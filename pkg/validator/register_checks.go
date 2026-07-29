@@ -42,10 +42,10 @@ func init() {
 
 type namespaceCheck struct{}
 
-func (namespaceCheck) ID() string       { return "namespace" }
-func (namespaceCheck) Title() string    { return "Namespace Scope" }
-func (namespaceCheck) Section() string  { return "resource-compliance" }
-func (namespaceCheck) Blocking() bool   { return true }
+func (namespaceCheck) ID() string         { return "namespace" }
+func (namespaceCheck) Title() string      { return "Namespace Scope" }
+func (namespaceCheck) Section() string    { return "resource-compliance" }
+func (namespaceCheck) Blocking() bool     { return true }
 func (namespaceCheck) Scope() check.Scope { return check.ScopeDoc }
 func (namespaceCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := namespace.ValidateBytes(data, source)
@@ -63,10 +63,10 @@ func (namespaceCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type psaCheck struct{}
 
-func (psaCheck) ID() string       { return "psa-labels" }
-func (psaCheck) Title() string    { return "PSA Namespace Labels" }
-func (psaCheck) Section() string  { return "resource-compliance" }
-func (psaCheck) Blocking() bool   { return true }
+func (psaCheck) ID() string         { return "psa-labels" }
+func (psaCheck) Title() string      { return "PSA Namespace Labels" }
+func (psaCheck) Section() string    { return "resource-compliance" }
+func (psaCheck) Blocking() bool     { return true }
 func (psaCheck) Scope() check.Scope { return check.ScopeDoc }
 func (psaCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := psa.ValidateReader(bytes.NewReader(data), source)
@@ -84,10 +84,10 @@ func (psaCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type rbacReadonlyCheck struct{}
 
-func (rbacReadonlyCheck) ID() string       { return "rbac-readonly" }
-func (rbacReadonlyCheck) Title() string    { return "RBAC Read-Only Aggregate" }
-func (rbacReadonlyCheck) Section() string  { return "resource-compliance" }
-func (rbacReadonlyCheck) Blocking() bool   { return true }
+func (rbacReadonlyCheck) ID() string         { return "rbac-readonly" }
+func (rbacReadonlyCheck) Title() string      { return "RBAC Read-Only Aggregate" }
+func (rbacReadonlyCheck) Section() string    { return "resource-compliance" }
+func (rbacReadonlyCheck) Blocking() bool     { return true }
 func (rbacReadonlyCheck) Scope() check.Scope { return check.ScopeDoc }
 func (rbacReadonlyCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := rbac.ValidateReader(bytes.NewReader(data), source)
@@ -105,10 +105,10 @@ func (rbacReadonlyCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type rbacWildcardCheck struct{}
 
-func (rbacWildcardCheck) ID() string       { return "rbac-wildcards" }
-func (rbacWildcardCheck) Title() string    { return "RBAC Wildcards" }
-func (rbacWildcardCheck) Section() string  { return "resource-compliance" }
-func (rbacWildcardCheck) Blocking() bool   { return true }
+func (rbacWildcardCheck) ID() string         { return "rbac-wildcards" }
+func (rbacWildcardCheck) Title() string      { return "RBAC Wildcards" }
+func (rbacWildcardCheck) Section() string    { return "resource-compliance" }
+func (rbacWildcardCheck) Blocking() bool     { return true }
 func (rbacWildcardCheck) Scope() check.Scope { return check.ScopeDoc }
 func (rbacWildcardCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := rbac.ValidateWildcardsReader(bytes.NewReader(data), source)
@@ -126,10 +126,10 @@ func (rbacWildcardCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type crbCheck struct{}
 
-func (crbCheck) ID() string       { return "crb" }
-func (crbCheck) Title() string    { return "ClusterRoleBinding Subject Namespace" }
-func (crbCheck) Section() string  { return "resource-compliance" }
-func (crbCheck) Blocking() bool   { return true }
+func (crbCheck) ID() string         { return "crb" }
+func (crbCheck) Title() string      { return "ClusterRoleBinding Subject Namespace" }
+func (crbCheck) Section() string    { return "resource-compliance" }
+func (crbCheck) Blocking() bool     { return true }
 func (crbCheck) Scope() check.Scope { return check.ScopeDoc }
 func (crbCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := crb.ValidateBytes(data, source)
@@ -147,10 +147,10 @@ func (crbCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type syncoptsCheck struct{}
 
-func (syncoptsCheck) ID() string       { return "sync-options" }
-func (syncoptsCheck) Title() string    { return "Argo CD Sync Options" }
-func (syncoptsCheck) Section() string  { return "resource-compliance" }
-func (syncoptsCheck) Blocking() bool   { return true }
+func (syncoptsCheck) ID() string         { return "sync-options" }
+func (syncoptsCheck) Title() string      { return "Argo CD Sync Options" }
+func (syncoptsCheck) Section() string    { return "resource-compliance" }
+func (syncoptsCheck) Blocking() bool     { return true }
 func (syncoptsCheck) Scope() check.Scope { return check.ScopeDoc }
 func (syncoptsCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := syncopts.ValidateReader(bytes.NewReader(data), source)
@@ -168,10 +168,10 @@ func (syncoptsCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type imageCheck struct{}
 
-func (imageCheck) ID() string       { return "image-checksum" }
-func (imageCheck) Title() string    { return "Image Digest Pinning" }
-func (imageCheck) Section() string  { return "resource-compliance" }
-func (imageCheck) Blocking() bool   { return true }
+func (imageCheck) ID() string         { return "image-checksum" }
+func (imageCheck) Title() string      { return "Image Digest Pinning" }
+func (imageCheck) Section() string    { return "resource-compliance" }
+func (imageCheck) Blocking() bool     { return true }
 func (imageCheck) Scope() check.Scope { return check.ScopeDoc }
 func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := image.ValidateBytes(data, source)
@@ -191,10 +191,10 @@ func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type namedportCheck struct{}
 
-func (namedportCheck) ID() string       { return "named-ports" }
-func (namedportCheck) Title() string    { return "Named Ports" }
-func (namedportCheck) Section() string  { return "resource-compliance" }
-func (namedportCheck) Blocking() bool   { return true }
+func (namedportCheck) ID() string         { return "named-ports" }
+func (namedportCheck) Title() string      { return "Named Ports" }
+func (namedportCheck) Section() string    { return "resource-compliance" }
+func (namedportCheck) Blocking() bool     { return true }
 func (namedportCheck) Scope() check.Scope { return check.ScopeDoc }
 func (namedportCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := namedport.ValidateBytes(data, source)
@@ -214,10 +214,10 @@ func (namedportCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type podspecCheck struct{}
 
-func (podspecCheck) ID() string       { return "podspec-defaults" }
-func (podspecCheck) Title() string    { return "PodSpec Defaults" }
-func (podspecCheck) Section() string  { return "resource-compliance" }
-func (podspecCheck) Blocking() bool   { return true }
+func (podspecCheck) ID() string         { return "podspec-defaults" }
+func (podspecCheck) Title() string      { return "PodSpec Defaults" }
+func (podspecCheck) Section() string    { return "resource-compliance" }
+func (podspecCheck) Blocking() bool     { return true }
 func (podspecCheck) Scope() check.Scope { return check.ScopeDoc }
 func (podspecCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := podspec.ValidateReader(bytes.NewReader(data), source)
@@ -237,10 +237,10 @@ func (podspecCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type placeholderCheck struct{}
 
-func (placeholderCheck) ID() string       { return "placeholder" }
-func (placeholderCheck) Title() string    { return "Unresolved Placeholders" }
-func (placeholderCheck) Section() string  { return "resource-compliance" }
-func (placeholderCheck) Blocking() bool   { return true }
+func (placeholderCheck) ID() string         { return "placeholder" }
+func (placeholderCheck) Title() string      { return "Unresolved Placeholders" }
+func (placeholderCheck) Section() string    { return "resource-compliance" }
+func (placeholderCheck) Blocking() bool     { return true }
 func (placeholderCheck) Scope() check.Scope { return check.ScopeDoc }
 func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
 	// placeholder.ValidateReaderWithOptions requires *os.File; write to a temp
@@ -275,10 +275,10 @@ func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type clusterIdentityAdapter struct{}
 
-func (clusterIdentityAdapter) ID() string       { return "cluster-identity" }
-func (clusterIdentityAdapter) Title() string    { return "Cluster Identity Copy/Paste" }
-func (clusterIdentityAdapter) Section() string  { return "resource-compliance" }
-func (clusterIdentityAdapter) Blocking() bool   { return true }
+func (clusterIdentityAdapter) ID() string         { return "cluster-identity" }
+func (clusterIdentityAdapter) Title() string      { return "Cluster Identity Copy/Paste" }
+func (clusterIdentityAdapter) Section() string    { return "resource-compliance" }
+func (clusterIdentityAdapter) Blocking() bool     { return true }
 func (clusterIdentityAdapter) Scope() check.Scope { return check.ScopeOverlay }
 func (clusterIdentityAdapter) CheckOverlay(overlayPath, cluster string) []check.Finding {
 	var idx clusterid.ClusterIndex

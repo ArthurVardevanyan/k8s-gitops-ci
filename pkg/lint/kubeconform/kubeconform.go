@@ -50,8 +50,8 @@ type Result struct {
 
 // FileResult is per-file results.
 type FileResult struct {
-	Filename, Status string
-	Errors           []string
+	Filename, Status                                   string
+	Errors                                             []string
 	ValidCount, InvalidCount, ErrorCount, SkippedCount int
 }
 

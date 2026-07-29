@@ -84,7 +84,7 @@ func ComposeResourceComplianceSection(findings []check.Finding) Section {
 }
 
 // ComposeKustomizeBuildSection renders the Kustomize Build section.
-func ComposeKustomizeBuildSection(overlayCount int, buildErrors map[string]string, hookLines []string, fixNeeded []string) Section {
+func ComposeKustomizeBuildSection(overlayCount int, buildErrors map[string]string, hookLines, fixNeeded []string) Section {
 	var b strings.Builder
 	hasError := false
 
@@ -122,7 +122,7 @@ func ComposeKustomizeBuildSection(overlayCount int, buildErrors map[string]strin
 }
 
 // ComposeScaffoldValidationSection renders scaffold validation results.
-func ComposeScaffoldValidationSection(driftSummary string, execErrors []string, missingClusters []string) Section {
+func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingClusters []string) Section {
 	var b strings.Builder
 	hasError := false
 

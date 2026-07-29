@@ -34,13 +34,13 @@ type Options struct {
 
 // Result captures the pipeline outcome.
 type Result struct {
-	PRValid           bool
-	TitleErr          error
-	UnsignedErr       error
-	ChecklistErr      error
-	ValidatorResult   *validator.Result
-	ValidationErr     error
-	ReproduceCommand  string
+	PRValid          bool
+	TitleErr         error
+	UnsignedErr      error
+	ChecklistErr     error
+	ValidatorResult  *validator.Result
+	ValidationErr    error
+	ReproduceCommand string
 }
 
 // Run executes the pipeline phases.
@@ -121,18 +121,18 @@ func shouldRunValidation(opts Options) bool {
 
 func toValidatorOptions(opts Options) validator.Options {
 	return validator.Options{
-		RepoURL:     opts.URL,
-		PR:          opts.PR,
-		BaseRef:     resolveBaseRef(opts.TargetBranch),
-		Revision:    resolveRevision(opts.Revision),
-		LintOnly:    opts.LintOnly,
-		SkipAVP:     opts.SkipAVP,
+		RepoURL:      opts.URL,
+		PR:           opts.PR,
+		BaseRef:      resolveBaseRef(opts.TargetBranch),
+		Revision:     resolveRevision(opts.Revision),
+		LintOnly:     opts.LintOnly,
+		SkipAVP:      opts.SkipAVP,
 		SkipGolangci: opts.SkipGolangci,
-		NoComment:   opts.NoComment,
-		Concurrency: opts.Workers(),
-		Apps:        opts.Apps,
-		Clusters:    opts.Clusters,
-		Providers:   opts.Providers,
+		NoComment:    opts.NoComment,
+		Concurrency:  opts.Workers(),
+		Apps:         opts.Apps,
+		Clusters:     opts.Clusters,
+		Providers:    opts.Providers,
 	}
 }
 
@@ -170,11 +170,11 @@ func postComment(res *Result, opts Options) error {
 		marker = "<!-- gitops-ci-report -->"
 	}
 	report := validator.Report{
-		Marker:    marker,
-		Title:     "GitOps CI Results",
-		Header:    "GitOps CI Pipeline",
-		Sections:  composeSections(res, opts),
-		Body:      "```bash\n" + res.ReproduceCommand + "\n```",
+		Marker:   marker,
+		Title:    "GitOps CI Results",
+		Header:   "GitOps CI Pipeline",
+		Sections: composeSections(res, opts),
+		Body:     "```bash\n" + res.ReproduceCommand + "\n```",
 	}
 	if err := github.UpsertComment(client, marker, report.Render()); err != nil {
 		return err

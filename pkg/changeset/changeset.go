@@ -41,6 +41,27 @@ func GetAllFiles() ([]string, error) {
 	return walkDir(".")
 }
 
+// GetFilesUnderDirs walks each of the given directories and returns all files
+// found within them, deduplicated. Use this instead of GetAllFiles when only
+// specific subdirectories need to be processed.
+func GetFilesUnderDirs(dirs []string) ([]string, error) {
+	seen := make(map[string]bool)
+	var all []string
+	for _, dir := range dirs {
+		files, err := walkDir(dir)
+		if err != nil {
+			return nil, fmt.Errorf("walk %s: %w", dir, err)
+		}
+		for _, f := range files {
+			if !seen[f] {
+				seen[f] = true
+				all = append(all, f)
+			}
+		}
+	}
+	return all, nil
+}
+
 // FilterByExtension keeps files ending with any of the given extensions.
 func FilterByExtension(files []string, exts ...string) []string {
 	var out []string
@@ -82,7 +103,7 @@ func FilterByPrefix(files []string, prefix string) []string {
 }
 
 // FilterByApp returns files that appear to belong to any of the named apps.
-func FilterByApp(files []string, apps []string) []string {
+func FilterByApp(files, apps []string) []string {
 	if len(apps) == 0 {
 		return files
 	}

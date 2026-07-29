@@ -40,9 +40,9 @@ type ProgressFunc func(format string, args ...any)
 
 // BuildResult captures the result of building a single overlay.
 type BuildResult struct {
-	Overlay string
+	Overlay  string
 	YAMLFile string
-	Err     error
+	Err      error
 }
 
 // FindAllOverlays returns all overlay directories under app/overlays.

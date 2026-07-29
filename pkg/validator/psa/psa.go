@@ -24,8 +24,8 @@ var ValidLevels = map[string]bool{"restricted": true, "baseline": true, "privile
 
 // ValidationError records a missing/invalid PSA label.
 type ValidationError struct {
-	File, Name        string
-	MissingLabels     []string
+	File, Name    string
+	MissingLabels []string
 }
 
 func (e ValidationError) String() string {

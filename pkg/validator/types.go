@@ -19,6 +19,7 @@ type Options struct {
 	IncludeDeletions bool
 	Concurrency      int
 	Apps, Clusters   []string
+	Dirs             []string // explicit subdirectories to validate; bypasses git diff
 	Providers        provider.Providers
 }
 

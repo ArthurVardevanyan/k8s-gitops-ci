@@ -42,11 +42,11 @@ func isShellScript(path string) bool {
 
 // Violation records a shellcheck finding.
 type Violation struct {
-	File      string
-	Line      int
-	Severity  string
-	Message   string
-	SC        string
+	File     string
+	Line     int
+	Severity string
+	Message  string
+	SC       string
 }
 
 // Run executes shellcheck on the given script files.

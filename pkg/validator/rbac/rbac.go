@@ -72,7 +72,7 @@ func (d DeduplicatedWildcardError) String() string {
 
 // readOnlyExempt maps apiGroup/resource to allowed verbs.
 var readOnlyExempt = map[string]map[string]map[string]bool{
-	"metrics.k8s.io": {"pods": {"create": true}},
+	"metrics.k8s.io":        {"pods": {"create": true}},
 	"monitoring.coreos.com": {"prometheuses/api": {"create": true, "update": true}},
 }
 

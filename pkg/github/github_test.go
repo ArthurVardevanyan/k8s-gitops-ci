@@ -11,10 +11,10 @@ func TestClient_Repo(t *testing.T) {
 
 func TestClient_RepoEdgeCases(t *testing.T) {
 	cases := map[string]string{
-		"":                                      "",
-		"https://github.com/org/repo.git":       "org/repo",
-		"git@github.com:org/repo.git":           "", // unsupported
-		"github.com/org/repo":                   "org/repo",
+		"":                                "",
+		"https://github.com/org/repo.git": "org/repo",
+		"git@github.com:org/repo.git":     "", // unsupported
+		"github.com/org/repo":             "org/repo",
 	}
 	for in, want := range cases {
 		if got := NewClient(in, "1").Repo(); got != want {
