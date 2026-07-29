@@ -46,6 +46,20 @@ tasks:
       - gofumpt -w .
       - goimports -w .
 
+  update:deps:
+    desc: Upgrade all Go dependencies and tidy go.mod/go.sum
+    cmds:
+      - go get -u ./...
+      - go mod tidy
+
+  update:
+    desc: Run all update tasks (deps, schemas, policies, scoped-resources)
+    cmds:
+      - task: update:deps
+      - task: update:schemas
+      - task: update:policies
+      - task: update:scoped-resources
+
   update:schemas:
     desc: Pull embedded kubeconform schemas from git
     cmds:
