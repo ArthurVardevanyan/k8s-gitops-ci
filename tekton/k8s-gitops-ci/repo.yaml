@@ -4,7 +4,7 @@ apiVersion: pipelinesascode.tekton.dev/v1alpha1
 kind: Repository
 metadata:
   name: k8s-gitops-ci
-  namespace: homelab
+  namespace: k8s-gitops-ci
 spec:
   url: "https://github.com/ArthurVardevanyan/k8s-gitops-ci"
   concurrency_limit: 1

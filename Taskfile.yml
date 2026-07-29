@@ -1,59 +1,434 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
 version: '3'
 
 vars:
-  BIN: gitops-ci
+  NAME: k8s-gitops-ci
+  GOIMPORTS_VERSION: v0.34.0
+  GOFUMPT_VERSION: v0.8.0
+  GOLANGCI_LINT_VERSION: v2.2.2
+  GOVULNCHECK_VERSION: v1.3.0
+  TOOLS: "{{.ROOT_DIR | toSlash}}/.tool"
+  TOOLS_BIN: "{{.TOOLS}}"
+  DIST: "{{.ROOT_DIR | toSlash}}/bin"
+  PATH_SEP: "{{ if eq OS `windows` }};{{ else }}:{{ end }}"
+  TOOLS_PATH: "{{.TOOLS_BIN}}{{.PATH_SEP}}{{.DIST}}"
+  MAIN_PACKAGE: ./cmd/k8s-gitops-ci
+  COVER: "{{.ROOT_DIR | toSlash}}/.task/cover"
+  BUILD_COMMIT:
+    sh: git rev-parse HEAD 2>/dev/null || echo nightly
+  GIT_SHA:
+    sh: git rev-parse --short=12 HEAD 2>/dev/null || echo unknown
+  BUILD_VERSION:
+    sh: |
+      if [ -n "${BUILD_VERSION:-}" ]; then
+        echo "${BUILD_VERSION}"
+        exit 0
+      fi
+      LATEST_TAG="$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname \
+        | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 | sed 's/^[vV]//')"
+      if [ -z "$LATEST_TAG" ]; then LATEST_TAG="0.0.1"; fi
+      echo "${LATEST_TAG}-local"
   GIT_VERSION:
     sh: git describe --tags --always 2>/dev/null || echo dev
-  GIT_COMMIT:
-    sh: git rev-parse --short HEAD 2>/dev/null || echo unknown
   BUILD_TIME:
     sh: date -u +%Y-%m-%dT%H:%M:%SZ
   LDFLAGS: >-
     -s -w
-    -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildVersion={{.GIT_VERSION}}
+    -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildVersion={{.BUILD_VERSION}}
     -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildTime={{.BUILD_TIME}}
-    -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.Commit={{.GIT_COMMIT}}
+    -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.Commit={{.BUILD_COMMIT}}
 
 env:
+  CGO_ENABLED: "0"
   GOFLAGS: -mod=mod
 
+# ── Info ──────────────────────────────────────────────────────────────────────
 tasks:
   default:
+    aliases: [info]
+    silent: true
+    desc: Display project information
     cmds:
-      - task: build
+      - |
+        echo "------------------------------------------------------------"
+        echo "{{.NAME}} Taskfile"
+        echo "------------------------------------------------------------"
+        echo "Common commands:"
+        echo "  task           # this info"
+        echo "  task ci        # full CI pipeline (lint + test + build)"
+        echo "  task build     # build bin/k8s-gitops-ci"
+        echo "  task test      # run tests"
+        echo "  task lint      # run golangci-lint"
+        echo "  task format    # auto-format Go sources"
+        echo ""
+        echo "  BUILD_VERSION: {{.BUILD_VERSION}}"
+        echo "  BUILD_COMMIT:  {{.BUILD_COMMIT}}"
+        echo "  GIT_SHA:       {{.GIT_SHA}}"
+        echo "------------------------------------------------------------"
 
-  build:
-    desc: Build the CLI binary to bin/gitops-ci
+# ── Modules ───────────────────────────────────────────────────────────────────
+  mod:
+    desc: Download and tidy Go modules
+    silent: true
+    sources:
+      - go.mod
+      - go.sum
     cmds:
-      - mkdir -p bin
-      - go build -ldflags "{{.LDFLAGS}}" -o bin/{{.BIN}} ./cmd/{{.BIN}}
-    generates:
-      - bin/{{.BIN}}
+      - go mod download
+      - go mod tidy
 
-  test:
-    desc: Run unit tests
+  mod:check:
+    desc: Ensure go.mod and go.sum are tidy without modifying the working tree
+    silent: true
     cmds:
-      - go test ./...
+      - |
+        set -e
+        cp go.mod go.mod.bak
+        cp go.sum go.sum.bak
+        if ! go mod tidy 2>&1; then
+          echo "❌ go mod tidy failed"
+          mv go.mod.bak go.mod
+          mv go.sum.bak go.sum
+          exit 1
+        fi
+        if diff -q go.mod go.mod.bak > /dev/null 2>&1 && diff -q go.sum go.sum.bak > /dev/null 2>&1; then
+          echo "✅ go.mod and go.sum are tidy"
+          rm -f go.mod.bak go.sum.bak
+          exit 0
+        fi
+        echo "❌ go.mod and go.sum need tidying"
+        diff go.mod.bak go.mod || true
+        mv go.mod.bak go.mod
+        mv go.sum.bak go.sum
+        echo "Run 'task mod' to fix."
+        exit 1
 
-  lint:
-    desc: Run linters
+  mod:verify:
+    desc: Verify Go module integrity and checksums
+    silent: true
     cmds:
-      - golangci-lint run ./...
+      - go mod verify
 
+# ── Tool installation ─────────────────────────────────────────────────────────
+  install-tools:
+    desc: Install all Go development tools to .tool/
+    silent: true
+    deps: [install-tools:go]
+    cmds:
+      - echo "✅ All development tools installed"
+
+  install-tools:go:
+    desc: Install Go tooling (golangci-lint, govulncheck, gofumpt, goimports)
+    silent: true
+    run: once
+    env:
+      GOBIN: "{{.TOOLS_BIN}}"
+      PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+    cmds:
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+        mkdir -p "{{.TOOLS_BIN}}"
+        install_tool() {
+          local name="$1" pkg="$2"
+          if [[ ! -x "{{.TOOLS_BIN}}/$name" ]]; then
+            echo "[install] $name"
+            go install "$pkg"
+          fi
+        }
+        install_tool golangci-lint "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}"
+        install_tool govulncheck   "golang.org/x/vuln/cmd/govulncheck@{{.GOVULNCHECK_VERSION}}"
+        install_tool gofumpt       "mvdan.cc/gofumpt@{{.GOFUMPT_VERSION}}"
+        install_tool goimports     "golang.org/x/tools/cmd/goimports@{{.GOIMPORTS_VERSION}}"
+
+# ── Formatting ────────────────────────────────────────────────────────────────
   format:
-    desc: Format sources
+    desc: Auto-format Go code (goimports + gofumpt) and tidy modules
+    deps: [install-tools]
+    silent: true
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - .tool/goimports
+      - .tool/gofumpt
     cmds:
-      - gofumpt -w .
-      - goimports -w .
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+        echo "Formatting Go files..."
+        find . -type f -name '*.go' \
+          -not -path './.cache/*' \
+          -not -path './.task/*' \
+          -not -path './.tool/*' \
+          -not -path './vendor/*' \
+          -print0 | xargs -0 goimports -w
+        find . \
+          -type d \( -name .cache -o -name .task -o -name .tool -o -name vendor \) -prune -false \
+          -o -type f -name '*.go' -print \
+          | xargs gofumpt -w -extra
+        go mod tidy
+        echo "✅ Formatting complete"
 
+  format:check:
+    desc: Check Go formatting without modifying files (fails if changes needed)
+    deps: [install-tools]
+    silent: true
+    sources:
+      - "**/*.go"
+      - .tool/goimports
+      - .tool/gofumpt
+    cmds:
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+        changes=0
+        UNFORMATTED=$(find . \
+          -type d \( -name .cache -o -name .task -o -name .tool -o -name vendor \) -prune -false \
+          -o -type f -name '*.go' -print0 \
+          | xargs -0 goimports -l 2>/dev/null || true)
+        if [ -n "$UNFORMATTED" ]; then
+          echo "❌ goimports issues:"
+          echo "$UNFORMATTED"
+          changes=1
+        fi
+        UNFORMATTED=$(find . \
+          -type d \( -name .cache -o -name .task -o -name .tool -o -name vendor \) -prune -false \
+          -o -type f -name '*.go' -print0 \
+          | xargs -0 gofumpt -l -extra 2>/dev/null || true)
+        if [ -n "$UNFORMATTED" ]; then
+          echo "❌ gofumpt issues:"
+          echo "$UNFORMATTED"
+          changes=1
+        fi
+        if [ "$changes" -ne 0 ]; then
+          echo "Run 'task format' to fix."
+          exit 1
+        fi
+        echo "✅ Code formatting is correct"
+
+# ── Lint & static analysis ────────────────────────────────────────────────────
+  lint:
+    desc: Run golangci-lint
+    aliases: [l]
+    silent: true
+    deps: [install-tools]
+    sources:
+      - "./**/*.go"
+      - .golangci.yml
+      - .tool/golangci-lint
+    cmds:
+      - |
+        set -e
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+        echo "Running golangci-lint..."
+        golangci-lint run ./... --config .golangci.yml --timeout 5m0s
+        echo "✅ No linting issues found"
+
+  vet:
+    desc: Run go vet
+    silent: true
+    sources:
+      - "./**/*.go"
+      - go.mod
+      - go.sum
+    cmds:
+      - go vet ./...
+
+# ── Security ──────────────────────────────────────────────────────────────────
+  vulncheck:
+    desc: Check for known vulnerabilities (only fails on fixable findings)
+    silent: true
+    deps: [install-tools]
+    cmds:
+      - |
+        export PATH="{{.TOOLS_PATH}}:$PATH"
+        OUTPUT=$(govulncheck -format json ./...)
+        if echo "$OUTPUT" | grep -q '"fixed_version"'; then
+          echo "ERROR: fixable vulnerabilities found:"
+          govulncheck ./... || true
+          exit 1
+        fi
+        if echo "$OUTPUT" | grep -q '"finding"'; then
+          echo "WARNING: unfixable vulnerabilities (no patch available):"
+          echo "$OUTPUT" | grep -o '"osv": "[^"]*"' | sort -u | sed 's/^/  /'
+        else
+          echo "✅ No vulnerabilities found"
+        fi
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+  build:
+    desc: Build bin/{{.NAME}}
+    silent: true
+    deps: [update:schemas, update:policies]
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.DIST}}/{{.NAME}}"
+    cmds:
+      - mkdir -p {{.DIST}}
+      - >
+        go build
+        -ldflags '-w {{.LDFLAGS}}'
+        -trimpath
+        -o {{.DIST}}/{{.NAME}}
+        {{.MAIN_PACKAGE}}
+
+  # image:build and image:publish are commented out until the registry is wired up.
+  # image:build:
+  #   desc: Build and push container image with ko
+  #   env:
+  #     KO_DOCKER_REPO: '{{.KO_DOCKER_REPO | default "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"}}'
+  #     BUILD_VERSION: "{{.BUILD_VERSION}}"
+  #     BUILD_COMMIT: "{{.BUILD_COMMIT}}"
+  #   cmds:
+  #     - ko build {{.MAIN_PACKAGE}} --bare --sbom=none --tags={{.KO_TAGS | default "local"}}
+  #
+  # image:publish:
+  #   desc: Build+push image and write .image-tag / .image-ref / .image-digest
+  #   env:
+  #     KO_DOCKER_REPO: '{{.KO_DOCKER_REPO | default "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"}}'
+  #   cmds:
+  #     - |
+  #       ... (see upstream image:publish for full logic)
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+  test:
+    desc: Run test suite
+    aliases: [t]
+    env:
+      GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
+      GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    cmds:
+      - go test $GOTESTFLAGS -timeout 10m ./...
+
+  test:cover:
+    desc: Run tests with coverage profile + race detector
+    silent: true
+    env:
+      GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
+      GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    cmds:
+      - mkdir -p {{.COVER}}
+      # CGO_ENABLED=1 set inline — the global CGO_ENABLED=0 is exported into
+      # subprocesses and task-level env won't override it there.
+      - CGO_ENABLED=1 go test $GOTESTFLAGS -race -covermode=atomic -coverprofile={{.COVER}}/cover.out -timeout 10m ./...
+
+  test:race:
+    desc: Alias for test:cover (race detector runs there)
+    cmds:
+      - task: test:cover
+
+  coverage:report:
+    desc: Print per-file coverage report
+    silent: true
+    deps: [test:cover]
+    cmds:
+      - go tool cover -func={{.COVER}}/cover.out
+
+  coverage:html:
+    desc: Generate HTML coverage report and open in browser
+    silent: true
+    deps: [test:cover]
+    cmds:
+      - go tool cover -html={{.COVER}}/cover.out -o {{.COVER}}/coverage.html
+      - |
+        echo "✅ HTML report: {{.COVER}}/coverage.html"
+        if command -v xdg-open >/dev/null 2>&1; then xdg-open {{.COVER}}/coverage.html
+        elif command -v open >/dev/null 2>&1; then open {{.COVER}}/coverage.html; fi
+
+# ── Full CI pipeline ──────────────────────────────────────────────────────────
+  ci:
+    desc: Full CI pipeline — mod check, format, schemas, lint, vulncheck, test, build
+    silent: true
+    vars:
+      TIMEFILE: '{{.TIMEFILE | default "/tmp/k8s-gitops-ci-timings"}}'
+    cmds:
+      # Native `- task:` references preserve the Taskfile env (CGO_ENABLED, etc.)
+      # across steps. Timing markers are appended to TIMEFILE and diffed at the end.
+      - |
+        set -euo pipefail
+        : > "{{.TIMEFILE}}"
+        printf '%s\t%s\n' "$(date +%s.%N)" "START" >> "{{.TIMEFILE}}"
+        echo "=========================================="
+        echo "🚀 Starting CI Pipeline"
+        echo "=========================================="
+        echo ""
+        echo "▶ Step 1/6  Module Dependencies Check"
+      - task: mod:check
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/6  Module Dependencies Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 2/6  Code Formatting Check"
+      - task: format:check
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/6  Code Formatting Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 3/6  Schemas & Policies"
+      - task: update:schemas
+      - task: update:policies
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/6  Schemas & Policies" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 4/6  Linting"
+      - task: lint
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/6  Linting" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 5/6  Tests (coverage + race)"
+      - task: test:cover
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/6  Tests (coverage + race)" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 6/6  Build"
+      - task: build
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/6  Build" >> "{{.TIMEFILE}}"
+      - |
+        set -euo pipefail
+        echo ""
+        echo "=========================================="
+        echo "✅ CI Pipeline Completed Successfully!"
+        echo "=========================================="
+        echo "⏱  Step timings (wall time):"
+        awk -F'\t' '
+          NR == 1 { prev = $1; next }
+          {
+            secs = $1 - prev
+            total += secs
+            printf "   %-38s %7.1fs\n", $2, secs
+            prev = $1
+          }
+          END { printf "   %-38s %7.1fs\n", "TOTAL", total }
+        ' "{{.TIMEFILE}}"
+        echo "=========================================="
+
+# ── Clean ─────────────────────────────────────────────────────────────────────
+  clean:
+    desc: Remove build artifacts, caches, and temp files
+    silent: true
+    cmds:
+      - |
+        echo "🧹 Cleaning..."
+        rm -rf bin/ dist/ .task/ .tool/
+        find . -name "*.tmp" -type f -delete
+        find . -name ".DS_Store" -type f -delete
+        echo "✅ Clean complete"
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
   update:deps:
     desc: Upgrade all Go dependencies and tidy go.mod/go.sum
+    silent: true
     cmds:
-      - go get -u ./...
-      - go mod tidy
+      - |
+        set -euo pipefail
+        echo "🔍 Updating Go dependencies..."
+        go get -u ./...
+        go mod tidy
+        echo "✅ Dependencies updated — run 'task test' to verify"
 
   update:
     desc: Run all update tasks (deps, schemas, policies, scoped-resources)
+    silent: true
     cmds:
       - task: update:deps
       - task: update:schemas
@@ -68,14 +443,14 @@ tasks:
       - pkg/lint/kubeconform/schemas/schemas.tar.gz
 
   update:policies:
-    desc: Pull embedded kyverno policies
+    desc: Pull embedded kyverno policies (placeholder)
     cmds:
       - scripts/pull-policies.sh
     generates:
       - pkg/lint/kyverno/policies/policies.tar.gz
 
   update:scoped-resources:
-    desc: Regenerate resource scope maps
+    desc: Regenerate resource scope maps from kubectl api-resources
     cmds:
       - scripts/pull-scoped-resources.sh
     generates:
