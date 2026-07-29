@@ -1,0 +1,60 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: gitops-ci
+  labels:
+    app.kubernetes.io/name: gitops-ci
+spec:
+  description: GitOps CI lint / build / validate pipeline
+  params:
+    - name: repo-url
+      type: string
+    - name: pr-number
+      type: string
+      default: ""
+    - name: revision
+      type: string
+    - name: target-branch
+      type: string
+      default: origin/main
+    - name: trigger-comment
+      type: string
+      default: ""
+    - name: image
+      type: string
+      default: ghcr.io/arthurvardevanyan/k8s-gitops-ci:latest
+  workspaces:
+    - name: source
+  tasks:
+    - name: clone
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: source
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+    - name: pipeline
+      runAfter:
+        - clone
+      taskRef:
+        name: gitops-ci
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: pr-number
+          value: $(params.pr-number)
+        - name: revision
+          value: $(params.revision)
+        - name: target-branch
+          value: $(params.target-branch)
+        - name: trigger-comment
+          value: $(params.trigger-comment)
+        - name: image
+          value: $(params.image)

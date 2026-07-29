@@ -1,0 +1,52 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: gitops-ci
+  labels:
+    app.kubernetes.io/name: gitops-ci
+spec:
+  description: Runs the k8s-gitops-ci binary in pipeline mode
+  params:
+    - name: repo-url
+      type: string
+    - name: pr-number
+      type: string
+      default: ""
+    - name: revision
+      type: string
+    - name: target-branch
+      type: string
+      default: origin/main
+    - name: trigger-comment
+      type: string
+      default: ""
+    - name: image
+      type: string
+      default: ghcr.io/arthurvardevanyan/k8s-gitops-ci:latest
+  workspaces:
+    - name: source
+      description: Cloned repository
+  steps:
+    - name: run
+      image: $(params.image)
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: PARAMS_URL
+          value: $(params.repo-url)
+        - name: PARAMS_PR
+          value: $(params.pr-number)
+        - name: PARAMS_REVISION
+          value: $(params.revision)
+        - name: PARAMS_TARGET_BRANCH
+          value: $(params.target-branch)
+        - name: PARAMS_TRIGGER_COMMENT
+          value: $(params.trigger-comment)
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-token
+              key: token
+              optional: true
+      command:
+        - gitops-ci
+        - pipeline
