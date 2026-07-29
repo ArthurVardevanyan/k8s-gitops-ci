@@ -16,6 +16,11 @@ import (
 // ClusterTokenRe is an optional cluster-name token regex (nil = off).
 var ClusterTokenRe *regexp.Regexp
 
+// AllowField reports whether a field name should be skipped during identity
+// scanning (e.g. "clusterName" in a resource that legitimately uses it).
+// Org layers may replace this with a custom matcher.
+var AllowField func(field string) bool
+
 // ValidationError records a cluster identity finding.
 type ValidationError struct {
 	File   string
@@ -147,15 +152,24 @@ func appendUnique(sl []string, s string) []string {
 
 func (id *OverlayIdentity) scanString(s, source string) {
 	for _, m := range projectNumberRe.FindAllStringSubmatch(s, -1) {
+		if AllowField != nil && AllowField("projectNumber") {
+			continue
+		}
 		id.ProjectNumbers = append(id.ProjectNumbers, m[1])
 		id.Sources[m[1]] = append(id.Sources[m[1]], source)
 	}
 	for _, m := range projectIDRe.FindAllStringSubmatch(s, -1) {
+		if AllowField != nil && AllowField("projectID") {
+			continue
+		}
 		id.ProjectIDs = append(id.ProjectIDs, m[1])
 		id.Sources[m[1]] = append(id.Sources[m[1]], source)
 	}
 	if ClusterTokenRe != nil {
 		for _, tok := range tokenSeparator.Split(s, -1) {
+			if AllowField != nil && AllowField("clusterName") {
+				continue
+			}
 			if ClusterTokenRe.MatchString(tok) && tok != id.ClusterName {
 				id.ClusterNames = appendUnique(id.ClusterNames, tok)
 				id.Sources[tok] = append(id.Sources[tok], source)
