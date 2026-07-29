@@ -23,7 +23,7 @@ builds:
       - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.Commit={{.Commit}}
 kos:
   - repositories:
-      - ghcr.io/arthurvardevanyan/k8s-gitops-ci
+      - registry.arthurvardevanyan.com/homelab/k8s-gitops-ci
     tags:
       - '{{.Version}}'
       - latest
@@ -34,7 +34,8 @@ kos:
       - linux/arm64
     main: ./cmd/gitops-ci
 changelog:
-  use: github-native
+  use: git-cliff
+  abbrev: -1
 release:
   github:
     owner: ArthurVardevanyan

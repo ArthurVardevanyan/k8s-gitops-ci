@@ -1,0 +1,276 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: k8s-gitops-ci
+  annotations:
+    io.kubernetes.cri-o.TrySkipVolumeSELinuxLabel: "true"
+    pipelinesascode.tekton.dev/on-event: "[pull_request, push]"
+    pipelinesascode.tekton.dev/on-target-branch: "[main]"
+    pipelinesascode.tekton.dev/max-keep-runs: "1"
+    pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
+    pipelinesascode.tekton.dev/task: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/tasks/git-clone/0.9.1/git-clone.yaml"
+    pipelinesascode.tekton.dev/task-1: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/base/clair-action/clair-action-task.yaml"
+spec:
+  params:
+    - name: git-url
+      value: "{{ repo_url }}"
+    - name: git-commit
+      value: "{{ revision }}"
+    - name: pull-request-number
+      value: "{{ pull_request_number }}"
+    - name: event
+      value: "{{ event_type }}"
+  pipelineSpec:
+    params:
+      - name: git-url
+        description: Repository URL to clone from.
+        type: string
+      - name: git-commit
+        type: string
+      - name: pull-request-number
+        type: string
+        default: ""
+      - name: event
+        type: string
+
+    results:
+      - description: The common vulnerabilities and exposures (CVE) result
+        name: SCAN_OUTPUT
+        value: $(tasks.clair-action.results.SCAN_OUTPUT)
+
+    workspaces:
+      - name: data
+      - name: git_auth_secret
+
+    tasks:
+      - name: git-clone
+        taskRef:
+          name: git-clone
+          kind: Task
+        params:
+          - name: url
+            value: $(params.git-url)
+          - name: revision
+            value: $(params.git-commit)
+        workspaces:
+          - name: output
+            workspace: data
+          - name: basic-auth
+            workspace: git_auth_secret
+
+      - name: build
+        runAfter:
+          - git-clone
+        workspaces:
+          - name: output
+            workspace: data
+          - name: basic-auth
+            workspace: git_auth_secret
+        params:
+          - name: revision
+            value: $(params.git-commit)
+          - name: pull-request-number
+            value: $(params.pull-request-number)
+          - name: git-url
+            value: $(params.git-url)
+          - name: event
+            value: $(params.event)
+        taskSpec:
+          params:
+            - name: revision
+              type: string
+            - name: pull-request-number
+              type: string
+              default: ""
+            - name: git-url
+              type: string
+            - name: event
+              type: string
+          results:
+            - name: IMAGE
+          workspaces:
+            - name: output
+              optional: false
+            - name: basic-auth
+              optional: false
+          stepTemplate:
+            name: stepTemplate
+            computeResources:
+              requests:
+                memory: 500Mi
+                cpu: 500m
+                ephemeral-storage: 100Mi
+              limits:
+                cpu: "4"
+                memory: 5Gi
+                ephemeral-storage: 500Mi
+            securityContext:
+              privileged: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              seccompProfile:
+                type: RuntimeDefault
+              capabilities:
+                drop:
+                  - ALL
+          volumes:
+            - name: cache
+              persistentVolumeClaim:
+                claimName: cache
+          steps:
+            - name: build
+              image: registry.arthurvardevanyan.com/homelab/toolbox:not_latest
+              env:
+                - name: WORKSPACE_DATA_PATH
+                  value: $(workspaces.output.path)
+                - name: WORKSPACE_RESULTS_PATH
+                  value: $(results.IMAGE.path)
+                - name: PARAM_GIT_URL
+                  value: $(params.git-url)
+                - name: PARAM_REVISION
+                  value: $(params.revision)
+                - name: PARAM_PULL_REQUEST_NUMBER
+                  value: $(params.pull-request-number)
+                - name: PARAM_EVENT
+                  value: $(params.event)
+              volumeMounts:
+                - name: cache
+                  mountPath: /go/pkg
+                  subPath: go
+                - name: cache
+                  mountPath: /tmp
+                  subPath: tmp
+              script: |
+                #!/bin/bash
+                set -o errexit
+                set -o nounset
+                set -o pipefail
+
+                calculate_next_version() {
+                  echo "Calculating next SemVer..."
+                  LATEST_RELEASE=$(gh release list \
+                    --repo "${PARAM_GIT_URL}" \
+                    --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+                  if [ -z "${LATEST_RELEASE}" ]; then LATEST_RELEASE="v0.0.0"; fi
+                  echo "Latest release: ${LATEST_RELEASE}"
+
+                  PR_TITLE=$(gh pr view "${GIT_PR}" \
+                    --repo "${PARAM_GIT_URL}" \
+                    --json title --jq .title)
+                  echo "PR title: ${PR_TITLE}"
+
+                  if ! echo "${PR_TITLE}" | grep -qE \
+                    "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\(.*\))?!?: .+"; then
+                    echo "Error: PR title '${PR_TITLE}' does not follow Conventional Commits."
+                    exit 1
+                  fi
+
+                  BUMP="patch"
+                  if echo "${PR_TITLE}" | grep -q "BREAKING CHANGE"; then
+                    BUMP="major"
+                  elif echo "${PR_TITLE}" | grep -qE "^[a-z]+(\(.*\))?!:"; then
+                    BUMP="major"
+                  elif echo "${PR_TITLE}" | grep -qE "^feat(\(.*\))?:"; then
+                    BUMP="minor"
+                  fi
+
+                  VERSION="${LATEST_RELEASE#v}"
+                  MAJOR=$(echo "${VERSION}" | cut -d. -f1)
+                  MINOR=$(echo "${VERSION}" | cut -d. -f2)
+                  PATCH=$(echo "${VERSION}" | cut -d. -f3)
+                  MAJOR="${MAJOR:-0}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
+
+                  if [ "${BUMP}" = "major" ]; then
+                    MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0
+                  elif [ "${BUMP}" = "minor" ]; then
+                    MINOR=$((MINOR+1)); PATCH=0
+                  else
+                    PATCH=$((PATCH+1))
+                  fi
+
+                  export NEW_SEMVER="v${MAJOR}.${MINOR}.${PATCH}"
+                  echo "Next SemVer: ${NEW_SEMVER}"
+                }
+
+                cd "${WORKSPACE_DATA_PATH}"
+                git config --global --add safe.directory "${WORKSPACE_DATA_PATH}"
+
+                gh auth login \
+                  --hostname "github.com" \
+                  --with-token <"$(workspaces.basic-auth.path)/git-provider-token"
+
+                export GOPATH=/go/pkg
+                export GOCACHE=/tmp/go-build
+                export GOMODCACHE=/go/pkg/mod
+
+                echo "Running tests..."
+                go test ./...
+
+                if [ "${PARAM_EVENT}" = "push" ]; then
+                  echo "Push to main — determining merged PR..."
+                  GIT_PR=$(gh pr list \
+                    --repo "${PARAM_GIT_URL}" \
+                    --search "${PARAM_REVISION}" \
+                    --state merged --json url \
+                    | jq --raw-output '.[] | .url' \
+                    | rev | cut -d/ -f1 | rev)
+                  echo "Merged PR: ${GIT_PR}"
+
+                  calculate_next_version
+
+                  echo "Running goreleaser release for ${NEW_SEMVER}..."
+                  export GORELEASER_CURRENT_TAG="${NEW_SEMVER}"
+                  export GITHUB_TOKEN
+                  GITHUB_TOKEN=$(cat "$(workspaces.basic-auth.path)/git-provider-token")
+                  goreleaser release --clean
+
+                  IMAGE=$(jq -r \
+                    '.[] | select(.type == "Docker Image") | select(.goos == "linux") | select(.goarch == "amd64") | .name' \
+                    dist/artifacts.json | head -1)
+                else
+                  echo "Pull request — running goreleaser snapshot..."
+                  goreleaser release --snapshot --clean
+
+                  IMAGE=$(jq -r \
+                    '.[] | select(.type == "Docker Image") | select(.goos == "linux") | select(.goarch == "amd64") | .name' \
+                    dist/artifacts.json | head -1)
+                fi
+
+                echo "Image: ${IMAGE}"
+                echo -n "${IMAGE}" > "${WORKSPACE_RESULTS_PATH}"
+
+      - name: clair-action
+        runAfter:
+          - build
+        taskRef:
+          name: clair-action
+          kind: Task
+        params:
+          - name: IMAGE
+            value: $(tasks.build.results.IMAGE)
+
+  taskRunTemplate:
+    serviceAccountName: pipeline
+    podTemplate:
+      runtimeClassName: selinux
+      securityContext:
+        fsGroupChangePolicy: OnRootMismatch
+  workspaces:
+    - name: data
+      volumeClaimTemplate:
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "1Gi"
+          storageClassName: rook-ceph-block-ci
+    - name: git_auth_secret
+      secret:
+        secretName: "{{ git_auth_secret }}"
