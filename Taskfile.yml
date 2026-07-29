@@ -40,16 +40,23 @@ tasks:
       - goimports -w .
 
   update:schemas:
-    desc: Pull embedded kubeconform schemas
+    desc: Pull embedded kubeconform schemas from git
     cmds:
       - scripts/pull-schemas.sh
+    generates:
+      - pkg/lint/kubeconform/schemas/schemas.tar.gz
 
   update:policies:
     desc: Pull embedded kyverno policies
     cmds:
       - scripts/pull-policies.sh
+    generates:
+      - pkg/lint/kyverno/policies/policies.tar.gz
 
   update:scoped-resources:
     desc: Regenerate resource scope maps
     cmds:
       - scripts/pull-scoped-resources.sh
+    generates:
+      - pkg/validator/namespace/resource_scope.go
+      - pkg/validator/namespace/extra_resource_scope.go
