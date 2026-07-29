@@ -107,7 +107,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 	return out
 }
 
-func lookupScope(key string) (clusterScoped bool, known bool) {
+func lookupScope(key string) (clusterScoped, known bool) {
 	if ExtraResourceScope != nil {
 		if v, ok := ExtraResourceScope[key]; ok {
 			return v, true

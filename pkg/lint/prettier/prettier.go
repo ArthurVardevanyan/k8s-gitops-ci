@@ -29,7 +29,7 @@ func Filter(files []string) []string {
 }
 
 // Run executes prettier --check on files.
-func Run(files []string, extraArgs []string) (string, error) {
+func Run(files, extraArgs []string) (string, error) {
 	files = Filter(files)
 	if len(files) == 0 {
 		return "", nil

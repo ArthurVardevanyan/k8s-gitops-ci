@@ -49,10 +49,10 @@ func (e ValidationError) String() string {
 
 // DeduplicatedError aggregates podspec findings.
 type DeduplicatedError struct {
-	Kind, Name, Container        string
-	MissingFields, Files         []string
-	Count                        int
-	Path                         string
+	Kind, Name, Container string
+	MissingFields, Files  []string
+	Count                 int
+	Path                  string
 }
 
 func (d DeduplicatedError) String() string {

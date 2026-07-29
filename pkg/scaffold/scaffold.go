@@ -15,9 +15,9 @@ import (
 
 // Generic core defaults kept verbatim.
 const (
-	Binary      = "scafctl"
+	Binary       = "scafctl"
 	ConfigSource = "repo-config"
-	HookKeyword = "run_scafctl_scaffold"
+	HookKeyword  = "run_scafctl_scaffold"
 )
 
 // ExcludedClusters lists clusters skipped from scaffold drift checks.
@@ -32,9 +32,9 @@ type RunOptions struct {
 
 // ScaffoldResult holds drift for one app.
 type ScaffoldResult struct {
-	App       string
+	App        string
 	Mismatches []string
-	Err       error
+	Err        error
 }
 
 // ScaffoldSummary aggregates scaffold results.

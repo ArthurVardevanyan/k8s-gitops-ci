@@ -38,9 +38,9 @@ var knownNonPlaceholders = map[string]bool{
 }
 
 var (
-	placeholderRe = regexp.MustCompile(`<([A-Z][A-Z0-9_-]*)>`)
+	placeholderRe  = regexp.MustCompile(`<([A-Z][A-Z0-9_-]*)>`)
 	placeholderRe2 = regexp.MustCompile(`<([a-z]+-[a-z]+-[a-z]+)>`)
-	avpRe         = regexp.MustCompile(`<(path|vault|aws|gcp):[^>]+>`)
+	avpRe          = regexp.MustCompile(`<(path|vault|aws|gcp):[^>]+>`)
 )
 
 // ValidateFile validates placeholders in a file with default options.

@@ -168,7 +168,7 @@ func fetchMainConfig(path string) []byte {
 	return out
 }
 
-func parseTopLevel(data []byte) (overrides map[string]*yaml.Node, envs map[string]*yaml.Node, groups map[string]*yaml.Node) {
+func parseTopLevel(data []byte) (overrides, envs, groups map[string]*yaml.Node) {
 	overrides = make(map[string]*yaml.Node)
 	envs = make(map[string]*yaml.Node)
 	groups = make(map[string]*yaml.Node)

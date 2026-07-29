@@ -82,7 +82,7 @@ func FilterByPrefix(files []string, prefix string) []string {
 }
 
 // FilterByApp returns files that appear to belong to any of the named apps.
-func FilterByApp(files []string, apps []string) []string {
+func FilterByApp(files, apps []string) []string {
 	if len(apps) == 0 {
 		return files
 	}

@@ -137,8 +137,10 @@ func pathMatches(selPath, findingPath string) bool {
 	return true
 }
 
-var pathIndexRe = regexp.MustCompile(`\[[0-9]+\]`)
-var idxRe = regexp.MustCompile(`^[0-9]+$`)
+var (
+	pathIndexRe = regexp.MustCompile(`\[[0-9]+\]`)
+	idxRe       = regexp.MustCompile(`^[0-9]+$`)
+)
 
 func normalizePath(p string) string {
 	p = strings.TrimPrefix(p, "/")

@@ -14,5 +14,5 @@ var Commit = "unknown"
 
 // String returns the version line.
 func String() string {
-	return fmt.Sprintf("gitops-ci version %s (commit %s, built %s)", BuildVersion, Commit, BuildTime)
+	return fmt.Sprintf("k8s-gitops-ci version %s (commit %s, built %s)", BuildVersion, Commit, BuildTime)
 }

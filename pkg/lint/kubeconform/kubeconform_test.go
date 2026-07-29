@@ -36,5 +36,3 @@ func TestValidateFiles_EmptyList(t *testing.T) {
 		t.Errorf("expected empty result: %+v err %v", r, err)
 	}
 }
-
-
