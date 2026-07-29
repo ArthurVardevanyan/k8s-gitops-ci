@@ -83,6 +83,84 @@ func ComposeResourceComplianceSection(findings []check.Finding) Section {
 	return Section{Name: "Resource Compliance", Body: b.String(), Error: true}
 }
 
+// ComposeKustomizeBuildSection renders the Kustomize Build section.
+func ComposeKustomizeBuildSection(overlayCount int, buildErrors map[string]string, hookLines []string, fixNeeded []string) Section {
+	var b strings.Builder
+	hasError := false
+
+	// Overlay build summary
+	if len(buildErrors) == 0 {
+		fmt.Fprintf(&b, "- ✅ **Overlay Build** — %d overlay(s) built successfully\n", overlayCount)
+	} else {
+		hasError = true
+		b.WriteString("- ❌ **Overlay Build**\n")
+		for ov, msg := range buildErrors {
+			fmt.Fprintf(&b, "\n%s\n", RenderSubDropdown(ov, "```\n"+strings.TrimSpace(msg)+"\n```"))
+		}
+	}
+
+	// Hook results
+	if len(hookLines) > 0 {
+		b.WriteString(RenderSubDropdown("Hook Results", strings.Join(hookLines, "\n")))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("- ✅ **Hooks** — no hooks or all passed\n")
+	}
+
+	// Kustomize fix
+	if len(fixNeeded) > 0 {
+		hasError = true
+		b.WriteString("- ❌ **Kustomize Fix** — the following files need `kustomize edit fix`:\n")
+		for _, f := range fixNeeded {
+			fmt.Fprintf(&b, "  - `%s`\n", f)
+		}
+	} else {
+		b.WriteString("- ✅ **Kustomize Fix** — all kustomization.yaml files are up to date\n")
+	}
+
+	return Section{Name: "Kustomize Build", Body: b.String(), Error: hasError}
+}
+
+// ComposeScaffoldValidationSection renders scaffold validation results.
+func ComposeScaffoldValidationSection(driftSummary string, execErrors []string, missingClusters []string) Section {
+	var b strings.Builder
+	hasError := false
+
+	// Drift
+	if driftSummary == "" {
+		b.WriteString("- ✅ **Scaffold Drift** — no drift detected\n")
+	} else {
+		hasError = true
+		b.WriteString("- ❌ **Scaffold Drift**\n\n")
+		b.WriteString(RenderSubDropdown("Drift Details", driftSummary))
+		b.WriteString("\n")
+	}
+
+	// Exec errors
+	if len(execErrors) == 0 {
+		b.WriteString("- ✅ **Scaffold Exec** — all scaffold runs succeeded\n")
+	} else {
+		hasError = true
+		b.WriteString("- ❌ **Scaffold Exec**\n")
+		for _, e := range execErrors {
+			fmt.Fprintf(&b, "  - %s\n", e)
+		}
+	}
+
+	// Missing clusters
+	if len(missingClusters) == 0 {
+		b.WriteString("- ✅ **Cluster Coverage** — all clusters accounted for\n")
+	} else {
+		hasError = true
+		b.WriteString("- ❌ **Missing Clusters**\n")
+		for _, c := range missingClusters {
+			fmt.Fprintf(&b, "  - `%s`\n", c)
+		}
+	}
+
+	return Section{Name: "Scaffold Validation", Body: b.String(), Error: hasError}
+}
+
 // ComposeKyvernoSection renders the Kyverno subsection.
 func ComposeKyvernoSection(body string) Section {
 	if body == "" {

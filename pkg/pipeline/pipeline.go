@@ -184,18 +184,41 @@ func postComment(res *Result, opts Options) error {
 
 func composeSections(res *Result, opts Options) []validator.Section {
 	var sections []validator.Section
+
+	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr))
-	sections = append(sections, validator.ComposeLintingSection(map[string]string{}))
-	sections = append(sections, validator.ComposeStaticChecksSection(map[string]string{}))
-	sections = append(sections, validator.Section{Name: "Kustomize Build", Body: "TBD"})
-	sections = append(sections, validator.Section{Name: "Scaffold Validation", Body: "TBD"})
-	var compliance []validator.Section
+
+	// 2–3. Linting + Static Checks pulled from ValidatorResult sections if present.
+	lintReports := map[string]string{}
+	staticReports := map[string]string{}
 	if res.ValidatorResult != nil {
-		compliance = append(compliance, validator.ComposeResourceComplianceSection(res.ValidatorResult.Check.Findings))
+		for _, s := range res.ValidatorResult.Sections {
+			switch s.Name {
+			case "Linting":
+				lintReports["summary"] = s.Body
+			case "Static Checks":
+				staticReports["summary"] = s.Body
+			}
+		}
 	}
+	sections = append(sections, validator.ComposeLintingSection(lintReports))
+	sections = append(sections, validator.ComposeStaticChecksSection(staticReports))
+
+	// 4. Kustomize Build
+	sections = append(sections, validator.ComposeKustomizeBuildSection(0, nil, nil, nil))
+
+	// 5. Scaffold Validation
+	sections = append(sections, validator.ComposeScaffoldValidationSection("", nil, nil))
+
+	// 6. Resource Compliance
+	if res.ValidatorResult != nil {
+		sections = append(sections, validator.ComposeResourceComplianceSection(res.ValidatorResult.Check.Findings))
+	} else {
+		sections = append(sections, validator.Section{Name: "Resource Compliance", Body: "No results."})
+	}
+
+	// 7. CI Notes
 	_ = opts
-	_ = compliance
-	sections = append(sections, validator.Section{Name: "Resource Compliance", Body: "See detailed results above."})
 	sections = append(sections, validator.ComposeCINotesSection("Pipeline completed."))
 	return sections
 }
