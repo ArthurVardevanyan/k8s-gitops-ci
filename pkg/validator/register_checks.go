@@ -1,49 +1,305 @@
 package validator
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"strings"
+
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/crb"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/image"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/namedport"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/namespace"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/placeholder"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/podspec"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/psa"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/rbac"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/syncopts"
 )
 
+// ClusterIndexProvider is a seam allowing the engine to inject a ClusterIndex
+// before running overlay checks. Set once at pipeline startup.
+var ClusterIndexProvider func() clusterid.ClusterIndex
+
 func init() {
-	check.Register(docAdapter{id: "namespace", title: "Namespace Scope"})
-	check.Register(docAdapter{id: "psa-labels", title: "PSA Namespace Labels"})
-	check.Register(docAdapter{id: "rbac-wildcards", title: "RBAC Wildcards"})
-	check.Register(docAdapter{id: "rbac-readonly", title: "RBAC Read-Only Aggregate"})
-	check.Register(docAdapter{id: "crb", title: "ClusterRoleBinding Subject Namespace"})
-	check.Register(docAdapter{id: "sync-options", title: "Argo CD Sync Options"})
-	check.Register(docAdapter{id: "image-checksum", title: "Image Digest Pinning"})
-	check.Register(docAdapter{id: "named-ports", title: "Named Ports"})
-	check.Register(docAdapter{id: "podspec-defaults", title: "PodSpec Defaults"})
-	check.Register(docAdapter{id: "placeholder", title: "Unresolved Placeholders"})
+	check.Register(namespaceCheck{})
+	check.Register(psaCheck{})
+	check.Register(rbacReadonlyCheck{})
+	check.Register(rbacWildcardCheck{})
+	check.Register(crbCheck{})
+	check.Register(syncoptsCheck{})
+	check.Register(imageCheck{})
+	check.Register(namedportCheck{})
+	check.Register(podspecCheck{})
+	check.Register(placeholderCheck{})
 	check.Register(clusterIdentityAdapter{})
 }
 
-type docAdapter struct {
-	id, title string
+// ── namespace ────────────────────────────────────────────────────────────────
+
+type namespaceCheck struct{}
+
+func (namespaceCheck) ID() string       { return "namespace" }
+func (namespaceCheck) Title() string    { return "Namespace Scope" }
+func (namespaceCheck) Section() string  { return "resource-compliance" }
+func (namespaceCheck) Blocking() bool   { return true }
+func (namespaceCheck) Scope() check.Scope { return check.ScopeDoc }
+func (namespaceCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := namespace.ValidateBytes(data, source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "namespace", File: e.File,
+			Kind: e.Kind, Name: e.Name, Message: e.Message,
+		})
+	}
+	return out
 }
 
-func (d docAdapter) ID() string      { return d.id }
-func (d docAdapter) Title() string   { return d.title }
-func (d docAdapter) Section() string { return "resource-compliance" }
-func (d docAdapter) Blocking() bool  { return true }
-func (d docAdapter) Scope() check.Scope {
-	return check.ScopeDoc
+// ── psa ──────────────────────────────────────────────────────────────────────
+
+type psaCheck struct{}
+
+func (psaCheck) ID() string       { return "psa-labels" }
+func (psaCheck) Title() string    { return "PSA Namespace Labels" }
+func (psaCheck) Section() string  { return "resource-compliance" }
+func (psaCheck) Blocking() bool   { return true }
+func (psaCheck) Scope() check.Scope { return check.ScopeDoc }
+func (psaCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := psa.ValidateReader(bytes.NewReader(data), source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "psa-labels", File: e.File,
+			Name: e.Name, Message: e.String(),
+		})
+	}
+	return out
 }
-func (d docAdapter) CheckDoc(data []byte, source string) []check.Finding {
-	return nil
+
+// ── rbac-readonly ─────────────────────────────────────────────────────────────
+
+type rbacReadonlyCheck struct{}
+
+func (rbacReadonlyCheck) ID() string       { return "rbac-readonly" }
+func (rbacReadonlyCheck) Title() string    { return "RBAC Read-Only Aggregate" }
+func (rbacReadonlyCheck) Section() string  { return "resource-compliance" }
+func (rbacReadonlyCheck) Blocking() bool   { return true }
+func (rbacReadonlyCheck) Scope() check.Scope { return check.ScopeDoc }
+func (rbacReadonlyCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := rbac.ValidateReader(bytes.NewReader(data), source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "rbac-readonly", File: e.File,
+			Kind: e.Kind, Name: e.Resource, Message: e.String(),
+		})
+	}
+	return out
 }
+
+// ── rbac-wildcards ────────────────────────────────────────────────────────────
+
+type rbacWildcardCheck struct{}
+
+func (rbacWildcardCheck) ID() string       { return "rbac-wildcards" }
+func (rbacWildcardCheck) Title() string    { return "RBAC Wildcards" }
+func (rbacWildcardCheck) Section() string  { return "resource-compliance" }
+func (rbacWildcardCheck) Blocking() bool   { return true }
+func (rbacWildcardCheck) Scope() check.Scope { return check.ScopeDoc }
+func (rbacWildcardCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := rbac.ValidateWildcardsReader(bytes.NewReader(data), source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "rbac-wildcards", File: e.File,
+			Kind: e.Kind, Name: e.Resource, Message: e.String(),
+		})
+	}
+	return out
+}
+
+// ── crb ───────────────────────────────────────────────────────────────────────
+
+type crbCheck struct{}
+
+func (crbCheck) ID() string       { return "crb" }
+func (crbCheck) Title() string    { return "ClusterRoleBinding Subject Namespace" }
+func (crbCheck) Section() string  { return "resource-compliance" }
+func (crbCheck) Blocking() bool   { return true }
+func (crbCheck) Scope() check.Scope { return check.ScopeDoc }
+func (crbCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := crb.ValidateBytes(data, source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "crb", File: e.File,
+			Kind: e.Kind, Name: e.Name, Message: e.Message,
+		})
+	}
+	return out
+}
+
+// ── sync-options ──────────────────────────────────────────────────────────────
+
+type syncoptsCheck struct{}
+
+func (syncoptsCheck) ID() string       { return "sync-options" }
+func (syncoptsCheck) Title() string    { return "Argo CD Sync Options" }
+func (syncoptsCheck) Section() string  { return "resource-compliance" }
+func (syncoptsCheck) Blocking() bool   { return true }
+func (syncoptsCheck) Scope() check.Scope { return check.ScopeDoc }
+func (syncoptsCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := syncopts.ValidateReader(bytes.NewReader(data), source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "sync-options", File: e.File,
+			Kind: e.Kind, Name: e.Name, Message: e.String(),
+		})
+	}
+	return out
+}
+
+// ── image-checksum ────────────────────────────────────────────────────────────
+
+type imageCheck struct{}
+
+func (imageCheck) ID() string       { return "image-checksum" }
+func (imageCheck) Title() string    { return "Image Digest Pinning" }
+func (imageCheck) Section() string  { return "resource-compliance" }
+func (imageCheck) Blocking() bool   { return true }
+func (imageCheck) Scope() check.Scope { return check.ScopeDoc }
+func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := image.ValidateBytes(data, source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "image-checksum", File: e.File,
+			Kind: e.Kind, Name: e.Name,
+			Value:   e.Image,
+			Message: e.Message,
+		})
+	}
+	return out
+}
+
+// ── named-ports ───────────────────────────────────────────────────────────────
+
+type namedportCheck struct{}
+
+func (namedportCheck) ID() string       { return "named-ports" }
+func (namedportCheck) Title() string    { return "Named Ports" }
+func (namedportCheck) Section() string  { return "resource-compliance" }
+func (namedportCheck) Blocking() bool   { return true }
+func (namedportCheck) Scope() check.Scope { return check.ScopeDoc }
+func (namedportCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := namedport.ValidateBytes(data, source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "named-ports", File: e.File,
+			Kind: e.Kind, Name: e.Name,
+			Container: e.Container, Path: e.Path,
+			Message: e.Issue,
+		})
+	}
+	return out
+}
+
+// ── podspec-defaults ──────────────────────────────────────────────────────────
+
+type podspecCheck struct{}
+
+func (podspecCheck) ID() string       { return "podspec-defaults" }
+func (podspecCheck) Title() string    { return "PodSpec Defaults" }
+func (podspecCheck) Section() string  { return "resource-compliance" }
+func (podspecCheck) Blocking() bool   { return true }
+func (podspecCheck) Scope() check.Scope { return check.ScopeDoc }
+func (podspecCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := podspec.ValidateReader(bytes.NewReader(data), source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "podspec-defaults", File: e.File,
+			Kind: e.Kind, Name: e.Name,
+			Container: e.Container, Path: e.Path,
+			Message: strings.Join(e.MissingFields, ", "),
+		})
+	}
+	return out
+}
+
+// ── placeholder ───────────────────────────────────────────────────────────────
+
+type placeholderCheck struct{}
+
+func (placeholderCheck) ID() string       { return "placeholder" }
+func (placeholderCheck) Title() string    { return "Unresolved Placeholders" }
+func (placeholderCheck) Section() string  { return "resource-compliance" }
+func (placeholderCheck) Blocking() bool   { return true }
+func (placeholderCheck) Scope() check.Scope { return check.ScopeDoc }
+func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
+	// placeholder.ValidateReaderWithOptions requires *os.File; write to a temp
+	// file to satisfy that constraint.
+	tmp, err := os.CreateTemp("", "gitops-ph-*.yaml")
+	if err != nil {
+		return nil
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := io.Copy(tmp, bytes.NewReader(data)); err != nil {
+		tmp.Close()
+		return nil
+	}
+	if _, err := tmp.Seek(0, 0); err != nil {
+		tmp.Close()
+		return nil
+	}
+	errs := placeholder.ValidateReaderWithOptions(tmp, source, placeholder.Options{})
+	tmp.Close()
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "placeholder", File: e.File,
+			Message: e.String(),
+			Value:   e.Match,
+		})
+	}
+	return out
+}
+
+// ── cluster-identity (overlay scope) ─────────────────────────────────────────
 
 type clusterIdentityAdapter struct{}
 
-func (clusterIdentityAdapter) ID() string      { return "cluster-identity" }
-func (clusterIdentityAdapter) Title() string   { return "Cluster Identity Copy/Paste" }
-func (clusterIdentityAdapter) Section() string { return "resource-compliance" }
-func (clusterIdentityAdapter) Blocking() bool  { return true }
-func (clusterIdentityAdapter) Scope() check.Scope {
-	return check.ScopeOverlay
-}
+func (clusterIdentityAdapter) ID() string       { return "cluster-identity" }
+func (clusterIdentityAdapter) Title() string    { return "Cluster Identity Copy/Paste" }
+func (clusterIdentityAdapter) Section() string  { return "resource-compliance" }
+func (clusterIdentityAdapter) Blocking() bool   { return true }
+func (clusterIdentityAdapter) Scope() check.Scope { return check.ScopeOverlay }
 func (clusterIdentityAdapter) CheckOverlay(overlayPath, cluster string) []check.Finding {
-	_ = clusterid.Options{}
-	return nil
+	var idx clusterid.ClusterIndex
+	if ClusterIndexProvider != nil {
+		idx = ClusterIndexProvider()
+	}
+	raw := clusterid.RawFindings(overlayPath, cluster, idx)
+	out := make([]check.Finding, 0, len(raw))
+	for _, f := range raw {
+		out = append(out, check.Finding{
+			CheckID:     exempt.IDClusterIdentity,
+			File:        f.File,
+			Path:        f.Field,
+			Value:       f.Value,
+			Token:       f.Token,
+			Kind:        f.Kind,
+			Name:        f.Name,
+			Namespace:   f.Namespace,
+			Annotations: f.Annotations,
+			Message:     f.Message,
+		})
+	}
+	return out
 }
