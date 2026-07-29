@@ -31,6 +31,9 @@ func RunAll(opts Options) (*Result, error) {
 }
 
 func resolveChangeset(opts Options) ([]string, error) {
+	if len(opts.Dirs) > 0 {
+		return changeset.GetFilesUnderDirs(opts.Dirs)
+	}
 	return changeset.GetChangedFiles(changeset.Options{
 		RepoURL:          opts.RepoURL,
 		PR:               opts.PR,

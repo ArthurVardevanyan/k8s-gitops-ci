@@ -130,9 +130,20 @@ func runBuildYAML(args []string) error {
 func runTestAll(args []string) error {
 	fs := flag.NewFlagSet("test-all", flag.ExitOnError)
 	fs.Parse(args)
-	opts := validator.Options{}
-	_, err := validator.RunAll(opts)
-	return err
+	opts := validator.Options{
+		Dirs: fs.Args(),
+	}
+	res, err := validator.RunAll(opts)
+	if err != nil {
+		return err
+	}
+	for _, s := range res.Sections {
+		fmt.Printf("=== %s ===\n%s\n", s.Name, s.Body)
+	}
+	if res.Blocking {
+		return fmt.Errorf("test-all: validation failed")
+	}
+	return nil
 }
 
 func runScanAll(args []string) error {
@@ -317,7 +328,7 @@ func runYAMLSyntax(args []string) error {
 // ── help ──────────────────────────────────────────────────────────────────────
 
 func printUsage() {
-	fmt.Println(`Usage: gitops-ci <command> [flags]
+	fmt.Println(`Usage: k8s-gitops-ci <command> [flags]
 
 Pipeline:
   pipeline          Run the full CI pipeline (aliases: ci)
@@ -343,5 +354,5 @@ Static Checks:
 Version:
   version           Show version information
 
-Run 'gitops-ci <command> --help' for per-command flags.`)
+Run 'k8s-gitops-ci <command> --help' for per-command flags.`)
 }

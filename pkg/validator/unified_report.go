@@ -8,11 +8,11 @@ import (
 
 // Report renders the unified PR comment.
 type Report struct {
-	Marker   string
-	Title    string
-	Header   string
-	Body     string
-	Sections []Section
+	Marker    string
+	Title     string
+	Header    string
+	Body      string
+	Sections  []Section
 	Timestamp time.Time
 }
 

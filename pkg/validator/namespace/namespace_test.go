@@ -74,5 +74,3 @@ func TestDeduplicate(t *testing.T) {
 		t.Errorf("unexpected dedup: %v", ded)
 	}
 }
-
-

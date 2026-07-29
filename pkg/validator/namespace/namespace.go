@@ -10,9 +10,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ExtraResourceScope allows org layers to inject additional resource scopes.
-var ExtraResourceScope map[string]bool
-
 // ValidationError records a namespace scope violation.
 type ValidationError struct {
 	File, Kind, Name, Message string
@@ -107,7 +104,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 	return out
 }
 
-func lookupScope(key string) (clusterScoped bool, known bool) {
+func lookupScope(key string) (clusterScoped, known bool) {
 	if ExtraResourceScope != nil {
 		if v, ok := ExtraResourceScope[key]; ok {
 			return v, true

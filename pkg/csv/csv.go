@@ -118,5 +118,3 @@ func csvVersionPart(s string) string {
 	}
 	return s
 }
-
-

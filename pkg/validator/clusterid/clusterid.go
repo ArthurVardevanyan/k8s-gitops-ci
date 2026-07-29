@@ -23,9 +23,9 @@ var AllowField func(field string) bool
 
 // ValidationError records a cluster identity finding.
 type ValidationError struct {
-	File   string
+	File    string
 	Message string
-	Direct bool
+	Direct  bool
 }
 
 func (e ValidationError) String() string {
@@ -59,8 +59,8 @@ type Options struct {
 // Finding is a registry-facing finding.
 type Finding struct {
 	CheckID, File, Field, Value, Token, Kind, Name, Namespace string
-	Annotations                                              map[string]string
-	Message                                                  string
+	Annotations                                               map[string]string
+	Message                                                   string
 }
 
 // AppliedExemption records an accepted exemption.
@@ -107,7 +107,7 @@ func RawFindings(overlayPath, clusterName string, index ClusterIndex) []Finding 
 		if foreign != clusterName {
 			findings = append(findings, Finding{
 				CheckID: exempt.IDClusterName, File: overlayPath,
-				Value: foreign,
+				Value:   foreign,
 				Message: fmt.Sprintf("cluster name %q belongs to a different cluster but appears in the overlay for %q (likely a copy/paste error)", foreign, clusterName),
 			})
 		}

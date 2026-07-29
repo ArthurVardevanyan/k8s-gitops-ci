@@ -135,7 +135,7 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 				if portName == "" {
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name, Container: cname,
-						Path: fmt.Sprintf("spec.template.spec.containers[].ports[%d]", i),
+						Path:  fmt.Sprintf("spec.template.spec.containers[].ports[%d]", i),
 						Issue: fmt.Sprintf("container port %s missing name", quickString(findKey(p, "containerPort"))),
 					})
 				}
@@ -156,7 +156,7 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 					if portField != nil && isNumericPort(portField) {
 						errs = append(errs, ValidationError{
 							File: source, Kind: kind, Name: name, Container: cname,
-							Path: fmt.Sprintf("spec.template.spec.containers[].%s.port", pt),
+							Path:  fmt.Sprintf("spec.template.spec.containers[].%s.port", pt),
 							Issue: fmt.Sprintf("%s.port is numeric (%s); reference a named containerPort instead", pt, portField.Value),
 						})
 					}
@@ -194,7 +194,7 @@ func validateService(mapping *yaml.Node, kind, name, source string) []Validation
 		if portName == "" {
 			errs = append(errs, ValidationError{
 				File: source, Kind: kind, Name: name,
-				Path: fmt.Sprintf("spec.ports[%d]", i),
+				Path:  fmt.Sprintf("spec.ports[%d]", i),
 				Issue: fmt.Sprintf("service port %s missing name", quickString(findKey(p, "port"))),
 			})
 		}
@@ -202,7 +202,7 @@ func validateService(mapping *yaml.Node, kind, name, source string) []Validation
 		if targetPort != nil && isNumericPort(targetPort) {
 			errs = append(errs, ValidationError{
 				File: source, Kind: kind, Name: name,
-				Path: fmt.Sprintf("spec.ports[%d].targetPort", i),
+				Path:  fmt.Sprintf("spec.ports[%d].targetPort", i),
 				Issue: fmt.Sprintf("targetPort is numeric (%s); reference a named containerPort instead", targetPort.Value),
 			})
 		}
@@ -224,7 +224,7 @@ func validateIngress(mapping *yaml.Node, kind, name, source string) []Validation
 					baseName := quickString(findKey(svc, "name"))
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name,
-						Path: "spec.defaultBackend.service.port.number",
+						Path:  "spec.defaultBackend.service.port.number",
 						Issue: fmt.Sprintf("ingress backend for service %q uses port.number (%s); use port.name instead", baseName, n.Value),
 					})
 				}
@@ -264,7 +264,7 @@ func validateIngress(mapping *yaml.Node, kind, name, source string) []Validation
 				baseName := quickString(findKey(svc, "name"))
 				errs = append(errs, ValidationError{
 					File: source, Kind: kind, Name: name,
-					Path: fmt.Sprintf("spec.rules[].http.paths[%d].backend.service.port.number", i),
+					Path:  fmt.Sprintf("spec.rules[].http.paths[%d].backend.service.port.number", i),
 					Issue: fmt.Sprintf("ingress backend for service %q uses port.number (%s); use port.name instead", baseName, n.Value),
 				})
 			}
