@@ -25,5 +25,6 @@
     "editor.defaultFormatter": "redhat.vscode-yaml"
   },
   "yaml.format.printWidth": 200,
-  "yaml.format.proseWrap": "preserve"
+  "yaml.format.proseWrap": "preserve",
+  "cSpell.words": ["pipelinesascode"]
 }
