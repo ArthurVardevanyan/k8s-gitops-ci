@@ -1,0 +1,41 @@
+version: 2
+project_name: gitops-ci
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+builds:
+  - id: gitops-ci
+    main: ./cmd/gitops-ci
+    binary: gitops-ci
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildVersion={{.Version}}
+      - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildTime={{.Date}}
+      - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.Commit={{.Commit}}
+kos:
+  - repositories:
+      - ghcr.io/arthurvardevanyan/k8s-gitops-ci
+    tags:
+      - '{{.Version}}'
+      - latest
+    bare: true
+    preserve_import_paths: false
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    main: ./cmd/gitops-ci
+changelog:
+  use: github-native
+release:
+  github:
+    owner: ArthurVardevanyan
+    name: k8s-gitops-ci
