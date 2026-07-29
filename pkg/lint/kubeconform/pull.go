@@ -12,10 +12,7 @@ import (
 var DefaultSchemaRepo = "https://github.com/ArthurVardevanyan/kubernetes-json-schema"
 
 // PullSchemas clones the kubernetes-json-schema repository.
-func PullSchemas(version, outDir string) error {
-	if version == "" {
-		version = DefaultOptions().KubernetesVersion
-	}
+func PullSchemas(outDir string) error {
 	if outDir == "" {
 		outDir = filepath.Join(os.TempDir(), "kubernetes-json-schema")
 	}
@@ -34,33 +31,19 @@ func PullSchemas(version, outDir string) error {
 	return nil
 }
 
-// BuildSchemaArchive creates schemas.tar.gz from a cloned kubernetes-json-schema dir.
-func BuildSchemaArchive(schemaDir string, versions []string) ([]byte, error) {
-	if len(versions) == 0 {
-		versions = []string{DefaultOptions().KubernetesVersion}
-	}
-	return tarSchemas(schemaDir, versions)
+// SchemaDirs returns the known top-level schema directories in the repo.
+func SchemaDirs() []string {
+	return []string{"custom-standalone-strict", "master-local", "master-standalone-strict"}
 }
 
-// ValidateSchemaDir checks that the schema directory contains expected version dirs.
-func ValidateSchemaDir(schemaDir string, versions []string) error {
-	if len(versions) == 0 {
-		versions = []string{DefaultOptions().KubernetesVersion}
-	}
-	for _, v := range versions {
-		for _, suffix := range []string{"-standalone-strict", "-standalone", ""} {
-			dir := filepath.Join(schemaDir, v+suffix)
-			if _, err := os.Stat(dir); err == nil {
-				return nil
-			}
+// ValidateSchemaDir checks that the schema directory contains expected dirs.
+func ValidateSchemaDir(schemaDir string) error {
+	for _, d := range SchemaDirs() {
+		if _, err := os.Stat(filepath.Join(schemaDir, d)); err == nil {
+			return nil
 		}
 	}
-	entries, _ := os.ReadDir(schemaDir)
-	var names []string
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	return fmt.Errorf("schema directory %s does not contain expected version subdirs (versions=%v; found=%v)", schemaDir, versions, names)
+	return fmt.Errorf("schema directory %s missing expected subdirs %v", schemaDir, SchemaDirs())
 }
 
 // SchemaVersionsAtDir returns available kubernetes versions in the schema dir.
@@ -76,8 +59,12 @@ func SchemaVersionsAtDir(schemaDir string) ([]string, error) {
 			continue
 		}
 		name := e.Name()
-		base := strings.TrimSuffix(name, "-standalone-strict")
-		base = strings.TrimSuffix(base, "-standalone")
+		base := strings.TrimPrefix(name, "master")
+		base = strings.TrimPrefix(base, "custom")
+		base = strings.TrimPrefix(base, "-")
+		if base == "" {
+			base = "master"
+		}
 		if !seen[base] {
 			seen[base] = true
 			versions = append(versions, base)
@@ -86,7 +73,12 @@ func SchemaVersionsAtDir(schemaDir string) ([]string, error) {
 	return versions, nil
 }
 
-func tarSchemas(schemaDir string, versions []string) ([]byte, error) {
-	_ = versions
+// BuildSchemaArchive creates schemas.tar.gz from a cloned kubernetes-json-schema dir.
+func BuildSchemaArchive(schemaDir string) ([]byte, error) {
+	return tarSchemas(schemaDir)
+}
+
+func tarSchemas(schemaDir string) ([]byte, error) {
+	_ = schemaDir
 	return []byte("tgz" + schemaDir), nil
 }

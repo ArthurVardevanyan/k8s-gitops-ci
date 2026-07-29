@@ -1,0 +1,30 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: gitops-ci-on-comment
+  annotations:
+    pipelinesascode.tekton.dev/on-event: '[pull_request]'
+    pipelinesascode.tekton.dev/on-target-branch: '[main]'
+    pipelinesascode.tekton.dev/on-comment: '/retest'
+    pipelinesascode.tekton.dev/task: '[git-clone, gitops-ci]'
+spec:
+  pipelineRef:
+    name: gitops-ci
+  params:
+    - name: repo-url
+      value: '{{repo_url}}'
+    - name: pr-number
+      value: '{{pull_request_number}}'
+    - name: revision
+      value: '{{revision}}'
+    - name: trigger-comment
+      value: '{{trigger_comment}}'
+  workspaces:
+    - name: source
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
