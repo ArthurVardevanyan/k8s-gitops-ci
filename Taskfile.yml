@@ -1,0 +1,55 @@
+version: '3'
+
+vars:
+  BIN: gitops-ci
+  LDFLAGS: >-
+    -s -w
+    -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildVersion={{.GIT_VERSION}}
+    -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildTime={{.BUILD_TIME}}
+    -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.Commit={{.GIT_COMMIT}}
+
+env:
+  GOFLAGS: -mod=mod
+
+tasks:
+  default:
+    cmds:
+      - task: build
+
+  build:
+    desc: Build the CLI
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o bin/{{.BIN}} ./cmd/{{.BIN}}
+    generates:
+      - bin/{{.BIN}}
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Run linters
+    cmds:
+      - golangci-lint run ./...
+
+  format:
+    desc: Format sources
+    cmds:
+      - gofumpt -w .
+      - goimports -w .
+
+  update:schemas:
+    desc: Pull embedded kubeconform schemas
+    cmds:
+      - scripts/pull-schemas.sh
+
+  update:policies:
+    desc: Pull embedded kyverno policies
+    cmds:
+      - scripts/pull-policies.sh
+
+  update:scoped-resources:
+    desc: Regenerate resource scope maps
+    cmds:
+      - scripts/pull-scoped-resources.sh

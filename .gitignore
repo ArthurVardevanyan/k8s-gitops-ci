@@ -1,0 +1,8 @@
+secrets/*
+*.test
+bin/
+dist/
+coverage.out
+vendor/
+.idea/
+.DS_Store
