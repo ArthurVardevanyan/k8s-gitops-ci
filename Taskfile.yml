@@ -2,6 +2,12 @@ version: '3'
 
 vars:
   BIN: gitops-ci
+  GIT_VERSION:
+    sh: git describe --tags --always 2>/dev/null || echo dev
+  GIT_COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo unknown
+  BUILD_TIME:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
   LDFLAGS: >-
     -s -w
     -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildVersion={{.GIT_VERSION}}
@@ -17,8 +23,9 @@ tasks:
       - task: build
 
   build:
-    desc: Build the CLI
+    desc: Build the CLI binary to bin/gitops-ci
     cmds:
+      - mkdir -p bin
       - go build -ldflags "{{.LDFLAGS}}" -o bin/{{.BIN}} ./cmd/{{.BIN}}
     generates:
       - bin/{{.BIN}}
