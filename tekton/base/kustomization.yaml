@@ -1,7 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  - pipelines/gitops-ci.yaml
-  - tasks/gitops-ci.yaml
-  - tasks/kustomize.yaml

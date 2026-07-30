@@ -2,7 +2,6 @@ package placeholder
 
 import (
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -45,5 +44,3 @@ func TestValidateFileWithOptions_AVPPatterns(t *testing.T) {
 		t.Errorf("expected AVP placeholder: %v", errs)
 	}
 }
-
-func stringsContains(s, sub string) bool { return strings.Index(s, sub) != -1 }

@@ -1,17 +1,20 @@
 package image
 
 import (
+	"context"
 	"crypto/tls"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
-	"gopkg.in/yaml.v3"
 )
 
 // ValidationError records an unpinned image.
@@ -48,17 +51,17 @@ func (e ExemptedImage) String() string {
 	return fmt.Sprintf("%s: image %q exempt via %s annotation", e.File, e.Image, exempt.Key(exempt.IDImageChecksum))
 }
 
-// ImageRef parses an OCI image reference.
-type ImageRef struct {
+// Ref parses an OCI image reference.
+type Ref struct {
 	Registry, Repo, Tag, Digest, Raw string
 }
 
 // ParseImageRef parses a raw image string.
-func ParseImageRef(raw string) *ImageRef {
+func ParseImageRef(raw string) *Ref {
 	if raw == "" {
 		return nil
 	}
-	ref := &ImageRef{Raw: raw}
+	ref := &Ref{Raw: raw}
 	atParts := strings.Split(raw, "@")
 	if len(atParts) == 2 {
 		ref.Digest = atParts[1]
@@ -87,7 +90,7 @@ func ParseImageRef(raw string) *ImageRef {
 }
 
 // isOCIImageRef returns true for non-Docker-Hub refs.
-func isOCIImageRef(ref *ImageRef) bool {
+func isOCIImageRef(ref *Ref) bool {
 	return ref != nil && ref.Registry != "docker.io" && !strings.Contains(ref.Raw, " ")
 }
 
@@ -124,7 +127,7 @@ func ValidateBytesWithExemptions(data []byte, source string) ([]ValidationError,
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			break
@@ -169,12 +172,12 @@ func ExtractImagesFromFile(path string) []string {
 }
 
 // VerifyTagDigest resolves a tag and compares it to a digest.
-func VerifyTagDigest(ref *ImageRef, client *http.Client) *ValidationError {
+func VerifyTagDigest(ref *Ref, client *http.Client) *ValidationError {
 	if ref == nil || client == nil || ref.Tag == "" {
 		return &ValidationError{Message: fmt.Sprintf("failed to resolve tag %q: missing tag", ref.Raw)}
 	}
 	url := fmt.Sprintf("https://%s/v2/%s/manifests/%s", ref.Registry, ref.Repo, ref.Tag)
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodHead, url, nil)
 	if err != nil {
 		return &ValidationError{Image: ref.Raw, Message: fmt.Sprintf("failed to resolve tag %q: %v", ref.Tag, err)}
 	}
@@ -212,9 +215,14 @@ func VerifyFileTagDigests(path string, client *http.Client) []ValidationError {
 	return errs
 }
 
-// DefaultClient returns an insecure-skip-verify HTTP client for tests.
+// DefaultClient returns an HTTP client suitable for OCI registry calls.
 func DefaultClient() *http.Client {
-	return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		},
+	}
 }
 
 // AuthenticatedClient returns a client with bearer token for 401 challenges.
@@ -226,12 +234,6 @@ func AuthenticatedClient(client *http.Client, registry, repo string) *http.Clien
 		return client
 	}
 	return client
-}
-
-// TokenResponse models an OCI token response.
-type TokenResponse struct {
-	Token       string `json:"token"`
-	AccessToken string `json:"access_token"`
 }
 
 var imageRe = regexp.MustCompile(`(?i)image:\s*["']?([^\s"']+)["']?`)
@@ -274,6 +276,8 @@ func extractImages(node *yaml.Node, parentKey string) []string {
 		for _, c := range node.Content {
 			imgs = append(imgs, extractImages(c, parentKey)...)
 		}
+	case yaml.DocumentNode, yaml.AliasNode:
+		// Not expected in a decoded resource body; nothing to extract.
 	}
 	return dedupStrings(imgs)
 }
@@ -334,42 +338,4 @@ func dedupStrings(sl []string) []string {
 
 func newBytesReader(b []byte) *strings.Reader {
 	return strings.NewReader(string(b))
-}
-
-func parseAuthHeader(header string) (realm, service, scope string) {
-	// simplistic parsing
-	parts := strings.Split(header, ",")
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if strings.HasPrefix(p, "Bearer ") {
-			p = strings.TrimPrefix(p, "Bearer ")
-		}
-		if strings.HasPrefix(p, "realm=") {
-			realm = strings.Trim(strings.TrimPrefix(p, "realm="), `"`)
-		}
-		if strings.HasPrefix(p, "service=") {
-			service = strings.Trim(strings.TrimPrefix(p, "service="), `"`)
-		}
-		if strings.HasPrefix(p, "scope=") {
-			scope = strings.Trim(strings.TrimPrefix(p, "scope="), `"`)
-		}
-	}
-	return
-}
-
-func fetchToken(realm, service, scope string, client *http.Client) (string, error) {
-	url := fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scope)
-	resp, err := client.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	var tr TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tr); err != nil {
-		return "", err
-	}
-	if tr.Token != "" {
-		return tr.Token, nil
-	}
-	return tr.AccessToken, nil
 }

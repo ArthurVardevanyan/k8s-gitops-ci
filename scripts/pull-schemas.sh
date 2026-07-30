@@ -10,7 +10,7 @@ mkdir -p "$(dirname "$OUTPUT")"
 mkdir -p "$SCHEMA_CACHE"
 
 if [[ -d "$SCHEMA_CACHE/.git" ]]; then
-  git -C "$SCHEMA_CACHE" pull --depth=1 origin master
+  git -C "$SCHEMA_CACHE" pull --depth=1 origin production
 else
   rm -rf "$SCHEMA_CACHE"
   git clone --depth=1 "$SCHEMA_REPO" "$SCHEMA_CACHE"

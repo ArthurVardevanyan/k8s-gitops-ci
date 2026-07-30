@@ -8,8 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"gopkg.in/yaml.v3"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 )
 
 // CheckFix reports kustomization files that are not normalized.

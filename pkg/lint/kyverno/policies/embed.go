@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,6 +15,11 @@ import (
 
 //go:embed policies.tar.gz
 var policiesArchive embed.FS
+
+// maxExtractedFileSize bounds how much data is written per archive entry,
+// as defense-in-depth against decompression-bomb style resource exhaustion
+// even though the archive is embedded (trusted, build-time) content.
+const maxExtractedFileSize = 512 << 20 // 512MiB
 
 // Extract extracts the embedded policy archive to a temp directory.
 func Extract() (dir string, cleanup func(), err error) {
@@ -35,7 +41,7 @@ func Extract() (dir string, cleanup func(), err error) {
 	tr := tar.NewReader(gr)
 	for {
 		h, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -56,10 +62,16 @@ func Extract() (dir string, cleanup func(), err error) {
 			cleanup()
 			return "", nil, err
 		}
-		if _, err := io.Copy(f, tr); err != nil {
+		n, err := io.Copy(f, io.LimitReader(tr, maxExtractedFileSize+1))
+		if err != nil {
 			f.Close()
 			cleanup()
 			return "", nil, err
+		}
+		if n > maxExtractedFileSize {
+			f.Close()
+			cleanup()
+			return "", nil, fmt.Errorf("archive entry %s exceeds max extracted size", h.Name)
 		}
 		_ = f.Close()
 	}

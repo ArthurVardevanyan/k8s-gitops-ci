@@ -69,13 +69,13 @@ func TestIsPACPlaceholder(t *testing.T) {
 
 func TestWalkDir(t *testing.T) {
 	dir := t.TempDir()
-	_ = writeFile(dir, "a.txt", "x")
-	_ = writeFile(dir, filepath.Join("node_modules", "b.txt"), "y")
+	writeFile(dir, "a.txt", "x")
+	writeFile(dir, filepath.Join("node_modules", "b.txt"), "y")
 	files, err := walkDir(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
+	names := make([]string, 0, len(files))
 	for _, f := range files {
 		names = append(names, filepath.Base(f))
 	}
@@ -84,11 +84,10 @@ func TestWalkDir(t *testing.T) {
 	}
 }
 
-func writeFile(dir, rel, content string) string {
+func writeFile(dir, rel, content string) {
 	p := filepath.Join(dir, rel)
 	_ = os.MkdirAll(filepath.Dir(p), 0o755)
 	_ = os.WriteFile(p, []byte(content), 0o644)
-	return p
 }
 
 func contains(sl []string, s string) bool {

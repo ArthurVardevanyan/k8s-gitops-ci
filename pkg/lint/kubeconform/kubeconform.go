@@ -10,8 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform/schemas"
 	kfv "github.com/yannh/kubeconform/pkg/validator"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform/schemas"
 )
 
 // MissingSchemaHint is appended to schema-not-found errors.
@@ -93,7 +94,7 @@ func (r *Result) Deduplicate() []DeduplicatedError {
 			order = append(order, e)
 		}
 	}
-	var out []DeduplicatedError
+	out := make([]DeduplicatedError, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}
@@ -208,7 +209,7 @@ func ValidateDir(dir string, opts Options) (*Result, func(), error) {
 	var files []string
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
-			return nil
+			return nil //nolint:nilerr // filepath.Walk convention: skip entry, keep walking
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext == ".yaml" || ext == ".yml" {

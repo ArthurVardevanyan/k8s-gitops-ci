@@ -1,0 +1,10 @@
+## DOCS:
+## https://pipelinesascode.com/docs/guide/repositorycrd/#concurrency
+apiVersion: pipelinesascode.tekton.dev/v1alpha1
+kind: Repository
+metadata:
+  name: k8s-gitops-ci
+  namespace: k8s-gitops-ci
+spec:
+  url: "https://github.com/ArthurVardevanyan/k8s-gitops-ci"
+  concurrency_limit: 1

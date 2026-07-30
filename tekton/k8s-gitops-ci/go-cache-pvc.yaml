@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: go-cache
+  namespace: k8s-gitops-ci
+spec:
+  # ReadWriteOnce on Ceph RBD (block): the pipeline runs with max-concurrency "1"
+  # so only one pod mounts this at a time. RBD block storage handles the Go module
+  # cache IO patterns far better than CephFS.
+  #
+  # Holds: GOMODCACHE, GOCACHE, GOLANGCI_LINT_CACHE, XDG_CACHE_HOME (schemas/policies),
+  # GOPATH (go install/sumdb verification cache), GOENV (go env config file).
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: "25Gi"
+  storageClassName: rook-ceph-block-ci

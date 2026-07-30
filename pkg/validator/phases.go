@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,13 +32,13 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result) {
 
 	if mdOut, err := markdownlint.Run(changed); err == nil {
 		lintReports["markdownlint"] = mdOut
-	} else if err != markdownlint.ErrCLINotFound {
+	} else if !errors.Is(err, markdownlint.ErrCLINotFound) {
 		lintReports["markdownlint"] = err.Error()
 	}
 
 	if pOut, err := prettier.Run(changed, nil); err == nil {
 		lintReports["prettier"] = pOut
-	} else if err != prettier.ErrCLINotFound {
+	} else if !errors.Is(err, prettier.ErrCLINotFound) {
 		lintReports["prettier"] = err.Error()
 	}
 
@@ -49,12 +50,12 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result) {
 			}
 			lintReports["shellcheck"] = sb.String()
 		}
-	} else if scErr != shellcheck.ErrCLINotFound {
+	} else if !errors.Is(scErr, shellcheck.ErrCLINotFound) {
 		lintReports["shellcheck"] = scErr.Error()
 	}
 
 	if !opts.SkipGolangci {
-		if glOut, err := golangci.Run(changed); err != nil && err != golangci.ErrCLINotFound {
+		if glOut, err := golangci.Run(changed); err != nil && !errors.Is(err, golangci.ErrCLINotFound) {
 			lintReports["golangci"] = err.Error()
 		} else {
 			lintReports["golangci"] = glOut
@@ -124,7 +125,9 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result) {
 	}
 
 	// Merge and classify.
-	allFindings := append(docResult.Findings, overlayResult.Findings...)
+	allFindings := make([]check.Finding, 0, len(docResult.Findings)+len(overlayResult.Findings))
+	allFindings = append(allFindings, docResult.Findings...)
+	allFindings = append(allFindings, overlayResult.Findings...)
 	changedSet := detectSourceFiles(changed)
 	direct, indirect := finalizeCompliance(allFindings, changedSet)
 

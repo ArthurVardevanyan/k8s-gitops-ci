@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -69,15 +70,15 @@ func Run(files []string) ([]Violation, string, error) {
 }
 
 func parseGCC(output string) []Violation {
-	var violations []Violation
-	for _, line := range strings.Split(output, "\n") {
+	lines := strings.Split(output, "\n")
+	violations := make([]Violation, 0, len(lines))
+	for _, line := range lines {
 		parts := strings.SplitN(line, ":", 5)
 		if len(parts) < 5 {
 			continue
 		}
 		file := parts[0]
-		lineNo := 0
-		fmt.Sscanf(parts[1], "%d", &lineNo)
+		lineNo, _ := strconv.Atoi(parts[1])
 		msg := strings.TrimSpace(parts[4])
 		sc := ""
 		if idx := strings.LastIndex(msg, "["); idx != -1 {

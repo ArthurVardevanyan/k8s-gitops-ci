@@ -3,7 +3,7 @@ package cluster
 import "testing"
 
 func TestBuildProjectIndex(t *testing.T) {
-	idx := BuildProjectIndex([]ClusterProject{
+	idx := BuildProjectIndex([]Project{
 		{Name: "c1", ProjectID: "p1", ProjectNumber: "n1"},
 		{Name: "c2", ProjectID: "p2", ProjectNumber: "n2", NetworkProjectID: "shared"},
 	})

@@ -89,15 +89,11 @@ func findPlaceholders(line string, opts Options) []string {
 		}
 	}
 	if opts.CheckAVP {
-		for _, m := range avpRe.FindAllString(line, -1) {
-			matches = append(matches, m)
-		}
+		matches = append(matches, avpRe.FindAllString(line, -1)...)
 	}
 	for _, s := range Sentinels {
 		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(s) + `\b`)
-		for _, m := range re.FindAllString(line, -1) {
-			matches = append(matches, m)
-		}
+		matches = append(matches, re.FindAllString(line, -1)...)
 	}
 	return dedup(matches)
 }

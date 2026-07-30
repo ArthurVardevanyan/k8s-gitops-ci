@@ -2,6 +2,7 @@ package namespace
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -88,7 +89,7 @@ func ValidateBytes(data []byte, source string) []ValidationError {
 // Deduplicate de-duplicates validation errors preserving first order.
 func Deduplicate(errs []ValidationError) []DeduplicatedError {
 	seen := make(map[string]int)
-	var order []string
+	order := make([]string, 0, len(errs))
 	for _, e := range errs {
 		key := e.Kind + "/" + e.Name + "/" + e.Message
 		if _, ok := seen[key]; !ok {
@@ -96,7 +97,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 		}
 		seen[key]++
 	}
-	var out []DeduplicatedError
+	out := make([]DeduplicatedError, 0, len(order))
 	for _, k := range order {
 		parts := split3(k)
 		out = append(out, DeduplicatedError{Kind: parts[0], Name: parts[1], Message: parts[2], Count: seen[k]})
@@ -163,7 +164,7 @@ func bytesReader(b []byte) *bytes.Reader {
 }
 
 func isEOF(err error) bool {
-	return err == io.EOF
+	return errors.Is(err, io.EOF)
 }
 
 func stringsHasSuffix(s, suffix string) bool {

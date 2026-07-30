@@ -1,6 +1,7 @@
 package namedport
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -37,10 +38,6 @@ func (d DeduplicatedError) String() string {
 	return fmt.Sprintf("%s %q %s (%d overlay(s))", d.Kind, d.Name, d.Issue, d.Count)
 }
 
-var workloadKinds = map[string]bool{
-	"Deployment": true, "StatefulSet": true, "DaemonSet": true, "Job": true, "CronJob": true, "Pod": true,
-}
-
 // ValidateFile validates named ports in a file.
 func ValidateFile(path string) []ValidationError {
 	f, err := os.Open(path)
@@ -63,7 +60,7 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			break
@@ -287,7 +284,7 @@ func Deduplicate(errors []ValidationError, maxFiles int) []DeduplicatedError {
 		maxFiles = 3
 	}
 	seen := make(map[string]*DeduplicatedError)
-	var order []string
+	order := make([]string, 0, len(errors))
 	for _, e := range errors {
 		key := e.Kind + "/" + e.Name + "/" + e.Container + "/" + e.Issue
 		if d, ok := seen[key]; ok {
@@ -304,7 +301,7 @@ func Deduplicate(errors []ValidationError, maxFiles int) []DeduplicatedError {
 		}
 		order = append(order, key)
 	}
-	var out []DeduplicatedError
+	out := make([]DeduplicatedError, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}

@@ -129,7 +129,9 @@ func runBuildYAML(args []string) error {
 
 func runTestAll(args []string) error {
 	fs := flag.NewFlagSet("test-all", flag.ExitOnError)
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	opts := validator.Options{
 		Dirs: fs.Args(),
 	}
@@ -148,7 +150,9 @@ func runTestAll(args []string) error {
 
 func runScanAll(args []string) error {
 	fs := flag.NewFlagSet("scan-all", flag.ExitOnError)
-	fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	opts := validator.Options{}
 	res, err := validator.RunAll(opts)
 	if err != nil {
@@ -299,7 +303,7 @@ func runUpdateScaffoldStatus(_ []string) error {
 
 // ── sort-configs ──────────────────────────────────────────────────────────────
 
-func runSortConfigs(args []string) error {
+func runSortConfigs(_ []string) error {
 	n, err := config.SortConfigs()
 	if err != nil {
 		return err
