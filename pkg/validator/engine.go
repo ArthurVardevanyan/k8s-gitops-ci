@@ -54,9 +54,10 @@ func runDocChecks(files []string, selectors []exempt.Selector, workers int, disa
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				findings := evaluateDoc(j.doc.data, j.doc.files, checks, selectors)
+				findings, exempted := evaluateDoc(j.doc.data, j.doc.files, checks, selectors)
 				mu.Lock()
 				combined.Findings = append(combined.Findings, findings...)
+				combined.Exempted = append(combined.Exempted, exempted...)
 				mu.Unlock()
 			}
 		}()
@@ -94,9 +95,10 @@ func runOverlayChecks(overlays []string, cluster string, selectors []exempt.Sele
 						continue
 					}
 					findings := oc.CheckOverlay(j.overlay, j.cluster)
-					findings = fanOut(findings, []string{j.overlay}, selectors)
+					findings, exempted := fanOut(findings, []string{j.overlay}, selectors)
 					mu.Lock()
 					combined.Findings = append(combined.Findings, findings...)
+					combined.Exempted = append(combined.Exempted, exempted...)
 					mu.Unlock()
 				}
 			}
@@ -160,34 +162,43 @@ func splitDocuments(data []byte) [][]byte {
 	return nonEmpty
 }
 
-func evaluateDoc(doc []byte, files []string, checks []check.Check, selectors []exempt.Selector) []check.Finding {
+func evaluateDoc(doc []byte, files []string, checks []check.Check, selectors []exempt.Selector) ([]check.Finding, []exempt.Applied) {
 	var findings []check.Finding
+	var exempted []exempt.Applied
 	for _, c := range checks {
 		dc, ok := c.(check.DocCheck)
 		if !ok {
 			continue
 		}
 		res := dc.CheckDoc(doc, "")
-		res = fanOut(res, files, selectors)
+		res, ex := fanOut(res, files, selectors)
 		findings = append(findings, res...)
+		exempted = append(exempted, ex...)
 	}
-	return findings
+	return findings, exempted
 }
 
-func fanOut(findings []check.Finding, files []string, selectors []exempt.Selector) []check.Finding {
+// fanOut expands each finding across every file it was found in, evaluating
+// exemptions per (finding, file) pair. It returns both the surviving
+// (non-exempted) findings and the accepted exemptions, so callers can
+// record an audit-trail entry instead of silently discarding why a finding
+// didn't appear in the report.
+func fanOut(findings []check.Finding, files []string, selectors []exempt.Selector) ([]check.Finding, []exempt.Applied) {
 	var out []check.Finding
+	var exempted []exempt.Applied
 	for _, f := range findings {
 		for _, file := range files {
 			f2 := f
 			f2.File = file
 			scalar := f2.Scalar()
-			if ok, _ := exempt.Evaluate(f2.CheckID, scalar, f2.Annotations, selectors); ok {
+			if ok, applied := exempt.Evaluate(f2.CheckID, scalar, f2.Annotations, selectors); ok {
+				exempted = append(exempted, applied)
 				continue
 			}
 			out = append(out, f2)
 		}
 	}
-	return out
+	return out, exempted
 }
 
 func uniqueStrings(sl []string) []string {

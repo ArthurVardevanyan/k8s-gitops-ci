@@ -172,14 +172,21 @@ func (imageCheck) Section() string    { return "resource-compliance" }
 func (imageCheck) Blocking() bool     { return true }
 func (imageCheck) Scope() check.Scope { return check.ScopeDoc }
 func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
-	errs := image.ValidateBytes(data, source)
+	// ValidateBytesRaw (not ValidateBytes) so exemption evaluation happens
+	// once, uniformly, in the shared check/exempt engine - which is what
+	// records an audit-trail entry for image-checksum exemptions and also
+	// enables EXEMPTIONS-selector exemptions (ValidateBytes only ever
+	// supported the annotation form, decided internally, before the
+	// finding could reach this adapter at all).
+	errs := image.ValidateBytesRaw(data, source)
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
 		out = append(out, check.Finding{
 			CheckID: "image-checksum", File: e.File,
 			Kind: e.Kind, Name: e.Name,
-			Value:   e.Image,
-			Message: e.Message,
+			Value:       e.Image,
+			Message:     e.Message,
+			Annotations: e.Annotations,
 		})
 	}
 	return out

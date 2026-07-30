@@ -20,6 +20,12 @@ import (
 // ValidationError records an unpinned image.
 type ValidationError struct {
 	File, Kind, Name, Image, Message string
+	// Annotations holds the owning resource's metadata.annotations, so
+	// callers that route findings through the shared check/exempt engine
+	// (rather than this package's own ValidateBytesWithExemptions) can
+	// evaluate annotation-based exemptions themselves. Only populated by
+	// ValidateBytesRaw.
+	Annotations map[string]string
 }
 
 func (e ValidationError) String() string {
@@ -40,6 +46,28 @@ func (d DeduplicatedError) String() string {
 		return fmt.Sprintf("%s %q image %q not pinned to SHA digest (%d overlay(s))", d.Kind, d.Name, d.Image, d.Count)
 	}
 	return fmt.Sprintf("image %q not pinned to SHA digest (%d overlay(s))", d.Image, d.Count)
+}
+
+// Deduplicate groups image findings by Kind+Name+Image, returning one
+// DeduplicatedError per unique combination with a count of how many
+// occurrences (e.g. across overlays) matched.
+func Deduplicate(errs []ValidationError) []DeduplicatedError {
+	seen := make(map[string]*DeduplicatedError)
+	order := make([]string, 0, len(errs))
+	for _, e := range errs {
+		key := fmt.Sprintf("%s/%s/%s", e.Kind, e.Name, e.Image)
+		if d, ok := seen[key]; ok {
+			d.Count++
+			continue
+		}
+		seen[key] = &DeduplicatedError{Kind: e.Kind, Name: e.Name, Image: e.Image, Count: 1}
+		order = append(order, key)
+	}
+	out := make([]DeduplicatedError, 0, len(order))
+	for _, k := range order {
+		out = append(out, *seen[k])
+	}
+	return out
 }
 
 // ExemptedImage records an annotation-exempted image.
@@ -160,6 +188,54 @@ func ValidateBytesWithExemptions(data []byte, source string) ([]ValidationError,
 		}
 	}
 	return errs, exempted
+}
+
+// ValidateBytesRaw validates image pinning in bytes without applying any
+// exemption filtering - every unpinned image is returned as a finding,
+// including ones that would be annotation-exempted, each carrying the
+// owning resource's annotations. Use this (instead of ValidateBytes /
+// ValidateBytesWithExemptions) when the caller routes findings through the
+// shared pkg/validator/check + pkg/validator/exempt engine, so that engine
+// can apply exemptions (both annotation and EXEMPTIONS-selector modes)
+// uniformly and record an audit-trail entry - matching how every other
+// check in this repo is wired, rather than this package silently deciding
+// exemptions on its own before the finding ever reaches the shared engine.
+func ValidateBytesRaw(data []byte, source string) []ValidationError {
+	var errs []ValidationError
+	dec := yaml.NewDecoder(newBytesReader(data))
+	for {
+		var doc yaml.Node
+		if err := dec.Decode(&doc); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			break
+		}
+		if len(doc.Content) == 0 {
+			continue
+		}
+		mapping := doc.Content[0]
+		if mapping.Kind != yaml.MappingNode {
+			continue
+		}
+		kind := quickString(findKey(mapping, "kind"))
+		name := quickName(mapping)
+		ann := extractAnnotations(mapping)
+		for _, img := range extractImages(mapping, "") {
+			ref := ParseImageRef(img)
+			if !isOCIImageRef(ref) {
+				continue
+			}
+			if ref.Digest == "" {
+				errs = append(errs, ValidationError{
+					File: source, Kind: kind, Name: name, Image: img,
+					Message:     "image is not pinned to a SHA digest",
+					Annotations: ann,
+				})
+			}
+		}
+	}
+	return errs
 }
 
 // ExtractImagesFromFile extracts all image values from a file.
