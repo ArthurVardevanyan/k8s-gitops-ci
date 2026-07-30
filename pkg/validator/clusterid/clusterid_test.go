@@ -229,6 +229,62 @@ func TestRawFindings_InvalidJSON(t *testing.T) {
 	}
 }
 
+// ── real foreign-cluster-name detection (via ClusterIndex.KnownClusters) ────
+
+func TestRawFindings_ForeignClusterName_KnownClusters_NoPatternMatch(t *testing.T) {
+	// "othercluster" does not match any ClusterTokenRe shape (nil here), but
+	// IS a known cluster per the live index — RawFindings must still catch
+	// it. This is the concrete "real detection" gap: previously only
+	// ClusterTokenRe-shaped tokens were ever checked at all.
+	old := ClusterTokenRe
+	defer func() { ClusterTokenRe = old }()
+	ClusterTokenRe = nil
+
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "patch.yaml"), []byte("cluster: othercluster"), 0o644)
+	idx := ClusterIndex{KnownClusters: map[string]bool{"othercluster": true}}
+	findings := RawFindings(d, "mycluster", idx)
+
+	var found bool
+	for _, f := range findings {
+		if f.CheckID == exempt.IDClusterName && f.Value == "othercluster" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a cluster-name finding for known foreign cluster %q, got %+v", "othercluster", findings)
+	}
+}
+
+func TestRawFindings_ForeignClusterName_SelfNameNotFlagged(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "patch.yaml"), []byte("cluster: mycluster"), 0o644)
+	idx := ClusterIndex{KnownClusters: map[string]bool{"mycluster": true, "othercluster": true}}
+	findings := RawFindings(d, "mycluster", idx)
+	for _, f := range findings {
+		if f.CheckID == exempt.IDClusterName {
+			t.Errorf("self cluster name must never be flagged as foreign, got %+v", f)
+		}
+	}
+}
+
+func TestGetIdentity_KnownClustersNotConsulted(t *testing.T) {
+	// The public, index-less GetIdentity entry point is documented as
+	// pattern-only; confirm it does NOT catch a known-but-unpatterned
+	// foreign name (only RawFindings, which threads the index through
+	// getIdentity, does).
+	old := ClusterTokenRe
+	defer func() { ClusterTokenRe = old }()
+	ClusterTokenRe = nil
+
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "patch.yaml"), []byte("cluster: othercluster"), 0o644)
+	id := GetIdentity(d, "mycluster")
+	if len(id.ClusterNames) != 0 {
+		t.Errorf("GetIdentity (index-less) should not detect foreign names by KnownClusters; got %v", id.ClusterNames)
+	}
+}
+
 func TestClusterTokenRe_NilDoesNotScanNames(t *testing.T) {
 	old := ClusterTokenRe
 	defer func() { ClusterTokenRe = old }()
