@@ -247,7 +247,13 @@ spec:
                   # accessible by integration).
                   git tag "${NEW_SEMVER}" "${PARAM_REVISION}"
 
-                  GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean
+                  # Generate the changelog with git-cliff (using cliff.toml's
+                  # conventional-commit groupings) into a path outside the git
+                  # worktree so it doesn't trip GoReleaser's dirty-state guard,
+                  # then hand it to GoReleaser as the release body.
+                  git-cliff --bump --unreleased -o "${TMPDIR}/CHANGELOG.md"
+
+                  GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean --release-notes "${TMPDIR}/CHANGELOG.md"
                 else
                   # PR event - run Goreleaser with snapshot tag using short SHA
                   SHORT_SHA="${PARAM_REVISION:0:7}"

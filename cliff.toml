@@ -18,9 +18,7 @@ footer = ""
 [git]
 conventional_commits = true
 filter_unconventional = true
-commit_preprocessors = [
-  { pattern = '.*', replace = "" }
-]
+commit_preprocessors = []
 commit_parsers = [
   { message = "^feat", group = "Features" },
   { message = "^fix", group = "Bug Fixes" },

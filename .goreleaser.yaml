@@ -34,7 +34,7 @@ kos:
       - linux/arm64
     main: ./cmd/k8s-gitops-ci
 changelog:
-  use: git-cliff
+  use: git
   abbrev: -1
 release:
   github:
