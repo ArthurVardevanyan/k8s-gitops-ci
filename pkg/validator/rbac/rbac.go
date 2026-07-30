@@ -287,24 +287,32 @@ func badVerbs(rule *yaml.Node, _ string) []string {
 	return bad
 }
 
+// isExemptVerb reports whether verb is allowed, for every listed apiGroup
+// and resource, by the readOnlyExempt allowlist. Every apiGroup must have
+// an exact entry in readOnlyExempt (a wildcard apiGroup, "*", is never
+// exempt - it would otherwise bypass the allowlist's narrow scoping
+// entirely), and every resource under that group must explicitly allow
+// this verb.
+//
+// This does an exact map lookup per (apiGroup, resource) pair rather than
+// iterating readOnlyExempt's entries directly - iterating the whole map
+// and bailing on the first apiGroup that doesn't match the entry currently
+// being visited made the result depend on Go's intentionally-randomized
+// map iteration order, so the same input could exempt or reject a verb
+// differently from one call to the next.
 func isExemptVerb(verb string, apiGroups, resources []string) bool {
 	if len(apiGroups) == 0 || len(resources) == 0 {
 		return false
 	}
 	for _, g := range apiGroups {
-		for exemptGroup, resMap := range readOnlyExempt {
-			if g != exemptGroup && g != "*" {
-				// require exact apiGroup match for exemption
+		resMap, ok := readOnlyExempt[g]
+		if !ok {
+			return false
+		}
+		for _, r := range resources {
+			verbs, ok := resMap[r]
+			if !ok || !verbs[verb] {
 				return false
-			}
-			for _, r := range resources {
-				if verbs, ok := resMap[r]; ok {
-					if !verbs[verb] {
-						return false
-					}
-				} else {
-					return false
-				}
 			}
 		}
 	}
