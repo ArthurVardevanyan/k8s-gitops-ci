@@ -94,10 +94,7 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 			continue
 		}
 		name := quickName(mapping)
-		podPath := "spec"
-		if kind != "Pod" {
-			podPath = "spec.template.spec"
-		}
+		podPath := podSpecPath(kind)
 		podSpec := getNodeAtPath(mapping, podPath)
 		if podSpec == nil || podSpec.Kind != yaml.MappingNode {
 			continue
@@ -182,6 +179,23 @@ func Deduplicate(errors []ValidationError, maxFiles int) []DeduplicatedError {
 		out = append(out, *seen[k])
 	}
 	return out
+}
+
+// podSpecPath returns the dot-path (relative to the document root) of the
+// pod spec for kind. CronJob nests its pod spec three levels deeper than
+// every other workload kind (spec.jobTemplate.spec.template.spec, not
+// spec.template.spec) - without this, CronJob workloads are silently never
+// validated at all (getNodeAtPath returns nil, so the caller skips the
+// document with zero findings rather than an error).
+func podSpecPath(kind string) string {
+	switch kind {
+	case "Pod":
+		return "spec"
+	case "CronJob":
+		return "spec.jobTemplate.spec.template.spec"
+	default:
+		return "spec.template.spec"
+	}
 }
 
 func validatePodFields(source, kind, name string, podSpec *yaml.Node, podPath string) []ValidationError {

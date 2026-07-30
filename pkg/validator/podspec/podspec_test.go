@@ -59,6 +59,77 @@ spec:
 	}
 }
 
+func TestValidateReader_BadCronJob(t *testing.T) {
+	// Regression: CronJob nests its pod spec three levels deeper than
+	// every other workload kind (spec.jobTemplate.spec.template.spec, not
+	// spec.template.spec). Previously the hardcoded path never resolved
+	// for CronJob, so it was silently never validated at all.
+	data := `kind: CronJob
+metadata:
+  name: bad-cj
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: c
+            image: x
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) == 0 {
+		t.Fatal("expected errors for a CronJob missing required pod/security fields")
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e.Path, "jobTemplate") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected at least one error path to reflect CronJob's nested pod spec, got: %v", errs)
+	}
+}
+
+func TestValidateReader_GoodCronJob(t *testing.T) {
+	data := `kind: CronJob
+metadata:
+  name: good-cj
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          enableServiceLinks: false
+          restartPolicy: Never
+          schedulerName: default
+          dnsPolicy: ClusterFirst
+          automountServiceAccountToken: false
+          containers:
+          - name: c
+            image: x
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              privileged: false
+              runAsNonRoot: true
+              capabilities:
+                drop:
+                - ALL
+              seccompProfile:
+                type: RuntimeDefault
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                cpu: 100m
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for a compliant CronJob: %v", errs)
+	}
+}
+
 func TestFormatComment(t *testing.T) {
 	err := ValidationError{Kind: "Deployment", Name: "bad", MissingFields: []string{"automountServiceAccountToken"}}
 	s := FormatComment([]ValidationError{err})
