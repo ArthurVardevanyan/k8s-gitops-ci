@@ -227,25 +227,20 @@ spec:
                 GITHUB_TOKEN=$(cat "${AUTH_PATH}/git-provider-token")
                 export GITHUB_TOKEN
 
-                echo "Running CI pipeline..."
                 task ci
 
-                # TODO: image build and push
-                # if [ "${PARAM_EVENT}" = "push" ]; then
-                #   NEW_SEMVER=$(git-cliff --bumped-version)
-                #   echo "Releasing ${NEW_SEMVER}..."
-                #   GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --clean
-                # else
-                #   SHA_SHORT="${PARAM_REVISION:0:7}"
-                #   TAG="$(date -u +%Y%m%d%H%M%S)-pr-${PARAM_PR_NUMBER}-${SHA_SHORT}"
-                #   GORELEASER_CURRENT_TAG="${TAG}" goreleaser release --snapshot --clean
-                # fi
-                #
-                # IMAGE=$(jq -r \
-                #   '.[] | select(.type == "Docker Image") | select(.goos == "linux") | select(.goarch == "amd64") | .name' \
-                #   dist/artifacts.json | head -1)
-                # echo "Image: ${IMAGE}"
-                # printf '%s' "${IMAGE}" > results.IMAGE.path
+                # Push event - run Goreleaser with semantic version
+                if [ "${PARAM_EVENT}" = "push" ]; then
+                  NEW_SEMVER=$(git-cliff --bumped-version)
+                  echo "Releasing ${NEW_SEMVER}..."
+                  GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean || true
+                else
+                  # PR event - run Goreleaser with snapshot tag using short SHA
+                  SHORT_SHA="${PARAM_REVISION:0:7}"
+                  TAG="$(date -u +%Y%m%d%H%M%S)-pr-${PARAM_PR_NUMBER}-${SHORT_SHA}"
+                  echo "Creating snapshot release: ${TAG}"
+                  GORELEASER_CURRENT_TAG="${TAG}" goreleaser release --snapshot --skip=ko --clean || true
+                fi
 
       # TODO: clair scan (re-enable once image build is wired up)
       # - name: clair-action
