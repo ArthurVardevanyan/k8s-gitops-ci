@@ -1,6 +1,7 @@
 package clusterid
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,12 +36,20 @@ func (e ValidationError) String() string {
 
 // OverlayIdentity captures tokens found in an overlay.
 type OverlayIdentity struct {
-	ClusterName    string
-	ProjectIDs     []string
-	ProjectNumbers []string
-	InfraIDs       []string
-	ClusterNames   []string
-	Sources        map[string][]string
+	ClusterName      string
+	ProjectIDs       []string
+	ProjectNumbers   []string
+	InfraIDs         []string
+	ClusterNames     []string
+	Sources          map[string][]string
+	InvalidJSONFiles []InvalidJSONFile // *.json files under the overlay that failed to parse
+}
+
+// InvalidJSONFile records a *.json file under the overlay that failed to
+// parse as valid JSON.
+type InvalidJSONFile struct {
+	File    string
+	Message string
 }
 
 // ClusterIndex maps project ids/numbers to cluster names.
@@ -117,6 +126,23 @@ func RawFindings(overlayPath, clusterName string, index ClusterIndex) []Finding 
 		}
 	}
 	findings = append(findings, rawInfraIDFindings(overlayPath, identity)...)
+	findings = append(findings, rawInvalidJSONFindings(overlayPath, identity)...)
+	return findings
+}
+
+// rawInvalidJSONFindings emits a non-exemptable structural finding for every
+// *.json file under the overlay that failed to parse as valid JSON. Like
+// infraID mismatches, this uses exempt.IDClusterIdentity (never exemptable)
+// since a syntactically-broken JSON file is a hard error, not something an
+// EXEMPTIONS selector or annotation should be able to paper over.
+func rawInvalidJSONFindings(overlayPath string, identity *OverlayIdentity) []Finding {
+	findings := make([]Finding, 0, len(identity.InvalidJSONFiles))
+	for _, invalid := range identity.InvalidJSONFiles {
+		findings = append(findings, Finding{
+			CheckID: exempt.IDClusterIdentity, File: filepath.Join(overlayPath, invalid.File),
+			Message: fmt.Sprintf("invalid JSON: %s", invalid.Message),
+		})
+	}
 	return findings
 }
 
@@ -158,6 +184,12 @@ func GetIdentity(overlayPath, clusterName string) *OverlayIdentity {
 			return nil //nolint:nilerr // skip unreadable file, keep walking
 		}
 		rel, _ := filepath.Rel(overlayPath, path)
+		if strings.EqualFold(filepath.Ext(path), ".json") {
+			var raw json.RawMessage
+			if jsonErr := json.Unmarshal(data, &raw); jsonErr != nil {
+				id.InvalidJSONFiles = append(id.InvalidJSONFiles, InvalidJSONFile{File: rel, Message: jsonErr.Error()})
+			}
+		}
 		id.scanString(string(data), rel)
 		return nil
 	})

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/cluster"
@@ -176,6 +177,55 @@ func TestAllowField_SkipsInfraID(t *testing.T) {
 	id := GetIdentity(d, "mycluster")
 	if len(id.InfraIDs) != 0 {
 		t.Errorf("AllowField should have skipped infraID; got %v", id.InfraIDs)
+	}
+}
+
+// ── JSON validation ─────────────────────────────────────────────────────────
+
+func TestGetIdentity_InvalidJSON(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "credentials.json"), []byte(`{"not": valid json`), 0o644)
+	id := GetIdentity(d, "mycluster")
+	if len(id.InvalidJSONFiles) != 1 {
+		t.Fatalf("expected 1 invalid JSON file, got %d: %+v", len(id.InvalidJSONFiles), id.InvalidJSONFiles)
+	}
+	if id.InvalidJSONFiles[0].File != "credentials.json" {
+		t.Errorf("unexpected file: %q", id.InvalidJSONFiles[0].File)
+	}
+}
+
+func TestGetIdentity_ValidJSON_NoFinding(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "credentials.json"), []byte(`{"audience": "example"}`), 0o644)
+	id := GetIdentity(d, "mycluster")
+	if len(id.InvalidJSONFiles) != 0 {
+		t.Errorf("expected no invalid JSON files, got %+v", id.InvalidJSONFiles)
+	}
+}
+
+func TestGetIdentity_NonJSONFile_NotValidated(t *testing.T) {
+	// A .yaml (or any non-.json) file with JSON-invalid-looking content
+	// must not be checked as JSON at all.
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "config.yaml"), []byte("this: is not json {{{"), 0o644)
+	id := GetIdentity(d, "mycluster")
+	if len(id.InvalidJSONFiles) != 0 {
+		t.Errorf("expected non-.json files to be skipped, got %+v", id.InvalidJSONFiles)
+	}
+}
+
+func TestRawFindings_InvalidJSON(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "credentials.json"), []byte(`{"not": valid`), 0o644)
+	findings := RawFindings(d, "mycluster", ClusterIndex{})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].CheckID != exempt.IDClusterIdentity {
+		t.Errorf("CheckID = %q, want %q (invalid JSON must be non-exemptable)", findings[0].CheckID, exempt.IDClusterIdentity)
+	}
+	if !strings.Contains(findings[0].Message, "invalid JSON") {
+		t.Errorf("unexpected message: %q", findings[0].Message)
 	}
 }
 
