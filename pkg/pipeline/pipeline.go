@@ -66,15 +66,15 @@ func Run(opts Options) error {
 	wg.Wait()
 
 	res := &Result{}
-	if isValidPR(opts.PR) && !opts.isMergeQueue() && !opts.LintOnly {
+	if shouldRunPRChecks(opts) {
 		client := github.NewClient(opts.URL, opts.PR)
 		res.TitleErr = github.ValidatePRTitle(client)
 		res.UnsignedErr = runUnsignedCheck(client)
-		res.ChecklistErr = github.ValidatePRChecklist(client)
+		if shouldRunChecklistCheck(opts) {
+			res.ChecklistErr = github.ValidatePRChecklist(client)
+		}
 	}
-	if opts.LintOnly {
-		res.PRValid = true
-	}
+	res.PRValid = shouldRunPRChecks(opts) || opts.LintOnly
 
 	if shouldRunValidation(opts) {
 		vopts := toValidatorOptions(opts)
@@ -110,6 +110,22 @@ func isValidPR(pr string) bool {
 
 func (o *Options) isMergeQueue() bool {
 	return strings.Contains(o.TargetBranch, "gh-readonly-queue/")
+}
+
+// shouldRunPRChecks reports whether the blocking PR-title and signed-commit
+// checks should run. These run whenever there's a valid, non-merge-queue PR
+// - including in --lint-only mode, since they're cheap, GitHub-API-only
+// checks unrelated to the (skipped) build/validation phases.
+func shouldRunPRChecks(opts Options) bool {
+	return isValidPR(opts.PR) && !opts.isMergeQueue()
+}
+
+// shouldRunChecklistCheck reports whether the non-blocking PR-checklist
+// check should run. Unlike shouldRunPRChecks, this is explicitly skipped in
+// --lint-only mode: the checklist covers build/validation-adjacent items
+// that don't make sense to ask about when the build phase itself is skipped.
+func shouldRunChecklistCheck(opts Options) bool {
+	return shouldRunPRChecks(opts) && !opts.LintOnly
 }
 
 func (o *Options) Workers() int {
