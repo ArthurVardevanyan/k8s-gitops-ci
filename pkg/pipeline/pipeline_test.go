@@ -2,6 +2,9 @@ package pipeline
 
 import (
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -99,5 +102,135 @@ func TestComposeSections(t *testing.T) {
 	}
 	if !sections[0].Error {
 		t.Errorf("expected PR checks error")
+	}
+}
+
+// ── resolveRevision ───────────────────────────────────────────────────────
+
+func TestResolveRevision_ExplicitWins(t *testing.T) {
+	if got := resolveRevision("v1.2.3", "42"); got != "v1.2.3" {
+		t.Errorf("resolveRevision = %q, want %q", got, "v1.2.3")
+	}
+}
+
+func TestResolveRevision_PRFallsBackToRefsPullHead(t *testing.T) {
+	// This is the correctness fix: a PR run with no explicit --revision
+	// must check out the PR's own commits, not the target repo's default
+	// branch - otherwise the pipeline would silently validate the wrong code.
+	if got := resolveRevision("", "42"); got != "refs/pull/42/head" {
+		t.Errorf("resolveRevision = %q, want %q", got, "refs/pull/42/head")
+	}
+}
+
+func TestResolveRevision_NoRevisionNoPR_DefaultsToHEAD(t *testing.T) {
+	if got := resolveRevision("", ""); got != "HEAD" {
+		t.Errorf("resolveRevision = %q, want %q", got, "HEAD")
+	}
+}
+
+func TestResolveRevision_InvalidPR_DefaultsToHEAD(t *testing.T) {
+	// A placeholder/invalid PR value must not be templated into the ref.
+	if got := resolveRevision("", "{{ params.pr }}"); got != "HEAD" {
+		t.Errorf("resolveRevision = %q, want %q", got, "HEAD")
+	}
+}
+
+// ── setupWorkdir ──────────────────────────────────────────────────────────
+
+func newPipelineFixture(t *testing.T) (repoPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q")
+	run("checkout", "-q", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "marker.txt"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", ".")
+	run("commit", "-q", "-m", "init")
+	return dir
+}
+
+func TestSetupWorkdir_NoURL_IsNoOp(t *testing.T) {
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup, err := setupWorkdir(Options{})
+	if err != nil {
+		t.Fatalf("setupWorkdir: %v", err)
+	}
+	defer cleanup()
+
+	gotWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotWD != origWD {
+		t.Errorf("expected cwd unchanged for empty URL, got %q, want %q", gotWD, origWD)
+	}
+}
+
+func TestSetupWorkdir_ClonesChdirsAndRestores(t *testing.T) {
+	fixture := newPipelineFixture(t)
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cleanup, err := setupWorkdir(Options{URL: fixture, Revision: "main"})
+	if err != nil {
+		t.Fatalf("setupWorkdir: %v", err)
+	}
+
+	clonedWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clonedWD == origWD {
+		t.Fatal("expected cwd to change into the cloned repo")
+	}
+	if _, err := os.Stat(filepath.Join(clonedWD, "marker.txt")); err != nil {
+		t.Errorf("expected marker.txt in cloned repo: %v", err)
+	}
+
+	cleanup()
+
+	restoredWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restoredWD != origWD {
+		t.Errorf("expected cwd restored to %q, got %q", origWD, restoredWD)
+	}
+	if _, err := os.Stat(clonedWD); !os.IsNotExist(err) {
+		t.Errorf("expected cloned dir %q removed after cleanup", clonedWD)
+	}
+}
+
+func TestSetupWorkdir_InvalidURL_ReturnsError(t *testing.T) {
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup, err := setupWorkdir(Options{URL: filepath.Join(t.TempDir(), "does-not-exist")})
+	defer cleanup()
+	if err == nil {
+		t.Fatal("expected an error for a nonexistent repo URL")
+	}
+	gotWD, wdErr := os.Getwd()
+	if wdErr != nil {
+		t.Fatal(wdErr)
+	}
+	if gotWD != origWD {
+		t.Errorf("expected cwd unchanged on clone failure, got %q, want %q", gotWD, origWD)
 	}
 }
