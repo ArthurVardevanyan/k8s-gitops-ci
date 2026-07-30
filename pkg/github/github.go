@@ -135,14 +135,57 @@ func uncheckedItems(body string) map[string]bool {
 	return m
 }
 
-// GetUnsignedCommits identifies commits lacking signature verification.
+// prCommit is the subset of the GitHub "list pull request commits" API
+// response (GET /repos/{owner}/{repo}/pulls/{pr}/commits) this package reads.
+type prCommit struct {
+	SHA    string `json:"sha"`
+	Commit struct {
+		Message      string `json:"message"`
+		Verification struct {
+			Verified bool `json:"verified"`
+		} `json:"verification"`
+	} `json:"commit"`
+}
+
+// GetUnsignedCommits returns one "<short-sha> <message-first-line>"
+// identifier per commit on the PR whose GitHub-computed signature
+// verification did not succeed. A nil, nil result means every commit is
+// signed (or the PR has no commits).
 func GetUnsignedCommits(c *Client) ([]string, error) {
 	if !c.IsAvailable() {
 		return nil, nil
 	}
-	out, err := c.gh("pr", "view", c.pr, "--json", "commits", "--jq", `.commits[] | select(.authors[0].email | contains("noreply")) | '".code"'`)
-	_ = out
-	return nil, err
+	out, err := c.gh("api", fmt.Sprintf("repos/%s/pulls/%s/commits", c.repo, c.pr))
+	if err != nil {
+		return nil, fmt.Errorf("could not fetch PR commits: %w", err)
+	}
+	return parseUnsignedCommits([]byte(out))
+}
+
+// parseUnsignedCommits parses a GitHub "list pull request commits" API
+// response body and returns identifiers for every commit whose signature
+// verification did not succeed.
+func parseUnsignedCommits(data []byte) ([]string, error) {
+	var commits []prCommit
+	if err := json.Unmarshal(data, &commits); err != nil {
+		return nil, fmt.Errorf("parsing PR commits: %w", err)
+	}
+	var unsigned []string
+	for _, cmt := range commits {
+		if cmt.Commit.Verification.Verified {
+			continue
+		}
+		sha := cmt.SHA
+		if len(sha) > 7 {
+			sha = sha[:7]
+		}
+		message := cmt.Commit.Message
+		if idx := strings.IndexByte(message, '\n'); idx >= 0 {
+			message = message[:idx]
+		}
+		unsigned = append(unsigned, strings.TrimSpace(sha+" "+message))
+	}
+	return unsigned, nil
 }
 
 // CommentOnUnsignedCommits posts a warning about unsigned commits.
@@ -155,10 +198,22 @@ func CommentOnUnsignedCommits(c *Client) error {
 }
 
 func (c *Client) gh(args ...string) (string, error) {
+	return c.ghStdin("", args...)
+}
+
+// ghStdin runs gh with args, writing stdin to the child process if non-empty.
+// Use this (with a "@-"-style field/body-file argument) instead of passing
+// large content directly as a command-line argument - both to avoid argv
+// length limits and because it's the mechanism gh itself expects for
+// reading field/body values from stdin (see gh api/gh pr comment --help).
+func (c *Client) ghStdin(stdin string, args ...string) (string, error) {
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	if repo := c.env("GH_REPO"); repo != "" {
 		cmd.Env = append(cmd.Env, "GH_REPO="+repo)
+	}
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.Output()
 	if err != nil {

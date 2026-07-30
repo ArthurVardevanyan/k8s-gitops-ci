@@ -68,3 +68,64 @@ func TestGetUnsignedCommits_NoGH(t *testing.T) {
 		t.Error("disabled client should not error")
 	}
 }
+
+func TestParseUnsignedCommits_AllVerified(t *testing.T) {
+	data := `[
+		{"sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "commit": {"message": "feat: a", "verification": {"verified": true}}},
+		{"sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "commit": {"message": "fix: b", "verification": {"verified": true}}}
+	]`
+	got, err := parseUnsignedCommits([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no unsigned commits, got %v", got)
+	}
+}
+
+func TestParseUnsignedCommits_MixedVerification(t *testing.T) {
+	data := `[
+		{"sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "commit": {"message": "feat: a", "verification": {"verified": true}}},
+		{"sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "commit": {"message": "fix: b\n\nlonger body text", "verification": {"verified": false}}}
+	]`
+	got, err := parseUnsignedCommits([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 unsigned commit, got %v", got)
+	}
+	if got[0] != "bbbbbbb fix: b" {
+		t.Errorf("got %q, want %q", got[0], "bbbbbbb fix: b")
+	}
+}
+
+func TestParseUnsignedCommits_Empty(t *testing.T) {
+	got, err := parseUnsignedCommits([]byte(`[]`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no unsigned commits, got %v", got)
+	}
+}
+
+func TestParseUnsignedCommits_MalformedJSON(t *testing.T) {
+	if _, err := parseUnsignedCommits([]byte(`not json`)); err == nil {
+		t.Error("expected error for malformed JSON")
+	}
+}
+
+func TestParseUnsignedCommits_UnverifiedTreatedAsUnsigned(t *testing.T) {
+	// verification.verified defaults to false (Go zero value) when the
+	// verification object is entirely absent - GitHub omits it for some
+	// commit types. Absence must be treated as unsigned, not skipped.
+	data := `[{"sha": "cccccccccccccccccccccccccccccccccccccccc", "commit": {"message": "chore: c"}}]`
+	got, err := parseUnsignedCommits([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 unsigned commit, got %v", got)
+	}
+}

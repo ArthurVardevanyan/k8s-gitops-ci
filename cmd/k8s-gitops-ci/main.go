@@ -88,6 +88,7 @@ func runPipeline(args []string) error {
 	opts.Providers = provider.Providers{}
 
 	var dirs, disableChecks, enableChecks string
+	var comment bool
 	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL")
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
@@ -96,19 +97,32 @@ func runPipeline(args []string) error {
 	fs.StringVar(&opts.TriggerComment, "trigger-comment", opts.TriggerComment, "trigger comment text")
 	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to restrict the changeset to (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.BoolVar(&opts.LintOnly, "lint-only", false, "lint only, skip build checks")
-	fs.BoolVar(&opts.NoComment, "no-comment", false, "do not post PR comment")
+	fs.BoolVar(&comment, "comment", false, "post PR comment (default: off)")
+	fs.BoolVar(&opts.NoComment, "no-comment", false, "do not post PR comment (hard override; takes precedence over --comment)")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-only API groups (OLM, Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API, Metal3) as exempt from the sync-options check; only enable if ALL target clusters are OpenShift/OKD")
 	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
 	fs.StringVar(&enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
 	fs.IntVar(&opts.Concurrency, "concurrency", 0, "worker concurrency (0=auto)")
+	fs.Var(newStringSliceFlag(&opts.Apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
+	fs.Var(newStringSliceFlag(&opts.Clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	opts.IncludePrefixes = splitCommaList(dirs)
 	opts.DisabledChecks = splitCommaList(disableChecks)
 	opts.EnabledChecks = splitCommaList(enableChecks)
+	opts.NoComment = resolveNoComment(comment, opts.NoComment)
 	return pipeline.Run(opts)
+}
+
+// resolveNoComment computes the effective NoComment value from the
+// --comment/--no-comment flags. Comments are off by default; --comment
+// opts in. --no-comment is a hard override that always wins, so it stays a
+// supported way to force comments off even if --comment is also
+// (redundantly) passed.
+func resolveNoComment(comment, noComment bool) bool {
+	return !comment || noComment
 }
 
 // splitCommaList splits a comma-separated flag value, trimming whitespace and
@@ -125,6 +139,29 @@ func splitCommaList(s string) []string {
 		}
 	}
 	return out
+}
+
+// stringSliceFlag implements flag.Value, collecting each occurrence of a
+// repeatable flag (e.g. --app foo --app bar) into the backing slice, in the
+// order given.
+type stringSliceFlag struct {
+	values *[]string
+}
+
+func newStringSliceFlag(values *[]string) *stringSliceFlag {
+	return &stringSliceFlag{values: values}
+}
+
+func (s *stringSliceFlag) String() string {
+	if s.values == nil {
+		return ""
+	}
+	return strings.Join(*s.values, ",")
+}
+
+func (s *stringSliceFlag) Set(v string) error {
+	*s.values = append(*s.values, v)
+	return nil
 }
 
 // ── build-yaml ────────────────────────────────────────────────────────────────
