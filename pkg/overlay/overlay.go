@@ -1,14 +1,22 @@
 package overlay
 
 import (
-	"context"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/engine"
+	"sigs.k8s.io/kustomize/api/krusty"
+	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
 // Strategy identifies how to build an overlay.
@@ -136,83 +144,151 @@ func RunBuildLoop(opts BuildOptions) []BuildResult {
 			opts.Progress("building %s", ov)
 		}
 		outFile := filepath.Join(opts.OutputDir, filepath.Base(ov)+".yaml")
-		res := buildOverlay(ov, opts.Strategy, exclude, outFile, opts.PreBuildHook)
+		res := buildOverlay(opts.App, ov, opts.Strategy, exclude, outFile, opts.PreBuildHook)
 		results = append(results, res)
 	}
 	return results
 }
 
-func buildOverlay(overlay string, strategy Strategy, exclude map[string]bool, outFile string, pre func(string, string) error) BuildResult {
+func buildOverlay(app, overlay string, strategy Strategy, exclude map[string]bool, outFile string, pre func(string, string) error) BuildResult {
 	if pre != nil {
 		if err := pre(overlay, outFile); err != nil {
 			return BuildResult{Overlay: overlay, Err: err}
 		}
 	}
-	ctx := context.Background()
 	isExcluded := IsExcluded(overlay, exclude)
+
+	var render func() ([]byte, error)
 	switch strategy {
-	case StrategyKustomize:
-		return runKustomize(ctx, overlay, outFile)
-	case StrategyKustomizeAVP:
-		if isExcluded {
-			return runKustomize(ctx, overlay, outFile)
-		}
-		return runKustomizeAVP(ctx, overlay, outFile)
-	case StrategyHelm:
-		return runHelm(ctx, overlay)
-	case StrategyHelmAVP:
-		if isExcluded {
-			return runHelm(ctx, overlay)
-		}
-		return runHelmAVP(ctx, overlay)
+	case StrategyKustomize, StrategyKustomizeAVP:
+		render = func() ([]byte, error) { return renderKustomize(overlay) }
+	case StrategyHelm, StrategyHelmAVP:
+		render = func() ([]byte, error) { return renderHelm(app, overlay) }
 	default:
 		return BuildResult{Overlay: overlay, Err: fmt.Errorf("unknown strategy %q", strategy)}
 	}
+
+	out, err := render()
+	if err != nil {
+		return BuildResult{Overlay: overlay, Err: err}
+	}
+
+	useAVP := (strategy == StrategyKustomizeAVP || strategy == StrategyHelmAVP) && !isExcluded
+	if useAVP {
+		out, err = runAVP(out)
+		if err != nil {
+			return BuildResult{Overlay: overlay, Err: err}
+		}
+	}
+
+	if err := os.WriteFile(outFile, out, 0o600); err != nil {
+		return BuildResult{Overlay: overlay, Err: err}
+	}
+	return BuildResult{Overlay: overlay, YAMLFile: outFile}
 }
 
-func runKustomize(_ context.Context, overlay, outFile string) BuildResult {
-	cmd := exec.Command("kustomize", "build", overlay)
+// renderKustomize builds overlay using the native Kustomize SDK (the same
+// engine the `kustomize` CLI itself runs on), avoiding a runtime dependency
+// on a `kustomize` binary being installed in the CI image.
+func renderKustomize(overlay string) ([]byte, error) {
+	fSys := filesys.MakeFsOnDisk()
+	opts := krusty.MakeDefaultOptions()
+	opts.LoadRestrictions = types.LoadRestrictionsNone
+	k := krusty.MakeKustomizer(opts)
+
+	resMap, err := k.Run(fSys, overlay)
+	if err != nil {
+		return nil, fmt.Errorf("kustomize build %s: %w", overlay, err)
+	}
+
+	out, err := resMap.AsYaml()
+	if err != nil {
+		return nil, fmt.Errorf("kustomize render %s: %w", overlay, err)
+	}
+	return out, nil
+}
+
+// renderHelm renders overlay/values.yaml against app/base using the native
+// Helm chart loader + rendering engine (no `pkg/action`, so no dependency on
+// Helm's release-storage backend or a live cluster connection). This mirrors
+// what `helm template` produces.
+func renderHelm(app, overlay string) ([]byte, error) {
+	valuesFile := filepath.Join(overlay, "values.yaml")
+	if _, err := os.Stat(valuesFile); err != nil {
+		return nil, fmt.Errorf("missing values.yaml: %w", err)
+	}
+
+	baseDir := filepath.Join(app, "base")
+	chrt, err := loader.Load(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("helm load chart %s: %w", baseDir, err)
+	}
+
+	overrideVals, err := chartutil.ReadValuesFile(valuesFile)
+	if err != nil {
+		return nil, fmt.Errorf("parsing values %s: %w", valuesFile, err)
+	}
+
+	releaseOpts := chartutil.ReleaseOptions{
+		Name:      filepath.Base(overlay),
+		Namespace: "default",
+		IsInstall: true,
+	}
+	renderVals, err := chartutil.ToRenderValues(chrt, overrideVals, releaseOpts, nil)
+	if err != nil {
+		return nil, fmt.Errorf("helm values %s: %w", overlay, err)
+	}
+
+	rendered, err := engine.Render(chrt, renderVals)
+	if err != nil {
+		return nil, fmt.Errorf("helm template %s: %w", overlay, err)
+	}
+
+	return assembleManifests(rendered), nil
+}
+
+// assembleManifests reassembles engine.Render's per-file output into a single
+// YAML stream, mirroring `helm template`'s behavior: NOTES.txt and empty
+// renders are dropped, remaining documents are emitted in a stable, sorted
+// order with a "# Source:" header per document.
+func assembleManifests(rendered map[string]string) []byte {
+	keys := make([]string, 0, len(rendered))
+	for name := range rendered {
+		if path.Base(name) == "NOTES.txt" {
+			continue
+		}
+		if strings.TrimSpace(rendered[name]) == "" {
+			continue
+		}
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+
+	var buf bytes.Buffer
+	for _, name := range keys {
+		buf.WriteString("---\n# Source: ")
+		buf.WriteString(name)
+		buf.WriteString("\n")
+		buf.WriteString(strings.TrimSpace(rendered[name]))
+		buf.WriteString("\n")
+	}
+	return buf.Bytes()
+}
+
+// runAVP pipes rendered YAML through `argocd-vault-plugin generate -`,
+// resolving AVP placeholders (<path:...>, <vault:...>, etc.) against the
+// configured secret backend. This mirrors what the argocd-vault-plugin
+// kustomize/helm CMPs do at deploy time. AVP is kept as a subprocess call
+// (rather than an imported library) since embedding it would pull in every
+// supported secret-backend SDK (AWS, GCP, Vault, Azure) unconditionally.
+func runAVP(in []byte) ([]byte, error) {
+	cmd := exec.Command("argocd-vault-plugin", "generate", "-")
+	cmd.Stdin = bytes.NewReader(in)
 	out, err := cmd.Output()
 	if err != nil {
-		return BuildResult{Overlay: overlay, Err: fmtErr(cmd, err)}
+		return nil, fmtErr(cmd, err)
 	}
-	if err := os.WriteFile(outFile, out, 0o644); err != nil {
-		return BuildResult{Overlay: overlay, Err: err}
-	}
-	return BuildResult{Overlay: overlay, YAMLFile: outFile}
-}
-
-func runKustomizeAVP(_ context.Context, overlay, outFile string) BuildResult {
-	build := exec.Command("kustomize", "build", overlay)
-	buildOut, err := build.Output()
-	if err != nil {
-		return BuildResult{Overlay: overlay, Err: fmtErr(build, err)}
-	}
-	avp := exec.Command("argocd-vault-plugin", "generate", "-")
-	avp.Stdin = strings.NewReader(string(buildOut))
-	out, err := avp.Output()
-	if err != nil {
-		return BuildResult{Overlay: overlay, Err: fmtErr(avp, err)}
-	}
-	if err := os.WriteFile(outFile, out, 0o644); err != nil {
-		return BuildResult{Overlay: overlay, Err: err}
-	}
-	return BuildResult{Overlay: overlay, YAMLFile: outFile}
-}
-
-func runHelm(_ context.Context, overlay string) BuildResult {
-	if _, err := os.Stat(filepath.Join(overlay, "values.yaml")); err != nil {
-		return BuildResult{Overlay: overlay, Err: fmt.Errorf("missing values.yaml: %w", err)}
-	}
-	return BuildResult{Overlay: overlay, Err: fmt.Errorf("helm build not implemented")}
-}
-
-func runHelmAVP(_ context.Context, overlay string) BuildResult {
-	res := runHelm(context.Background(), overlay)
-	if res.Err != nil {
-		return res
-	}
-	return BuildResult{Overlay: overlay, Err: fmt.Errorf("helm+avp build not implemented")}
+	return out, nil
 }
 
 func fmtErr(cmd *exec.Cmd, err error) error {
