@@ -252,6 +252,10 @@ func runKubeconform(args []string) error {
 	if len(files) == 0 {
 		return fmt.Errorf("kubeconform: no files specified")
 	}
+	if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
+		opts.SchemaDir = schemaDir
+		defer cleanup()
+	}
 	res, err := kubeconform.ValidateFiles(files, opts)
 	if err != nil {
 		return err

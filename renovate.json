@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "chore(deps):",
+  "commitMessageAction": "update",
+  "postUpdateOptions": ["gomodTidy"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Pinned go install tool versions in Taskfile.yml (golangci-lint, govulncheck, gofumpt, goimports)",
+      "managerFilePatterns": ["/^Taskfile\\.ya?ml$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Za-z0-9_]+:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group routine (non-major) Go dependency updates",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "go dependencies"
+    },
+    {
+      "description": "Isolate Go major bumps for manual review (module path suffix changes require source edits)",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["major"],
+      "groupName": null,
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Group the Taskfile-pinned Go tool versions together",
+      "matchFileNames": ["Taskfile.yml"],
+      "matchDatasources": ["go"],
+      "groupName": "taskfile go tools"
+    }
+  ]
+}

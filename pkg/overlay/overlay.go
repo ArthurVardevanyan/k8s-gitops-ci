@@ -187,6 +187,14 @@ func buildOverlay(app, overlay string, strategy Strategy, exclude map[string]boo
 	return BuildResult{Overlay: overlay, YAMLFile: outFile}
 }
 
+// RenderKustomize builds the given kustomize directory (an overlay, or any
+// other directory containing a kustomization.yaml) and returns the rendered
+// YAML manifest stream. Exported for callers (e.g. schema validation) that
+// need the fully-built manifests rather than raw, pre-build source files.
+func RenderKustomize(dir string) ([]byte, error) {
+	return renderKustomize(dir)
+}
+
 // renderKustomize builds overlay using the native Kustomize SDK (the same
 // engine the `kustomize` CLI itself runs on), avoiding a runtime dependency
 // on a `kustomize` binary being installed in the CI image.

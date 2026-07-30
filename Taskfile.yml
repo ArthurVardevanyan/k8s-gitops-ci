@@ -3,9 +3,13 @@ version: '3'
 
 vars:
   NAME: k8s-gitops-ci
+  # renovate: datasource=go depName=golang.org/x/tools
   GOIMPORTS_VERSION: v0.34.0
+  # renovate: datasource=go depName=mvdan.cc/gofumpt
   GOFUMPT_VERSION: v0.8.0
+  # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
   GOLANGCI_LINT_VERSION: v2.2.2
+  # renovate: datasource=go depName=golang.org/x/vuln
   GOVULNCHECK_VERSION: v1.3.0
   TOOLS: "{{.ROOT_DIR | toSlash}}/.tool"
   TOOLS_BIN: "{{.TOOLS}}"

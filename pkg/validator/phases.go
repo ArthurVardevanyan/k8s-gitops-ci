@@ -64,7 +64,11 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result) {
 
 	yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
 	kcOpts := kubeconform.DefaultOptions()
-	if kcRes, err := kubeconform.ValidateFiles(yamlFiles, kcOpts); err == nil && kcRes != nil {
+	if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
+		kcOpts.SchemaDir = schemaDir
+		defer cleanup()
+	}
+	if kcRes, err := validateWithRenderedOverlays(yamlFiles, kcOpts); err == nil && kcRes != nil {
 		if kcRes.Invalid > 0 || kcRes.Errors > 0 {
 			lintReports["kubeconform"] = kcRes.Summary()
 		}
