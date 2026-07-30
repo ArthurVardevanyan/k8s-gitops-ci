@@ -22,10 +22,43 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
+// Step IDs for standalone (non-check-registry) lint/build steps that
+// participate in the same generic enable/disable ID mechanism as
+// check-registry checks. See stepEnabled and the Options doc comment.
+const (
+	stepGolangci = "golangci"
+	stepAVP      = "avp"
+	stepKyverno  = "kyverno"
+)
+
+// defaultOffSteps lists step/check IDs that are disabled unless explicitly
+// present in Options.EnabledChecks. Every other ID defaults to enabled and
+// is only turned off via Options.DisabledChecks. Kyverno defaults off
+// because, unlike every other check in this repo, it has no generic default
+// policy set an arbitrary org could reasonably run out of the box - an org
+// must opt in and supply its own policies (see pkg/lint/kyverno).
+var defaultOffSteps = map[string]bool{
+	stepKyverno: true,
+}
+
+// stepEnabled reports whether the named step/check should run, given the
+// resolved disabled/enabled ID sets (see toIDSet). Steps not present in
+// defaultOffSteps run unless explicitly disabled; steps present in
+// defaultOffSteps only run when explicitly enabled.
+func stepEnabled(id string, disabled, enabled map[string]bool) bool {
+	if defaultOffSteps[id] {
+		return enabled[id]
+	}
+	return !disabled[id]
+}
+
 // runLintAndStaticChecks runs all linters and static checks, populating sections.
 func runLintAndStaticChecks(changed []string, opts Options, res *Result) {
 	w := Workers(opts)
 	_ = w
+
+	disabled := toIDSet(opts.DisabledChecks)
+	enabled := toIDSet(opts.EnabledChecks)
 
 	// ── linting ──────────────────────────────────────────────────────────────
 	lintReports := map[string]string{}
@@ -54,7 +87,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result) {
 		lintReports["shellcheck"] = scErr.Error()
 	}
 
-	if !opts.SkipGolangci {
+	if stepEnabled(stepGolangci, disabled, enabled) {
 		if glOut, err := golangci.Run(changed); err != nil && !errors.Is(err, golangci.ErrCLINotFound) {
 			lintReports["golangci"] = err.Error()
 		} else {
@@ -113,7 +146,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result) {
 	// Resolve selectors from hook config (empty for now; org layer injects via Options).
 	var selectors []exempt.Selector
 
-	disabled := toDisabledSet(opts.DisabledChecks)
+	disabled := toIDSet(opts.DisabledChecks)
 
 	// Doc engine over all changed YAML files.
 	yamlFiles := filterYAML(changed)
@@ -185,8 +218,11 @@ func detectOverlays(files []string) []overlayRef {
 	return refs
 }
 
-// toDisabledSet converts a slice of disabled check IDs into a lookup set.
-func toDisabledSet(ids []string) map[string]bool {
+// toIDSet converts a slice of IDs (from DisabledChecks or EnabledChecks)
+// into a lookup set. Reading a missing key from a nil map is a safe
+// zero-value (false) in Go, so callers can use the result directly without
+// a nil check.
+func toIDSet(ids []string) map[string]bool {
 	if len(ids) == 0 {
 		return nil
 	}
