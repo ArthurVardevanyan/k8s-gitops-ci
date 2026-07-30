@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/config"
@@ -86,12 +87,14 @@ func runPipeline(args []string) error {
 	opts := pipeline.EnvOptions()
 	opts.Providers = provider.Providers{}
 
+	var dirs string
 	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL")
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
 	fs.StringVar(&opts.TargetBranch, "target-branch", opts.TargetBranch, "target branch")
 	fs.StringVar(&opts.HookSource, "hook-source", opts.HookSource, "hook source (main|pr|local)")
 	fs.StringVar(&opts.TriggerComment, "trigger-comment", opts.TriggerComment, "trigger comment text")
+	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to restrict the changeset to (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.BoolVar(&opts.LintOnly, "lint-only", false, "lint only, skip build checks")
 	fs.BoolVar(&opts.SkipAVP, "skip-avp", false, "skip argocd-vault-plugin")
 	fs.BoolVar(&opts.SkipGolangci, "skip-golangci", false, "skip golangci-lint")
@@ -101,7 +104,24 @@ func runPipeline(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	opts.IncludePrefixes = splitCommaList(dirs)
 	return pipeline.Run(opts)
+}
+
+// splitCommaList splits a comma-separated flag value, trimming whitespace and
+// dropping empty entries.
+func splitCommaList(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // ── build-yaml ────────────────────────────────────────────────────────────────

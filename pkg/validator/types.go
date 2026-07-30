@@ -20,6 +20,7 @@ type Options struct {
 	Concurrency      int
 	Apps, Clusters   []string
 	Dirs             []string // explicit subdirectories to validate; bypasses git diff
+	IncludePrefixes  []string // restrict the resolved changeset (git diff or PR files) to files under these path prefixes; empty means no restriction
 	Providers        provider.Providers
 }
 

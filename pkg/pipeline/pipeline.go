@@ -15,21 +15,22 @@ import (
 
 // Options configures the pipeline run.
 type Options struct {
-	URL            string
-	PR             string
-	Revision       string
-	TargetBranch   string
-	HookSource     string
-	TriggerComment string
-	LintOnly       bool
-	SkipAVP        bool
-	SkipGolangci   bool
-	NoComment      bool
-	Verbose        bool
-	Concurrency    int
-	Apps           []string
-	Clusters       []string
-	Providers      provider.Providers
+	URL             string
+	PR              string
+	Revision        string
+	TargetBranch    string
+	HookSource      string
+	TriggerComment  string
+	LintOnly        bool
+	SkipAVP         bool
+	SkipGolangci    bool
+	NoComment       bool
+	Verbose         bool
+	Concurrency     int
+	Apps            []string
+	Clusters        []string
+	IncludePrefixes []string // restrict the changeset to files under these path prefixes (e.g. "kubernetes/", "tekton/"); empty means no restriction
+	Providers       provider.Providers
 }
 
 // Result captures the pipeline outcome.
@@ -118,18 +119,19 @@ func shouldRunValidation(opts Options) bool {
 
 func toValidatorOptions(opts Options) validator.Options {
 	return validator.Options{
-		RepoURL:      opts.URL,
-		PR:           opts.PR,
-		BaseRef:      resolveBaseRef(opts.TargetBranch),
-		Revision:     resolveRevision(opts.Revision),
-		LintOnly:     opts.LintOnly,
-		SkipAVP:      opts.SkipAVP,
-		SkipGolangci: opts.SkipGolangci,
-		NoComment:    opts.NoComment,
-		Concurrency:  opts.Workers(),
-		Apps:         opts.Apps,
-		Clusters:     opts.Clusters,
-		Providers:    opts.Providers,
+		RepoURL:         opts.URL,
+		PR:              opts.PR,
+		BaseRef:         resolveBaseRef(opts.TargetBranch),
+		Revision:        resolveRevision(opts.Revision),
+		LintOnly:        opts.LintOnly,
+		SkipAVP:         opts.SkipAVP,
+		SkipGolangci:    opts.SkipGolangci,
+		NoComment:       opts.NoComment,
+		Concurrency:     opts.Workers(),
+		Apps:            opts.Apps,
+		Clusters:        opts.Clusters,
+		IncludePrefixes: opts.IncludePrefixes,
+		Providers:       opts.Providers,
 	}
 }
 

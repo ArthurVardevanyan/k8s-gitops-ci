@@ -33,6 +33,14 @@ func TestOptionsWorkers(t *testing.T) {
 	}
 }
 
+func TestToValidatorOptions_IncludePrefixes(t *testing.T) {
+	opts := Options{IncludePrefixes: []string{"kubernetes/", "tekton/"}}
+	vopts := toValidatorOptions(opts)
+	if len(vopts.IncludePrefixes) != 2 {
+		t.Fatalf("expected 2 include prefixes, got %v", vopts.IncludePrefixes)
+	}
+}
+
 func TestComposeSections(t *testing.T) {
 	res := &Result{TitleErr: errors.New("bad title")}
 	sections := composeSections(res, Options{})
