@@ -8,11 +8,5 @@ vendor/
 .DS_Store
 pkg/lint/kubeconform/schemas/schemas.tar.gz
 pkg/lint/kyverno/policies/policies.tar.gz
-.task/checksum/build
-.task/checksum/test
-.tool/gofumpt
-.tool/goimports
-.tool/golangci-lint
-.tool/govulncheck
-.task/checksum/format
-.task/checksum/format-check
+.task
+.tool

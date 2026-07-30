@@ -352,12 +352,13 @@ tasks:
     desc: Full CI pipeline — mod check, format, schemas, lint, vulncheck, test, build
     silent: true
     vars:
-      TIMEFILE: '{{.TIMEFILE | default "/tmp/k8s-gitops-ci-timings"}}'
+      TIMEFILE: '{{.TIMEFILE | default (printf "%s/.task/ci-timings" (.ROOT_DIR | toSlash))}}'
     cmds:
       # Native `- task:` references preserve the Taskfile env (CGO_ENABLED, etc.)
       # across steps. Timing markers are appended to TIMEFILE and diffed at the end.
       - |
         set -euo pipefail
+        mkdir -p "$(dirname "{{.TIMEFILE}}")"
         : > "{{.TIMEFILE}}"
         printf '%s\t%s\n' "$(date +%s.%N)" "START" >> "{{.TIMEFILE}}"
         echo "=========================================="

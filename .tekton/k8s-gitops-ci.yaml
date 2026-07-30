@@ -33,10 +33,6 @@ spec:
         default: ""
       - name: event
         type: string
-    results:
-      - name: SCAN_OUTPUT
-        description: CVE scan result (placeholder until clair is re-enabled)
-        value: ""
     workspaces:
       - name: data
       - name: git_auth_secret
@@ -95,11 +91,16 @@ spec:
           volumes:
             - name: home
               emptyDir: {}
-            # go-cache workspace provides GOMODCACHE/GOCACHE when bound;
-            # these emptyDir fallbacks are used when it is not.
-            - name: go-mod-fallback
-              emptyDir: {}
-            - name: go-build-fallback
+            # go-cache workspace provides GOMODCACHE/GOCACHE/GOPATH/GOTMPDIR/
+            # etc. when bound; this single emptyDir is the fallback used
+            # when it is not. Mounted directly at /home/default/.cache
+            # (rather than at each individual subdirectory) so every
+            # subdirectory Go/tools create under it (go-mod, go-build,
+            # golangci-lint, go-tmp, ...) sits on one real, writable mount
+            # point instead of relying on kubelet auto-creating .cache as a
+            # plain (root-owned, non-writable-by-us) intermediate directory
+            # for several separately-mounted volumes.
+            - name: cache-fallback
               emptyDir: {}
           stepTemplate:
             name: stepTemplate
@@ -116,6 +117,27 @@ spec:
                 value: /home/default/.cache/golangci-lint
               - name: XDG_CACHE_HOME
                 value: /home/default/.cache
+              # GOPATH defaults to a baked-in, read-only path inside the
+              # toolbox image (e.g. /go); go install/module verification
+              # (sumdb) needs to write under $GOPATH/pkg, so it must be
+              # redirected too, same as the other caches above.
+              - name: GOPATH
+                value: /home/default/.cache/gopath
+              - name: GOENV
+                value: /home/default/.cache/go-env/env
+              # go build/install create transient scratch work dirs via
+              # os.TempDir() (defaults to /tmp), which is on the read-only
+              # root filesystem in this pod — redirect to the writable
+              # cache volume. Not persisted on the go-cache PVC since
+              # these dirs are deleted after each build anyway.
+              - name: GOTMPDIR
+                value: /home/default/.cache/go-tmp
+              # Generic temp dir for non-Go tools (mktemp, git, tar, etc. —
+              # e.g. scripts/pull-schemas.sh, pull-policies.sh,
+              # pull-scoped-resources.sh all call `mktemp -d`), which
+              # default to $TMPDIR or /tmp — also read-only in this pod.
+              - name: TMPDIR
+                value: /home/default/.cache/tmp
               - name: GO_CACHE_BOUND
                 value: $(workspaces.go-cache.bound)
               - name: GO_CACHE_PATH
@@ -123,17 +145,15 @@ spec:
             volumeMounts:
               - name: home
                 mountPath: /home/default
-              - name: go-mod-fallback
-                mountPath: /home/default/.cache/go-mod
-              - name: go-build-fallback
-                mountPath: /home/default/.cache/go-build
+              - name: cache-fallback
+                mountPath: /home/default/.cache
             computeResources:
               requests:
                 cpu: 500m
                 memory: 500Mi
                 ephemeral-storage: 100Mi
               limits:
-                cpu: "4"
+                cpu: "6"
                 memory: 5Gi
                 ephemeral-storage: 500Mi
             securityContext:
@@ -183,9 +203,20 @@ spec:
                   export GOCACHE="${GO_CACHE_PATH}/go-build"
                   export GOLANGCI_LINT_CACHE="${GO_CACHE_PATH}/golangci-lint"
                   export XDG_CACHE_HOME="${GO_CACHE_PATH}/.cache"
-                  mkdir -p "${GOMODCACHE}" "${GOCACHE}" "${GOLANGCI_LINT_CACHE}" "${XDG_CACHE_HOME}"
+                  export GOPATH="${GO_CACHE_PATH}/gopath"
+                  export GOENV="${GO_CACHE_PATH}/go-env/env"
+                  mkdir -p "${GOMODCACHE}" "${GOCACHE}" "${GOLANGCI_LINT_CACHE}" "${XDG_CACHE_HOME}" "${GOPATH}"
                   echo "Using persistent Go caches under: ${GO_CACHE_PATH}"
                 fi
+
+                # go build/install use os.TempDir() (GOTMPDIR, default /tmp)
+                # for transient scratch work dirs regardless of GOCACHE;
+                # /tmp is on the read-only root filesystem in this pod, so
+                # this must always be redirected, bound or not. Same for
+                # TMPDIR, used by mktemp and other non-Go tooling.
+                mkdir -p "${GOTMPDIR}" "${TMPDIR}"
+
+                go env GOPATH GOMODCACHE GOCACHE GOLANGCI_LINT_CACHE GOTMPDIR
 
                 cd "$(workspaces.output.path)"
                 git config --global --add safe.directory "$(workspaces.output.path)"
@@ -214,7 +245,7 @@ spec:
                 #   '.[] | select(.type == "Docker Image") | select(.goos == "linux") | select(.goarch == "amd64") | .name' \
                 #   dist/artifacts.json | head -1)
                 # echo "Image: ${IMAGE}"
-                # printf '%s' "${IMAGE}" > "$(results.IMAGE.path)"
+                # printf '%s' "${IMAGE}" > results.IMAGE.path
 
       # TODO: clair scan (re-enable once image build is wired up)
       # - name: clair-action
