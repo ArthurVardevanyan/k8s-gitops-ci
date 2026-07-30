@@ -73,3 +73,77 @@ func TestPathMatches(t *testing.T) {
 		}
 	}
 }
+
+func TestPathMatches_ArrayIndexPinning(t *testing.T) {
+	// Regression: a selector with a literal array index must pin to
+	// exactly that index, not degrade to "any index" the way an empty
+	// bracket "[]" wildcard does.
+	if !pathMatches("containers[1].image", "spec.containers[1].image") {
+		t.Error("expected selector to match its own pinned index")
+	}
+	if pathMatches("containers[1].image", "spec.containers[0].image") {
+		t.Error("expected selector NOT to match a different index")
+	}
+	if pathMatches("containers[1].image", "spec.containers[2].image") {
+		t.Error("expected selector NOT to match a different index")
+	}
+}
+
+func TestPathMatches_EmptyBracketStillWildcards(t *testing.T) {
+	// The explicit "[]" wildcard form must still match any index - only
+	// a literal numeric index should pin.
+	if !pathMatches("containers[].image", "spec.containers[0].image") {
+		t.Error("expected [] to match index 0")
+	}
+	if !pathMatches("containers[].image", "spec.containers[7].image") {
+		t.Error("expected [] to match index 7")
+	}
+}
+
+func TestNormalizePath_PreservesLiteralIndex(t *testing.T) {
+	if got := normalizePath("containers[2].image"); got != "containers/2/image" {
+		t.Errorf("normalizePath = %q, want %q", got, "containers/2/image")
+	}
+	if got := normalizePath("containers[].image"); got != "containers/*/image" {
+		t.Errorf("normalizePath = %q, want %q", got, "containers/*/image")
+	}
+}
+
+func TestEvaluate_TokenPreferredOverValue(t *testing.T) {
+	// A check may emit a human-readable Value for display while matching
+	// exemptions against a more stable Token (e.g. a foreign-cluster
+	// token vs. its raw display string). The annotation must match
+	// against Token when set, not Value.
+	s := Scalar{Value: "display text (cluster-a)", Token: "cluster-a", File: "x.yaml"}
+	ann := map[string]string{Key(IDImageChecksum): "cluster-a"}
+	ok, applied := Evaluate(IDImageChecksum, s, ann, nil)
+	if !ok {
+		t.Fatalf("expected the annotation to match against Token, got ok=%v", ok)
+	}
+	if applied.Token != "cluster-a" || applied.Value != "display text (cluster-a)" {
+		t.Errorf("unexpected applied exemption: %+v", applied)
+	}
+}
+
+func TestEvaluate_ValueUsedWhenTokenEmpty(t *testing.T) {
+	s := Scalar{Value: "img@sha256:abc", File: "x.yaml"}
+	ann := map[string]string{Key(IDImageChecksum): "img@sha256:abc"}
+	ok, _ := Evaluate(IDImageChecksum, s, ann, nil)
+	if !ok {
+		t.Error("expected the annotation to match against Value when Token is empty")
+	}
+}
+
+func TestSelectorMatches_Token(t *testing.T) {
+	sel := Selector{Check: IDImageChecksum, Value: "cluster-a"}
+	s := Scalar{Value: "display text (cluster-a)", Token: "cluster-a", File: "x.yaml"}
+	if !SelectorMatches(sel, s, IDImageChecksum) {
+		t.Error("expected selector Value to match against Token, not the display Value")
+	}
+	// A selector matching the raw display Value (not the Token) must NOT
+	// match, since Token takes precedence when set.
+	selOnDisplay := Selector{Check: IDImageChecksum, Value: "display text (cluster-a)"}
+	if SelectorMatches(selOnDisplay, s, IDImageChecksum) {
+		t.Error("expected selector matching the display Value to NOT match once Token takes precedence")
+	}
+}

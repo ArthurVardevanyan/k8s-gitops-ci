@@ -68,6 +68,17 @@ func Accepts(annotations map[string]string, id, value string) bool {
 	return annotations[Key(id)] == value
 }
 
+// annotationValue returns the value used for exemption matching: Token
+// when set (a stable, machine-oriented identifier a check can use instead
+// of its human-readable display value), defaulting to Value when Token is
+// empty.
+func (s Scalar) annotationValue() string {
+	if s.Token != "" {
+		return s.Token
+	}
+	return s.Value
+}
+
 // SelectorMatches reports whether a selector matches a scalar finding for id.
 func SelectorMatches(sel Selector, s Scalar, id string) bool {
 	if sel.Check != id {
@@ -85,10 +96,10 @@ func SelectorMatches(sel Selector, s Scalar, id string) bool {
 	if sel.Namespace != "" && sel.Namespace != s.Namespace {
 		return false
 	}
-	if sel.Value != "" && sel.Value != s.Value {
+	if sel.Value != "" && sel.Value != s.annotationValue() {
 		return false
 	}
-	if sel.Match != "" && !strings.Contains(s.Value, sel.Match) {
+	if sel.Match != "" && !strings.Contains(s.annotationValue(), sel.Match) {
 		return false
 	}
 	if sel.Path != "" && !pathMatches(sel.Path, s.Path) {
@@ -102,7 +113,7 @@ func Evaluate(id string, s Scalar, annotations map[string]string, selectors []Se
 	if !Exemptable(id) {
 		return false, Applied{}
 	}
-	if Accepts(annotations, id, s.Value) {
+	if Accepts(annotations, id, s.annotationValue()) {
 		return true, Applied{CheckID: id, File: s.File, Path: s.Path, Value: s.Value, Token: s.Token, Kind: s.Kind, Name: s.Name}
 	}
 	for _, sel := range selectors {
@@ -113,6 +124,14 @@ func Evaluate(id string, s Scalar, annotations map[string]string, selectors []Se
 	return false, Applied{}
 }
 
+// pathMatches reports whether selPath (a selector's Path field) matches
+// findingPath (a finding's Path field), aligning the selector as a suffix
+// of the finding path. A selector segment of "*" (from an empty bracket
+// "[]") matches any index; a selector segment with a literal numeric index
+// (from "[N]") only matches that exact index in the finding path - it does
+// not degrade to "any index the same way". This is what makes array-index
+// pinning (e.g. "containers[1].image" matching only index 1, not any
+// index) actually possible.
 func pathMatches(selPath, findingPath string) bool {
 	sel := normalizePath(selPath)
 	find := normalizePath(findingPath)
@@ -128,31 +147,29 @@ func pathMatches(selPath, findingPath string) bool {
 		if sp == "*" || sp == fp {
 			continue
 		}
-		// allow selectors with bracket index to match numeric index
-		if idxRe.MatchString(sp) && idxRe.MatchString(fp) {
-			continue
-		}
 		return false
 	}
 	return true
 }
 
-var (
-	pathIndexRe = regexp.MustCompile(`\[[0-9]+\]`)
-	idxRe       = regexp.MustCompile(`^[0-9]+$`)
-)
+// pathIndexRe matches a bracketed array index, capturing the digits (empty
+// for "[]", the literal index for "[N]").
+var pathIndexRe = regexp.MustCompile(`\[([0-9]*)\]`)
 
+// normalizePath converts a selector/finding path into slash-separated
+// segments. "name[N]" becomes "name/N" (preserving the literal index, so
+// it can be pinned exactly); "name[]" becomes "name/*" (an explicit,
+// intentional wildcard). Dots are treated as segment separators.
 func normalizePath(p string) string {
 	p = strings.TrimPrefix(p, "/")
 	p = strings.TrimPrefix(p, ".")
 	p = strings.ReplaceAll(p, ".", "/")
-	p = strings.ReplaceAll(p, "[]", "/*")
-	p = pathIndexRe.ReplaceAllString(p, "/*")
-	parts := strings.Split(p, "/")
-	for i := range parts {
-		if parts[i] == "*" {
-			parts[i] = "*"
+	p = pathIndexRe.ReplaceAllStringFunc(p, func(m string) string {
+		idx := pathIndexRe.FindStringSubmatch(m)[1]
+		if idx == "" {
+			return "/*"
 		}
-	}
-	return strings.Trim(strings.Join(parts, "/"), "/")
+		return "/" + idx
+	})
+	return strings.Trim(p, "/")
 }
