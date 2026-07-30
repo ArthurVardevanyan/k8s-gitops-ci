@@ -234,27 +234,18 @@ spec:
                   NEW_SEMVER=$(git-cliff --bumped-version)
                   echo "Releasing ${NEW_SEMVER}..."
 
-                  # GoReleaser requires a real git tag pointing at the release
-                  # commit before `goreleaser release` will run — create it via
-                  # the GitHub API (using the already-authenticated gh CLI) and
-                  # fetch it back locally so GoReleaser's local tag validation
-                  # ("git tag %v was not made against commit %v") passes.
-                  GIT_URL=$(git remote get-url origin)
-                  REPO_SLUG="${GIT_URL#https://github.com/}"
-                  REPO_SLUG="${REPO_SLUG%.git}"
-                  GH_LOGIN=$(gh api user --jq .login)
-                  GH_USER_ID=$(gh api user --jq .id)
-                  GH_EMAIL="${GH_USER_ID}+${GH_LOGIN}@users.noreply.github.com"
-
-                  TAG_SHA=$(gh api --method POST "/repos/${REPO_SLUG}/git/tags" \
-                    -f "tag=${NEW_SEMVER}" -f "message=automated release" \
-                    -f "object=${PARAM_REVISION}" -f "type=commit" \
-                    -f "tagger[name]=${GH_LOGIN}" -f "tagger[email]=${GH_EMAIL}" \
-                    --jq .sha)
-                  gh api --method POST "/repos/${REPO_SLUG}/git/refs" \
-                    -f "ref=refs/tags/${NEW_SEMVER}" -f "sha=${TAG_SHA}"
-
-                  git fetch --tags --force
+                  # GoReleaser only validates that GORELEASER_CURRENT_TAG
+                  # exists as a local git tag pointing at HEAD — this is a
+                  # local-only check ("git tag %v was not made against commit
+                  # %v"), it does not need to exist on GitHub yet. GoReleaser's
+                  # own release-creation call uses the GitHub Releases API
+                  # with target_commitish (the same mechanism as
+                  # `gh release create --target <sha>`), which auto-creates
+                  # the tag on GitHub. Creating the tag ourselves via the raw
+                  # Git Data API (git/tags + git/refs) is unnecessary and not
+                  # permitted for this GitHub App token (403: Resource not
+                  # accessible by integration).
+                  git tag "${NEW_SEMVER}" "${PARAM_REVISION}"
 
                   GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean
                 else
