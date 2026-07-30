@@ -4,11 +4,14 @@ import (
 	"fmt"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/syncopts"
 )
 
 // RunAll runs the four validator phases.
 func RunAll(opts Options) (*Result, error) {
 	res := &Result{}
+
+	syncopts.AssumeOpenShift = opts.AssumeOpenShift
 
 	changed, err := resolveChangeset(opts)
 	if err != nil {

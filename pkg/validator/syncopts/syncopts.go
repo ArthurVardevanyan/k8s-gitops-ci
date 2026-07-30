@@ -16,11 +16,17 @@ const (
 	Marker             = "<!-- sync-options-warning -->"
 )
 
-// builtinAPIGroups lists API groups considered "built-in" (no sync-options
-// annotation required). A value of true means the group is exempt; a value
-// of false means the group is explicitly known but still requires the
-// annotation (e.g. operator-managed CRDs that may not exist on first sync).
-var builtinAPIGroups = map[string]bool{
+// AssumeOpenShift enables treating OpenShift/OKD-only API groups (OLM,
+// Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API,
+// the built-in image registry, Metal3, etc.) as builtin/exempt from the
+// sync-options requirement. These groups only ship by default on
+// OpenShift/OKD clusters — enable this only if ALL target clusters are
+// OpenShift/OKD. Set once at process startup (see validator.RunAll).
+var AssumeOpenShift = false
+
+// coreAPIGroups lists distro-agnostic API groups considered "built-in" (no
+// sync-options annotation required) on any conformant Kubernetes cluster.
+var coreAPIGroups = map[string]bool{
 	// Core / built-in Kubernetes API groups.
 	"":                             true, // core/v1
 	"apps":                         true,
@@ -49,29 +55,46 @@ var builtinAPIGroups = map[string]bool{
 	// doesn't apply to them.
 	"kustomize.config.k8s.io": true,
 
-	// Widely-installed platform/monitoring groups treated as builtin.
-	"metrics.k8s.io":        true,
+	// Widely-installed, distro-agnostic platform group.
+	"metrics.k8s.io": true,
+}
+
+// openshiftAPIGroups lists API groups that ship by default on OpenShift/OKD
+// clusters (but not on a generic/vanilla Kubernetes cluster). These are only
+// treated as exempt when AssumeOpenShift is true.
+var openshiftAPIGroups = map[string]bool{
+	// Prometheus Operator / OLM — bundled with OpenShift/OKD's cluster
+	// monitoring and Operator Lifecycle Manager respectively.
 	"monitoring.coreos.com": true,
 	"operators.coreos.com":  true,
 
 	// OpenShift API groups.
-	"operator.openshift.io":              true,
-	"config.openshift.io":                true,
-	"route.openshift.io":                 true,
-	"image.openshift.io":                 true,
-	"project.openshift.io":               true,
-	"quota.openshift.io":                 true,
-	"security.openshift.io":              true,
-	"console.openshift.io":               true,
-	"helm.openshift.io":                  true,
-	"tuned.openshift.io":                 true,
-	"machine.openshift.io":               true,
-	"machineconfiguration.openshift.io":  true,
-	"ingressoperator.openshift.io":       true,
-	"samples.operator.openshift.io":      true,
-	"hive.openshift.io":                  true,
-	"agent-install.openshift.io":         true,
-	"controlplane.operator.openshift.io": true,
+	"operator.openshift.io":               true,
+	"config.openshift.io":                 true,
+	"route.openshift.io":                  true,
+	"image.openshift.io":                  true,
+	"imageregistry.operator.openshift.io": true,
+	"project.openshift.io":                true,
+	"quota.openshift.io":                  true,
+	"security.openshift.io":               true,
+	"console.openshift.io":                true,
+	"helm.openshift.io":                   true,
+	"tuned.openshift.io":                  true,
+	"machine.openshift.io":                true,
+	"machineconfiguration.openshift.io":   true,
+	"ingressoperator.openshift.io":        true,
+	"samples.operator.openshift.io":       true,
+	"hive.openshift.io":                   true,
+	"agent-install.openshift.io":          true,
+	"controlplane.operator.openshift.io":  true,
+
+	// Gateway API — OpenShift/OKD's built-in Gateway API implementation
+	// (Cluster Ingress Operator), not shipped by default on vanilla k8s.
+	"gateway.networking.k8s.io": true,
+
+	// Cluster Baremetal Operator — ships on OpenShift/OKD baremetal-
+	// platform installs.
+	"metal3.io": true,
 
 	// CNI / networking-related operator groups.
 	"whereabouts.cni.cncf.io":   true,
@@ -83,15 +106,31 @@ var builtinAPIGroups = map[string]bool{
 	"operatorframework.io":          true,
 	"olm.operatorframework.io":      true,
 	"packages.operators.coreos.com": true,
+}
 
-	// Known CRD-providing groups that ARE NOT exempt — resources in
-	// these groups still require the sync-options annotation.
+// nonExemptCRDGroups lists known CRD-providing groups that are NOT exempt —
+// resources in these groups still require the sync-options annotation,
+// since they're optional add-ons (installed via OLM/Helm) on any platform,
+// including OpenShift/OKD, and may not exist yet at first sync.
+var nonExemptCRDGroups = map[string]bool{
 	"argoproj.io":         false,
 	"tekton.dev":          false,
 	"kyverno.io":          false,
 	"external-secrets.io": false,
 	"cert-manager.io":     false,
 	"velero.io":           false,
+	"networking.istio.io": false,
+	"security.istio.io":   false,
+}
+
+// installerOnlyKinds are local config artifacts consumed by installer
+// tooling (e.g. the OpenShift agent-based installer) that are never
+// submitted to a Kubernetes API server or synced by ArgoCD. They're
+// typically declared with a bare, groupless apiVersion (e.g. "v1beta1"),
+// so they're matched by kind instead of by API group.
+var installerOnlyKinds = map[string]bool{
+	"AgentConfig":   true,
+	"InstallConfig": true,
 }
 
 // ValidationError records a missing sync-options annotation.
@@ -145,6 +184,9 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 		kind := quickString(findKey(mapping, "kind"))
 		apiVersion := quickString(findKey(mapping, "apiVersion"))
 		if kind == "" || apiVersion == "" {
+			continue
+		}
+		if installerOnlyKinds[kind] {
 			continue
 		}
 		if isBuiltinResource(apiVersion) {
@@ -210,8 +252,18 @@ func extractGroup(apiVersion string) string {
 
 func isBuiltinResource(apiVersion string) bool {
 	g := extractGroup(apiVersion)
-	v, ok := builtinAPIGroups[g]
-	return ok && v
+	if v, ok := coreAPIGroups[g]; ok {
+		return v
+	}
+	if AssumeOpenShift {
+		if v, ok := openshiftAPIGroups[g]; ok {
+			return v
+		}
+	}
+	if v, ok := nonExemptCRDGroups[g]; ok {
+		return v
+	}
+	return false
 }
 
 func hasSkipDryRun(annotations map[string]string) bool {

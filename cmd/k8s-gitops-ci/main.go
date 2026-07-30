@@ -87,7 +87,7 @@ func runPipeline(args []string) error {
 	opts := pipeline.EnvOptions()
 	opts.Providers = provider.Providers{}
 
-	var dirs string
+	var dirs, disableChecks string
 	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL")
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
@@ -100,11 +100,14 @@ func runPipeline(args []string) error {
 	fs.BoolVar(&opts.SkipGolangci, "skip-golangci", false, "skip golangci-lint")
 	fs.BoolVar(&opts.NoComment, "no-comment", false, "do not post PR comment")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
+	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-only API groups (OLM, Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API, Metal3) as exempt from the sync-options check; only enable if ALL target clusters are OpenShift/OKD")
+	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated check IDs to disable entirely (e.g. sync-options for non-ArgoCD users)")
 	fs.IntVar(&opts.Concurrency, "concurrency", 0, "worker concurrency (0=auto)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	opts.IncludePrefixes = splitCommaList(dirs)
+	opts.DisabledChecks = splitCommaList(disableChecks)
 	return pipeline.Run(opts)
 }
 

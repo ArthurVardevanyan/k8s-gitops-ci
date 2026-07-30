@@ -20,13 +20,27 @@ type docSource struct {
 	files []string
 }
 
+// filterDisabled removes checks whose ID is present in disabled.
+func filterDisabled(checks []check.Check, disabled map[string]bool) []check.Check {
+	if len(disabled) == 0 {
+		return checks
+	}
+	out := make([]check.Check, 0, len(checks))
+	for _, c := range checks {
+		if !disabled[c.ID()] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // runDocChecks evaluates all ScopeDoc checks once per unique doc and fans out.
-func runDocChecks(files []string, selectors []exempt.Selector, workers int) check.Result {
+func runDocChecks(files []string, selectors []exempt.Selector, workers int, disabled map[string]bool) check.Result {
 	if workers <= 0 {
 		workers = runtime.NumCPU() * 2
 	}
 	docs := indexDocuments(files)
-	checks := check.ByScope(check.ScopeDoc)
+	checks := filterDisabled(check.ByScope(check.ScopeDoc), disabled)
 	type job struct {
 		hash string
 		doc  *docSource
@@ -56,11 +70,11 @@ func runDocChecks(files []string, selectors []exempt.Selector, workers int) chec
 }
 
 // runOverlayChecks drives ScopeOverlay checks.
-func runOverlayChecks(overlays []string, cluster string, selectors []exempt.Selector, workers int) check.Result {
+func runOverlayChecks(overlays []string, cluster string, selectors []exempt.Selector, workers int, disabled map[string]bool) check.Result {
 	if workers <= 0 {
 		workers = runtime.NumCPU() * 2
 	}
-	checks := check.ByScope(check.ScopeOverlay)
+	checks := filterDisabled(check.ByScope(check.ScopeOverlay), disabled)
 	if len(checks) == 0 {
 		return check.Result{}
 	}

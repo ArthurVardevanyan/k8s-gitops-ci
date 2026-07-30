@@ -26,6 +26,8 @@ type Options struct {
 	SkipGolangci    bool
 	NoComment       bool
 	Verbose         bool
+	AssumeOpenShift bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check
+	DisabledChecks  []string // check IDs to disable entirely (e.g. "sync-options" for non-ArgoCD users)
 	Concurrency     int
 	Apps            []string
 	Clusters        []string
@@ -127,6 +129,8 @@ func toValidatorOptions(opts Options) validator.Options {
 		SkipAVP:         opts.SkipAVP,
 		SkipGolangci:    opts.SkipGolangci,
 		NoComment:       opts.NoComment,
+		AssumeOpenShift: opts.AssumeOpenShift,
+		DisabledChecks:  opts.DisabledChecks,
 		Concurrency:     opts.Workers(),
 		Apps:            opts.Apps,
 		Clusters:        opts.Clusters,

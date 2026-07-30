@@ -109,16 +109,18 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result) {
 	// Resolve selectors from hook config (empty for now; org layer injects via Options).
 	var selectors []exempt.Selector
 
+	disabled := toDisabledSet(opts.DisabledChecks)
+
 	// Doc engine over all changed YAML files.
 	yamlFiles := filterYAML(changed)
-	docResult := runDocChecks(yamlFiles, selectors, w)
+	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
 
 	// Overlay engine - overlays detected from changed files.
 	overlays := detectOverlays(changed)
 	var overlayResult check.Result
 	if len(overlays) > 0 {
 		for _, ov := range overlays {
-			r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, w)
+			r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, w, disabled)
 			overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
 			overlayResult.Exempted = append(overlayResult.Exempted, r.Exempted...)
 		}
@@ -177,6 +179,18 @@ func detectOverlays(files []string) []overlayRef {
 		}
 	}
 	return refs
+}
+
+// toDisabledSet converts a slice of disabled check IDs into a lookup set.
+func toDisabledSet(ids []string) map[string]bool {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
 }
 
 func filterYAML(files []string) []string {

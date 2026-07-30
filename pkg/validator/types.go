@@ -17,6 +17,8 @@ type Options struct {
 	SkipGolangci     bool
 	NoComment        bool
 	IncludeDeletions bool
+	AssumeOpenShift  bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check; see syncopts.AssumeOpenShift
+	DisabledChecks   []string // check IDs to disable entirely (e.g. "sync-options" for non-ArgoCD users)
 	Concurrency      int
 	Apps, Clusters   []string
 	Dirs             []string // explicit subdirectories to validate; bypasses git diff
