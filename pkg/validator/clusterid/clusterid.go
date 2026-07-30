@@ -59,13 +59,6 @@ type ClusterIndex struct {
 	KnownClusters   map[string]bool
 }
 
-// Options configures cluster identity validation.
-type Options struct {
-	Index      ClusterIndex
-	Selectors  []exempt.Selector
-	DirectFile func(path string) bool
-}
-
 // Finding is a registry-facing finding.
 type Finding struct {
 	CheckID, File, Field, Value, Token, Kind, Name, Namespace string
@@ -97,7 +90,11 @@ var (
 // RawFindings returns registry-facing findings for an overlay.
 func RawFindings(overlayPath, clusterName string, index ClusterIndex) []Finding {
 	var findings []Finding
-	identity := GetIdentity(overlayPath, clusterName)
+	// Use the index-aware identity walk (not the public GetIdentity, which is
+	// index-less for back-compat) so a token that isn't ClusterTokenRe-shaped
+	// but IS a known foreign cluster name (per index.KnownClusters) is still
+	// caught. GetIdentity alone can only ever catch pattern-shaped tokens.
+	identity := getIdentity(overlayPath, clusterName, index)
 	for _, num := range identity.ProjectNumbers {
 		if owner, ok := index.NumberToCluster[num]; ok && owner != clusterName {
 			findings = append(findings, Finding{
@@ -168,8 +165,20 @@ func rawInfraIDFindings(overlayPath string, identity *OverlayIdentity) []Finding
 	return findings
 }
 
-// GetIdentity extracts identity tokens from an overlay.
+// GetIdentity extracts identity tokens from an overlay. Foreign-cluster-name
+// detection here is pattern-only (ClusterTokenRe); it has no ClusterIndex to
+// consult, so a foreign name that doesn't match the pattern but IS a known
+// cluster (per a live cluster-metadata index) will not be caught by this
+// entry point — use RawFindings for the full, index-aware check.
 func GetIdentity(overlayPath, clusterName string) *OverlayIdentity {
+	return getIdentity(overlayPath, clusterName, ClusterIndex{})
+}
+
+// getIdentity is the index-aware implementation shared by the public
+// GetIdentity (called with a zero-value ClusterIndex) and RawFindings (called
+// with the real index, so foreign-cluster-name detection can also match
+// index.KnownClusters, not just the ClusterTokenRe pattern).
+func getIdentity(overlayPath, clusterName string, index ClusterIndex) *OverlayIdentity {
 	id := &OverlayIdentity{ClusterName: clusterName, Sources: make(map[string][]string)}
 	id.ClusterName = selfClusterName(clusterName)
 	_ = filepath.Walk(overlayPath, func(path string, info os.FileInfo, err error) error {
@@ -190,7 +199,7 @@ func GetIdentity(overlayPath, clusterName string) *OverlayIdentity {
 				id.InvalidJSONFiles = append(id.InvalidJSONFiles, InvalidJSONFile{File: rel, Message: jsonErr.Error()})
 			}
 		}
-		id.scanString(string(data), rel)
+		id.scanString(string(data), rel, index)
 		return nil
 	})
 	id.ProjectIDs = uniqueSorted(id.ProjectIDs)
@@ -209,7 +218,7 @@ func appendUnique(sl []string, s string) []string {
 	return append(sl, s)
 }
 
-func (id *OverlayIdentity) scanString(s, source string) {
+func (id *OverlayIdentity) scanString(s, source string, index ClusterIndex) {
 	for _, m := range projectNumberRe.FindAllStringSubmatch(s, -1) {
 		if AllowField != nil && AllowField("projectNumber") {
 			continue
@@ -231,12 +240,24 @@ func (id *OverlayIdentity) scanString(s, source string) {
 		id.InfraIDs = append(id.InfraIDs, m[1])
 		id.Sources[m[1]] = append(id.Sources[m[1]], source)
 	}
-	if ClusterTokenRe != nil {
+	if ClusterTokenRe != nil || len(index.KnownClusters) > 0 {
 		for _, tok := range tokenSeparator.Split(s, -1) {
 			if AllowField != nil && AllowField("clusterName") {
 				continue
 			}
-			if ClusterTokenRe.MatchString(tok) && tok != id.ClusterName {
+			if tok == id.ClusterName {
+				continue
+			}
+			// A token is flagged as a foreign cluster name if it's a known
+			// cluster in the live cluster-metadata index (a definite
+			// cross-cluster reference) OR it merely looks like one per the
+			// org-configured ClusterTokenRe pattern (a likely typo/stale
+			// name not in the metadata at all). Checking KnownClusters here
+			// — not just the pattern — is what makes this "real"
+			// foreign-cluster-name detection: previously a foreign name that
+			// didn't happen to match the pattern went entirely undetected
+			// even though the live metadata already knew about it.
+			if index.KnownClusters[tok] || (ClusterTokenRe != nil && ClusterTokenRe.MatchString(tok)) {
 				id.ClusterNames = appendUnique(id.ClusterNames, tok)
 				id.Sources[tok] = append(id.Sources[tok], source)
 			}
