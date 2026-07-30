@@ -277,8 +277,20 @@ func (clusterIdentityAdapter) CheckOverlay(overlayPath, cluster string) []check.
 	raw := clusterid.RawFindings(overlayPath, cluster, idx)
 	out := make([]check.Finding, 0, len(raw))
 	for _, f := range raw {
+		// Use the finding's own CheckID (exempt.IDProjectRef/IDClusterName -
+		// both exemptable) rather than hardcoding exempt.IDClusterIdentity
+		// for everything, which would make every cluster-identity finding
+		// permanently non-exemptable regardless of type. Only structural
+		// findings that don't set a more specific ID (none currently exist,
+		// but a future infraID-mismatch/invalid-JSON check would use this
+		// path deliberately, per exempt.IDClusterIdentity's documented
+		// fail-closed contract) fall back to the non-exemptable bucket.
+		checkID := f.CheckID
+		if checkID == "" {
+			checkID = exempt.IDClusterIdentity
+		}
 		out = append(out, check.Finding{
-			CheckID:     exempt.IDClusterIdentity,
+			CheckID:     checkID,
 			File:        f.File,
 			Path:        f.Field,
 			Value:       f.Value,
