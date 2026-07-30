@@ -98,10 +98,7 @@ func isValidPR(pr string) bool {
 		return false
 	}
 	matched, _ := regexp.MatchString(`\{\{.*\}\}`, pr)
-	if matched {
-		return false
-	}
-	return true
+	return !matched
 }
 
 func (o *Options) isMergeQueue() bool {

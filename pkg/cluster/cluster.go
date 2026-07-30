@@ -1,7 +1,7 @@
 package cluster
 
-// ClusterProject is a generic, schema-free description of a cluster's identity.
-type ClusterProject struct {
+// Project is a generic, schema-free description of a cluster's identity.
+type Project struct {
 	Name             string
 	ProjectID        string
 	ProjectNumber    string
@@ -16,7 +16,7 @@ type ProjectIndex struct {
 }
 
 // BuildProjectIndex builds a ProjectIndex from cluster metadata.
-func BuildProjectIndex(clusters []ClusterProject) ProjectIndex {
+func BuildProjectIndex(clusters []Project) ProjectIndex {
 	index := ProjectIndex{
 		IDToCluster:     make(map[string]string),
 		NumberToCluster: make(map[string]string),

@@ -124,7 +124,7 @@ func groupByModule(files []string) ([]ModuleGroup, error) {
 		}
 		roots[root].Files = append(roots[root].Files, abs)
 	}
-	var groups []ModuleGroup
+	groups := make([]ModuleGroup, 0, len(roots))
 	for _, g := range roots {
 		groups = append(groups, *g)
 	}
@@ -153,7 +153,7 @@ func dirsForGroup(g ModuleGroup) []string {
 		}
 		dirs[rel] = struct{}{}
 	}
-	var out []string
+	out := make([]string, 0, len(dirs))
 	for d := range dirs {
 		out = append(out, d)
 	}

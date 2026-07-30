@@ -30,21 +30,21 @@ type RunOptions struct {
 	OutputDir    string
 }
 
-// ScaffoldResult holds drift for one app.
-type ScaffoldResult struct {
+// Result holds drift for one app.
+type Result struct {
 	App        string
 	Mismatches []string
 	Err        error
 }
 
-// ScaffoldSummary aggregates scaffold results.
-type ScaffoldSummary struct {
-	Results []ScaffoldResult
+// Summary aggregates scaffold results.
+type Summary struct {
+	Results []Result
 }
 
 // Run executes scaffold validation for selected apps.
-func Run(opts RunOptions) *ScaffoldSummary {
-	summary := &ScaffoldSummary{}
+func Run(opts RunOptions) *Summary {
+	summary := &Summary{}
 	for _, app := range opts.Apps {
 		if !HasScaffoldEnabled(app) {
 			continue
@@ -66,25 +66,25 @@ func HasScaffoldEnabled(app string) bool {
 }
 
 // RunForApp regenerates and compares overlays for one app.
-func RunForApp(app string, changedFiles []string) ScaffoldResult {
+func RunForApp(app string, changedFiles []string) Result {
 	configPath := filepath.Join(convention.ScaffoldDir, "configs", app+".yaml")
 	if _, err := os.Stat(configPath); err != nil {
-		return ScaffoldResult{App: app, Err: fmt.Errorf("config not found: %w", err)}
+		return Result{App: app, Err: fmt.Errorf("config not found: %w", err)}
 	}
 	templateDir := filepath.Join(convention.ScaffoldDir, "templates", app)
 	if _, err := os.Stat(templateDir); err != nil {
-		return ScaffoldResult{App: app, Err: fmt.Errorf("template dir not found: %w", err)}
+		return Result{App: app, Err: fmt.Errorf("template dir not found: %w", err)}
 	}
 	tmp, err := os.MkdirTemp("", "scaffold-*")
 	if err != nil {
-		return ScaffoldResult{App: app, Err: err}
+		return Result{App: app, Err: err}
 	}
 	defer os.RemoveAll(tmp)
 
 	cmd := exec.Command(Binary, "scaffold", "--config", ConfigSource+"="+configPath, "--output", tmp)
 	if err := cmd.Run(); err != nil {
 		// tolerate missing binary gracefully
-		return ScaffoldResult{App: app, Err: fmt.Errorf("scaffold command failed: %w", err)}
+		return Result{App: app, Err: fmt.Errorf("scaffold command failed: %w", err)}
 	}
 
 	changedOverlays := narrowToChangedOverlays(app, changedFiles)
@@ -103,26 +103,29 @@ func RunForApp(app string, changedFiles []string) ScaffoldResult {
 			mismatches = append(mismatches, ov)
 		}
 	}
-	return ScaffoldResult{App: app, Mismatches: mismatches}
+	return Result{App: app, Mismatches: mismatches}
 }
 
 // UpdateReadmeStatus updates the scaffold status table in README.md.
 func UpdateReadmeStatus() error {
 	path := "README.md"
 	if _, err := os.Stat(path); err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
-	table := GenerateScaffoldTable([]ScaffoldResult{{App: "example", Mismatches: nil}})
+	table := GenerateScaffoldTable([]Result{{App: "example", Mismatches: nil}})
 	updated := replaceMarkerSection(string(data), "<!-- scaffold-status -->", "<!-- /scaffold-status -->", table)
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
 // CheckReadmeStatus returns whether the README status table is current.
-func CheckReadmeStatus() (bool, string) {
+func CheckReadmeStatus() (current bool, diff string) {
 	data, err := os.ReadFile("README.md")
 	if err != nil {
 		return true, "" // no README is not an error
@@ -135,7 +138,7 @@ func CheckReadmeStatus() (bool, string) {
 }
 
 // GenerateScaffoldTable renders a markdown status table.
-func GenerateScaffoldTable(results []ScaffoldResult) string {
+func GenerateScaffoldTable(results []Result) string {
 	var b strings.Builder
 	b.WriteString("<!-- scaffold-status -->\n")
 	b.WriteString("| App | Status |\n")

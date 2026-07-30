@@ -1,6 +1,7 @@
 package psa
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,9 +11,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
-// os.FileInfo alias for filepath.Walk.
-type fileInfo = os.FileInfo
 
 const Marker = "<!-- psa-namespace-labels -->"
 
@@ -60,7 +58,7 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			break
@@ -105,7 +103,7 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 // Deduplicate aggregates validation errors preserving order.
 func Deduplicate(errs []ValidationError) []DeduplicatedError {
 	seen := make(map[string]*DeduplicatedError)
-	var order []string
+	order := make([]string, 0, len(errs))
 	for _, e := range errs {
 		key := e.Name
 		if d, ok := seen[key]; ok {
@@ -122,7 +120,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 		seen[key] = &DeduplicatedError{Name: e.Name, MissingLabels: labels, Count: 1}
 		order = append(order, key)
 	}
-	var out []DeduplicatedError
+	out := make([]DeduplicatedError, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}
@@ -172,7 +170,7 @@ func FindCommentedNamespaces(dir string) map[string]map[string]bool {
 	}
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
-			return nil
+			return nil //nolint:nilerr // filepath.Walk convention: skip entry, keep walking
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext != ".yaml" && ext != ".yml" {
@@ -180,7 +178,7 @@ func FindCommentedNamespaces(dir string) map[string]map[string]bool {
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // skip unreadable file, keep walking
 		}
 		for ns, ls := range findCommentedPSALabels(data) {
 			if out[ns] == nil {

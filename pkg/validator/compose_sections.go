@@ -3,9 +3,20 @@ package validator
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
+
+// titleCase uppercases the first letter of a string, safe for ASCII section names.
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
 
 // ComposePRChecksSection renders PR-check results.
 func ComposePRChecksSection(titleErr, signErr, checklistErr error) Section {
@@ -43,7 +54,7 @@ func ComposeLintingSection(reports map[string]string) Section {
 			hasError = true
 			icon = "⚠️"
 		}
-		fmt.Fprintf(&b, "- %s **%s**\n", icon, strings.Title(name))
+		fmt.Fprintf(&b, "- %s **%s**\n", icon, titleCase(name))
 		if out != "" {
 			fmt.Fprintf(&b, "\n```\n%s\n```\n", strings.TrimSpace(out))
 		}

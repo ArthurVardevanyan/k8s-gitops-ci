@@ -1,6 +1,7 @@
 package podspec
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -76,7 +77,7 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			break
@@ -159,7 +160,7 @@ func Deduplicate(errors []ValidationError, maxFiles int) []DeduplicatedError {
 		maxFiles = 3
 	}
 	seen := make(map[string]*DeduplicatedError)
-	var order []string
+	order := make([]string, 0, len(errors))
 	for _, e := range errors {
 		key := e.Kind + "/" + e.Name + "/" + e.Container + "/" + strings.Join(e.MissingFields, ",") + "/" + e.Path
 		if d, ok := seen[key]; ok {
@@ -176,7 +177,7 @@ func Deduplicate(errors []ValidationError, maxFiles int) []DeduplicatedError {
 		}
 		order = append(order, key)
 	}
-	var out []DeduplicatedError
+	out := make([]DeduplicatedError, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}

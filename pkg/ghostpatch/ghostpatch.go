@@ -70,7 +70,10 @@ type AppOverlayResult struct {
 func CheckOverlay(overlayPath, renderedYAML string) ([]Target, error) {
 	kustPath := filepath.Join(overlayPath, "kustomization.yaml")
 	if _, err := os.Stat(kustPath); err != nil {
-		return nil, nil
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
 	}
 	data, err := os.ReadFile(kustPath)
 	if err != nil {
@@ -116,29 +119,30 @@ func CheckApp(appPath string) ([]AppOverlayResult, error) {
 		}
 		return nil, err
 	}
-	var results []AppOverlayResult
+	results := make([]AppOverlayResult, 0, len(entries))
 	for _, e := range entries {
-		if e.IsDir() {
-			ov := filepath.Join(dir, e.Name())
-			if _, err := os.Stat(filepath.Join(ov, "kustomization.yaml")); err != nil {
-				continue
-			}
-			rendered, err := kustomizeBuild(ov)
-			if err != nil {
-				results = append(results, AppOverlayResult{Overlay: ov, Err: err})
-				continue
-			}
-			ghosts, err := CheckOverlay(ov, rendered)
-			if err != nil {
-				results = append(results, AppOverlayResult{Overlay: ov, Err: err})
-				continue
-			}
-			var gr []GhostResult
-			for _, g := range ghosts {
-				gr = append(gr, GhostResult{Target: g})
-			}
-			results = append(results, AppOverlayResult{Overlay: ov, Ghosts: gr})
+		if !e.IsDir() {
+			continue
 		}
+		ov := filepath.Join(dir, e.Name())
+		if _, err := os.Stat(filepath.Join(ov, "kustomization.yaml")); err != nil {
+			continue
+		}
+		rendered, err := kustomizeBuild(ov)
+		if err != nil {
+			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
+			continue
+		}
+		ghosts, err := CheckOverlay(ov, rendered)
+		if err != nil {
+			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
+			continue
+		}
+		var gr []GhostResult
+		for _, g := range ghosts {
+			gr = append(gr, GhostResult{Target: g})
+		}
+		results = append(results, AppOverlayResult{Overlay: ov, Ghosts: gr})
 	}
 	return results, nil
 }
@@ -158,7 +162,7 @@ func ClassifyOverlay(overlayPath, renderedYAML string, addedFiles []string) ([]G
 		}
 	}
 	sectionChanged, _ := PatchesSectionChanged(kustPath)
-	var out []GhostResult
+	out := make([]GhostResult, 0, len(ghosts))
 	for _, g := range ghosts {
 		blocking := false
 		if !isNew && sectionChanged {
@@ -181,8 +185,7 @@ func PatchesSectionChanged(kustPath string) (bool, error) {
 	if err != nil {
 		base, err = gitShow(context.Background(), "origin/main", kustPath)
 		if err != nil {
-			// new file or git unavailable -> not changed
-			return false, nil
+			return false, nil //nolint:nilerr // new file or git unavailable -> not changed
 		}
 	}
 	basePatches := extractPatchesYAML(base)
@@ -281,14 +284,15 @@ func extractPatchesYAML(data []byte) []byte {
 	}
 	doc := root.Content[0]
 	for i := 0; i < len(doc.Content); i += 2 {
-		if doc.Content[i].Value == "patches" {
-			var buf strings.Builder
-			enc := yaml.NewEncoder(&buf)
-			enc.SetIndent(2)
-			_ = enc.Encode(doc.Content[i+1])
-			_ = enc.Close()
-			return []byte(buf.String())
+		if doc.Content[i].Value != "patches" {
+			continue
 		}
+		var buf strings.Builder
+		enc := yaml.NewEncoder(&buf)
+		enc.SetIndent(2)
+		_ = enc.Encode(doc.Content[i+1])
+		_ = enc.Close()
+		return []byte(buf.String())
 	}
 	return nil
 }

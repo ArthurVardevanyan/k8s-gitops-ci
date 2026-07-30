@@ -134,14 +134,17 @@ func ByID(id string) (Check, bool) {
 	if !ok {
 		return nil, false
 	}
-	return v.(Check), true
+	c, ok := v.(Check)
+	return c, ok
 }
 
 // All returns all registered checks sorted by id.
 func All() []Check {
 	var out []Check
 	registry.Range(func(_, v any) bool {
-		out = append(out, v.(Check))
+		if c, ok := v.(Check); ok {
+			out = append(out, c)
+		}
 		return true
 	})
 	sort.Slice(out, func(i, j int) bool { return out[i].ID() < out[j].ID() })
@@ -152,7 +155,10 @@ func All() []Check {
 func ByScope(s Scope) []Check {
 	var out []Check
 	registry.Range(func(_, v any) bool {
-		c := v.(Check)
+		c, ok := v.(Check)
+		if !ok {
+			return true
+		}
 		if c.Scope() == s {
 			out = append(out, c)
 		}

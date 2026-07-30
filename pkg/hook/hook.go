@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -234,21 +233,21 @@ func HasScaffoldEnabled(path string) bool {
 	return cfg.Scaffold
 }
 
-// HookRunner executes hook scripts if present.
-type HookRunner struct {
+// Runner executes hook scripts if present.
+type Runner struct {
 	Root string
 }
 
 // NewHookRunner creates a runner rooted at root.
-func NewHookRunner(root string) *HookRunner { return &HookRunner{Root: root} }
+func NewHookRunner(root string) *Runner { return &Runner{Root: root} }
 
-func (r *HookRunner) preBuild(overlayPath string) error {
+func (r *Runner) preBuild(overlayPath string) error {
 	script := filepath.Join(r.Root, "pre-build.sh")
 	return runScript(script, overlayPath)
 }
 
 // RunHooks runs any declared scripts for the given overlay.
-func (r *HookRunner) RunHooks(overlayPath string, cfg *Config) error {
+func (r *Runner) RunHooks(overlayPath string, cfg *Config) error {
 	if cfg == nil {
 		return nil
 	}
@@ -262,15 +261,16 @@ func (r *HookRunner) RunHooks(overlayPath string, cfg *Config) error {
 
 func runScript(script, arg string) error {
 	if _, err := os.Stat(script); err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
 	}
 	// Placeholder: actual exec omitted to avoid runtime dep in tests
 	_ = script
 	_ = arg
 	return nil
 }
-
-var reBoolTrue = regexp.MustCompile(`^(true|yes|1)$`)
 
 // FindTestScript returns the canonical test.sh path for an app.
 func FindTestScript(app string) string {

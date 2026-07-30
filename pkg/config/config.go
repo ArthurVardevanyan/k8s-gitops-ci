@@ -7,8 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"gopkg.in/yaml.v3"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 )
 
 // Dir returns the scaffold configs directory.
@@ -113,7 +114,7 @@ func checkFile(path string) (bool, error) {
 	}
 	sorted, err := sortBytes(original)
 	if err != nil {
-		return true, nil // unparseable - treat as sorted
+		return true, nil //nolint:nilerr // unparseable - treat as sorted, not a check failure
 	}
 	return string(sorted) == string(original), nil
 }

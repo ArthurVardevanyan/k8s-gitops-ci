@@ -84,7 +84,7 @@ func TestVerifyTagDigest_Match(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
-	ref := &ImageRef{Registry: strings.TrimPrefix(ts.URL, "https://"), Repo: "repo", Tag: "latest"}
+	ref := &Ref{Registry: strings.TrimPrefix(ts.URL, "https://"), Repo: "repo", Tag: "latest"}
 	client := ts.Client()
 	if err := VerifyTagDigest(ref, client); err != nil {
 		t.Errorf("expected match: %v", err)

@@ -35,4 +35,4 @@ func TestFormatResult_WithGoFmt(t *testing.T) {
 	}
 }
 
-func contains(s, sub string) bool { return strings.Index(s, sub) != -1 }
+func contains(s, sub string) bool { return strings.Contains(s, sub) }

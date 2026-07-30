@@ -2,6 +2,7 @@ package crb
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -44,7 +45,7 @@ func ValidateBytes(data []byte, source string) []ValidationError {
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			break
@@ -86,7 +87,7 @@ func ValidateBytes(data []byte, source string) []ValidationError {
 // Deduplicate aggregates CRB errors preserving order.
 func Deduplicate(errs []ValidationError) []DeduplicatedError {
 	seen := make(map[string]*DeduplicatedError)
-	var order []string
+	order := make([]string, 0, len(errs))
 	for _, e := range errs {
 		key := e.Kind + "/" + e.Name + "/" + e.Subject
 		if d, ok := seen[key]; ok {
@@ -96,7 +97,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 		seen[key] = &DeduplicatedError{Kind: e.Kind, Name: e.Name, Subject: e.Subject, Count: 1}
 		order = append(order, key)
 	}
-	var out []DeduplicatedError
+	out := make([]DeduplicatedError, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}

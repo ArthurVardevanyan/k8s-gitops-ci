@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -93,7 +94,7 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			break
@@ -158,7 +159,7 @@ func ValidateWildcardsReader(r io.Reader, source string) []WildcardError {
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			break
@@ -199,7 +200,7 @@ func ValidateWildcardsReader(r io.Reader, source string) []WildcardError {
 // Deduplicate de-duplicates readonly errors.
 func Deduplicate(errs []ValidationError) []DeduplicatedError {
 	seen := make(map[string]*DeduplicatedError)
-	var order []string
+	order := make([]string, 0, len(errs))
 	for _, e := range errs {
 		key := fmt.Sprintf("%s/%s/%d/%s", e.Kind, e.Resource, e.RuleIndex, e.AggLabel)
 		if d, ok := seen[key]; ok {
@@ -212,7 +213,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 		}
 		order = append(order, key)
 	}
-	var out []DeduplicatedError
+	out := make([]DeduplicatedError, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}
@@ -222,7 +223,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 // DeduplicateWildcards de-duplicates wildcard errors.
 func DeduplicateWildcards(errs []WildcardError) []DeduplicatedWildcardError {
 	seen := make(map[string]*DeduplicatedWildcardError)
-	var order []string
+	order := make([]string, 0, len(errs))
 	for _, e := range errs {
 		key := fmt.Sprintf("%s/%s/%d/%s", e.Kind, e.Resource, e.RuleIndex, e.Field)
 		if d, ok := seen[key]; ok {
@@ -235,7 +236,7 @@ func DeduplicateWildcards(errs []WildcardError) []DeduplicatedWildcardError {
 		}
 		order = append(order, key)
 	}
-	var out []DeduplicatedWildcardError
+	out := make([]DeduplicatedWildcardError, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}
@@ -263,7 +264,7 @@ func FormatWildcardComment(errors []WildcardError) string {
 	return b.String()
 }
 
-func badVerbs(rule *yaml.Node, source string) []string {
+func badVerbs(rule *yaml.Node, _ string) []string {
 	if rule == nil {
 		return nil
 	}
@@ -314,7 +315,7 @@ func stringSlice(n *yaml.Node) []string {
 	if n == nil || n.Kind != yaml.SequenceNode {
 		return nil
 	}
-	var out []string
+	out := make([]string, 0, len(n.Content))
 	for _, c := range n.Content {
 		out = append(out, c.Value)
 	}

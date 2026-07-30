@@ -72,7 +72,8 @@ func ValidateFiles(files []string, policyDir string) (*Result, error) {
 	cmd := exec.CommandContext(context.Background(), "kyverno", args...)
 	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		exitErr := &exec.ExitError{}
+		if errors.As(err, &exitErr) {
 			if exitErr.ExitCode() > 1 {
 				return nil, fmt.Errorf("kyverno apply failed (exit %d): %s", exitErr.ExitCode(), string(exitErr.Stderr))
 			}
@@ -89,7 +90,7 @@ func ValidateFilesBatched(policyPath string, filesByApp map[string][]string, wor
 	if workers <= 0 {
 		workers = 1
 	}
-	var apps []string
+	apps := make([]string, 0, len(filesByApp))
 	for app := range filesByApp {
 		apps = append(apps, app)
 	}
@@ -135,7 +136,7 @@ func CollectYAML(dir string) []string {
 	var files []string
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
-			return nil
+			return nil //nolint:nilerr // filepath.Walk convention: skip entry, keep walking
 		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if ext == ".yaml" || ext == ".yml" {
@@ -238,7 +239,7 @@ func Deduplicate(violations []Violation, maxSamples int) []DeduplicatedViolation
 		maxSamples = 3
 	}
 	seen := make(map[string]*DeduplicatedViolation)
-	var order []string
+	order := make([]string, 0, len(violations))
 	for _, v := range violations {
 		key := v.Policy + "/" + v.Rule + "/" + v.Message
 		if d, ok := seen[key]; ok {
@@ -262,7 +263,7 @@ func Deduplicate(violations []Violation, maxSamples int) []DeduplicatedViolation
 			Files:     []string{v.File},
 		}
 	}
-	var out []DeduplicatedViolation
+	out := make([]DeduplicatedViolation, 0, len(order))
 	for _, k := range order {
 		out = append(out, *seen[k])
 	}
@@ -306,7 +307,7 @@ func FormatComment(violations []DeduplicatedViolation) string {
 func stripNSSelectors(data []byte) []byte {
 	// simplistic line removal of namespaceSelector label keys
 	lines := strings.Split(string(data), "\n")
-	var out []string
+	out := make([]string, 0, len(lines))
 	skip := 0
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)

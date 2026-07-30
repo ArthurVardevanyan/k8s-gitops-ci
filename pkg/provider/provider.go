@@ -80,7 +80,7 @@ func (p Providers) SecretAuthHint(stderr string) string {
 }
 
 // ProjectIdentity returns cluster project identity metadata.
-func (p Providers) ProjectIdentity() (cluster.ProjectIndex, map[string]bool, bool, error) {
+func (p Providers) ProjectIdentity() (idx cluster.ProjectIndex, idToCluster map[string]bool, ok bool, err error) {
 	if p.ClusterMetadata != nil {
 		return p.ClusterMetadata.ProjectIdentity()
 	}

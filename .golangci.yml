@@ -1,24 +1,108 @@
+version: "2"
 run:
   timeout: 10m
-
 linters:
   enable:
+    - asciicheck
+    - bodyclose
+    - dogsled
+    - dupl
+    - durationcheck
     - errcheck
-    - gosimple
-    - govet
-    - ineffassign
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - gocritic
+    - goheader
+    - goprintffuncname
+    - gosec
+    - importas
+    - makezero
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - prealloc
+    - predeclared
+    - revive
     - staticcheck
+    - tparallel
+    - unparam
     - unused
+    - whitespace
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-checks:
+        - nestingReduce
+        - truncateCmp
+        - unnamedResult
+        - unnecessaryDefer
+    gosec:
+      excludes:
+        - G104 # Duplicates errcheck
+        - G204 # Subprocess launched with variable — this is a CI tool that intentionally runs git/kustomize/kubeconform/etc.
+        - G304 # File inclusion via variable — this tool reads workspace files by computed path
+        - G306 # WriteFile permissions — CI tool writes to workspace files that need group-readable perms
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - dupl
+          - errcheck
+          - forcetypeassert
+          - gosec
+        path: _test\.go
+      - linters:
+          - dupl
+        path: cmd/
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
     - gofumpt
     - goimports
-    - misspell
-    - revive
-
-linters-settings:
-  gofumpt:
-    extra-rules: true
-  goimports:
-    local-prefixes: github.com/ArthurVardevanyan/k8s-gitops-ci
-
-issues:
-  exclude-use-default: false
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/ArthurVardevanyan/k8s-gitops-ci
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

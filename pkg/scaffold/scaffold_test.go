@@ -11,10 +11,6 @@ func TestHasScaffoldEnabled(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.sh")
 	_ = os.WriteFile(path, []byte(HookKeyword+"\n"), 0o644)
-	if !HasScaffoldEnabled(path) {
-		// HasScaffoldEnabled expects app name, path logic uses filepath.Join(app,"test.sh")
-		// but it also accepts absolute path? No. So we test via ParseTestScript path indirectly.
-	}
 	cfg, err := parseTestScriptDirect(path)
 	if err != nil || cfg == nil || !cfg.Scaffold {
 		t.Fatal("expected scaffold enabled")
@@ -67,7 +63,7 @@ func TestUpdateReadmeStatus_CreatesTable(t *testing.T) {
 }
 
 func TestGenerateScaffoldTable(t *testing.T) {
-	s := GenerateScaffoldTable([]ScaffoldResult{{App: "a", Mismatches: []string{"x"}}})
+	s := GenerateScaffoldTable([]Result{{App: "a", Mismatches: []string{"x"}}})
 	if !strings.Contains(s, "drift") {
 		t.Errorf("table missing drift: %q", s)
 	}

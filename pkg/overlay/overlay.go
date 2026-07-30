@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -75,7 +76,7 @@ func IsExcluded(overlay string, exclude map[string]bool) bool {
 }
 
 // GetOverlaysToTest maps changed files to the set of overlays to build.
-func GetOverlaysToTest(app string, changedFiles []string, ignoreTestChanges bool) ([]string, bool, string) {
+func GetOverlaysToTest(app string, changedFiles []string, ignoreTestChanges bool) (overlays []string, fullTest bool, trigger string) {
 	if app == "" {
 		return nil, false, ""
 	}
@@ -84,8 +85,8 @@ func GetOverlaysToTest(app string, changedFiles []string, ignoreTestChanges bool
 		return nil, false, ""
 	}
 	var selected []string
-	fullTest := false
-	trigger := ""
+	fullTest = false
+	trigger = ""
 	for _, f := range changedFiles {
 		if !strings.HasPrefix(f, app+"/") {
 			continue
@@ -125,7 +126,7 @@ func RunBuildLoop(opts BuildOptions) []BuildResult {
 	if len(opts.Overlays) == 0 {
 		return nil
 	}
-	var results []BuildResult
+	results := make([]BuildResult, 0, len(opts.Overlays))
 	exclude := make(map[string]bool)
 	for _, e := range opts.AVPExclude {
 		exclude[e] = true
@@ -158,12 +159,12 @@ func buildOverlay(overlay string, strategy Strategy, exclude map[string]bool, ou
 		}
 		return runKustomizeAVP(ctx, overlay, outFile)
 	case StrategyHelm:
-		return runHelm(ctx, overlay, outFile)
+		return runHelm(ctx, overlay)
 	case StrategyHelmAVP:
 		if isExcluded {
-			return runHelm(ctx, overlay, outFile)
+			return runHelm(ctx, overlay)
 		}
-		return runHelmAVP(ctx, overlay, outFile)
+		return runHelmAVP(ctx, overlay)
 	default:
 		return BuildResult{Overlay: overlay, Err: fmt.Errorf("unknown strategy %q", strategy)}
 	}
@@ -199,16 +200,15 @@ func runKustomizeAVP(_ context.Context, overlay, outFile string) BuildResult {
 	return BuildResult{Overlay: overlay, YAMLFile: outFile}
 }
 
-func runHelm(_ context.Context, overlay, outFile string) BuildResult {
-	_ = overlay
+func runHelm(_ context.Context, overlay string) BuildResult {
 	if _, err := os.Stat(filepath.Join(overlay, "values.yaml")); err != nil {
 		return BuildResult{Overlay: overlay, Err: fmt.Errorf("missing values.yaml: %w", err)}
 	}
 	return BuildResult{Overlay: overlay, Err: fmt.Errorf("helm build not implemented")}
 }
 
-func runHelmAVP(_ context.Context, overlay, outFile string) BuildResult {
-	res := runHelm(context.Background(), overlay, outFile)
+func runHelmAVP(_ context.Context, overlay string) BuildResult {
+	res := runHelm(context.Background(), overlay)
 	if res.Err != nil {
 		return res
 	}
@@ -216,7 +216,8 @@ func runHelmAVP(_ context.Context, overlay, outFile string) BuildResult {
 }
 
 func fmtErr(cmd *exec.Cmd, err error) error {
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	exitErr := &exec.ExitError{}
+	if errors.As(err, &exitErr) {
 		stderr := string(exitErr.Stderr)
 		hint := ""
 		if SecretAuthHint != nil {

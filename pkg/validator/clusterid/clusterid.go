@@ -8,9 +8,10 @@ import (
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/cluster"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
-	"gopkg.in/yaml.v3"
 )
 
 // ClusterTokenRe is an optional cluster-name token regex (nil = off).
@@ -124,11 +125,11 @@ func GetIdentity(overlayPath, clusterName string) *OverlayIdentity {
 			if info != nil && info.IsDir() && info.Name() == "overlays" {
 				return filepath.SkipDir
 			}
-			return nil
+			return nil //nolint:nilerr // filepath.Walk convention: skip entry, keep walking
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil
+			return nil //nolint:nilerr // skip unreadable file, keep walking
 		}
 		rel, _ := filepath.Rel(overlayPath, path)
 		id.scanString(string(data), rel)

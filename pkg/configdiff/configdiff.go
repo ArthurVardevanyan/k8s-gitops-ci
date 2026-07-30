@@ -9,8 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"gopkg.in/yaml.v3"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 )
 
 // EnvironmentPrefixes maps environment names to cluster-name prefixes.

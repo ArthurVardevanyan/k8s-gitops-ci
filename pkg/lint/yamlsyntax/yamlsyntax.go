@@ -1,7 +1,6 @@
 package yamlsyntax
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -67,13 +66,4 @@ func CheckFiles(files []string) ([]Violation, error) {
 		all = append(all, v...)
 	}
 	return all, nil
-}
-
-func splitLines(data []byte) []string {
-	var lines []string
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	return lines
 }

@@ -198,7 +198,7 @@ func detectSourceFiles(changed []string) map[string]bool {
 }
 
 // finalizeCompliance splits findings into blocking vs warning tables.
-func finalizeCompliance(findings []check.Finding, changedFiles map[string]bool) ([]check.Finding, []check.Finding) {
+func finalizeCompliance(findings []check.Finding, changedFiles map[string]bool) (blocking, warning []check.Finding) {
 	var direct, indirect []check.Finding
 	for _, f := range findings {
 		if f.ForcedDirect || changedFiles[f.File] {
