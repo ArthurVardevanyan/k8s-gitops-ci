@@ -95,16 +95,31 @@ func validateDoc(mapping *yaml.Node, kind, name, source string) []ValidationErro
 	return errs
 }
 
+// podSpecPath returns the dot-path (relative to the document root) of the
+// pod spec for kind. CronJob nests its pod spec three levels deeper than
+// every other workload kind (spec.jobTemplate.spec.template.spec, not
+// spec.template.spec) - without this, CronJob workloads are silently never
+// validated at all (getNodeAtPath returns nil, and validateWorkload bails
+// out with zero findings rather than an error).
+func podSpecPath(kind string) string {
+	switch kind {
+	case "Pod":
+		return "spec"
+	case "CronJob":
+		return "spec.jobTemplate.spec.template.spec"
+	default:
+		return "spec.template.spec"
+	}
+}
+
 func validateWorkload(mapping *yaml.Node, kind, name, source string) []ValidationError {
 	var errs []ValidationError
-	podPath := "spec.template.spec"
-	if kind == "Pod" {
-		podPath = "spec"
-	}
+	podPath := podSpecPath(kind)
 	podSpec := getNodeAtPath(mapping, podPath)
 	if podSpec == nil || podSpec.Kind != yaml.MappingNode {
 		return nil
 	}
+	containersPath := podPath + ".containers"
 	containers := getNodeAtPath(podSpec, "containers")
 	initContainers := getNodeAtPath(podSpec, "initContainers")
 	for _, contList := range []*yaml.Node{containers, initContainers} {
@@ -118,10 +133,9 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 			cname := quickString(findKey(cont, "name"))
 			ports := findKey(cont, "ports")
 			if ports == nil || ports.Kind != yaml.SequenceNode || len(ports.Content) == 0 {
-				errs = append(errs, ValidationError{
-					File: source, Kind: kind, Name: name, Container: cname,
-					Path: "spec.template.spec.containers", Issue: "container ports missing",
-				})
+				// A container with no ports at all is normal, not a
+				// violation - only unnamed *existing* ports are flagged
+				// below.
 				continue
 			}
 			for i, p := range ports.Content {
@@ -132,8 +146,8 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 				if portName == "" {
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name, Container: cname,
-						Path:  fmt.Sprintf("spec.template.spec.containers[].ports[%d]", i),
-						Issue: fmt.Sprintf("container port %s missing name", quickString(findKey(p, "containerPort"))),
+						Path:  fmt.Sprintf("%s.ports[%d]", containersPath, i),
+						Issue: fmt.Sprintf("container port %s missing name (define ports[].name so it can be referenced by name)", quickString(findKey(p, "containerPort"))),
 					})
 				}
 			}
@@ -153,7 +167,7 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 					if portField != nil && isNumericPort(portField) {
 						errs = append(errs, ValidationError{
 							File: source, Kind: kind, Name: name, Container: cname,
-							Path:  fmt.Sprintf("spec.template.spec.containers[].%s.port", pt),
+							Path:  fmt.Sprintf("%s.%s.port", containersPath, pt),
 							Issue: fmt.Sprintf("%s.port is numeric (%s); reference a named containerPort instead", pt, portField.Value),
 						})
 					}

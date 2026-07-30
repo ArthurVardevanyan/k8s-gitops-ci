@@ -23,6 +23,51 @@ spec:
 	}
 }
 
+func TestValidateReader_CronJobUnnamedPort(t *testing.T) {
+	// Regression: CronJob nests its pod spec three levels deeper than
+	// every other workload kind. Previously the hardcoded
+	// "spec.template.spec" path never resolved for CronJob, so it was
+	// silently never validated at all (zero findings, not an error).
+	data := `kind: CronJob
+metadata:
+  name: cj
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: c
+            ports:
+            - containerPort: 8080
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error for an unnamed CronJob container port, got: %v", errs)
+	}
+	if !strings.Contains(errs[0].Path, "jobTemplate") {
+		t.Errorf("expected the reported path to reflect CronJob's nested pod spec, got: %q", errs[0].Path)
+	}
+}
+
+func TestValidateReader_ContainerNoPortsNotFlagged(t *testing.T) {
+	// Regression: a container with no ports list at all is normal, not a
+	// violation. Only unnamed *existing* ports should be flagged.
+	data := `kind: Deployment
+metadata:
+  name: d
+spec:
+  template:
+    spec:
+      containers:
+      - name: c
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors for a container with no ports, got: %v", errs)
+	}
+}
+
 func TestValidateReader_DeploymentNumericProbe(t *testing.T) {
 	data := `kind: Deployment
 metadata:
