@@ -3,6 +3,7 @@ package placeholder
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -58,8 +59,11 @@ func ValidateFileWithOptions(path string, opts Options) []ValidationError {
 	return ValidateReaderWithOptions(f, path, opts)
 }
 
-// ValidateReaderWithOptions validates placeholders from a reader.
-func ValidateReaderWithOptions(r *os.File, source string, opts Options) []ValidationError {
+// ValidateReaderWithOptions validates placeholders from a reader. r is a
+// plain io.Reader (not *os.File) so callers with in-memory content (e.g.
+// the check-engine adapters in pkg/validator, which have already-decoded
+// document bytes) don't need to write a temp file just to call this.
+func ValidateReaderWithOptions(r io.Reader, source string, opts Options) []ValidationError {
 	var errs []ValidationError
 	scanner := bufio.NewScanner(r)
 	lineNo := 0
@@ -71,7 +75,7 @@ func ValidateReaderWithOptions(r *os.File, source string, opts Options) []Valida
 			continue
 		}
 		for _, m := range findPlaceholders(line, opts) {
-			errs = append(errs, ValidationError{File: source, Line: lineNo, Match: m})
+			errs = append(errs, ValidationError{File: source, Line: lineNo, Match: m, Context: trimmed})
 		}
 	}
 	_ = scanner.Err()
@@ -95,17 +99,8 @@ func findPlaceholders(line string, opts Options) []string {
 		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(s) + `\b`)
 		matches = append(matches, re.FindAllString(line, -1)...)
 	}
-	return dedup(matches)
-}
-
-func dedup(sl []string) []string {
-	seen := make(map[string]bool)
-	var out []string
-	for _, s := range sl {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
+	// Intentionally not deduplicated: a line with the same placeholder
+	// token twice (e.g. "<PATH>/<PATH>/file") should yield two findings,
+	// not one - each occurrence is a separate unresolved placeholder.
+	return matches
 }
