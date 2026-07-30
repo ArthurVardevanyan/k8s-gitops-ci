@@ -43,6 +43,35 @@ func TestFilterByPrefix(t *testing.T) {
 	}
 }
 
+func TestFilterByPrefixes(t *testing.T) {
+	files := []string{"kubernetes/app/base.yaml", "okd/base.yaml", "tekton/base/task.yaml", ".tekton/pr.yaml", "ansible/playbook.yaml"}
+	got := FilterByPrefixes(files, []string{"kubernetes/", "okd/", "tekton/", ".tekton/"})
+	if len(got) != 4 {
+		t.Errorf("expected 4 files, got %d: %v", len(got), got)
+	}
+	if contains(got, "ansible/playbook.yaml") {
+		t.Errorf("expected ansible/ to be filtered out: %v", got)
+	}
+}
+
+func TestFilterByPrefixes_Empty(t *testing.T) {
+	files := []string{"a.yaml", "b.yaml"}
+	got := FilterByPrefixes(files, nil)
+	if len(got) != 2 {
+		t.Errorf("expected no-op filter, got %v", got)
+	}
+}
+
+func TestFilterByPrefixes_Dedup(t *testing.T) {
+	// tekton/ and .tekton/ both match tekton/base/task.yaml? No -- ensure a file
+	// matching multiple prefixes is only included once.
+	files := []string{"tekton/base/task.yaml"}
+	got := FilterByPrefixes(files, []string{"tekton/", "tekton/base"})
+	if len(got) != 1 {
+		t.Errorf("expected single de-duplicated match, got %v", got)
+	}
+}
+
 func TestDetectApps_FilterByPrefix(t *testing.T) {
 	files := []string{"app1/base.yaml", "app2/base.yaml", "app1/overlays/x.yaml"}
 	got := FilterByApp(files, []string{"app1"})

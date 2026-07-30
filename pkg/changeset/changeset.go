@@ -102,6 +102,30 @@ func FilterByPrefix(files []string, prefix string) []string {
 	return out
 }
 
+// FilterByPrefixes keeps files starting with any of the given prefixes,
+// de-duplicated and in their original relative order. An empty prefixes
+// slice returns files unchanged (no-op filter).
+func FilterByPrefixes(files, prefixes []string) []string {
+	if len(prefixes) == 0 {
+		return files
+	}
+	seen := make(map[string]bool, len(files))
+	var out []string
+	for _, f := range files {
+		for _, p := range prefixes {
+			if p == "" {
+				continue
+			}
+			if strings.HasPrefix(f, p) && !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // FilterByApp returns files that appear to belong to any of the named apps.
 func FilterByApp(files, apps []string) []string {
 	if len(apps) == 0 {

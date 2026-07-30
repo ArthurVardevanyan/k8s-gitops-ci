@@ -31,13 +31,20 @@ func RunAll(opts Options) (*Result, error) {
 }
 
 func resolveChangeset(opts Options) ([]string, error) {
+	var files []string
+	var err error
 	if len(opts.Dirs) > 0 {
-		return changeset.GetFilesUnderDirs(opts.Dirs)
+		files, err = changeset.GetFilesUnderDirs(opts.Dirs)
+	} else {
+		files, err = changeset.GetChangedFiles(changeset.Options{
+			RepoURL:          opts.RepoURL,
+			PR:               opts.PR,
+			BaseRef:          opts.BaseRef,
+			IncludeDeletions: opts.IncludeDeletions,
+		})
 	}
-	return changeset.GetChangedFiles(changeset.Options{
-		RepoURL:          opts.RepoURL,
-		PR:               opts.PR,
-		BaseRef:          opts.BaseRef,
-		IncludeDeletions: opts.IncludeDeletions,
-	})
+	if err != nil {
+		return nil, err
+	}
+	return changeset.FilterByPrefixes(files, opts.IncludePrefixes), nil
 }
