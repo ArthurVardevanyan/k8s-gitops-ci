@@ -114,11 +114,72 @@ func TestRunDocChecks_DisabledCheckExcluded(t *testing.T) {
 	}
 }
 
+func TestRunDocChecks_ImageChecksumAnnotationExemption_RecordsAudit(t *testing.T) {
+	// End-to-end regression covering two related fixes together: the
+	// image-checksum check adapter now routes through the shared
+	// check/exempt engine (previously it decided annotation exemptions
+	// internally, before a Finding ever existed), and fanOut now actually
+	// records the resulting exemption instead of discarding it.
+	d := t.TempDir()
+	f := filepath.Join(d, "x.yaml")
+	doc := `kind: Deployment
+metadata:
+  name: d
+  annotations:
+    gitops-ci.k8s.io/exempt-image-checksum: registry.io/repo:tag
+spec:
+  template:
+    spec:
+      containers:
+      - image: registry.io/repo:tag
+`
+	if err := os.WriteFile(f, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := runDocChecks([]string{f}, nil, 1, nil)
+	for _, fnd := range res.Findings {
+		if fnd.CheckID == "image-checksum" {
+			t.Errorf("expected the annotation-exempted image finding to be excluded, got %+v", fnd)
+		}
+	}
+	found := false
+	for _, ex := range res.Exempted {
+		if ex.CheckID == "image-checksum" && ex.Value == "registry.io/repo:tag" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an audit-trail entry for the image-checksum exemption, got %+v", res.Exempted)
+	}
+}
+
 func TestFanOutExemption(t *testing.T) {
 	findings := []check.Finding{{CheckID: "namespace", File: "", Value: "skip-me"}}
 	selectors := []exempt.Selector{{Check: "namespace", Value: "skip-me"}}
-	out := fanOut(findings, []string{"a.yaml"}, selectors)
+	out, exempted := fanOut(findings, []string{"a.yaml"}, selectors)
 	if len(out) != 0 {
 		t.Errorf("expected exemption to remove finding")
+	}
+	// Regression: fanOut previously discarded the exempt.Applied value
+	// entirely (`if ok, _ := exempt.Evaluate(...)`), so no check ever got
+	// an audit-trail entry for its exemptions.
+	if len(exempted) != 1 {
+		t.Fatalf("expected 1 recorded exemption, got %d: %v", len(exempted), exempted)
+	}
+	if exempted[0].CheckID != "namespace" || exempted[0].Value != "skip-me" {
+		t.Errorf("unexpected recorded exemption: %+v", exempted[0])
+	}
+}
+
+func TestFanOutExemption_NoMatch_NoRecordedExemption(t *testing.T) {
+	findings := []check.Finding{{CheckID: "namespace", File: "", Value: "keep-me"}}
+	selectors := []exempt.Selector{{Check: "namespace", Value: "skip-me"}}
+	out, exempted := fanOut(findings, []string{"a.yaml"}, selectors)
+	if len(out) != 1 {
+		t.Errorf("expected the non-matching finding to survive")
+	}
+	if len(exempted) != 0 {
+		t.Errorf("expected no recorded exemptions, got %v", exempted)
 	}
 }
