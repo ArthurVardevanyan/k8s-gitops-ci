@@ -2,8 +2,6 @@ package validator
 
 import (
 	"bytes"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -243,23 +241,7 @@ func (placeholderCheck) Section() string    { return "resource-compliance" }
 func (placeholderCheck) Blocking() bool     { return true }
 func (placeholderCheck) Scope() check.Scope { return check.ScopeDoc }
 func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
-	// placeholder.ValidateReaderWithOptions requires *os.File; write to a temp
-	// file to satisfy that constraint.
-	tmp, err := os.CreateTemp("", "gitops-ph-*.yaml")
-	if err != nil {
-		return nil
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := io.Copy(tmp, bytes.NewReader(data)); err != nil {
-		tmp.Close()
-		return nil
-	}
-	if _, err := tmp.Seek(0, 0); err != nil {
-		tmp.Close()
-		return nil
-	}
-	errs := placeholder.ValidateReaderWithOptions(tmp, source, placeholder.Options{})
-	tmp.Close()
+	errs := placeholder.ValidateReaderWithOptions(bytes.NewReader(data), source, placeholder.Options{})
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
 		out = append(out, check.Finding{

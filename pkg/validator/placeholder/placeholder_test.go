@@ -2,6 +2,7 @@ package placeholder
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -42,5 +43,40 @@ func TestValidateFileWithOptions_AVPPatterns(t *testing.T) {
 	errs := ValidateFileWithOptions(path, Options{CheckAVP: true})
 	if len(errs) != 1 {
 		t.Errorf("expected AVP placeholder: %v", errs)
+	}
+}
+
+func TestValidateReaderWithOptions_AcceptsPlainIOReader(t *testing.T) {
+	// Regression: the signature previously required *os.File specifically,
+	// forcing callers with in-memory content to write a temp file just to
+	// call this function. A plain strings.Reader must work directly.
+	r := strings.NewReader("image: <REGISTRY>/img\n")
+	errs := ValidateReaderWithOptions(r, "in-memory.yaml", Options{})
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error from a plain io.Reader: %v", errs)
+	}
+}
+
+func TestValidateReaderWithOptions_ContextPopulated(t *testing.T) {
+	// Regression: ValidationError.Context was declared but never set.
+	r := strings.NewReader("  image: <REGISTRY>/img  \n")
+	errs := ValidateReaderWithOptions(r, "x.yaml", Options{})
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error: %v", errs)
+	}
+	if errs[0].Context != "image: <REGISTRY>/img" {
+		t.Errorf("Context = %q, want trimmed line content", errs[0].Context)
+	}
+}
+
+func TestValidateReaderWithOptions_DuplicateTokenOnOneLine_TwoFindings(t *testing.T) {
+	// Regression: findPlaceholders used to dedupe matches per line, so a
+	// line with the same placeholder token twice only produced one
+	// finding. Each occurrence is a separate unresolved placeholder and
+	// must be reported separately.
+	r := strings.NewReader("path: <REGISTRY>/<REGISTRY>/image\n")
+	errs := ValidateReaderWithOptions(r, "x.yaml", Options{})
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 findings for a duplicated token on one line, got %d: %v", len(errs), errs)
 	}
 }
