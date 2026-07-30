@@ -50,16 +50,67 @@ func TestFinalizeCompliance(t *testing.T) {
 }
 
 func TestRunDocChecks(t *testing.T) {
-	res := runDocChecks([]string{}, nil, 1)
+	res := runDocChecks([]string{}, nil, 1, nil)
 	if len(res.Findings) != 0 {
 		t.Errorf("expected empty findings")
 	}
 }
 
 func TestRunOverlayChecks(t *testing.T) {
-	res := runOverlayChecks([]string{"overlay"}, "cluster", nil, 1)
+	res := runOverlayChecks([]string{"overlay"}, "cluster", nil, 1, nil)
 	if len(res.Findings) != 0 {
 		t.Errorf("expected empty findings")
+	}
+}
+
+func TestFilterDisabled(t *testing.T) {
+	all := check.ByScope(check.ScopeDoc)
+	if len(all) == 0 {
+		t.Skip("no ScopeDoc checks registered")
+	}
+	target := all[0].ID()
+
+	// No disabled set: everything passes through.
+	if out := filterDisabled(all, nil); len(out) != len(all) {
+		t.Errorf("expected all %d checks, got %d", len(all), len(out))
+	}
+
+	// Disabling one ID removes exactly that check.
+	disabled := map[string]bool{target: true}
+	out := filterDisabled(all, disabled)
+	if len(out) != len(all)-1 {
+		t.Fatalf("expected %d checks after disabling one, got %d", len(all)-1, len(out))
+	}
+	for _, c := range out {
+		if c.ID() == target {
+			t.Errorf("disabled check %q still present", target)
+		}
+	}
+}
+
+func TestRunDocChecks_DisabledCheckExcluded(t *testing.T) {
+	d := t.TempDir()
+	f := filepath.Join(d, "x.yaml")
+	_ = os.WriteFile(f, []byte("kind: ArgoCD\napiVersion: argoproj.io/v1alpha1\nmetadata:\n  name: cd\n"), 0o644)
+
+	// sync-options should normally flag this doc.
+	base := runDocChecks([]string{f}, nil, 1, nil)
+	found := false
+	for _, fnd := range base.Findings {
+		if fnd.CheckID == "sync-options" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected sync-options finding without disabling, got %+v", base.Findings)
+	}
+
+	// Disabling sync-options should exclude it entirely.
+	out := runDocChecks([]string{f}, nil, 1, map[string]bool{"sync-options": true})
+	for _, fnd := range out.Findings {
+		if fnd.CheckID == "sync-options" {
+			t.Errorf("expected sync-options findings to be excluded, got %+v", out.Findings)
+		}
 	}
 }
 
