@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/cluster"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
 func TestSelfClusterName(t *testing.T) {
@@ -118,6 +119,63 @@ func TestAllowField_SkipsProjectNumber(t *testing.T) {
 	id := GetIdentity(d, "mycluster")
 	if len(id.ProjectNumbers) != 0 {
 		t.Errorf("AllowField should have skipped projectNumber; got %v", id.ProjectNumbers)
+	}
+}
+
+// ── infraID ───────────────────────────────────────────────────────────────
+
+func TestGetIdentity_InfraID(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "install-config.yaml"), []byte("infraID: mycluster-ab12c"), 0o644)
+	id := GetIdentity(d, "mycluster")
+	if len(id.InfraIDs) != 1 || id.InfraIDs[0] != "mycluster-ab12c" {
+		t.Errorf("unexpected infraIDs: %v", id.InfraIDs)
+	}
+}
+
+func TestGetIdentity_InfraID_Underscore(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "vars.tf"), []byte(`infra_id = "othercluster-xy99z"`), 0o644)
+	id := GetIdentity(d, "mycluster")
+	if len(id.InfraIDs) != 1 || id.InfraIDs[0] != "othercluster-xy99z" {
+		t.Errorf("unexpected infraIDs: %v", id.InfraIDs)
+	}
+}
+
+func TestRawFindings_InfraIDMismatch(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "install-config.yaml"), []byte("infraID: othercluster-ab12c"), 0o644)
+	findings := RawFindings(d, "mycluster", ClusterIndex{})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].CheckID != exempt.IDClusterIdentity {
+		t.Errorf("CheckID = %q, want %q (infraID mismatches must be non-exemptable)", findings[0].CheckID, exempt.IDClusterIdentity)
+	}
+	if findings[0].Value != "othercluster-ab12c" {
+		t.Errorf("unexpected value: %q", findings[0].Value)
+	}
+}
+
+func TestRawFindings_InfraIDMatchesClusterName_NoFinding(t *testing.T) {
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "install-config.yaml"), []byte("infraID: mycluster"), 0o644)
+	findings := RawFindings(d, "mycluster", ClusterIndex{})
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings when infraID matches the overlay folder name, got %d: %+v", len(findings), findings)
+	}
+}
+
+func TestAllowField_SkipsInfraID(t *testing.T) {
+	old := AllowField
+	defer func() { AllowField = old }()
+	AllowField = func(field string) bool { return field == "infraID" }
+
+	d := t.TempDir()
+	_ = os.WriteFile(filepath.Join(d, "install-config.yaml"), []byte("infraID: othercluster-ab12c"), 0o644)
+	id := GetIdentity(d, "mycluster")
+	if len(id.InfraIDs) != 0 {
+		t.Errorf("AllowField should have skipped infraID; got %v", id.InfraIDs)
 	}
 }
 

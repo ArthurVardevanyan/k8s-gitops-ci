@@ -80,6 +80,9 @@ var (
 	projectNumberRe = regexp.MustCompile(`projects/(\d+)/locations/`)
 	projectIDRe     = regexp.MustCompile(`@([^.]+)\.iam\.gserviceaccount\.com`)
 	tokenSeparator  = regexp.MustCompile(`[^A-Za-z0-9_-]+`)
+	// infraIDRe matches an "infraID"/"infra_id" key (YAML, JSON, or shell
+	// env-var assignment style) and captures its value.
+	infraIDRe = regexp.MustCompile(`(?i)"?infra[_-]?id"?\s*[:=]\s*"?([A-Za-z0-9][A-Za-z0-9._-]*)"?`)
 )
 
 // RawFindings returns registry-facing findings for an overlay.
@@ -112,6 +115,29 @@ func RawFindings(overlayPath, clusterName string, index ClusterIndex) []Finding 
 				Message: fmt.Sprintf("cluster name %q belongs to a different cluster but appears in the overlay for %q (likely a copy/paste error)", foreign, clusterName),
 			})
 		}
+	}
+	findings = append(findings, rawInfraIDFindings(overlayPath, identity)...)
+	return findings
+}
+
+// rawInfraIDFindings emits a non-exemptable structural finding for every
+// infraID that doesn't match the overlay's own folder name. Unlike
+// project-ref/cluster-name findings, this uses exempt.IDClusterIdentity
+// (never exemptable) since a mismatched infraID indicates the overlay was
+// very likely copy/pasted wholesale from another cluster's folder - the
+// kind of error EXEMPTIONS selectors and annotations aren't meant to paper
+// over.
+func rawInfraIDFindings(overlayPath string, identity *OverlayIdentity) []Finding {
+	findings := make([]Finding, 0, len(identity.InfraIDs))
+	for _, infraID := range identity.InfraIDs {
+		if infraID == identity.ClusterName {
+			continue
+		}
+		findings = append(findings, Finding{
+			CheckID: exempt.IDClusterIdentity, File: overlayPath,
+			Field: "infraID", Value: infraID,
+			Message: fmt.Sprintf("infraID %q does not match overlay folder name %q (likely a copy/paste error)", infraID, identity.ClusterName),
+		})
 	}
 	return findings
 }
@@ -164,6 +190,13 @@ func (id *OverlayIdentity) scanString(s, source string) {
 			continue
 		}
 		id.ProjectIDs = append(id.ProjectIDs, m[1])
+		id.Sources[m[1]] = append(id.Sources[m[1]], source)
+	}
+	for _, m := range infraIDRe.FindAllStringSubmatch(s, -1) {
+		if AllowField != nil && AllowField("infraID") {
+			continue
+		}
+		id.InfraIDs = append(id.InfraIDs, m[1])
 		id.Sources[m[1]] = append(id.Sources[m[1]], source)
 	}
 	if ClusterTokenRe != nil {
