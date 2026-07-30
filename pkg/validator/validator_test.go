@@ -42,6 +42,30 @@ func TestResolveChangeset_NoIncludePrefixes(t *testing.T) {
 	}
 }
 
+func TestRunAll_PopulatesLogger(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, LintOnly: true, Verbose: true})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger == nil {
+		t.Fatal("expected Result.Logger to be populated, got nil")
+	}
+}
+
+func TestResult_HasErrorSection(t *testing.T) {
+	r := &Result{Sections: []Section{{Name: "a", Error: false}, {Name: "b", Error: true}}}
+	if !r.HasErrorSection() {
+		t.Error("expected HasErrorSection to report true when a section has Error=true")
+	}
+	r2 := &Result{Sections: []Section{{Name: "a", Error: false}}}
+	if r2.HasErrorSection() {
+		t.Error("expected HasErrorSection to report false when no section has Error=true")
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

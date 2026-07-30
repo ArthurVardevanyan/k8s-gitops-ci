@@ -4,12 +4,14 @@ import (
 	"fmt"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/syncopts"
 )
 
 // RunAll runs the four validator phases.
 func RunAll(opts Options) (*Result, error) {
-	res := &Result{}
+	log := logger.NewLogger(opts.Verbose, "")
+	res := &Result{Logger: log}
 
 	syncopts.AssumeOpenShift = opts.AssumeOpenShift
 
