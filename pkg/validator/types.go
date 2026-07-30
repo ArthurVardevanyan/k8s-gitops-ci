@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
@@ -23,6 +24,7 @@ type Options struct {
 	TriggerComment   string
 	LintOnly         bool
 	NoComment        bool
+	Verbose          bool
 	IncludeDeletions bool
 	AssumeOpenShift  bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check; see syncopts.AssumeOpenShift
 	DisabledChecks   []string // IDs to disable entirely (e.g. "sync-options", "golangci", "avp"); only affects steps that default to enabled
@@ -41,6 +43,7 @@ type Result struct {
 	Blocking   bool
 	Check      check.Result
 	ReportBody string
+	Logger     *logger.Logger
 }
 
 // Section is a named report section.
@@ -49,8 +52,8 @@ type Section struct {
 	Error      bool
 }
 
-// ErrorInSection reports whether any error-section exists.
-func (r *Result) ErrorInSection() bool {
+// HasErrorSection reports whether any error-section exists.
+func (r *Result) HasErrorSection() bool {
 	for _, s := range r.Sections {
 		if s.Error {
 			return true
