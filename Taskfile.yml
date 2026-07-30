@@ -454,6 +454,7 @@ tasks:
     desc: Regenerate resource scope maps from kubectl api-resources
     cmds:
       - scripts/pull-scoped-resources.sh
+      - task: format
     generates:
       - pkg/validator/namespace/resource_scope.go
       - pkg/validator/namespace/extra_resource_scope.go
