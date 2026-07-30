@@ -29,6 +29,30 @@ metadata:
 	}
 }
 
+func TestValidateReader_KustomizeComponent(t *testing.T) {
+	data := `kind: Component
+apiVersion: kustomize.config.k8s.io/v1alpha1
+resources:
+  - deployment.yaml
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for kustomize Component: %v", errs)
+	}
+}
+
+func TestValidateReader_KustomizeKustomization(t *testing.T) {
+	data := `kind: Kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+resources:
+  - deployment.yaml
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for kustomize Kustomization: %v", errs)
+	}
+}
+
 func TestValidateReader_CRD_Annotation(t *testing.T) {
 	data := `kind: ArgoCD
 apiVersion: argoproj.io/v1alpha1

@@ -16,30 +16,82 @@ const (
 	Marker             = "<!-- sync-options-warning -->"
 )
 
-// builtinAPIGroups lists groups considered built-in (no sync-options required).
+// builtinAPIGroups lists API groups considered "built-in" (no sync-options
+// annotation required). A value of true means the group is exempt; a value
+// of false means the group is explicitly known but still requires the
+// annotation (e.g. operator-managed CRDs that may not exist on first sync).
 var builtinAPIGroups = map[string]bool{
-	"": true, "apps": true, "batch": true,
-	"rbac.authorization.k8s.io": true, "policy": true, "networking.k8s.io": true,
-	"storage.k8s.io": true, "scheduling.k8s.io": true, "apiextensions.k8s.io": true,
-	"admissionregistration.k8s.io": true, "apiregistration.k8s.io": true,
-	"authentication.k8s.io": true, "authorization.k8s.io": true,
-	"certificates.k8s.io": true, "coordination.k8s.io": true, "discovery.k8s.io": true,
-	"events.k8s.io": true, "flowcontrol.apiserver.k8s.io": true, "node.k8s.io": true,
-	"autoscaling": true, "metrics.k8s.io": true, "monitoring.coreos.com": true,
-	"operators.coreos.com": true, "operator.openshift.io": true,
-	"config.openshift.io": true, "route.openshift.io": true, "image.openshift.io": true,
-	"project.openshift.io": true, "quota.openshift.io": true, "security.openshift.io": true,
-	"console.openshift.io": true, "helm.openshift.io": true, "tuned.openshift.io": true,
-	"machine.openshift.io": true, "machineconfiguration.openshift.io": true,
-	"ingressoperator.openshift.io": true, "samples.operator.openshift.io": true,
-	"whereabouts.cni.cncf.io": true, "k8s.cni.cncf.io": true,
-	"sriovnetwork.openshift.io": true, "nmstate.io": true,
-	"hive.openshift.io": true, "agent-install.openshift.io": true,
-	"migration.k8s.io": true, "controlplane.operator.openshift.io": true,
-	"operatorframework.io": true, "olm.operatorframework.io": true,
-	"packages.operators.coreos.com": true, "argoproj.io": false,
-	"tekton.dev": false, "kyverno.io": false, "external-secrets.io": false,
-	"cert-manager.io": false, "velero.io": false,
+	// Core / built-in Kubernetes API groups.
+	"":                             true, // core/v1
+	"apps":                         true,
+	"batch":                        true,
+	"autoscaling":                  true,
+	"rbac.authorization.k8s.io":    true,
+	"policy":                       true,
+	"networking.k8s.io":            true,
+	"storage.k8s.io":               true,
+	"scheduling.k8s.io":            true,
+	"apiextensions.k8s.io":         true,
+	"admissionregistration.k8s.io": true,
+	"apiregistration.k8s.io":       true,
+	"authentication.k8s.io":        true,
+	"authorization.k8s.io":         true,
+	"certificates.k8s.io":          true,
+	"coordination.k8s.io":          true,
+	"discovery.k8s.io":             true,
+	"events.k8s.io":                true,
+	"flowcontrol.apiserver.k8s.io": true,
+	"node.k8s.io":                  true,
+	"migration.k8s.io":             true,
+
+	// Kustomize build-time control objects (Kustomization/Component).
+	// Never applied to the cluster by ArgoCD; the annotation concept
+	// doesn't apply to them.
+	"kustomize.config.k8s.io": true,
+
+	// Widely-installed platform/monitoring groups treated as builtin.
+	"metrics.k8s.io":        true,
+	"monitoring.coreos.com": true,
+	"operators.coreos.com":  true,
+
+	// OpenShift API groups.
+	"operator.openshift.io":              true,
+	"config.openshift.io":                true,
+	"route.openshift.io":                 true,
+	"image.openshift.io":                 true,
+	"project.openshift.io":               true,
+	"quota.openshift.io":                 true,
+	"security.openshift.io":              true,
+	"console.openshift.io":               true,
+	"helm.openshift.io":                  true,
+	"tuned.openshift.io":                 true,
+	"machine.openshift.io":               true,
+	"machineconfiguration.openshift.io":  true,
+	"ingressoperator.openshift.io":       true,
+	"samples.operator.openshift.io":      true,
+	"hive.openshift.io":                  true,
+	"agent-install.openshift.io":         true,
+	"controlplane.operator.openshift.io": true,
+
+	// CNI / networking-related operator groups.
+	"whereabouts.cni.cncf.io":   true,
+	"k8s.cni.cncf.io":           true,
+	"sriovnetwork.openshift.io": true,
+	"nmstate.io":                true,
+
+	// OLM / operator framework groups.
+	"operatorframework.io":          true,
+	"olm.operatorframework.io":      true,
+	"packages.operators.coreos.com": true,
+
+	// Known CRD-providing groups that ARE NOT exempt — resources in
+	// these groups still require the sync-options annotation.
+	"argoproj.io":         false,
+	"tekton.dev":          false,
+	"kyverno.io":          false,
+	"external-secrets.io": false,
+	"cert-manager.io":     false,
+	"velero.io":           false,
 }
 
 // ValidationError records a missing sync-options annotation.
