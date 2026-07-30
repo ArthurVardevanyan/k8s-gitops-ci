@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
@@ -50,20 +50,17 @@ type Result struct {
 	ReproduceCommand string
 }
 
-// Run executes the pipeline phases.
+// Run executes the pipeline phases. When opts.URL is set (the normal
+// Tekton-invoked path - see setupWorkdir), it clones the repo to a temp
+// directory, checks out the resolved revision, and chdirs into it for the
+// duration of the run before restoring the original working directory and
+// removing the clone.
 func Run(opts Options) error {
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_ = resolveRevision(opts.URL)
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_ = opts.Providers.ReportMarker()
-	}()
-	wg.Wait()
+	cleanup, err := setupWorkdir(opts)
+	defer cleanup()
+	if err != nil {
+		return fmt.Errorf("pipeline setup: %w", err)
+	}
 
 	res := &Result{}
 	if shouldRunPRChecks(opts) {
@@ -76,14 +73,12 @@ func Run(opts Options) error {
 	}
 	res.PRValid = shouldRunPRChecks(opts) || opts.LintOnly
 
-	if shouldRunValidation(opts) {
-		vopts := toValidatorOptions(opts)
-		vr, err := validator.RunAll(vopts)
-		res.ValidatorResult = vr
-		res.ValidationErr = err
-	}
+	vopts := toValidatorOptions(opts)
+	vr, verr := validator.RunAll(vopts)
+	res.ValidatorResult = vr
+	res.ValidationErr = verr
 
-	res.ReproduceCommand = validator.ReproduceCommand(toValidatorOptions(opts))
+	res.ReproduceCommand = validator.ReproduceCommand(vopts)
 	if !opts.NoComment {
 		_ = postComment(res, opts)
 	}
@@ -93,11 +88,57 @@ func Run(opts Options) error {
 	return nil
 }
 
-func resolveRevision(raw string) string {
-	if raw == "" {
-		return "HEAD"
+// setupWorkdir clones opts.URL (when set) to a temp directory, checks out
+// the resolved revision, and chdirs into it, returning a cleanup function
+// the caller must defer regardless of whether an error is also returned
+// (cleanup is always safe to call and never itself errors). When opts.URL
+// is empty - a local run against the current working directory, as used by
+// the test-all/build-yaml/scan-all subcommands, or a bare `pipeline`
+// invocation with no --url - this is a no-op: cleanup does nothing and no
+// chdir happens, so Run behaves exactly as it did before this function
+// existed.
+func setupWorkdir(opts Options) (cleanup func(), err error) {
+	noop := func() {}
+	if opts.URL == "" {
+		return noop, nil
 	}
-	return raw
+
+	revision := resolveRevision(opts.Revision, opts.PR)
+	dir, err := git.Clone(git.CloneOptions{URL: opts.URL, Revision: revision, Verbose: opts.Verbose})
+	if err != nil {
+		return noop, fmt.Errorf("cloning %s: %w", opts.URL, err)
+	}
+
+	origWD, err := os.Getwd()
+	if err != nil {
+		_ = git.Cleanup(dir)
+		return noop, fmt.Errorf("getting working directory: %w", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		_ = git.Cleanup(dir)
+		return noop, fmt.Errorf("entering cloned repo %s: %w", dir, err)
+	}
+
+	return func() {
+		_ = os.Chdir(origWD)
+		_ = git.Cleanup(dir)
+	}, nil
+}
+
+// resolveRevision determines the git revision to check out. An explicit
+// raw revision always wins. Otherwise, a valid PR number resolves to that
+// PR's head ref (refs/pull/<pr>/head) so PR runs check out the PR's actual
+// commits instead of falling through to the target repo's default branch -
+// which would silently validate the wrong code. With neither set, "HEAD"
+// requests the clone's default branch.
+func resolveRevision(raw, pr string) string {
+	if raw != "" {
+		return raw
+	}
+	if isValidPR(pr) {
+		return fmt.Sprintf("refs/pull/%s/head", pr)
+	}
+	return "HEAD"
 }
 
 func isValidPR(pr string) bool {
@@ -135,16 +176,12 @@ func (o *Options) Workers() int {
 	return runtime.NumCPU() * 2
 }
 
-func shouldRunValidation(opts Options) bool {
-	return true
-}
-
 func toValidatorOptions(opts Options) validator.Options {
 	return validator.Options{
 		RepoURL:         opts.URL,
 		PR:              opts.PR,
 		BaseRef:         resolveBaseRef(opts.TargetBranch),
-		Revision:        resolveRevision(opts.Revision),
+		Revision:        resolveRevision(opts.Revision, opts.PR),
 		LintOnly:        opts.LintOnly,
 		NoComment:       opts.NoComment,
 		AssumeOpenShift: opts.AssumeOpenShift,
