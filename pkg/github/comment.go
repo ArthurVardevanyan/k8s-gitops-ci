@@ -1,13 +1,17 @@
 package github
 
 import (
-	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
-// UpsertComment posts or updates the single CI report comment.
+// UpsertComment posts or updates the single CI report comment. Updating an
+// existing comment PATCHes it directly by ID (found via findCommentID)
+// rather than relying on gh's --edit-last (which edits whatever the
+// authenticated user's most recent comment happens to be, not necessarily
+// the one matching marker). The body is passed via stdin (-F body=@-), not
+// as a command-line argument, to avoid both argv length limits for large
+// reports and shell-argument-escaping concerns.
 func UpsertComment(c *Client, marker, body string) error {
 	if !c.IsAvailable() {
 		return nil
@@ -17,11 +21,7 @@ func UpsertComment(c *Client, marker, body string) error {
 		return err
 	}
 	if id != "" {
-		_, err := c.gh("pr", "comment", c.pr, "--edit-last", "--body-file", "-")
-		if err == nil {
-			return nil
-		}
-		_, err = c.gh("api", fmt.Sprintf("repos/%s/issues/comments/%s", c.repo, id), "-X", "PATCH", "-F", "body="+body)
+		_, err := c.ghStdin(body, "api", fmt.Sprintf("repos/%s/issues/comments/%s", c.repo, id), "-X", "PATCH", "-F", "body=@-")
 		return err
 	}
 	return postComment(c, body)
@@ -59,12 +59,14 @@ func findCommentID(c *Client, marker string) (string, error) {
 }
 
 func listCommentIDs(c *Client, marker string) ([]string, error) {
-	out, err := exec.CommandContext(context.Background(), "gh", "api", fmt.Sprintf("repos/%s/issues/%s/comments", c.repo, c.pr), "--jq", fmt.Sprintf(".[] | select(.body | contains(%q)) | .id", marker)).Output()
+	// Route through c.gh (not a bare exec.Command) so GH_REPO gets set the
+	// same way findCommentID's lookup does.
+	out, err := c.gh("api", fmt.Sprintf("repos/%s/issues/%s/comments", c.repo, c.pr), "--jq", fmt.Sprintf(".[] | select(.body | contains(%q)) | .id", marker))
 	if err != nil {
 		return nil, err
 	}
 	var ids []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			ids = append(ids, line)
@@ -74,6 +76,6 @@ func listCommentIDs(c *Client, marker string) ([]string, error) {
 }
 
 func postComment(c *Client, body string) error {
-	_, err := c.gh("pr", "comment", c.pr, "--body", body)
+	_, err := c.ghStdin(body, "pr", "comment", c.pr, "--body-file", "-")
 	return err
 }
