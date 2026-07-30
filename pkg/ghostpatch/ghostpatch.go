@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -236,12 +235,39 @@ func computeRenames(patches []Patch) map[string]string {
 	return renames
 }
 
-var renameRe = regexp.MustCompile(`"op"\s*:\s*"(replace|add)"[^}]*"path"\s*:\s*"/?metadata/name"[^}]*"value"\s*:\s*"([^"]+)"`)
+// jsonPatchOp is a single JSON6902-style patch operation, as it appears in
+// a kustomize patches[].patch block. Despite the "JSON" in the name,
+// kustomize accepts (and real overlays typically use) YAML list syntax for
+// this field, e.g.:
+//
+//	patch: |-
+//	  - op: replace
+//	    path: /metadata/name
+//	    value: new-name
+type jsonPatchOp struct {
+	Op    string `yaml:"op"`
+	Path  string `yaml:"path"`
+	Value string `yaml:"value"`
+}
 
+// renameFromPatch parses patch as a YAML list of JSON6902 operations and
+// returns the new name if it contains a replace/add of /metadata/name.
+// This must decode real YAML (not just a JSON-object-literal regex) since
+// that's the syntax kustomize patches actually use in practice - a
+// JSON-bracket-and-quotes-only matcher would silently fail to detect
+// renames in the common case.
 func renameFromPatch(patch string) string {
-	m := renameRe.FindStringSubmatch(strings.ReplaceAll(patch, "\n", " "))
-	if len(m) >= 3 {
-		return m[2]
+	var ops []jsonPatchOp
+	if err := yaml.Unmarshal([]byte(patch), &ops); err != nil {
+		return ""
+	}
+	for _, op := range ops {
+		if op.Op != "replace" && op.Op != "add" {
+			continue
+		}
+		if op.Path == "/metadata/name" || op.Path == "metadata/name" {
+			return op.Value
+		}
 	}
 	return ""
 }
