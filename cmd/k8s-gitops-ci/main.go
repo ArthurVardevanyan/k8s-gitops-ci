@@ -87,7 +87,7 @@ func runPipeline(args []string) error {
 	opts := pipeline.EnvOptions()
 	opts.Providers = provider.Providers{}
 
-	var dirs, disableChecks string
+	var dirs, disableChecks, enableChecks string
 	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL")
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
@@ -96,18 +96,18 @@ func runPipeline(args []string) error {
 	fs.StringVar(&opts.TriggerComment, "trigger-comment", opts.TriggerComment, "trigger comment text")
 	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to restrict the changeset to (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.BoolVar(&opts.LintOnly, "lint-only", false, "lint only, skip build checks")
-	fs.BoolVar(&opts.SkipAVP, "skip-avp", false, "skip argocd-vault-plugin")
-	fs.BoolVar(&opts.SkipGolangci, "skip-golangci", false, "skip golangci-lint")
 	fs.BoolVar(&opts.NoComment, "no-comment", false, "do not post PR comment")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-only API groups (OLM, Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API, Metal3) as exempt from the sync-options check; only enable if ALL target clusters are OpenShift/OKD")
-	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated check IDs to disable entirely (e.g. sync-options for non-ArgoCD users)")
+	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
+	fs.StringVar(&enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
 	fs.IntVar(&opts.Concurrency, "concurrency", 0, "worker concurrency (0=auto)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	opts.IncludePrefixes = splitCommaList(dirs)
 	opts.DisabledChecks = splitCommaList(disableChecks)
+	opts.EnabledChecks = splitCommaList(enableChecks)
 	return pipeline.Run(opts)
 }
 

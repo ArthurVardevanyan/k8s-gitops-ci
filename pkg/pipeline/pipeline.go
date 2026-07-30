@@ -14,6 +14,11 @@ import (
 )
 
 // Options configures the pipeline run.
+//
+// Step/check enablement uses one generic ID-based mechanism instead of
+// dedicated boolean flags per step - see the doc comment on
+// validator.Options for the full explanation. DisabledChecks/EnabledChecks
+// are passed straight through to validator.Options unchanged.
 type Options struct {
 	URL             string
 	PR              string
@@ -22,12 +27,11 @@ type Options struct {
 	HookSource      string
 	TriggerComment  string
 	LintOnly        bool
-	SkipAVP         bool
-	SkipGolangci    bool
 	NoComment       bool
 	Verbose         bool
 	AssumeOpenShift bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check
-	DisabledChecks  []string // check IDs to disable entirely (e.g. "sync-options" for non-ArgoCD users)
+	DisabledChecks  []string // IDs to disable entirely (e.g. "sync-options", "golangci", "avp"); only affects steps that default to enabled
+	EnabledChecks   []string // IDs to explicitly enable; only affects steps that default to disabled (e.g. "kyverno")
 	Concurrency     int
 	Apps            []string
 	Clusters        []string
@@ -126,11 +130,10 @@ func toValidatorOptions(opts Options) validator.Options {
 		BaseRef:         resolveBaseRef(opts.TargetBranch),
 		Revision:        resolveRevision(opts.Revision),
 		LintOnly:        opts.LintOnly,
-		SkipAVP:         opts.SkipAVP,
-		SkipGolangci:    opts.SkipGolangci,
 		NoComment:       opts.NoComment,
 		AssumeOpenShift: opts.AssumeOpenShift,
 		DisabledChecks:  opts.DisabledChecks,
+		EnabledChecks:   opts.EnabledChecks,
 		Concurrency:     opts.Workers(),
 		Apps:            opts.Apps,
 		Clusters:        opts.Clusters,

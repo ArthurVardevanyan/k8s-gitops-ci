@@ -6,6 +6,15 @@ import (
 )
 
 // Options configures the validator orchestration.
+//
+// Step/check enablement uses one generic ID-based mechanism instead of
+// dedicated boolean flags per step: every gateable step (per-doc/per-overlay
+// checks registered in pkg/validator/check, as well as standalone steps like
+// "golangci" and "kyverno") has a string ID. Steps default to enabled unless
+// they're explicitly opted out via DisabledChecks, EXCEPT steps registered as
+// default-off (see defaultOffSteps in phases.go, e.g. "kyverno"), which stay
+// disabled until their ID is explicitly listed in EnabledChecks. See
+// stepEnabled in phases.go.
 type Options struct {
 	RepoURL          string
 	PR               string
@@ -13,12 +22,11 @@ type Options struct {
 	Revision         string
 	TriggerComment   string
 	LintOnly         bool
-	SkipAVP          bool
-	SkipGolangci     bool
 	NoComment        bool
 	IncludeDeletions bool
 	AssumeOpenShift  bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check; see syncopts.AssumeOpenShift
-	DisabledChecks   []string // check IDs to disable entirely (e.g. "sync-options" for non-ArgoCD users)
+	DisabledChecks   []string // IDs to disable entirely (e.g. "sync-options", "golangci", "avp"); only affects steps that default to enabled
+	EnabledChecks    []string // IDs to explicitly enable; only affects steps that default to disabled (e.g. "kyverno")
 	Concurrency      int
 	Apps, Clusters   []string
 	Dirs             []string // explicit subdirectories to validate; bypasses git diff
