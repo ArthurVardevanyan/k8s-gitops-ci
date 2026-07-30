@@ -160,15 +160,14 @@ func FormatComment(errs []ValidationError) string {
 	return b.String()
 }
 
-// FindCommentedNamespaces scans dir for commented-out PSA labels.
+// FindCommentedNamespaces scans every YAML file under dir/base for
+// commented-out PSA labels. It walks the whole base/ directory rather than
+// looking only for a file literally named namespace.yaml, since the
+// Namespace manifest may live under any filename.
 func FindCommentedNamespaces(dir string) map[string]map[string]bool {
 	out := make(map[string]map[string]bool)
-	// first try base/namespace.yaml
-	base := filepath.Join(dir, "base", "namespace.yaml")
-	if data, err := os.ReadFile(base); err == nil {
-		return findCommentedPSALabels(data)
-	}
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	baseDir := filepath.Join(dir, "base")
+	_ = filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil //nolint:nilerr // filepath.Walk convention: skip entry, keep walking
 		}
@@ -194,6 +193,12 @@ func FindCommentedNamespaces(dir string) map[string]map[string]bool {
 	return out
 }
 
+// commentedLabelSuffixes lists the label-key suffixes checked alongside
+// each PSA mode: "" for the level label (e.g.
+// "pod-security.kubernetes.io/enforce") and "-version" for its paired
+// version label (e.g. "pod-security.kubernetes.io/enforce-version").
+var commentedLabelSuffixes = []string{"", "-version"}
+
 func findCommentedPSALabels(data []byte) map[string]map[string]bool {
 	out := make(map[string]map[string]bool)
 	var curNs string
@@ -202,13 +207,15 @@ func findCommentedPSALabels(data []byte) map[string]map[string]bool {
 		if strings.HasPrefix(trimmed, "#") {
 			inner := strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
 			for _, mode := range ValidModes {
-				key := "pod-security.kubernetes.io/" + mode
-				if strings.HasPrefix(inner, key+":") {
-					if curNs != "" {
-						if out[curNs] == nil {
-							out[curNs] = make(map[string]bool)
+				for _, suffix := range commentedLabelSuffixes {
+					key := "pod-security.kubernetes.io/" + mode + suffix
+					if strings.HasPrefix(inner, key+":") {
+						if curNs != "" {
+							if out[curNs] == nil {
+								out[curNs] = make(map[string]bool)
+							}
+							out[curNs][key] = true
 						}
-						out[curNs][key] = true
 					}
 				}
 			}
