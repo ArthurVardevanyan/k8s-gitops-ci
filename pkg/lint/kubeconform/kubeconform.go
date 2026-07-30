@@ -77,6 +77,18 @@ func (d DeduplicatedError) String() string {
 	return s
 }
 
+// Merge folds src's counts and details into r.
+func (r *Result) Merge(src *Result) {
+	if src == nil {
+		return
+	}
+	r.Valid += src.Valid
+	r.Invalid += src.Invalid
+	r.Errors += src.Errors
+	r.Skipped += src.Skipped
+	r.Details = append(r.Details, src.Details...)
+}
+
 // Deduplicate de-duplicates result errors.
 func (r *Result) Deduplicate() []DeduplicatedError {
 	seen := make(map[string]*DeduplicatedError)
@@ -110,17 +122,40 @@ func (r *Result) Summary() string {
 	return s
 }
 
-// ExtractSchemas extracts the embedded schema archive.
+// ExtractSchemas extracts the embedded schema archive and returns the
+// directory containing the archive's top-level "kubernetes-json-schema"
+// folder (i.e. the direct parent of custom-standalone-strict,
+// master-standalone-strict, and master-local), ready to be used as
+// Options.SchemaDir / passed to SchemaLocations.
 func ExtractSchemas() (dir string, cleanup func(), err error) {
-	return schemas.Extract()
+	extracted, cleanup, err := schemas.Extract()
+	if err != nil {
+		return "", nil, err
+	}
+	return filepath.Join(extracted, "kubernetes-json-schema"), cleanup, nil
 }
 
-// SchemaLocations returns schema location templates.
+// SchemaLocations returns schema location templates for the local, embedded
+// kubernetes-json-schema archive rooted at schemaBase (see ExtractSchemas).
+//
+// The archive has a fixed, kubernetes-version-independent layout:
+//   - master-standalone-strict/  builtin Kubernetes resources, using
+//     kubeconform's own {{.ResourceKind}}{{.KindSuffix}}.json convention.
+//   - master-local/  additional builtin/apiextensions schemas not present in
+//     master-standalone-strict (e.g. the top-level CustomResourceDefinition
+//     object itself), using the same {{.ResourceKind}}{{.KindSuffix}}.json
+//     convention.
+//   - custom-standalone-strict/  third-party & OKD/OpenShift CRDs, using a
+//     flat {kind}-{full-group}-{version}.json convention. Note this does
+//     NOT use {{.KindSuffix}}: KindSuffix truncates multi-segment API groups
+//     (e.g. "machineconfiguration.openshift.io" -> "machineconfiguration"),
+//     so it can never match filenames like
+//     "kubeletconfig-machineconfiguration.openshift.io-v1.json".
 func SchemaLocations(schemaBase string) []string {
 	return []string{
-		filepath.Join(schemaBase, "{{.NormalizedKubernetesVersion}}-standalone-strict", "{{.ResourceKind}}{{.KindSuffix}}.json"),
-		filepath.Join(schemaBase, "{{.NormalizedKubernetesVersion}}-standalone-strict", "{{.Group}}-{{.ResourceKind}}{{.KindSuffix}}.json"),
-		filepath.Join(schemaBase, "{{.NormalizedKubernetesVersion}}-standalone-strict", "{{.ResourceAPIVersion}}", "{{.ResourceKind}}{{.KindSuffix}}.json"),
+		filepath.Join(schemaBase, "master-standalone-strict", "{{.ResourceKind}}{{.KindSuffix}}.json"),
+		filepath.Join(schemaBase, "master-local", "{{.ResourceKind}}{{.KindSuffix}}.json"),
+		filepath.Join(schemaBase, "custom-standalone-strict", "{{.ResourceKind}}-{{.Group}}-{{.ResourceAPIVersion}}.json"),
 	}
 }
 
@@ -181,6 +216,19 @@ func ValidateFileBytes(v kfv.Validator, filename string, data []byte) FileResult
 	return fr
 }
 
+// ValidateBytes validates in-memory YAML content (e.g. a rendered
+// `kustomize build` manifest stream) as a single named unit. name is used
+// only for reporting (it need not exist on disk).
+func ValidateBytes(name string, data []byte, opts Options) (*Result, error) {
+	v, err := NewValidator(opts)
+	if err != nil {
+		return nil, err
+	}
+	res := &Result{}
+	updateResult(res, ValidateFileBytes(v, name, data))
+	return res, nil
+}
+
 // ValidateFiles validates a list of files.
 func ValidateFiles(files []string, opts Options) (*Result, error) {
 	v, err := NewValidator(opts)
@@ -194,7 +242,7 @@ func ValidateFiles(files []string, opts Options) (*Result, error) {
 func ValidateDir(dir string, opts Options) (*Result, func(), error) {
 	cleanup := func() {}
 	if opts.SchemaDir == "" {
-		schemaDir, c, err := schemas.Extract()
+		schemaDir, c, err := ExtractSchemas()
 		if err != nil {
 			return nil, nil, err
 		}

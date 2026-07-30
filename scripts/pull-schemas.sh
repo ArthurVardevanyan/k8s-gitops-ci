@@ -10,7 +10,13 @@ mkdir -p "$(dirname "$OUTPUT")"
 mkdir -p "$SCHEMA_CACHE"
 
 if [[ -d "$SCHEMA_CACHE/.git" ]]; then
-  git -C "$SCHEMA_CACHE" pull --depth=1 origin production
+  # Use fetch + reset instead of pull so that force-pushes / rewritten
+  # history on the upstream "production" branch (e.g. after a rebase)
+  # don't cause "divergent branches" failures.
+  git -C "$SCHEMA_CACHE" fetch --depth=1 origin production
+  git -C "$SCHEMA_CACHE" checkout -B production FETCH_HEAD
+  git -C "$SCHEMA_CACHE" reset --hard FETCH_HEAD
+  git -C "$SCHEMA_CACHE" clean -fdx
 else
   rm -rf "$SCHEMA_CACHE"
   git clone --depth=1 "$SCHEMA_REPO" "$SCHEMA_CACHE"
