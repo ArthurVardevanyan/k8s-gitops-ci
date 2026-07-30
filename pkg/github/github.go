@@ -170,7 +170,7 @@ func parseUnsignedCommits(data []byte) ([]string, error) {
 	if err := json.Unmarshal(data, &commits); err != nil {
 		return nil, fmt.Errorf("parsing PR commits: %w", err)
 	}
-	var unsigned []string
+	unsigned := make([]string, 0, len(commits))
 	for _, cmt := range commits {
 		if cmt.Commit.Verification.Verified {
 			continue
