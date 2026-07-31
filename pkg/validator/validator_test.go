@@ -3,6 +3,7 @@ package validator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -52,6 +53,43 @@ func TestRunAll_PopulatesLogger(t *testing.T) {
 	}
 	if res.Logger == nil {
 		t.Fatal("expected Result.Logger to be populated, got nil")
+	}
+}
+
+func TestRunAll_LogsPhasesAndRecordsTiming(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, LintOnly: true})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger.InfoCount() == 0 {
+		t.Error("expected at least one Info() log line to have been emitted during lint/static checks")
+	}
+	if res.Timing == nil {
+		t.Fatal("expected Result.Timing to be populated, got nil")
+	}
+	summary := res.Timing.Summary(0)
+	if !strings.Contains(summary, "Linting") {
+		t.Errorf("expected timing summary to record the Linting phase, got:\n%s", summary)
+	}
+	if !strings.Contains(summary, "Static Checks") {
+		t.Errorf("expected timing summary to record the Static Checks phase, got:\n%s", summary)
+	}
+}
+
+func TestRunAll_RecordsBuildPhaseTimingWhenNotLintOnly(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	summary := res.Timing.Summary(0)
+	if !strings.Contains(summary, "Build+Compliance") {
+		t.Errorf("expected timing summary to record the Build+Compliance phase, got:\n%s", summary)
 	}
 }
 

@@ -11,7 +11,11 @@ import (
 // RunAll runs the four validator phases.
 func RunAll(opts Options) (*Result, error) {
 	log := logger.NewLogger(opts.Verbose, "")
-	res := &Result{Logger: log}
+	tc := opts.Timing
+	if tc == nil {
+		tc = NewTimingCollector()
+	}
+	res := &Result{Logger: log, Timing: tc}
 
 	syncopts.AssumeOpenShift = opts.AssumeOpenShift
 
@@ -19,14 +23,15 @@ func RunAll(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve changeset: %w", err)
 	}
+	log.Info(fmt.Sprintf("files to validate: %d", len(changed)))
 
 	if opts.LintOnly {
-		runLintAndStaticChecks(changed, opts, res)
+		runLintAndStaticChecks(changed, opts, res, log, tc)
 		return res, nil
 	}
 
-	runLintAndStaticChecks(changed, opts, res)
-	runBuildAndPostBuild(changed, opts, res)
+	runLintAndStaticChecks(changed, opts, res, log, tc)
+	runBuildAndPostBuild(changed, opts, res, log, tc)
 
 	res.Status = "ok"
 	if res.Blocking {

@@ -34,6 +34,10 @@ type Options struct {
 	Dirs             []string // explicit subdirectories to validate; bypasses git diff
 	IncludePrefixes  []string // restrict the resolved changeset (git diff or PR files) to files under these path prefixes; empty means no restriction
 	Providers        provider.Providers
+	// Timing allows an external TimingCollector to be passed in (e.g. from
+	// pkg/pipeline, which needs to record its own setup/PR-validation phases
+	// alongside the validator's). When nil, RunAll constructs its own.
+	Timing *TimingCollector
 }
 
 // Result carries per-section findings.
@@ -44,6 +48,7 @@ type Result struct {
 	Check      check.Result
 	ReportBody string
 	Logger     *logger.Logger
+	Timing     *TimingCollector
 }
 
 // Section is a named report section.
