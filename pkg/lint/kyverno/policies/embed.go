@@ -78,18 +78,30 @@ func Extract() (dir string, cleanup func(), err error) {
 	return dir, cleanup, nil
 }
 
-// EnsureArchive creates a placeholder archive if none exists.
+// EnsureArchive creates a placeholder archive if none exists. The tar and
+// gzip writers must be closed in that order (tar first, to flush its
+// end-of-archive padding into the gzip stream; gzip second, to flush its
+// own trailer) *before* the buffer's bytes are read - closing gzip first
+// (or relying on deferred closes that run after the buffer is already read)
+// silently produces a truncated/empty-looking archive, since gzip.Close
+// finalizes the compressed stream and any tar data written afterward never
+// reaches the buffer.
 func EnsureArchive(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
-	defer gw.Close()
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
-	_ = tw.WriteHeader(&tar.Header{Name: "kyverno-policies/", Mode: 0o755, Typeflag: tar.TypeDir})
-	gw.Close()
+	if err := tw.WriteHeader(&tar.Header{Name: "kyverno-policies/", Mode: 0o755, Typeflag: tar.TypeDir}); err != nil {
+		return fmt.Errorf("writing placeholder archive header: %w", err)
+	}
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("closing placeholder tar writer: %w", err)
+	}
+	if err := gw.Close(); err != nil {
+		return fmt.Errorf("closing placeholder gzip writer: %w", err)
+	}
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	return os.WriteFile(path, buf.Bytes(), 0o644)
 }

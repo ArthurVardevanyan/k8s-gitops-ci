@@ -81,6 +81,16 @@ func preparePoliciesFrom(dir string) (policyPath string, err error) {
 
 	out, err := buildPolicies(policyDir)
 	if err != nil {
+		// kustomize (or the kustomize binary itself) may be unavailable in
+		// some environments; fall back to validating against the bundle's
+		// raw base/ policies directly rather than hard-failing the whole
+		// Kyverno step. Namespace-selector stripping and IncludeComponents
+		// layering only apply to a successful kustomize render, so this
+		// fallback path skips both.
+		baseDir := filepath.Join(policyDir, "base")
+		if collected, collectErr := collectPolicies(baseDir); collectErr == nil && len(collected) > 0 {
+			return baseDir, nil
+		}
 		return "", fmt.Errorf("kustomize build policies: %w", err)
 	}
 
@@ -94,6 +104,39 @@ func preparePoliciesFrom(dir string) (policyPath string, err error) {
 		return "", err
 	}
 	return tmpFile, nil
+}
+
+// collectPolicies walks dir collecting every .yaml/.yml file, returning an
+// error if dir doesn't exist or the walk fails - unlike CollectYAML (which
+// silently swallows walk errors for best-effort resource collection), this
+// is used as a fallback-availability check where the caller needs to know
+// definitively whether usable base policies exist before relying on them.
+func collectPolicies(dir string) ([]string, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", dir)
+	}
+	var files []string
+	walkErr := filepath.Walk(dir, func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if fi.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".yaml" || ext == ".yml" {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return files, nil
 }
 
 // buildPolicies renders policyDir's base plus any configured

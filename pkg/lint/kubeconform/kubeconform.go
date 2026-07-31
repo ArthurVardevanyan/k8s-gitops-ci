@@ -15,8 +15,20 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform/schemas"
 )
 
-// MissingSchemaHint is appended to schema-not-found errors.
+// MissingSchemaHint is appended to schema-not-found errors (e.g. pointing
+// an operator at how to add a custom CRD schema for their org - see
+// docs/SCHEMAS.md). Defaults to empty (no hint appended).
 var MissingSchemaHint string
+
+// missingSchemaMarker is the substring kubeconform's validator package uses
+// to identify a "no schema found for this resource kind" error (see
+// github.com/yannh/kubeconform/pkg/validator.validate). Matched against
+// r.Err.Error() so MissingSchemaHint can be appended and so these errors
+// can be deliberately left unprefixed by resource identity (see
+// ValidateFileBytes) - identical missing-schema errors across many files
+// should collapse into a single dedup entry, unlike genuine validation
+// errors which should stay attributed per-resource.
+const missingSchemaMarker = "could not find schema for"
 
 // Options configures kubeconform validation.
 type Options struct {
@@ -63,18 +75,48 @@ type DeduplicatedError struct {
 	Files   []string
 }
 
+// maxListedFiles caps how many file paths StringWithFiles lists inline
+// before summarizing the remainder as "and N more".
+const maxListedFiles = 10
+
 func (d DeduplicatedError) String() string {
-	s := fmt.Sprintf("%s (%d file(s))", d.Message, d.Count)
-	if len(d.Files) > 0 {
-		files := d.Files
-		extra := ""
-		if len(files) > 10 {
-			extra = fmt.Sprintf(", and %d more", len(files)-10)
-			files = files[:10]
-		}
-		s += "\n    files: " + strings.Join(files, ", ") + extra
+	return fmt.Sprintf("%s (%d file(s))", d.Message, d.Count)
+}
+
+// StringWithFiles renders the same summary as String, plus an inline,
+// defensively-deduplicated, capped listing of the affected files. Kept
+// separate from String (rather than always including files inline) so
+// callers that only want the compact summary aren't forced to also render
+// a potentially long file list.
+func (d DeduplicatedError) StringWithFiles() string {
+	s := d.String()
+	if len(d.Files) == 0 {
+		return s
 	}
-	return s
+	files := dedupeStrings(d.Files)
+	extra := ""
+	if len(files) > maxListedFiles {
+		extra = fmt.Sprintf(", and %d more", len(files)-maxListedFiles)
+		files = files[:maxListedFiles]
+	}
+	return s + "\n    files: " + strings.Join(files, ", ") + extra
+}
+
+// dedupeStrings returns sl with duplicate entries removed, preserving
+// first-seen order. Defensive: Result.Deduplicate already avoids adding
+// duplicate file paths per DeduplicatedError, but StringWithFiles
+// shouldn't assume that invariant holds for every caller-constructed
+// DeduplicatedError.
+func dedupeStrings(sl []string) []string {
+	seen := make(map[string]bool, len(sl))
+	out := make([]string, 0, len(sl))
+	for _, s := range sl {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // Merge folds src's counts and details into r.
@@ -117,7 +159,7 @@ func (r *Result) Deduplicate() []DeduplicatedError {
 func (r *Result) Summary() string {
 	s := fmt.Sprintf("Summary: %d valid, %d invalid, %d errors, %d skipped\n", r.Valid, r.Invalid, r.Errors, r.Skipped)
 	for _, d := range r.Deduplicate() {
-		s += "  - " + d.String() + "\n"
+		s += "  - " + d.StringWithFiles() + "\n"
 	}
 	return s
 }
@@ -151,6 +193,15 @@ func ExtractSchemas() (dir string, cleanup func(), err error) {
 //     (e.g. "machineconfiguration.openshift.io" -> "machineconfiguration"),
 //     so it can never match filenames like
 //     "kubeletconfig-machineconfiguration.openshift.io-v1.json".
+//
+// This directory is deliberately hardcoded as "-strict" rather than using
+// kubeconform's {{.StrictSuffix}} template variable: scripts/pull-schemas.sh
+// only ever populates a custom-standalone-strict directory (there is no
+// non-strict custom-schema variant in the upstream kubernetes-json-schema
+// source this repo tracks), so {{.StrictSuffix}} would resolve to a
+// nonexistent "custom-standalone" directory whenever Options.Strict is
+// false, breaking every custom/CRD schema lookup in non-strict mode for no
+// compensating benefit.
 func SchemaLocations(schemaBase string) []string {
 	return []string{
 		filepath.Join(schemaBase, "master-standalone-strict", "{{.ResourceKind}}{{.KindSuffix}}.json"),
@@ -177,43 +228,93 @@ func NewValidator(opts Options) (kfv.Validator, error) {
 	})
 }
 
+// statusPrecedence ranks a multi-document file's aggregate Status: a file
+// containing several YAML documents with differing outcomes (e.g. one
+// invalid resource alongside otherwise-valid ones) is reported under
+// whichever status is most severe, not whichever document happened to be
+// validated last - a plain last-write-wins assignment would let a single
+// invalid document's status be silently overwritten by a later valid one
+// in the same file (and vice versa), a genuine correctness bug.
+var statusPrecedence = []string{"error", "invalid", "valid", "skipped", "empty"}
+
+func aggregateStatus(seen map[string]bool) string {
+	for _, s := range statusPrecedence {
+		if seen[s] {
+			return s
+		}
+	}
+	return "empty"
+}
+
+// resourceSignaturePrefix returns a "Kind \"name\": " prefix identifying
+// res, or "" if a signature can't be determined (e.g. the document failed
+// to parse enough to extract kind/name). Used to keep genuine validation
+// errors attributed to the resource that produced them, so identically-
+// worded errors from different resources don't collapse together in
+// Result.Deduplicate.
+func resourceSignaturePrefix(res *kfv.Result) string {
+	sig, err := res.Resource.Signature()
+	if err != nil || sig == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s %q: ", sig.Kind, sig.Name)
+}
+
 // ValidateFileBytes validates bytes with a given validator.
 func ValidateFileBytes(v kfv.Validator, filename string, data []byte) FileResult {
 	rc := io.NopCloser(bytes.NewReader(data))
 	defer rc.Close()
 	results := v.Validate(filename, rc)
 	fr := FileResult{Filename: filename}
-	for _, r := range results {
+	seenStatus := make(map[string]bool, len(results))
+	for i := range results {
+		r := results[i]
 		switch r.Status {
 		case kfv.Valid:
-			fr.Status = "valid"
+			seenStatus["valid"] = true
 			fr.ValidCount++
 		case kfv.Invalid:
-			fr.Status = "invalid"
+			seenStatus["invalid"] = true
 			fr.InvalidCount++
+			prefix := resourceSignaturePrefix(&r)
 			if r.Err != nil {
-				fr.Errors = append(fr.Errors, r.Err.Error())
+				fr.Errors = append(fr.Errors, prefix+r.Err.Error())
 			}
 			for _, ve := range r.ValidationErrors {
-				fr.Errors = append(fr.Errors, ve.Msg)
+				fr.Errors = append(fr.Errors, prefix+ve.Msg)
 			}
 		case kfv.Error:
-			fr.Status = "error"
+			seenStatus["error"] = true
 			fr.ErrorCount++
 			if r.Err != nil {
-				fr.Errors = append(fr.Errors, r.Err.Error())
+				fr.Errors = append(fr.Errors, formatSchemaAwareError(&r))
 			}
 		case kfv.Skipped:
-			fr.Status = "skipped"
+			seenStatus["skipped"] = true
 			fr.SkippedCount++
 		case kfv.Empty:
-			fr.Status = "empty"
+			seenStatus["empty"] = true
 		}
 	}
-	if fr.Status == "" {
-		fr.Status = "empty"
-	}
+	fr.Status = aggregateStatus(seenStatus)
 	return fr
+}
+
+// formatSchemaAwareError formats r.Err, appending MissingSchemaHint and
+// deliberately omitting the resource-signature prefix when r.Err is a
+// "could not find schema" error (so identical missing-schema errors across
+// many files collapse into one Result.Deduplicate entry instead of being
+// kept separate per resource), and prefixing with the resource signature
+// otherwise (so genuine validation errors stay attributed per-resource).
+func formatSchemaAwareError(r *kfv.Result) string {
+	msg := r.Err.Error()
+	if strings.Contains(msg, missingSchemaMarker) {
+		if MissingSchemaHint != "" {
+			msg += "; " + MissingSchemaHint
+		}
+		return msg
+	}
+	return resourceSignaturePrefix(r) + msg
 }
 
 // ValidateBytes validates in-memory YAML content (e.g. a rendered
@@ -229,7 +330,16 @@ func ValidateBytes(name string, data []byte, opts Options) (*Result, error) {
 	return res, nil
 }
 
-// ValidateFiles validates a list of files.
+// ValidateFiles validates a list of files. The returned error signals a
+// genuine setup failure (e.g. NewValidator failing to construct) - it is
+// deliberately nil whenever validation itself ran, even if res.Invalid or
+// res.Errors is nonzero. Callers must inspect those Result fields directly
+// to detect validation failures, not this error: at least two real call
+// sites (pkg/validator/phases.go's kubeconform lint step, gated on
+// `err == nil`, and kubeconform_overlay.go's renderAppOverlays fallback
+// logic) already correctly branch on res.Invalid/res.Errors and would
+// silently drop findings from their reports if this returned a non-nil
+// error whenever validation found problems.
 func ValidateFiles(files []string, opts Options) (*Result, error) {
 	v, err := NewValidator(opts)
 	if err != nil {
@@ -304,18 +414,19 @@ func validateFilesPar(v kfv.Validator, files []string) *Result {
 	return res
 }
 
+// updateResult folds fr's per-document counters into r's running totals.
+// This sums every counter unconditionally rather than switching on
+// fr.Status and adding only the matching bucket - a multi-document file
+// mixing e.g. one invalid and one valid document has both ValidCount and
+// InvalidCount set on the same FileResult (fr.Status reflects only the
+// most severe outcome, see aggregateStatus), and gating on fr.Status here
+// would silently drop whichever counter didn't match the aggregate status.
 func updateResult(r *Result, fr FileResult) {
 	r.Details = append(r.Details, fr)
-	switch fr.Status {
-	case "valid":
-		r.Valid += fr.ValidCount
-	case "invalid":
-		r.Invalid += fr.InvalidCount
-	case "error":
-		r.Errors += fr.ErrorCount
-	case "skipped":
-		r.Skipped += fr.SkippedCount
-	}
+	r.Valid += fr.ValidCount
+	r.Invalid += fr.InvalidCount
+	r.Errors += fr.ErrorCount
+	r.Skipped += fr.SkippedCount
 }
 
 func contains(sl []string, s string) bool {

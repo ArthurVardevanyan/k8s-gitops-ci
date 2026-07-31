@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -86,7 +87,10 @@ func ValidateFiles(files []string, policyDir string) (*Result, error) {
 // ValidateFilesBatched runs one kyverno subprocess per app in batches.
 func ValidateFilesBatched(policyPath string, filesByApp map[string][]string, workers int) (*Result, []error) {
 	if workers <= 0 {
-		workers = 1
+		// Kyverno's CLI is I/O-bound (subprocess + policy engine startup
+		// per invocation), so oversubscribing beyond physical cores keeps
+		// throughput up while individual jobs wait on each other.
+		workers = runtime.NumCPU() * 2
 	}
 	apps := make([]string, 0, len(filesByApp))
 	for app := range filesByApp {
@@ -145,34 +149,106 @@ func CollectYAML(dir string) []string {
 	return files
 }
 
+// policyReportResource is a single resource identity as reported by
+// kyverno's PolicyReport/ClusterReport JSON output.
+type policyReportResource struct {
+	Kind, Name, Namespace, APIVersion string
+}
+
+// policyReportResult is one result entry within a kyverno PolicyReport or
+// ClusterReport. Kyverno's `--policy-report` JSON output uses the
+// wgpolicyk8s.io PolicyReport shape, whose per-result outcome field is
+// `result` (pass/fail/warn/error/skip) and whose severity (low/medium/high)
+// is a distinct field - this package previously conflated the two by
+// reading a nonexistent `status` field and reusing its value as severity,
+// which meant severity-based sorting/icons never worked. A `resource`
+// (singular) or `resources` (plural) field may be present depending on
+// kyverno CLI version/output mode; both are honored.
+type policyReportResult struct {
+	Policy    string                 `json:"policy"`
+	Rule      string                 `json:"rule"`
+	Result    string                 `json:"result"`
+	Status    string                 `json:"status"` // fallback for older/alternate output shapes
+	Severity  string                 `json:"severity"`
+	Message   string                 `json:"message"`
+	Resource  *policyReportResource  `json:"resource"`
+	Resources []policyReportResource `json:"resources"`
+}
+
+// policyReport is the top-level kyverno `--policy-report` JSON document
+// (either a single PolicyReport or an aggregate ClusterReport - both share
+// this shape).
+type policyReport struct {
+	Kind    string               `json:"kind"`
+	Results []policyReportResult `json:"results"`
+}
+
+// reportStartMarkers are the JSON substrings identifying where the actual
+// kyverno report object begins in CLI output, which may be preceded by
+// unrelated log/preamble text. Kyverno's JSON encoder may or may not insert
+// a space after the colon depending on version, so both compact and
+// space-separated forms are matched.
+var reportStartMarkers = []string{
+	`"kind":"ClusterReport"`,
+	`"kind":"PolicyReport"`,
+	`"kind": "ClusterReport"`,
+	`"kind": "PolicyReport"`,
+}
+
+// findReportStart locates the byte offset of the `{` that begins the
+// kyverno report object within out. It finds the earliest matching
+// kind-marker (see reportStartMarkers), then walks backward to the nearest
+// enclosing `{`, so the returned offset is always a valid JSON object start
+// rather than the middle of one. Falls back to the first `{` in out if no
+// marker is found, and to -1 if out contains no `{` at all.
+func findReportStart(out []byte) int {
+	best := -1
+	for _, marker := range reportStartMarkers {
+		if idx := bytes.Index(out, []byte(marker)); idx != -1 && (best == -1 || idx < best) {
+			best = idx
+		}
+	}
+	if best == -1 {
+		return bytes.IndexAny(out, "{")
+	}
+	for i := best; i >= 0; i-- {
+		if out[i] == '{' {
+			return i
+		}
+	}
+	return best
+}
+
+// resultResources returns the resources named by a single policy report
+// result, whether kyverno reported them as a singular `resource` object or
+// a plural `resources` array.
+func resultResources(r policyReportResult) []policyReportResource {
+	if len(r.Resources) > 0 {
+		return r.Resources
+	}
+	if r.Resource != nil {
+		return []policyReportResource{*r.Resource}
+	}
+	return nil
+}
+
 func parseOutput(out []byte, resourceFiles []string) (*Result, error) {
-	start := bytes.Index(out, []byte(`{"kind":"ClusterReport"`))
-	if start == -1 {
-		start = bytes.Index(out, []byte(`{"kind":"PolicyReport"`))
-	}
-	if start == -1 {
-		start = bytes.IndexAny(out, "{")
-	}
+	start := findReportStart(out)
 	if start == -1 {
 		return &Result{}, nil
 	}
-	var report map[string]any
+	var report policyReport
 	if err := json.Unmarshal(out[start:], &report); err != nil {
 		return nil, fmt.Errorf("parsing kyverno output: %w (raw: %s)", err, truncate(string(out), 200))
 	}
 	res := &Result{}
-	results, _ := report["results"].([]any)
-	for _, r := range results {
-		m, _ := r.(map[string]any)
-		if m == nil {
+	for _, r := range report.Results {
+		if isExcludedRule(r.Policy, r.Rule) {
 			continue
 		}
-		policy, _ := m["policy"].(string)
-		rule, _ := m["rule"].(string)
-		status, _ := m["status"].(string)
-		resource, _ := m["resources"].([]any)
-		if isExcludedRule(policy, rule) {
-			continue
+		status := r.Result
+		if status == "" {
+			status = r.Status
 		}
 		switch status {
 		case "pass":
@@ -186,23 +262,28 @@ func parseOutput(out []byte, resourceFiles []string) (*Result, error) {
 		case "skip":
 			res.Skip++
 		}
-		if status == "fail" || status == "warn" || status == "error" {
-			for _, rs := range resource {
-				resMap, _ := rs.(map[string]any)
-				if resMap == nil {
-					continue
-				}
-				name := fmt.Sprintf("%v", resMap["name"])
-				kind := fmt.Sprintf("%v", resMap["kind"])
-				res.Violations = append(res.Violations, Violation{
-					Policy:   policy,
-					Rule:     rule,
-					Resource: fmt.Sprintf("%s/%s", kind, name),
-					File:     findResourceFile(name, resourceFiles),
-					Message:  fmt.Sprintf("%v", m["message"]),
-					Severity: status,
-				})
-			}
+		if status != "fail" && status != "warn" && status != "error" {
+			continue
+		}
+		severity := r.Severity
+		if severity == "" {
+			// Kyverno policies aren't required to set a severity
+			// annotation; default to "medium" rather than leaving this
+			// empty (which would otherwise rank as highest-priority
+			// ("high") under a naive zero-value map lookup) or reusing
+			// the pass/fail status as a fake severity (this package's
+			// previous, incorrect behavior).
+			severity = "medium"
+		}
+		for _, rs := range resultResources(r) {
+			res.Violations = append(res.Violations, Violation{
+				Policy:   r.Policy,
+				Rule:     r.Rule,
+				Resource: fmt.Sprintf("%s/%s", rs.Kind, rs.Name),
+				File:     findResourceFile(rs.Name, resourceFiles),
+				Message:  r.Message,
+				Severity: severity,
+			})
 		}
 	}
 	return res, nil
@@ -232,73 +313,121 @@ func findResourceFile(name string, resourceFiles []string) string {
 	return ""
 }
 
-// Deduplicate groups violations.
+// Deduplicate groups violations by policy+rule, collapsing repeated hits
+// against the same resource (e.g. from kustomize/kyverno autogen
+// duplicating a workload across multiple rendered variants) so Count
+// reflects the number of distinct resources affected rather than the raw
+// number of report entries. Resource identity is Violation.Resource
+// ("Kind/Name") - note this doesn't include namespace, so two
+// identically-named resources in different namespaces are treated as one;
+// that's an existing limitation of Violation's shape, not introduced here.
 func Deduplicate(violations []Violation, maxSamples int) []DeduplicatedViolation {
 	if maxSamples <= 0 {
 		maxSamples = 3
 	}
-	seen := make(map[string]*DeduplicatedViolation)
+	type group struct {
+		v       DeduplicatedViolation
+		seenRes map[string]bool
+	}
+	seen := make(map[string]*group)
 	order := make([]string, 0, len(violations))
 	for _, v := range violations {
-		key := v.Policy + "/" + v.Rule + "/" + v.Message
-		if d, ok := seen[key]; ok {
-			d.Count++
-			if len(d.Resources) < maxSamples && !contains(d.Resources, v.Resource) {
-				d.Resources = append(d.Resources, v.Resource)
+		key := v.Policy + "/" + v.Rule
+		g, ok := seen[key]
+		if !ok {
+			g = &group{
+				v: DeduplicatedViolation{
+					Policy:   v.Policy,
+					Rule:     v.Rule,
+					Message:  v.Message,
+					Severity: v.Severity,
+				},
+				seenRes: make(map[string]bool),
 			}
-			if len(d.Files) < maxSamples && !contains(d.Files, v.File) {
-				d.Files = append(d.Files, v.File)
-			}
-			continue
+			seen[key] = g
+			order = append(order, key)
 		}
-		order = append(order, key)
-		seen[key] = &DeduplicatedViolation{
-			Policy:    v.Policy,
-			Rule:      v.Rule,
-			Message:   v.Message,
-			Severity:  v.Severity,
-			Count:     1,
-			Resources: []string{v.Resource},
-			Files:     []string{v.File},
+		if !g.seenRes[v.Resource] {
+			g.seenRes[v.Resource] = true
+			g.v.Count++
+			if len(g.v.Resources) < maxSamples {
+				g.v.Resources = append(g.v.Resources, v.Resource)
+			}
+		}
+		if v.File != "" && len(g.v.Files) < maxSamples && !contains(g.v.Files, v.File) {
+			g.v.Files = append(g.v.Files, v.File)
 		}
 	}
 	out := make([]DeduplicatedViolation, 0, len(order))
 	for _, k := range order {
-		out = append(out, *seen[k])
+		out = append(out, seen[k].v)
 	}
 	return out
 }
 
-// FormatComment renders kyverno findings.
+// severityRank maps a severity string to a sort priority (lower sorts
+// first). Unknown/missing severities rank after every known severity
+// rather than defaulting to the same weight as "high", so a malformed or
+// absent severity can't masquerade as the most urgent finding.
+var severityRankOrder = map[string]int{"high": 0, "medium": 1, "low": 2}
+
+func severityRank(severity string) int {
+	if r, ok := severityRankOrder[strings.ToLower(severity)]; ok {
+		return r
+	}
+	return len(severityRankOrder)
+}
+
+func severityIcon(severity string) string {
+	switch strings.ToLower(severity) {
+	case "high":
+		return ":red_circle:"
+	case "medium":
+		return ":orange_circle:"
+	case "low":
+		return ":yellow_circle:"
+	default:
+		return ":white_circle:"
+	}
+}
+
+// FormatComment renders kyverno findings as a non-blocking PR advisory:
+// one section per policy/rule violation group, sorted by severity then by
+// how many resources it affects, each with its message, an affected-count
+// line, and a capped, bulleted sample of the resources involved.
 func FormatComment(violations []DeduplicatedViolation) string {
 	if len(violations) == 0 {
 		return ""
 	}
-	severityOrder := map[string]int{"high": 0, "medium": 1, "low": 2}
 	sort.Slice(violations, func(i, j int) bool {
-		si := severityOrder[strings.ToLower(violations[i].Severity)]
-		sj := severityOrder[strings.ToLower(violations[j].Severity)]
-		if si != sj {
-			return si < sj
+		ri, rj := severityRank(violations[i].Severity), severityRank(violations[j].Severity)
+		if ri != rj {
+			return ri < rj
 		}
 		return violations[i].Count > violations[j].Count
 	})
 	var b strings.Builder
 	b.WriteString(Marker + "\n")
-	b.WriteString("> [!WARNING] **Kyverno Policy Violations** — non-blocking advisory\n\n")
-	b.WriteString("| Policy | Rule | Severity | Count |\n")
-	b.WriteString("| --- | --- | --- | --- |\n")
+	b.WriteString("> [!WARNING]\n")
+	b.WriteString("> **Kyverno Policy Violations** — non-blocking advisory. These\n")
+	b.WriteString("> findings do not block this PR but should be reviewed.\n\n")
 	for _, v := range violations {
-		icon := ":white_circle:"
-		switch strings.ToLower(v.Severity) {
-		case "high":
-			icon = ":red_circle:"
-		case "medium":
-			icon = ":orange_circle:"
-		case "low":
-			icon = ":yellow_circle:"
+		fmt.Fprintf(&b, "### %s `%s` / `%s` (%s)\n\n", severityIcon(v.Severity), v.Policy, v.Rule, v.Severity)
+		if v.Message != "" {
+			fmt.Fprintf(&b, "> %s\n\n", v.Message)
 		}
-		fmt.Fprintf(&b, "| %s | %s | %s %s | %d |\n", v.Policy, v.Rule, icon, v.Severity, v.Count)
+		plural := "s"
+		if v.Count == 1 {
+			plural = ""
+		}
+		fmt.Fprintf(&b, "%d resource%s affected.\n\n", v.Count, plural)
+		for _, r := range v.Resources {
+			fmt.Fprintf(&b, "- %s\n", r)
+		}
+		if v.Count > len(v.Resources) {
+			fmt.Fprintf(&b, "- …and %d more\n", v.Count-len(v.Resources))
+		}
+		b.WriteString("\n")
 	}
 	return b.String()
 }

@@ -134,6 +134,137 @@ func TestParseOutput_ExcludedRuleDropped(t *testing.T) {
 	}
 }
 
+func TestParseOutput_ReadsResultFieldAndSeverity(t *testing.T) {
+	out := []byte(`{"kind":"ClusterReport","results":[
+		{"policy":"p","rule":"r","result":"fail","severity":"high","message":"m",
+		 "resources":[{"kind":"Pod","name":"foo"}]}
+	]}`)
+	res, err := parseOutput(out, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Fail != 1 {
+		t.Fatalf("Fail = %d, want 1", res.Fail)
+	}
+	if len(res.Violations) != 1 || res.Violations[0].Severity != "high" {
+		t.Fatalf("expected severity %q from the report's severity field, got %+v", "high", res.Violations)
+	}
+}
+
+func TestParseOutput_MissingSeverityDefaultsToMedium(t *testing.T) {
+	out := []byte(`{"kind":"ClusterReport","results":[
+		{"policy":"p","rule":"r","result":"fail","message":"m",
+		 "resources":[{"kind":"Pod","name":"foo"}]}
+	]}`)
+	res, err := parseOutput(out, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Violations) != 1 || res.Violations[0].Severity != "medium" {
+		t.Fatalf("expected default severity %q, got %+v", "medium", res.Violations)
+	}
+}
+
+func TestParseOutput_SingularResourceField(t *testing.T) {
+	out := []byte(`{"kind":"PolicyReport","results":[
+		{"policy":"p","rule":"r","result":"fail","severity":"low","message":"m",
+		 "resource":{"kind":"Pod","name":"foo"}}
+	]}`)
+	res, err := parseOutput(out, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Violations) != 1 || res.Violations[0].Resource != "Pod/foo" {
+		t.Fatalf("expected singular resource field to be honored, got %+v", res.Violations)
+	}
+}
+
+func TestParseOutput_StatusFieldFallback(t *testing.T) {
+	// Some kyverno output shapes/versions may use "status" instead of
+	// "result"; the fallback keeps those working.
+	out := []byte(`{"kind":"ClusterReport","results":[
+		{"policy":"p","rule":"r","status":"fail","severity":"high","message":"m",
+		 "resources":[{"kind":"Pod","name":"foo"}]}
+	]}`)
+	res, err := parseOutput(out, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Fail != 1 || len(res.Violations) != 1 {
+		t.Fatalf("expected status field fallback to be honored, got %+v", res)
+	}
+}
+
+func TestFindReportStart_PrettyPrintedSpaceAfterColon(t *testing.T) {
+	out := []byte("some preamble log line\n{\n  \"kind\": \"PolicyReport\",\n  \"results\": []\n}")
+	start := findReportStart(out)
+	if start == -1 {
+		t.Fatal("expected to find the report start")
+	}
+	res, err := parseOutput(out, nil)
+	if err != nil {
+		t.Fatalf("unexpected error parsing from found offset: %v", err)
+	}
+	if res.Pass != 0 {
+		t.Errorf("unexpected result: %+v", res)
+	}
+}
+
+func TestFindReportStart_WalksBackToEnclosingBrace(t *testing.T) {
+	// A preamble containing an unrelated '{' shouldn't be mistaken for the
+	// report start; findReportStart must land on the '{' that actually
+	// opens the report object identified by the kind marker.
+	out := []byte(`noise {not json} then {"kind":"ClusterReport","results":[]}`)
+	start := findReportStart(out)
+	if start == -1 || out[start] != '{' {
+		t.Fatalf("expected start to point at a '{', got offset %d", start)
+	}
+	res, err := parseOutput(out, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Violations) != 0 {
+		t.Errorf("unexpected violations: %+v", res.Violations)
+	}
+}
+
+func TestDeduplicate_CountsDistinctResourcesNotOccurrences(t *testing.T) {
+	// Two entries against the *same* resource (e.g. duplicated by
+	// kustomize/kyverno autogen across overlay variants) must count once.
+	violations := []Violation{
+		{Policy: "p", Rule: "r", Message: "m", Resource: "Pod/foo", File: "a.yaml", Severity: "high"},
+		{Policy: "p", Rule: "r", Message: "m", Resource: "Pod/foo", File: "b.yaml", Severity: "high"},
+		{Policy: "p", Rule: "r", Message: "m", Resource: "Pod/bar", File: "c.yaml", Severity: "high"},
+	}
+	ded := Deduplicate(violations, 5)
+	if len(ded) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(ded))
+	}
+	if ded[0].Count != 2 {
+		t.Errorf("Count = %d, want 2 distinct resources (Pod/foo counted once)", ded[0].Count)
+	}
+}
+
+func TestFormatComment_IncludesMessageAndSampleResources(t *testing.T) {
+	v := []DeduplicatedViolation{{
+		Policy: "p", Rule: "r", Message: "do not do the thing", Severity: "high",
+		Count: 5, Resources: []string{"Pod/a", "Pod/b"},
+	}}
+	out := FormatComment(v)
+	if !strings.Contains(out, "do not do the thing") {
+		t.Errorf("expected violation message in output: %s", out)
+	}
+	if !strings.Contains(out, "Pod/a") || !strings.Contains(out, "Pod/b") {
+		t.Errorf("expected sample resources in output: %s", out)
+	}
+	if !strings.Contains(out, "…and 3 more") {
+		t.Errorf("expected overflow line for the 3 resources beyond the 2 samples: %s", out)
+	}
+	if !strings.Contains(out, "5 resources affected") {
+		t.Errorf("expected affected-count line: %s", out)
+	}
+}
+
 func TestIsExcludedRule(t *testing.T) {
 	orig := ExcludedRules
 	defer func() { ExcludedRules = orig }()
