@@ -124,6 +124,33 @@ anything - it only _detects_ unresolved AVP tokens in
 already-rendered/committed YAML, independent of the build-time
 resolution described above.
 
+## Ghost Patch Detection
+
+Part of the Kustomize Build report section, `pkg/ghostpatch` detects a
+"ghost patch" - a `kustomization.yaml` `patches` entry whose `target`
+(kind/name/namespace) doesn't match any resource actually present in that
+overlay's rendered output, almost always because the resource it was meant
+to patch was renamed or removed elsewhere without updating (or removing)
+the patch. Every detected ghost is always shown in the report's Ghost
+Patches table, but only some are **blocking**
+(`ghostpatch.ClassifyOverlay`/`ClassifyApp`, wired via
+`buildGhostTable` in `pkg/validator/build_wiring.go`):
+
+- **Blocking** - the `kustomization.yaml`'s `patches:` section itself
+  changed relative to `main`/`origin/main` (via a real `git show` diff,
+  `ghostpatch.PatchesSectionChanged`) **and** the file isn't itself newly
+  added in this PR (per the changeset's added-files list, resolved once
+  via `changeset.GetAddedFiles` in `runBuildAndPostBuild`). This is the
+  case this PR most likely introduced or should have caught.
+- **Warning-only** - either the ghost patch predates this PR (the
+  `patches:` section is unchanged from `main`) or the `kustomization.yaml`
+  is brand new in this PR (nothing to compare against yet, so it can't
+  be confidently attributed to a change this PR made).
+
+A failure to resolve `main`/`origin/main` (no git history available, e.g.
+a shallow clone) degrades to "unchanged" (never blocking) rather than
+failing the check outright.
+
 ## Scaffold Validation
 
 Apps that opt into `scafctl`-based scaffolding (a `.scafctl/configs/<app>.yaml`

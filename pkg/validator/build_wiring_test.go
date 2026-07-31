@@ -1,6 +1,8 @@
 package validator
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -183,18 +185,23 @@ func TestBuildHookTable_AppWithHooksDefined(t *testing.T) {
 }
 
 func TestBuildGhostTable_NoApps(t *testing.T) {
-	if got := buildGhostTable(nil); got != "" {
-		t.Errorf("expected empty table for no apps, got %q", got)
+	if got, blocking := buildGhostTable(nil, nil); got != "" || blocking != 0 {
+		t.Errorf("expected empty table for no apps, got %q blocking=%d", got, blocking)
 	}
 }
 
 func TestBuildGhostTable_AppWithNoOverlays(t *testing.T) {
 	d := t.TempDir()
-	if got := buildGhostTable([]string{filepath.Join(d, "app-without-overlays")}); got != "" {
-		t.Errorf("expected empty table when the app has no overlays, got %q", got)
+	if got, blocking := buildGhostTable([]string{filepath.Join(d, "app-without-overlays")}, nil); got != "" || blocking != 0 {
+		t.Errorf("expected empty table when the app has no overlays, got %q blocking=%d", got, blocking)
 	}
 }
 
+// TestBuildGhostTable_GhostPatchDetected uses a plain (non-git) temp dir,
+// so ghostpatch.PatchesSectionChanged always falls back to "unchanged" (no
+// git history to diff against) - this only exercises the warning path.
+// See ghostpatch_test.go's git-backed tests for blocking-classification
+// coverage.
 func TestBuildGhostTable_GhostPatchDetected(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
@@ -207,11 +214,58 @@ func TestBuildGhostTable_GhostPatchDetected(t *testing.T) {
     [ { "op": "replace", "path": "/spec/replicas", "value": 1 } ]
 `)
 
-	got := buildGhostTable([]string{app})
+	got, blocking := buildGhostTable([]string{app}, nil)
 	if got == "" {
 		t.Fatal("expected a non-empty ghost patch table")
 	}
 	if !strings.Contains(got, "Deployment/missing") {
 		t.Errorf("expected the ghost patch target in the table, got:\n%s", got)
+	}
+	if blocking != 0 {
+		t.Errorf("expected 0 blocking (no git history to diff against), got %d", blocking)
+	}
+}
+
+// TestBuildGhostTable_BlockingGhostReflectedInCount uses a real git repo
+// (via ghostpatch's own test conventions) so ClassifyOverlay's blocking
+// path actually triggers, proving buildGhostTable's blockingCount return
+// reflects it (not just the rendered table's cosmetic marker).
+func TestBuildGhostTable_BlockingGhostReflectedInCount(t *testing.T) {
+	appDir := t.TempDir()
+	overlaysDir := filepath.Join(appDir, "overlays", "prod")
+	if err := os.MkdirAll(overlaysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(appDir)
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	kustPath := filepath.Join(overlaysDir, "kustomization.yaml")
+	mustWrite(t, kustPath, "patches: []\n")
+	runGit("init", "-b", "main")
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	mustWrite(t, kustPath, `patches:
+- target:
+    kind: Deployment
+    name: missing
+  patch: |-
+    []
+`)
+
+	got, blocking := buildGhostTable([]string{"."}, nil)
+	if got == "" {
+		t.Fatal("expected a non-empty ghost patch table")
+	}
+	if blocking != 1 {
+		t.Errorf("expected 1 blocking ghost patch, got %d (table: %s)", blocking, got)
 	}
 }

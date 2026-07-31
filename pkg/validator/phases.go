@@ -498,18 +498,29 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		Exempted: append(docResult.Exempted, overlayResult.Exempted...),
 	}
 	res.Check = combinedCheck
-	res.Blocking = len(direct) > 0
 
-	if res.Blocking {
+	fixNeeded, _ := kustomize.CheckFix(changed)
+	hookTable := buildHookTable(apps, hookCfgs, hookResults)
+	// addedFiles feeds ghostpatch.ClassifyOverlay's "is this
+	// kustomization.yaml itself new" check (a ghost patch on a brand-new
+	// overlay is a warning, not this PR's fault to have introduced against
+	// existing history) - an error resolving it (e.g. no git history
+	// available) degrades to "no added files", matching this phase's
+	// existing tolerant-of-git-failure pattern (kustomize.CheckFix above).
+	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
+	ghostTable, ghostBlockingCount := buildGhostTable(apps, addedFiles)
+	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
+
+	res.Blocking = len(direct) > 0 || ghostBlockingCount > 0
+
+	if len(direct) > 0 {
 		log.ErrorInSection("ResourceCompliance", "%d blocking finding(s)", len(direct))
 	} else {
 		log.Info("resource compliance: passed")
 	}
-
-	fixNeeded, _ := kustomize.CheckFix(changed)
-	hookTable := buildHookTable(apps, hookCfgs, hookResults)
-	ghostTable := buildGhostTable(apps)
-	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
+	if ghostBlockingCount > 0 {
+		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
+	}
 
 	// The README scaffold-status table's own structural staleness check
 	// ("scaffold table") runs as a Static Checks sub-check instead (see
