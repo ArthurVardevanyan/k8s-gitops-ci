@@ -376,7 +376,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	for _, app := range apps {
 		hookResults[app] = &appHookResult{}
 	}
-	var kyvernoOutputs []kyvernoOutput
+	var renderedOverlays []renderedOverlay
 	if len(overlays) > 0 {
 		overlayWorkers := w
 		if overlayWorkers > len(overlays) {
@@ -404,8 +404,11 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					if buildErr != "" {
 						buildErrs = append(buildErrs, buildErr)
 						log.ErrorInSection("Hooks", "%s", buildErr)
-					} else if kyvernoEnabled && len(rendered) > 0 {
-						kyvernoOutputs = append(kyvernoOutputs, kyvernoOutput{overlay: ov.path, data: rendered})
+					} else if len(rendered) > 0 {
+						// Collected unconditionally (not just when Kyverno is
+						// enabled) since NAD validation below also consumes
+						// every successfully-rendered overlay.
+						renderedOverlays = append(renderedOverlays, renderedOverlay{overlay: ov.path, data: rendered})
 					}
 					if hr := hookResults[app]; hr != nil {
 						hr.PreBuild = mergeHookOutcome(hr.PreBuild, pre)
@@ -432,8 +435,16 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 
 	if kyvernoEnabled {
-		res.Sections = append(res.Sections, runKyvernoValidation(kyvernoOutputs, log))
+		res.Sections = append(res.Sections, runKyvernoValidation(renderedOverlays, log))
 	}
+
+	// NetworkAttachmentDefinition validation over every successfully-rendered
+	// overlay. Structural checks always run (default-on, like every other
+	// check in this phase); the OVN-Kubernetes-aware semantic tier is
+	// additionally applied when Options.AssumeOpenShift is set, since an
+	// OpenShift/OKD cluster's default CNI is OVN-Kubernetes - the same
+	// assumption AssumeOpenShift already makes for the sync-options check.
+	res.Sections = append(res.Sections, runNADValidation(renderedOverlays, opts.AssumeOpenShift, log))
 
 	// Merge and classify.
 	allFindings := make([]check.Finding, 0, len(docResult.Findings)+len(overlayResult.Findings))

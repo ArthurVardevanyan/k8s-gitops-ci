@@ -99,7 +99,11 @@ of the flow above:
   `pkg/validator/exempt` (the unified exemption framework — see
   [EXCEPTIONS.md](EXCEPTIONS.md)), and one package per validator
   (`namespace`, `psa`, `rbac`, `crb`, `syncopts`, `image`, `namedport`,
-  `podspec`, `nad`, `placeholder`, `clusterid`).
+  `podspec`, `placeholder`, `clusterid`).
+- **NetworkAttachmentDefinition validation:** `pkg/validator/nad` — a
+  separate, always-on, non-exemptable validator over rendered overlay
+  output (not part of the `check.Register` framework above; see
+  [CI.md](CI.md#networkattachmentdefinition-nad-validation)).
 - **Reporting:** `pkg/validator/unified_report.go`,
   `compose_sections.go`, `pkg/logger`.
 - **Org-injection seams:** `pkg/provider` (see Design Conventions below).

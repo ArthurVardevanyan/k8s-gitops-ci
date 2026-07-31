@@ -97,6 +97,12 @@ treatment instead of using their owning check's own ID:
 | `project-ref`      | `pkg/validator/clusterid` (a project-identity sub-finding)                                                                                                                 | Yes                                                                                                                                                                                                                                                                                                                                                        |
 | `cluster-identity` | `pkg/validator/clusterid` (the fallback bucket for structural findings that don't set a more specific ID — e.g. a hypothetical future infraID-mismatch/invalid-JSON check) | **No — deliberately non-exemptable.** `exempt.Exemptable` hardcodes this ID to always return `false`, and `RegisterExemptable` refuses to register it even if called. This is intentional: a structural finding here means the data itself is malformed/untrustworthy, which isn't the kind of thing a selector or annotation should be able to wave away. |
 
+`pkg/validator/nad`'s NetworkAttachmentDefinition validation (see
+[CI.md](CI.md#networkattachmentdefinition-nad-validation)) is **not**
+part of the `check.Register` framework at all, so it has no check ID to
+exempt by either mode — a NAD finding always blocks regardless of
+`EXEMPTIONS=(...)` or annotations.
+
 ## Value vs. Token
 
 A `Scalar`'s exemption-matching value is its `Token` when set, falling

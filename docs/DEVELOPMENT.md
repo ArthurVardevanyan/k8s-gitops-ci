@@ -47,9 +47,12 @@ pkg/
   validator/        orchestration (RunAll, phases, report composition) +
                      per-concern sub-packages: check (registry), exempt
                      (unified exemption framework), and one package per
-                     validator (namespace, psa, rbac, crb, syncopts,
-                     image, namedport, podspec, nad, placeholder,
-                     clusterid)
+                     check.Register-driven validator (namespace, psa,
+                     rbac, crb, syncopts, image, namedport, podspec,
+                     placeholder, clusterid); nad is a separate,
+                     always-on, non-exemptable validator over rendered
+                     overlay output (not check.Register-driven — see
+                     docs/CI.md#networkattachmentdefinition-nad-validation)
   lint/              CLI-tool wrappers, one package per tool (golangci,
                      kubeconform, kyverno, markdownlint, prettier,
                      shellcheck, yamlsyntax)
