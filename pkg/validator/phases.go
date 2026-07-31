@@ -461,7 +461,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 
 	if kyvernoEnabled {
-		res.Sections = append(res.Sections, runKyvernoValidation(renderedOverlays, log))
+		res.Sections = append(res.Sections, runKyvernoValidation(renderedOverlays, yamlFiles, log))
 	}
 
 	// NetworkAttachmentDefinition validation over every successfully-rendered
