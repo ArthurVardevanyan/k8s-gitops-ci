@@ -229,6 +229,34 @@ automatically exemptable via its own check ID (see
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens, or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML                                                                                                                                |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID) |
 
+A handful of documents/directories are excluded from the doc-check pass
+above entirely (not merely exempted — they never generate a finding to
+begin with):
+
+- Every Kyverno `ClusterPolicy`/`Policy` document (`isKyvernoPolicyDoc`,
+  `pkg/validator/dispatch.go`) is excluded from every registered doc
+  check, since a policy's rule body can be shaped like a bare Pod/Service
+  spec (to match against), which would otherwise trip
+  `podspec-defaults`/`psa-labels`/`named-ports`/etc.
+- Any directory containing a `kyverno-test.yaml` (a Kyverno CLI test
+  manifest) has all of its files excluded from the doc-check pass
+  (`filterKyvernoTestFixtureDirs`, `pkg/validator/engine.go`) — those
+  fixtures are deliberately non-compliant by design (e.g. a Pod missing a
+  required field, to exercise a policy's "should fail" case) and aren't
+  real workloads. This doesn't affect kubeconform/Kyverno validation
+  themselves, which run over the changeset independently.
+- `placeholder` skips `CustomResourceDefinition` documents
+  (`placeholderCheck.SkipDoc`, `pkg/validator/register_checks.go`) — a
+  CRD's embedded OpenAPI schema can legitimately contain
+  angle-bracket/sentinel-shaped tokens (defaults, examples, pattern
+  strings) that aren't unresolved secrets.
+- `psa-labels` findings are suppressed when every one of that finding's
+  missing labels is present, commented out, in the app's `base/`
+  (`filterCommentedPSAFindings`, `pkg/validator/psa_wiring.go`) — e.g. an
+  operator temporarily commented a label out while troubleshooting. A
+  label that's present with an _invalid_ value is never suppressed this
+  way, only one that's genuinely absent.
+
 Four standalone (non-registry) steps participate in the same
 enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
 [Generic check-enablement mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)):

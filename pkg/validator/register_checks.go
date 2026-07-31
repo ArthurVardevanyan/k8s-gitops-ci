@@ -73,6 +73,12 @@ func (psaCheck) CheckDoc(data []byte, source string) []check.Finding {
 		out = append(out, check.Finding{
 			CheckID: "psa-labels", File: e.File,
 			Name: e.Name, Message: e.String(),
+			// MissingLabels is carried in Extra (rather than only inside
+			// the formatted Message) so filterCommentedPSAFindings
+			// (psa_wiring.go) can check each missing label individually
+			// against psa.FindCommentedNamespaces without re-parsing the
+			// rendered message string.
+			Extra: map[string]string{psaMissingLabelsExtraKey: strings.Join(e.MissingLabels, ",")},
 		})
 	}
 	return out
@@ -248,7 +254,11 @@ func (placeholderCheck) Section() string    { return "resource-compliance" }
 func (placeholderCheck) Blocking() bool     { return true }
 func (placeholderCheck) Scope() check.Scope { return check.ScopeDoc }
 func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
-	errs := placeholder.ValidateReaderWithOptions(bytes.NewReader(data), source, placeholder.Options{})
+	// CheckAVP: true - AVP-scheme placeholder tokens (<path:...#...>,
+	// argocd-vault-plugin's substitution syntax) are a real, documented
+	// placeholder form this check's own table advertises scanning for;
+	// leaving this false (as before) silently never scanned them.
+	errs := placeholder.ValidateReaderWithOptions(bytes.NewReader(data), source, placeholder.Options{CheckAVP: true})
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
 		out = append(out, check.Finding{
@@ -259,6 +269,13 @@ func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
 	}
 	return out
 }
+
+// SkipDoc excludes CustomResourceDefinition documents: a CRD's embedded
+// OpenAPI schema (defaults, examples, enum values, pattern strings, etc.)
+// can legitimately contain angle-bracket/sentinel-shaped tokens - schema
+// authoring conventions, not unresolved secrets - which would otherwise be
+// misreported as unresolved placeholders.
+func (placeholderCheck) SkipDoc(kind string) bool { return kind == "CustomResourceDefinition" }
 
 // ── cluster-identity (overlay scope) ─────────────────────────────────────────
 

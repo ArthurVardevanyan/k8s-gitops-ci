@@ -165,10 +165,21 @@ func splitDocuments(data []byte) [][]byte {
 func evaluateDoc(doc []byte, files []string, checks []check.Check, selectors []exempt.Selector) ([]check.Finding, []exempt.Applied) {
 	var findings []check.Finding
 	var exempted []exempt.Applied
+	var kind string
+	var kindLoaded bool
 	for _, c := range checks {
 		dc, ok := c.(check.DocCheck)
 		if !ok {
 			continue
+		}
+		if skipper, ok := c.(check.DocSkipper); ok {
+			if !kindLoaded {
+				kind = quickKind(doc)
+				kindLoaded = true
+			}
+			if skipper.SkipDoc(kind) {
+				continue
+			}
 		}
 		res := dc.CheckDoc(doc, "")
 		res, ex := fanOut(res, files, selectors)
@@ -209,6 +220,35 @@ func uniqueStrings(sl []string) []string {
 			seen[s] = true
 			out = append(out, s)
 		}
+	}
+	return out
+}
+
+// filterKyvernoTestFixtureDirs drops files living in a directory that also
+// contains a kyverno-test.yaml - a Kyverno CLI test manifest whose paired
+// resource fixtures are deliberately non-compliant by design (e.g. a Pod
+// intentionally missing a required field, to exercise a policy's "should
+// fail" case) - from compliance doc-check input, since those fixtures
+// aren't real workloads and shouldn't be held to podspec/psa/namespace/etc.
+// standards. Checked against the filesystem (not just the given files
+// list), since the kyverno-test.yaml sibling may not itself be part of the
+// current changeset. Only affects the compliance doc-check pass; the file
+// is still validated by kubeconform/Kyverno through their own paths.
+func filterKyvernoTestFixtureDirs(files []string) []string {
+	dirIsFixture := make(map[string]bool)
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		dir := filepath.Dir(f)
+		isFixture, cached := dirIsFixture[dir]
+		if !cached {
+			_, err := os.Stat(filepath.Join(dir, "kyverno-test.yaml"))
+			isFixture = err == nil
+			dirIsFixture[dir] = isFixture
+		}
+		if isFixture {
+			continue
+		}
+		out = append(out, f)
 	}
 	return out
 }

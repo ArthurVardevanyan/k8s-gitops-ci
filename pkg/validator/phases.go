@@ -384,10 +384,19 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	hookSelectors, hookExemptErrs := hookExemptSelectorsAndErrors(hookCfgs)
 	selectors := append(builtinExemptSelectors(), hookSelectors...)
 
-	// Doc engine over all changed YAML files.
-	yamlFiles := filterYAML(changed)
+	// Doc engine over all changed YAML files. kyverno-test.yaml fixture
+	// directories are excluded from compliance doc-checks (their paired
+	// resources are deliberately non-compliant CLI test data, not real
+	// workloads) - this doesn't affect kubeconform/Kyverno validation,
+	// which run over `changed`/rendered overlays through their own paths.
+	yamlFiles := filterKyvernoTestFixtureDirs(filterYAML(changed))
 	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
 	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
+	// Drop psa-labels findings whose missing labels are commented out
+	// (rather than genuinely absent) in the app's base/ - see
+	// filterCommentedPSAFindings for why this is scoped to exact,
+	// verbatim-missing-label matches only.
+	docResult.Findings = filterCommentedPSAFindings(docResult.Findings)
 
 	// Overlay engine - overlays detected from changed files. Each overlay is
 	// independent (its own checks over its own path/cluster), so fan them out

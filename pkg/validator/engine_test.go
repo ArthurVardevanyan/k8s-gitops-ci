@@ -56,6 +56,110 @@ func TestRunDocChecks(t *testing.T) {
 	}
 }
 
+// TestRunDocChecks_KyvernoPolicyDocsExcludedFromComplianceChecks is a
+// regression/coverage test proving indexDocuments' blanket
+// isKyvernoPolicyDoc skip already excludes Kyverno ClusterPolicy documents
+// from every ScopeDoc check (podspec included), even though a
+// ClusterPolicy's rule body can be shaped like a bare Pod spec (which would
+// otherwise trip podspec's tree-walker).
+func TestRunDocChecks_KyvernoPolicyDocsExcludedFromComplianceChecks(t *testing.T) {
+	d := t.TempDir()
+	f := filepath.Join(d, "policy.yaml")
+	policy := `apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+spec:
+  rules:
+  - name: autogen-cronjobs
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      pattern:
+        spec:
+          containers:
+          - name: "*"
+            securityContext:
+              runAsNonRoot: true
+`
+	if err := os.WriteFile(f, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, 1, nil)
+	for _, finding := range res.Findings {
+		if finding.CheckID == "podspec-defaults" {
+			t.Errorf("expected Kyverno policy documents to be excluded from podspec-defaults, got %+v", finding)
+		}
+	}
+}
+
+// TestEvaluateDoc_DocSkipperExcludesMatchingKind is a direct unit test of
+// the DocSkipper wiring itself (rather than a specific check), so a future
+// regression is caught even if every current DocSkipper implementation
+// happens to also be covered some other way.
+func TestEvaluateDoc_DocSkipperExcludesMatchingKind(t *testing.T) {
+	doc := []byte("kind: Widget\nmetadata:\n  name: x\n")
+	findings, _ := evaluateDoc(doc, []string{"a.yaml"}, []check.Check{skippingDocCheck{skipKind: "Widget"}}, nil)
+	if len(findings) != 0 {
+		t.Errorf("expected the matching kind to be skipped, got %+v", findings)
+	}
+	findings, _ = evaluateDoc(doc, []string{"a.yaml"}, []check.Check{skippingDocCheck{skipKind: "OtherKind"}}, nil)
+	if len(findings) != 1 {
+		t.Errorf("expected a non-matching kind not to be skipped, got %+v", findings)
+	}
+}
+
+type skippingDocCheck struct{ skipKind string }
+
+func (skippingDocCheck) ID() string                 { return "skipping-doc-check" }
+func (skippingDocCheck) Title() string              { return "" }
+func (skippingDocCheck) Section() string            { return "" }
+func (skippingDocCheck) Blocking() bool             { return false }
+func (skippingDocCheck) Scope() check.Scope         { return check.ScopeDoc }
+func (s skippingDocCheck) SkipDoc(kind string) bool { return kind == s.skipKind }
+func (skippingDocCheck) CheckDoc(data []byte, source string) []check.Finding {
+	return []check.Finding{{CheckID: "skipping-doc-check", File: source}}
+}
+
+func TestFilterKyvernoTestFixtureDirs(t *testing.T) {
+	d := t.TempDir()
+	fixtureDir := filepath.Join(d, "fixtures")
+	if err := os.MkdirAll(fixtureDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixtureDir, "kyverno-test.yaml"), []byte("name: test\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixtureResource := filepath.Join(fixtureDir, "bad-pod.yaml")
+	if err := os.WriteFile(fixtureResource, []byte("kind: Pod\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	normalDir := filepath.Join(d, "app")
+	if err := os.MkdirAll(normalDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	normalResource := filepath.Join(normalDir, "deployment.yaml")
+	if err := os.WriteFile(normalResource, []byte("kind: Deployment\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filterKyvernoTestFixtureDirs([]string{fixtureResource, normalResource})
+	if len(out) != 1 || out[0] != normalResource {
+		t.Errorf("expected only %q to survive, got %v", normalResource, out)
+	}
+}
+
+func TestFilterKyvernoTestFixtureDirs_NoFixtureDirsIsNoOp(t *testing.T) {
+	in := []string{"a.yaml", "b.yaml"}
+	out := filterKyvernoTestFixtureDirs(in)
+	if len(out) != 2 {
+		t.Errorf("expected no filtering when no kyverno-test.yaml exists, got %v", out)
+	}
+}
+
 func TestRunOverlayChecks(t *testing.T) {
 	res := runOverlayChecks([]string{"overlay"}, "cluster", nil, 1, nil)
 	if len(res.Findings) != 0 {
