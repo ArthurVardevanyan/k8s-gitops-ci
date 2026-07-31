@@ -64,8 +64,9 @@ func TestRunAll_LogsPhasesAndRecordsTiming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	if res.Logger.InfoCount() == 0 {
-		t.Error("expected at least one Info() log line to have been emitted during lint/static checks")
+	summaryOut := res.Logger.Summary()
+	if !strings.Contains(summaryOut, "RESULTS SUMMARY") {
+		t.Errorf("expected a rendered RESULTS SUMMARY banner, got:\n%s", summaryOut)
 	}
 	if res.Timing == nil {
 		t.Fatal("expected Result.Timing to be populated, got nil")

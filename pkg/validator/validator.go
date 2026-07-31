@@ -23,7 +23,7 @@ func RunAll(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve changeset: %w", err)
 	}
-	log.Info(fmt.Sprintf("files to validate: %d", len(changed)))
+	log.Info("files to validate: %d", len(changed))
 
 	if opts.LintOnly {
 		runLintAndStaticChecks(changed, opts, res, log, tc)
