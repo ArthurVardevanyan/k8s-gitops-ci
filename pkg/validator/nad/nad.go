@@ -1,95 +1,279 @@
+// Package nad provides NetworkAttachmentDefinition (NAD) validation.
+//
+// It offers two tiers of validation:
+//
+//   - Structural (default): lightweight YAML checks — the resource is a
+//     NetworkAttachmentDefinition and its spec.config field is present and
+//     non-empty. These checks are org/CNI-neutral.
+//   - OVN-aware (opt-in via assumeOpenshift): parses spec.config as an
+//     OVN-Kubernetes CNI netconf and applies OVN's semantic rules (topology,
+//     role, subnet, and transport constraints). This assumes NADs target the
+//     OVN-Kubernetes CNI, which is the CNI on OpenShift clusters - the same
+//     assumption already made by Options.AssumeOpenShift for the
+//     sync-options check (see pkg/validator/syncopts.AssumeOpenShift), so
+//     this tier reuses that flag rather than introducing a second one.
+//
+// The OVN-aware tier imports only the lightweight ovn-kubernetes netconf
+// parsing packages (pkg/config, pkg/types); the semantic rule set is
+// ported from ovn-kubernetes' util.ValidateNetConf so the heavyweight
+// pkg/util dependency tree (netlink, nftables, frr-k8s, ...) is avoided.
 package nad
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+
+	ovnconfig "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/config"
+	ovntypes "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/types"
+	kyaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-// ValidationError records NAD structure issues.
+// ValidationError represents a NAD validation failure.
 type ValidationError struct {
-	File, Message string
+	File    string
+	Message string
 }
 
 func (e ValidationError) String() string { return fmt.Sprintf("%s: %s", e.File, e.Message) }
 
-// IsNADFile reports whether a path looks like a NetworkAttachmentDefinition file.
-func IsNADFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".yaml" || ext == ".yml"
+// nadDoc is the minimal shape of a NetworkAttachmentDefinition needed for
+// validation. Decoding into this avoids depending on the typed NAD client.
+type nadDoc struct {
+	Kind     string `json:"kind"`
+	Metadata struct {
+		Name      string `json:"name"`
+		Namespace string `json:"namespace"`
+	} `json:"metadata"`
+	Spec struct {
+		Config string `json:"config"`
+	} `json:"spec"`
 }
 
-// ValidateFiles validates a list of files for NAD config emptiness.
-func ValidateFiles(files []string) []ValidationError {
+// ValidateFiles validates all NAD YAML files in the given list. When
+// assumeOpenshift is true, OVN-aware netconf validation is applied in
+// addition to the always-on structural checks.
+func ValidateFiles(files []string, assumeOpenshift bool) []ValidationError {
 	var errs []ValidationError
 	for _, f := range files {
 		if !IsNADFile(f) {
 			continue
 		}
-		data, err := os.ReadFile(f)
-		if err != nil {
-			continue
+		if e := validateNADFile(f, assumeOpenshift); len(e) > 0 {
+			errs = append(errs, e...)
 		}
-		errs = append(errs, validateBytes(data, f)...)
 	}
 	return errs
 }
 
-// ValidateDir walks a directory and validates NAD files.
-func ValidateDir(dir string) []ValidationError {
-	var errs []ValidationError
+// ValidateDir validates all NAD files in a directory tree.
+func ValidateDir(dir string, assumeOpenshift bool) []ValidationError {
+	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			errs = append(errs, ValidationError{File: path, Message: fmt.Sprintf("walking directory: %v", err)})
-			return nil
+			return err
 		}
-		if info.IsDir() || !IsNADFile(path) {
-			return nil
+		if !info.IsDir() && IsNADFile(path) {
+			files = append(files, path)
 		}
-		data, rerr := os.ReadFile(path)
-		if rerr != nil {
-			errs = append(errs, ValidationError{File: path, Message: fmt.Sprintf("read error: %v", rerr)})
-			return nil
-		}
-		errs = append(errs, validateBytes(data, path)...)
 		return nil
 	})
 	if err != nil {
-		errs = append(errs, ValidationError{File: dir, Message: fmt.Sprintf("walking directory: %v", err)})
+		return []ValidationError{{File: dir, Message: fmt.Sprintf("walking directory: %v", err)}}
+	}
+	return ValidateFiles(files, assumeOpenshift)
+}
+
+// nadKindRE matches a YAML `kind: NetworkAttachmentDefinition` mapping entry,
+// tolerating arbitrary whitespace after the colon and optional quoting of the
+// value (e.g. `kind:NetworkAttachmentDefinition`, `kind: "NetworkAttachmentDefinition"`).
+var nadKindRE = regexp.MustCompile(`(?m)^\s*kind:\s*["']?NetworkAttachmentDefinition["']?\s*$`)
+
+// IsNADFile reports whether path is a YAML file whose content declares
+// `kind: NetworkAttachmentDefinition`. Unlike a bare extension check, this
+// requires actually reading the file, so a non-existent or unreadable path
+// is reported as "not a NAD file" rather than erroring here — ValidateFiles/
+// ValidateDir surface read errors themselves once a file is dispatched to
+// validateNADFile.
+func IsNADFile(path string) bool {
+	if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return nadKindRE.Match(data)
+}
+
+// validateNADFile dispatches to the OVN-aware or structural validator.
+func validateNADFile(path string, assumeOpenshift bool) []ValidationError {
+	if assumeOpenshift {
+		return validateNADFileOVN(path)
+	}
+	return validateNADFileStructural(path)
+}
+
+// validateNADFileOVN parses every NetworkAttachmentDefinition document in the
+// file as an OVN-Kubernetes netconf and applies OVN's semantic validation.
+func validateNADFileOVN(path string) []ValidationError {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []ValidationError{{File: path, Message: fmt.Sprintf("read error: %v", err)}}
+	}
+
+	var errs []ValidationError
+	dec := kyaml.NewYAMLToJSONDecoder(bytes.NewReader(data))
+	for {
+		var doc nadDoc
+		if decErr := dec.Decode(&doc); decErr != nil {
+			if errors.Is(decErr, io.EOF) {
+				break
+			}
+			errs = append(errs, ValidationError{File: path, Message: fmt.Sprintf("decoding YAML: %v", decErr)})
+			return errs
+		}
+		if doc.Kind != "NetworkAttachmentDefinition" {
+			continue
+		}
+		if e := validateNetConf(path, doc); e != nil {
+			errs = append(errs, *e)
+		}
 	}
 	return errs
 }
 
-func validateBytes(data []byte, source string) []ValidationError {
-	var errs []ValidationError
-	if !strings.Contains(string(data), "kind: NetworkAttachmentDefinition") {
-		return nil
+// validateNetConf parses the NAD's spec.config as an OVN netconf and applies
+// OVN-Kubernetes' semantic rules. The rule set is ported from
+// ovn-kubernetes/go-controller/pkg/util.ValidateNetConf (keep in sync when the
+// pinned ovn-kubernetes version changes). Runtime-only checks that depend on
+// live cluster state (uplink gateway mode, dynamic transit-subnet defaulting)
+// are intentionally omitted as they are not statically knowable.
+func validateNetConf(path string, doc nadDoc) *ValidationError {
+	fail := func(msg string) *ValidationError {
+		return &ValidationError{File: path, Message: msg}
 	}
-	var found bool
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	lineNo := 0
+
+	netconf, err := ovnconfig.ParseNetConf([]byte(doc.Spec.Config))
+	if err != nil {
+		return fail(fmt.Sprintf("invalid NetworkAttachmentDefinition %s/%s: %v", doc.Metadata.Namespace, doc.Metadata.Name, err))
+	}
+
+	nadName := fmt.Sprintf("%s/%s", doc.Metadata.Namespace, doc.Metadata.Name)
+	if netconf.Name != ovntypes.DefaultNetworkName && netconf.NADName != nadName {
+		return fail(fmt.Sprintf("net-attach-def name (%s) is inconsistent with config (%s)", nadName, netconf.NADName))
+	}
+
+	if err := ovnconfig.ValidateNetConfNameFields(netconf); err != nil {
+		return fail(err.Error())
+	}
+
+	if netconf.AllowPersistentIPs && netconf.Topology == ovntypes.Layer3Topology {
+		return fail("layer3 topology does not allow persistent IPs")
+	}
+
+	if netconf.Role != "" && netconf.Role != ovntypes.NetworkRoleSecondary && netconf.Topology == ovntypes.LocalnetTopology {
+		return fail(fmt.Sprintf("unexpected network field \"role\" %s for \"localnet\" topology, "+
+			"localnet topology does not allow network roles to be set since its always a secondary network", netconf.Role))
+	}
+
+	if netconf.Role != "" && netconf.Role != ovntypes.NetworkRolePrimary && netconf.Role != ovntypes.NetworkRoleSecondary {
+		return fail(fmt.Sprintf("invalid network role value %s", netconf.Role))
+	}
+
+	if netconf.IPAM.Type != "" {
+		return fail(fmt.Sprintf("error parsing Network Attachment Definition %s: unsupported ipam key", nadName))
+	}
+
+	if netconf.Transport != "" &&
+		netconf.Transport != ovntypes.NetworkTransportNoOverlay &&
+		netconf.Transport != ovntypes.NetworkTransportEVPN {
+		return fail(fmt.Sprintf("invalid transport %q: must be one of %q", netconf.Transport,
+			[]string{ovntypes.NetworkTransportNoOverlay, ovntypes.NetworkTransportEVPN}))
+	}
+
+	if netconf.OutboundSNAT != "" {
+		if netconf.Transport != ovntypes.NetworkTransportNoOverlay {
+			return fail(fmt.Sprintf("outboundSNAT is only valid when transport is %q", ovntypes.NetworkTransportNoOverlay))
+		}
+		if netconf.OutboundSNAT != ovntypes.NoOverlaySNATEnabled &&
+			netconf.OutboundSNAT != ovntypes.NoOverlaySNATDisabled {
+			return fail(fmt.Sprintf("invalid outboundSNAT %q: must be one of %q", netconf.OutboundSNAT,
+				[]string{ovntypes.NoOverlaySNATEnabled, ovntypes.NoOverlaySNATDisabled}))
+		}
+	}
+
+	if netconf.JoinSubnet != "" && netconf.Topology == ovntypes.LocalnetTopology {
+		return fail("localnet topology does not allow specifying join-subnet as services are not supported")
+	}
+
+	if netconf.Role == ovntypes.NetworkRolePrimary && netconf.Subnets == "" && netconf.Topology == ovntypes.Layer2Topology {
+		return fail("the subnet attribute must be defined for layer2 primary user defined networks")
+	}
+
+	if netconf.InfrastructureSubnets != "" && netconf.Topology != ovntypes.Layer2Topology {
+		return fail("infrastructureSubnets is only supported for layer2 topology")
+	}
+
+	if netconf.ReservedSubnets != "" && netconf.Topology != ovntypes.Layer2Topology {
+		return fail("reservedSubnets is only supported for layer2 topology")
+	}
+
+	if netconf.DefaultGatewayIPs != "" && netconf.Topology != ovntypes.Layer2Topology {
+		return fail("defaultGatewayIPs is only supported for layer2 topology")
+	}
+
+	return nil
+}
+
+// validateNADFileStructural performs lightweight structural checks: the
+// spec.config field must be present and non-empty. This tier is CNI-neutral.
+func validateNADFileStructural(path string) []ValidationError {
+	f, err := os.Open(path)
+	if err != nil {
+		return []ValidationError{{File: path, Message: fmt.Sprintf("read error: %v", err)}}
+	}
+	defer f.Close() //nolint:errcheck // Best-effort close on read-only file
+
+	var errs []ValidationError
+	scanner := bufio.NewScanner(f)
+	hasConfig := false
+	lineNum := 0
+
 	for scanner.Scan() {
-		lineNo++
-		line := scanner.Text()
-		key := strings.TrimSpace(strings.SplitN(line, ":", 2)[0])
-		if key == "config" {
-			found = true
-			value := ""
-			if idx := strings.Index(line, ":"); idx != -1 {
-				value = strings.TrimSpace(line[idx+1:])
-			}
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "config:") {
+			hasConfig = true
+			value := strings.TrimSpace(strings.TrimPrefix(line, "config:"))
 			if value == "" || value == "''" || value == `""` {
-				errs = append(errs, ValidationError{File: source, Message: fmt.Sprintf("line %d: spec.config is empty", lineNo)})
+				errs = append(errs, ValidationError{
+					File:    path,
+					Message: fmt.Sprintf("line %d: spec.config is empty", lineNum),
+				})
 			}
 		}
 	}
-	if scanErr := scanner.Err(); scanErr != nil {
-		errs = append(errs, ValidationError{File: source, Message: fmt.Sprintf("scan error: %v", scanErr)})
+
+	if err := scanner.Err(); err != nil {
+		errs = append(errs, ValidationError{
+			File:    path,
+			Message: fmt.Sprintf("scan error: %v", err),
+		})
 	}
-	if !found {
-		errs = append(errs, ValidationError{File: source, Message: "spec.config field not found in NetworkAttachmentDefinition"})
+
+	if !hasConfig {
+		errs = append(errs, ValidationError{
+			File:    path,
+			Message: "spec.config field not found in NetworkAttachmentDefinition",
+		})
 	}
+
 	return errs
 }

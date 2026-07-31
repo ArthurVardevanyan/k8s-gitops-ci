@@ -8,6 +8,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/nad"
 )
 
 // titleCase uppercases the first letter of a string, safe for ASCII section names.
@@ -397,4 +398,27 @@ func ComposeKyvernoSection(body string) Section {
 // ComposeCINotesSection renders CI notes.
 func ComposeCINotesSection(body string) Section {
 	return Section{Name: "CI Notes", Body: body}
+}
+
+// ComposeNADSection renders NetworkAttachmentDefinition validation results.
+// tier reflects which rule set actually ran: "structural" (the always-on
+// default) or "OVN-aware" (Options.AssumeOpenShift's additional semantic
+// tier - see pkg/validator/nad's package doc comment).
+func ComposeNADSection(nadErrors []nad.ValidationError, assumeOpenshift bool) Section {
+	tier := "structural"
+	if assumeOpenshift {
+		tier = "OVN-aware"
+	}
+	if len(nadErrors) == 0 {
+		return Section{Name: "NetworkAttachmentDefinition Validation", Body: fmt.Sprintf("All NetworkAttachmentDefinition resources passed %s validation.", tier)}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "**%d invalid NetworkAttachmentDefinition(s)** (%s validation):\n\n", len(nadErrors), tier)
+	b.WriteString("| File | Error |\n| --- | --- |\n")
+	for _, e := range nadErrors {
+		fmt.Fprintf(&b, "| %s | %s |\n", e.File, strings.ReplaceAll(e.Message, "|", "\\|"))
+	}
+
+	return Section{Name: "NetworkAttachmentDefinition Validation", Body: b.String(), Error: true}
 }

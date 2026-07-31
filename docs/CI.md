@@ -214,6 +214,41 @@ enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
   an empty section rather than failing the run - Kyverno support is
   opt-in and best-effort once enabled, not a hard CI dependency.
 
+## NetworkAttachmentDefinition (NAD) validation
+
+`pkg/validator/nad` validates every successfully-rendered overlay's
+`NetworkAttachmentDefinition` resources (`runNADValidation` in
+`pkg/validator/nad_wiring.go`, over the same batch of rendered overlay
+output the `kyverno` step consumes — see
+[Build Strategies](#build-strategies)). Unlike the checks in the table
+above, it is **not** part of the `check.Register` framework: it's always
+on (not gateable via `DisabledChecks`/`EnabledChecks`) and its findings
+are **not** exemptable via `EXEMPTIONS=(...)` or the
+`gitops-ci.k8s.io/exempt-<check-id>` annotation (see
+[EXCEPTIONS.md](EXCEPTIONS.md)). It renders as its own always-present
+"NetworkAttachmentDefinition Validation" report section, blocking on any
+finding.
+
+It has two tiers:
+
+- **Structural** (always on): the resource is a
+  `NetworkAttachmentDefinition` and its `spec.config` field is present
+  and non-empty. CNI-neutral — no assumption about which CNI the config
+  targets.
+- **OVN-Kubernetes-aware** (opt-in via `--assume-openshift`, i.e.
+  `Options.AssumeOpenShift` — the same flag that exempts OpenShift-only
+  API groups from `sync-options` above, since an OpenShift/OKD cluster's
+  default CNI is OVN-Kubernetes): parses `spec.config` as an OVN netconf
+  and applies OVN's semantic rules (topology/role/subnet/transport
+  constraints, ported from `ovn-kubernetes/util.ValidateNetConf` — see
+  `pkg/validator/nad`'s package doc comment for what's intentionally
+  omitted: runtime-only checks that depend on live cluster state).
+
+`validate-nad` also exposes this directly as a CLI subcommand, bypassing
+the full pipeline, for validating a directory or explicit file list
+(`k8s-gitops-ci validate-nad [--assume-openshift] --dir <path>` or
+`... <file.yaml> ...`).
+
 ## Linting phase (all steps run concurrently)
 
 - **markdownlint**, **prettier**, **golangci** (Go files only),

@@ -29,7 +29,7 @@ func TestRunKyvernoValidation_NoOutputsSkipsEntirely(t *testing.T) {
 // findings/setup issues are a non-blocking advisory, not a build error).
 func TestRunKyvernoValidation_MissingCLIDegradesGracefully(t *testing.T) {
 	log := logger.NewLogger(false, "")
-	outputs := []kyvernoOutput{
+	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: foo\n")},
 	}
 	s := runKyvernoValidation(outputs, log)
@@ -109,7 +109,7 @@ func TestRunKyvernoValidation_WritesEachOutputAsASeparateFile(t *testing.T) {
 	// must not panic across a multi-output batch, exercising the
 	// resource-N.yaml naming/remap bookkeeping.
 	log := logger.NewLogger(false, "")
-	outputs := []kyvernoOutput{
+	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/dev", data: []byte("kind: ConfigMap\n")},
 		{overlay: "myapp/overlays/prod", data: []byte("kind: ConfigMap\n")},
 	}

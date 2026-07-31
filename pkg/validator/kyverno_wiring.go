@@ -10,12 +10,12 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 )
 
-// kyvernoOutput pairs a successfully-rendered overlay's YAML with the
+// renderedOverlay pairs a successfully-rendered overlay's YAML with the
 // overlay path it came from, so a violation's temp resource file (see
 // runKyvernoValidation) can be remapped back to something a reviewer can
 // actually open, instead of the resource's bare Kind
 // (pkg/lint/kyverno.Violation.File's previous, less useful value).
-type kyvernoOutput struct {
+type renderedOverlay struct {
 	overlay string
 	data    []byte
 }
@@ -29,7 +29,7 @@ type kyvernoOutput struct {
 // to an empty "Kyverno Policies" section rather than failing the run;
 // Kyverno support is opt-in (stepKyverno defaults off - see
 // docs/CI.md#registered-checks) and best-effort once enabled.
-func runKyvernoValidation(outputs []kyvernoOutput, log *logger.Logger) Section {
+func runKyvernoValidation(outputs []renderedOverlay, log *logger.Logger) Section {
 	if len(outputs) == 0 {
 		return ComposeKyvernoSection("")
 	}

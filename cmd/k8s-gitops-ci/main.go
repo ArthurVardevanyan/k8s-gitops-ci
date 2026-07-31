@@ -22,6 +22,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/nad"
 )
 
 func main() {
@@ -64,6 +65,8 @@ func main() {
 		err = runSortConfigs(args)
 	case "yaml-syntax":
 		err = runYAMLSyntax(args)
+	case "validate-nad":
+		err = runValidateNAD(args)
 	case "version", "--version", "-v":
 		fmt.Println(version.String())
 	case "--help", "-h", "help":
@@ -429,6 +432,42 @@ func runYAMLSyntax(args []string) error {
 	return fmt.Errorf("yaml-syntax: %d error(s)", len(violations))
 }
 
+// ── validate-nad ──────────────────────────────────────────────────────────────
+
+// runValidateNAD validates NetworkAttachmentDefinition files directly (bypassing
+// the full pipeline) - either every YAML file under --dir or the explicit file
+// paths given as positional args. --assume-openshift applies the additional
+// OVN-Kubernetes-aware semantic tier (see pkg/validator/nad's package doc
+// comment); the always-on structural tier runs regardless.
+func runValidateNAD(args []string) error {
+	fs := flag.NewFlagSet("validate-nad", flag.ExitOnError)
+	dir := fs.String("dir", "", "directory to validate")
+	assumeOpenshift := fs.Bool("assume-openshift", false, "apply OVN-aware validation (assumes the target CNI is OVN-Kubernetes)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *dir == "" && fs.NArg() == 0 {
+		return fmt.Errorf("validate-nad: usage: validate-nad [--assume-openshift] --dir <path> or <file.yaml> [<file.yaml>...]")
+	}
+
+	var errs []nad.ValidationError
+	if *dir != "" {
+		errs = nad.ValidateDir(*dir, *assumeOpenshift)
+	} else {
+		errs = nad.ValidateFiles(fs.Args(), *assumeOpenshift)
+	}
+
+	for _, e := range errs {
+		fmt.Fprintf(os.Stderr, "invalid NetworkAttachmentDefinition %s: %s\n", e.File, e.Message)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("validate-nad: %d error(s)", len(errs))
+	}
+	fmt.Println("All NetworkAttachmentDefinition files are valid.")
+	return nil
+}
+
 // ── help ──────────────────────────────────────────────────────────────────────
 
 func printUsage() {
@@ -454,6 +493,7 @@ Static Checks:
   ghost-patches     Detect kustomize patches that match no resource
   sort-configs      Sort repo config files
   update-scaffold-status Update scaffold README status table
+  validate-nad      Validate NetworkAttachmentDefinition files (structural + optional OVN-aware)
 
 Version:
   version           Show version information
