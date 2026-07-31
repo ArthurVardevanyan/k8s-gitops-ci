@@ -40,16 +40,28 @@ flowchart TD
 | --------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Full pipeline         | `k8s-gitops-ci pipeline --url <repo> --pr <n>` (alias: `ci`)       | PR's changed files via the GitHub API                                                                                                                                                                                                                                                                                                                                                                           |
 | Local PR check        | `k8s-gitops-ci pipeline --revision <sha> --target-branch <branch>` | `git diff <target>...<revision>`                                                                                                                                                                                                                                                                                                                                                                                |
-| Working-tree scan     | `k8s-gitops-ci test-all [dirs...]`                                 | every file under the given directories (not a diff — the full tree under each path)                                                                                                                                                                                                                                                                                                                             |
+| Working-tree scan     | `k8s-gitops-ci test-all [dirs...]`                                 | every file under the given positional directories (not a diff — the full tree under each path); with no positional dirs, falls back to the same changeset resolution as `pipeline` (see below)                                                                                                                                                                                                                  |
 | Uncommitted-diff scan | `k8s-gitops-ci scan-all`                                           | **`git diff` + `git diff --cached`** in the current working tree — despite the name, this does **not** scan every file in the repository; it only sees uncommitted changes, since it passes no `--dirs`/`--url`/`--pr`/`--revision` and `resolveChangeset` falls back to a working-tree diff when none of those are set. To validate the _entire_ repository regardless of git state, use `test-all .` instead. |
 | Ad-hoc overlay build  | `k8s-gitops-ci build-yaml --app <app> --cluster <cluster>`         | Same fallback as `scan-all` (uncommitted working-tree diff) — see the known limitation immediately below.                                                                                                                                                                                                                                                                                                       |
+
+`test-all` and `scan-all` accept the same changeset-scoping and
+check-enablement flags as `pipeline` — `--url`/`--pr`/`--target-branch`
+(PR/diff source), `--dirs` (restricts the resolved changeset to path
+prefixes — a filter, distinct from `test-all`'s positional `[dirs...]`,
+which instead _replaces_ the changeset source with a full-tree walk),
+`--disable-checks`/`--enable-checks`, `--hook-source`, `--concurrency`,
+`--assume-openshift`, and `--app`/`--cluster` (see the known limitation
+below). This lets a failing `pipeline --url ... --pr ...` run be
+reproduced locally with `test-all`/`scan-all` using an equivalent flag
+set, and vice versa.
 
 `--lint-only` (pipeline mode only) skips the Build Overlays + Resource
 Compliance phase entirely — useful for a fast Linting/Static-Checks-only
 pass.
 
 > **Known limitation — `--app`/`--cluster` are currently unwired.** > `Options.Apps`/`Options.Clusters` are threaded all the way from the
-> `pipeline`/`build-yaml` CLI flags down to `validator.Options`, but as of
+> `pipeline`/`test-all`/`scan-all`/`build-yaml` CLI flags down to
+> `validator.Options`, but as of
 > this writing **nothing in `pkg/validator` reads either field** to scope
 > the changeset or the overlay set — `resolveChangeset` only ever looks
 > at `Dirs`/`RepoURL`/`PR`/`BaseRef`/`IncludeDeletions`. (`pkg/scaffold.Run`

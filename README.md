@@ -85,6 +85,16 @@ Run `k8s-gitops-ci <command> --help` for per-command flags.
 error=N` line and per-phase timing, instead of only the aggregated
   pass/fail result at the end. Also available on `test-all`,
   `build-yaml`, and `scan-all`.
+- `--dirs`, `--disable-checks`, `--enable-checks`, `--hook-source`,
+  `--concurrency`, `--assume-openshift`, `--app`, `--cluster` — every
+  changeset-scoping and check-enablement flag `pipeline` accepts is also
+  accepted by `test-all` and `scan-all`, so a failing `pipeline --url ...
+--pr ...` run can be reproduced locally without a remote/PR (e.g.
+  `k8s-gitops-ci test-all --dirs=kubernetes/ --disable-checks=avp`). Note
+  `test-all`'s positional `[dirs...]` (a full-tree walk, replacing the
+  changeset source entirely) is distinct from `--dirs` (a path-prefix
+  filter applied on top of the resolved changeset) — see
+  [`docs/CI.md`](docs/CI.md) for the details.
 
 ## Development
 

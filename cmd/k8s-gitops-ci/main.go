@@ -183,16 +183,84 @@ func runBuildYAML(args []string) error {
 
 // ── test-all / scan-all ───────────────────────────────────────────────────────
 
-func runTestAll(args []string) error {
+// validatorFlagSet holds the flags shared by test-all and scan-all: the same
+// changeset-scoping and check-enablement flags "pipeline" exposes, so a
+// failing pipeline run can be reproduced with test-all/scan-all (and vice
+// versa) using an equivalent flag set, instead of test-all/scan-all only
+// exposing --verbose.
+type validatorFlagSet struct {
+	url, pr, targetBranch, hookSource string
+	dirs, disableChecks, enableChecks string
+	concurrency                       int
+	assumeOpenshift, verbose          bool
+	apps, clusters                    []string
+}
+
+// bindValidatorFlags registers the shared flags on fs and returns the
+// backing struct to read after fs.Parse.
+func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
+	v := &validatorFlagSet{}
+	fs.StringVar(&v.url, "url", "", "repository URL (e.g. https://github.com/org/repo — NOT a PR URL; pass the PR number via --pr)")
+	fs.StringVar(&v.pr, "pr", "", "pull request number")
+	fs.StringVar(&v.targetBranch, "target-branch", "", "target branch")
+	fs.StringVar(&v.hookSource, "hook-source", "", "hook source (main|pr|local)")
+	fs.StringVar(&v.dirs, "dirs", "", "comma-separated path prefixes to restrict the changeset to (e.g. kubernetes/,tekton/,.tekton/,okd/)")
+	fs.StringVar(&v.disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
+	fs.StringVar(&v.enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
+	fs.IntVar(&v.concurrency, "concurrency", 0, "worker concurrency (0=auto)")
+	fs.BoolVar(&v.assumeOpenshift, "assume-openshift", false, "treat OpenShift/OKD-only API groups (OLM, Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API, Metal3) as exempt from the sync-options check; only enable if ALL target clusters are OpenShift/OKD")
+	fs.BoolVar(&v.verbose, "verbose", false, "verbose output")
+	fs.Var(newStringSliceFlag(&v.apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
+	fs.Var(newStringSliceFlag(&v.clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
+	return v
+}
+
+// applyTo copies the parsed flags onto opts. Dirs (the positional,
+// full-tree-walk changeset source) is deliberately left untouched here -
+// callers that support it (test-all) set opts.Dirs separately from
+// fs.Args(), since it's a distinct changeset source from --dirs
+// (IncludePrefixes, which filters a git-diff/PR changeset rather than
+// replacing it).
+func (v *validatorFlagSet) applyTo(opts *validator.Options) {
+	opts.RepoURL = v.url
+	opts.PR = v.pr
+	opts.BaseRef = v.targetBranch
+	opts.HookSource = v.hookSource
+	opts.IncludePrefixes = splitCommaList(v.dirs)
+	opts.DisabledChecks = splitCommaList(v.disableChecks)
+	opts.EnabledChecks = splitCommaList(v.enableChecks)
+	opts.Concurrency = v.concurrency
+	opts.AssumeOpenShift = v.assumeOpenshift
+	opts.Verbose = v.verbose
+	opts.Apps = v.apps
+	opts.Clusters = v.clusters
+}
+
+// parseTestAllOptions parses test-all's flags (a superset of scan-all's:
+// same scoping/check-enablement flags as "pipeline", plus positional
+// [dirs...]) into a validator.Options, without running anything - split out
+// from runTestAll so the flag-to-Options wiring is unit-testable without
+// invoking validator.RunAll (which shells out to git).
+func parseTestAllOptions(args []string) (validator.Options, error) {
 	fs := flag.NewFlagSet("test-all", flag.ExitOnError)
-	var verbose bool
-	fs.BoolVar(&verbose, "verbose", false, "verbose output")
+	vf := bindValidatorFlags(fs)
 	if err := fs.Parse(args); err != nil {
-		return err
+		return validator.Options{}, err
 	}
-	opts := validator.Options{
-		Dirs:    fs.Args(),
-		Verbose: verbose,
+	var opts validator.Options
+	vf.applyTo(&opts)
+	// Positional [dirs...] args are a full-tree walk under those paths
+	// (bypassing git diff entirely) - kept for backward compatibility
+	// alongside the new --dirs flag, which instead filters a git-diff/PR
+	// changeset (see resolveChangeset in pkg/validator/validator.go).
+	opts.Dirs = fs.Args()
+	return opts, nil
+}
+
+func runTestAll(args []string) error {
+	opts, err := parseTestAllOptions(args)
+	if err != nil {
+		return err
 	}
 	res, err := validator.RunAll(opts)
 	if err != nil {
@@ -210,14 +278,25 @@ func runTestAll(args []string) error {
 	return nil
 }
 
-func runScanAll(args []string) error {
+// parseScanAllOptions parses scan-all's flags (the same scoping/check-
+// enablement flags as "pipeline", minus positional dirs) into a
+// validator.Options, without running anything - see parseTestAllOptions.
+func parseScanAllOptions(args []string) (validator.Options, error) {
 	fs := flag.NewFlagSet("scan-all", flag.ExitOnError)
-	var verbose bool
-	fs.BoolVar(&verbose, "verbose", false, "verbose output")
+	vf := bindValidatorFlags(fs)
 	if err := fs.Parse(args); err != nil {
+		return validator.Options{}, err
+	}
+	var opts validator.Options
+	vf.applyTo(&opts)
+	return opts, nil
+}
+
+func runScanAll(args []string) error {
+	opts, err := parseScanAllOptions(args)
+	if err != nil {
 		return err
 	}
-	opts := validator.Options{Verbose: verbose}
 	res, err := validator.RunAll(opts)
 	if err != nil {
 		return err
@@ -476,8 +555,14 @@ func printUsage() {
 Pipeline:
   pipeline          Run the full CI pipeline (aliases: ci)
   build-yaml        Build YAML for a specific app/cluster
-  test-all          Run all validators against the working tree
-  scan-all          Full-repo scan, print failing sections
+  test-all          Run all validators; accepts positional [dirs...] (full-tree
+                    walk) or the same --url/--pr/--dirs/--disable-checks/
+                    --enable-checks/etc. flags as "pipeline" (default: working-
+                    tree git diff)
+  scan-all          Like test-all, but only prints failing sections; defaults to
+                    an uncommitted working-tree diff (git diff + git diff
+                    --cached) - NOT a full-repo scan unless --dirs/--url/--pr
+                    is given (use "test-all ." for that)
 
 Linters:
   markdownlint      Run markdownlint on changed files
