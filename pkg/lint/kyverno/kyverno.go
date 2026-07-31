@@ -12,8 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kyverno/policies"
 )
 
 const Marker = "<!-- kyverno-policy-warning -->"
@@ -82,7 +80,7 @@ func ValidateFiles(files []string, policyDir string) (*Result, error) {
 			return nil, fmt.Errorf("running kyverno: %w", err)
 		}
 	}
-	return parseOutput(out)
+	return parseOutput(out, files)
 }
 
 // ValidateFilesBatched runs one kyverno subprocess per app in batches.
@@ -147,35 +145,7 @@ func CollectYAML(dir string) []string {
 	return files
 }
 
-// PreparePolicies extracts embedded policies and kustomize-builds them.
-func PreparePolicies() (policyPath string, cleanup func(), err error) {
-	dir, cleanup, err := policies.Extract()
-	if err != nil {
-		return "", nil, err
-	}
-	policyDir := filepath.Join(dir, "kyverno-policies")
-	if _, err := os.Stat(policyDir); err != nil {
-		return "", cleanup, err
-	}
-	ciOverlay := filepath.Join(policyDir, "overlays", "_ci")
-	_ = os.MkdirAll(ciOverlay, 0o755)
-	_ = os.WriteFile(filepath.Join(ciOverlay, "kustomization.yaml"), []byte(`resources:
-- ../../base
-`), 0o644)
-	cmd := exec.CommandContext(context.Background(), "kustomize", "build", ciOverlay)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", cleanup, fmt.Errorf("kustomize build policies: %w", err)
-	}
-	tmpFile := filepath.Join(dir, "prepared-policies.yaml")
-	out = stripNSSelectors(out)
-	if err := os.WriteFile(tmpFile, out, 0o644); err != nil {
-		return "", cleanup, err
-	}
-	return tmpFile, cleanup, nil
-}
-
-func parseOutput(out []byte) (*Result, error) {
+func parseOutput(out []byte, resourceFiles []string) (*Result, error) {
 	start := bytes.Index(out, []byte(`{"kind":"ClusterReport"`))
 	if start == -1 {
 		start = bytes.Index(out, []byte(`{"kind":"PolicyReport"`))
@@ -201,6 +171,9 @@ func parseOutput(out []byte) (*Result, error) {
 		rule, _ := m["rule"].(string)
 		status, _ := m["status"].(string)
 		resource, _ := m["resources"].([]any)
+		if isExcludedRule(policy, rule) {
+			continue
+		}
 		switch status {
 		case "pass":
 			res.Pass++
@@ -219,11 +192,13 @@ func parseOutput(out []byte) (*Result, error) {
 				if resMap == nil {
 					continue
 				}
+				name := fmt.Sprintf("%v", resMap["name"])
+				kind := fmt.Sprintf("%v", resMap["kind"])
 				res.Violations = append(res.Violations, Violation{
 					Policy:   policy,
 					Rule:     rule,
-					Resource: fmt.Sprintf("%v", resMap["name"]),
-					File:     fmt.Sprintf("%v", resMap["kind"]),
+					Resource: fmt.Sprintf("%s/%s", kind, name),
+					File:     findResourceFile(name, resourceFiles),
 					Message:  fmt.Sprintf("%v", m["message"]),
 					Severity: status,
 				})
@@ -231,6 +206,30 @@ func parseOutput(out []byte) (*Result, error) {
 		}
 	}
 	return res, nil
+}
+
+// findResourceFile is a best-effort match of a violation's resource name
+// back to the resourceFiles it was validated from, so Violation.File points
+// at something a reviewer can actually open - a resource's Kind (this
+// package's previous behavior) never identifies a source file. Matching by
+// filename containing the resource name is inherently approximate (kyverno's
+// JSON report doesn't otherwise carry the originating file), so this
+// deliberately checks every file for a substring match rather than assuming
+// a 1:1 file-to-resource layout; callers that already know the exact
+// resource-to-file mapping (e.g. one rendered overlay per file) should
+// prefer remapping Violation.File themselves afterward instead of relying on
+// this heuristic. Returns "" when no file's basename contains the name (kept
+// as an empty, honestly-unknown value rather than a misleading guess).
+func findResourceFile(name string, resourceFiles []string) string {
+	if name == "" {
+		return ""
+	}
+	for _, f := range resourceFiles {
+		if strings.Contains(filepath.Base(f), name) {
+			return f
+		}
+	}
+	return ""
 }
 
 // Deduplicate groups violations.
@@ -302,28 +301,6 @@ func FormatComment(violations []DeduplicatedViolation) string {
 		fmt.Fprintf(&b, "| %s | %s | %s %s | %d |\n", v.Policy, v.Rule, icon, v.Severity, v.Count)
 	}
 	return b.String()
-}
-
-func stripNSSelectors(data []byte) []byte {
-	// simplistic line removal of namespaceSelector label keys
-	lines := strings.Split(string(data), "\n")
-	out := make([]string, 0, len(lines))
-	skip := 0
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "namespaceSelector:" {
-			skip = 1
-			continue
-		}
-		if skip > 0 {
-			if strings.HasPrefix(line, "      ") || strings.HasPrefix(line, "\t") {
-				continue
-			}
-			skip = 0
-		}
-		out = append(out, line)
-	}
-	return []byte(strings.Join(out, "\n"))
 }
 
 func contains(sl []string, s string) bool {

@@ -311,6 +311,48 @@ func TestComposeSections_ReusesKustomizeBuildAndResourceCompliance(t *testing.T)
 	}
 }
 
+// TestComposeSections_OmitsKyvernoWhenNotProduced guards the "kyverno" step's
+// default-off gating: unlike Kustomize Build/Scaffold Validation/Resource
+// Compliance (which always fall back to a "No results." stub), a missing
+// Kyverno Policies section must be omitted entirely - phases.go only ever
+// produces it when the step is actually enabled, and a fallback stub here
+// would misleadingly read as "ran, found nothing" rather than "didn't run".
+func TestComposeSections_OmitsKyvernoWhenNotProduced(t *testing.T) {
+	res := &Result{ValidatorResult: &validator.Result{}}
+	sections := composeSections(res, Options{})
+	for _, s := range sections {
+		if s.Name == "Kyverno Policies" {
+			t.Errorf("expected no Kyverno Policies section when phases.go never produced one, got: %+v", s)
+		}
+	}
+}
+
+// TestComposeSections_ReusesKyvernoWhenProduced is the positive
+// counterpart: when phases.go did produce a "Kyverno Policies" section
+// (the "kyverno" step was enabled), composeSections must reuse it verbatim.
+func TestComposeSections_ReusesKyvernoWhenProduced(t *testing.T) {
+	res := &Result{
+		ValidatorResult: &validator.Result{
+			Sections: []validator.Section{
+				{Name: "Kyverno Policies", Body: "real kyverno body", Error: true},
+			},
+		},
+	}
+	sections := composeSections(res, Options{})
+	var found *validator.Section
+	for i := range sections {
+		if sections[i].Name == "Kyverno Policies" {
+			found = &sections[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a Kyverno Policies section to be present")
+	}
+	if found.Body != "real kyverno body" {
+		t.Errorf("expected the Kyverno Policies section to be reused verbatim, got:\n%s", found.Body)
+	}
+}
+
 // TestComposeSections_FallsBackWhenValidatorResultMissingSections guards
 // the --lint-only path: runBuildAndPostBuild never runs, so
 // ValidatorResult.Sections only has "Linting"/"Static Checks" - composeSections

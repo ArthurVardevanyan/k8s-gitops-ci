@@ -142,15 +142,17 @@ enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
   [Build Strategies](#build-strategies) above), default **on**.
 - **`kyverno`** — policy validation via `pkg/lint/kyverno`, default
   **off** (an org must opt in and supply its own policies — see
-  [SCHEMAS.md](SCHEMAS.md)). **Known limitation:** `stepKyverno` is
-  registered in `defaultOffSteps` and documented as an opt-in step, but
-  as of this writing `pkg/lint/kyverno` is never actually imported by
-  `pkg/validator/phases.go` or any other pipeline call site — there is no
-  dispatch wiring yet, so enabling it via `--enable-checks kyverno` is
-  currently a no-op. Verify against the current code before relying on
-  this changing without notice; treat Kyverno support as "the package
-  exists and is independently tested, the pipeline integration doesn't
-  yet."
+  [SCHEMAS.md](SCHEMAS.md)). Once enabled (`--enable-checks kyverno`),
+  every successfully-built overlay from this phase's build loop (see
+  [Build Strategies](#build-strategies) above) is batched into one
+  `kyverno apply` invocation
+  (`pkg/validator/kyverno_wiring.go`'s `runKyvernoValidation`) against the
+  prepared policy bundle; results render as a non-blocking "Kyverno
+  Policies" advisory section (`kyverno.FormatComment`'s own doc comment:
+  findings never contribute to `res.Blocking`). A missing `kyverno`/
+  `kustomize` CLI, unpreparable policies, or a write failure all degrade to
+  an empty section rather than failing the run - Kyverno support is
+  opt-in and best-effort once enabled, not a hard CI dependency.
 
 ## Linting phase (all steps run concurrently)
 

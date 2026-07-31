@@ -70,16 +70,87 @@ func TestMergeResults(t *testing.T) {
 	}
 }
 
-func TestStripNSSelectors(t *testing.T) {
-	in := []byte(`match:
-  namespaceSelector:
-    foo: bar
-  resources:
-    kinds:
-    - Pod
-`)
-	out := stripNSSelectors(in)
-	if strings.Contains(string(out), "namespaceSelector") {
-		t.Errorf("namespaceSelector not stripped: %s", out)
+func TestFindResourceFile_Match(t *testing.T) {
+	files := []string{"/tmp/build/myapp/prod.yaml", "/tmp/build/myapp/dev.yaml"}
+	if got := findResourceFile("prod", files); got != files[0] {
+		t.Errorf("findResourceFile = %q, want %q", got, files[0])
+	}
+}
+
+func TestFindResourceFile_NoMatch(t *testing.T) {
+	files := []string{"/tmp/build/myapp/prod.yaml"}
+	if got := findResourceFile("nonexistent", files); got != "" {
+		t.Errorf("findResourceFile = %q, want empty", got)
+	}
+}
+
+func TestFindResourceFile_EmptyName(t *testing.T) {
+	if got := findResourceFile("", []string{"/tmp/a.yaml"}); got != "" {
+		t.Errorf("findResourceFile = %q, want empty", got)
+	}
+}
+
+func TestParseOutput_FileAttributionViaResourceName(t *testing.T) {
+	out := []byte(`{"kind":"ClusterReport","results":[
+		{"policy":"require-labels","rule":"check-labels","status":"fail","message":"missing label",
+		 "resources":[{"kind":"Deployment","name":"foo","namespace":"bar"}]}
+	]}`)
+	res, err := parseOutput(out, []string{"/tmp/build/myapp/prod-foo.yaml"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(res.Violations))
+	}
+	if res.Violations[0].File != "/tmp/build/myapp/prod-foo.yaml" {
+		t.Errorf("File = %q, want the matched source file, not the resource Kind", res.Violations[0].File)
+	}
+	if res.Violations[0].Resource != "Deployment/foo" {
+		t.Errorf("Resource = %q, want %q", res.Violations[0].Resource, "Deployment/foo")
+	}
+}
+
+func TestParseOutput_ExcludedRuleDropped(t *testing.T) {
+	orig := ExcludedRules
+	defer func() { ExcludedRules = orig }()
+	ExcludedRules = map[string][]string{"excluded-policy": nil}
+
+	out := []byte(`{"kind":"ClusterReport","results":[
+		{"policy":"excluded-policy","rule":"any-rule","status":"fail","message":"m",
+		 "resources":[{"kind":"Pod","name":"foo"}]},
+		{"policy":"kept-policy","rule":"any-rule","status":"fail","message":"m",
+		 "resources":[{"kind":"Pod","name":"bar"}]}
+	]}`)
+	res, err := parseOutput(out, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Violations) != 1 || res.Violations[0].Policy != "kept-policy" {
+		t.Fatalf("expected only the non-excluded policy's violation to survive, got %+v", res.Violations)
+	}
+	// The excluded result's pass/fail counters must not be tallied either.
+	if res.Fail != 1 {
+		t.Errorf("Fail = %d, want 1 (excluded result shouldn't be counted)", res.Fail)
+	}
+}
+
+func TestIsExcludedRule(t *testing.T) {
+	orig := ExcludedRules
+	defer func() { ExcludedRules = orig }()
+	ExcludedRules = map[string][]string{
+		"policy-with-all-rules-excluded": nil,
+		"policy-with-one-rule-excluded":  {"specific-rule"},
+	}
+	if !isExcludedRule("policy-with-all-rules-excluded", "any-rule") {
+		t.Error("expected an empty rule slice to exclude every rule under that policy")
+	}
+	if !isExcludedRule("policy-with-one-rule-excluded", "specific-rule") {
+		t.Error("expected the specifically-listed rule to be excluded")
+	}
+	if isExcludedRule("policy-with-one-rule-excluded", "other-rule") {
+		t.Error("expected a different rule under the same policy to remain included")
+	}
+	if isExcludedRule("unconfigured-policy", "any-rule") {
+		t.Error("expected an unconfigured policy to never be excluded")
 	}
 }

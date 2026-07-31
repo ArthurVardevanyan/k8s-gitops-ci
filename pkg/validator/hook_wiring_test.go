@@ -108,7 +108,7 @@ func TestBuildOverlayWithHooks_NoHooksDefined(t *testing.T) {
 	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
 	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
 
-	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy)
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy)
 	if buildErr != "" {
 		t.Errorf("expected a clean build, got error: %q", buildErr)
 	}
@@ -126,7 +126,7 @@ func TestBuildOverlayWithHooks_PreBuildFailureSkipsBuild(t *testing.T) {
 	mustWrite(t, filepath.Join(app, "test.sh"), "#!/bin/sh\nPRE_BUILD_HOOK=fail_pre\nfail_pre() {\n\techo boom >&2\n\texit 1\n}\n")
 
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
 	if buildErr == "" || !strings.Contains(buildErr, "pre-build hook") {
 		t.Errorf("expected a pre-build hook error, got %q", buildErr)
 	}
@@ -160,7 +160,7 @@ check_yaml() {
 
 	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
 	if buildErr != "" {
 		t.Fatalf("expected a clean build, got error: %q", buildErr)
 	}
@@ -182,12 +182,37 @@ func TestBuildOverlayWithHooks_PostBuildHookFailureIsReported(t *testing.T) {
 
 	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, _, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
+	buildErr, _, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
 	if buildErr == "" || !strings.Contains(buildErr, "post-build hook") {
 		t.Errorf("expected a post-build hook error, got %q", buildErr)
 	}
 	if post != hookFailed {
 		t.Errorf("expected post=hookFailed, got %v", post)
+	}
+}
+
+func TestBuildOverlayWithHooks_ReturnsRenderedYAMLOnSuccess(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
+
+	buildErr, _, _, rendered := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy)
+	if buildErr != "" {
+		t.Fatalf("expected a clean build, got error: %q", buildErr)
+	}
+	if !strings.Contains(string(rendered), "kind: Deployment") {
+		t.Errorf("expected the rendered YAML to be returned, got: %s", rendered)
+	}
+}
+
+func TestBuildOverlayWithHooks_NoRenderedYAMLOnBuildFailure(t *testing.T) {
+	d := t.TempDir()
+	buildErr, _, _, rendered := buildOverlayWithHooks(overlayRef{path: filepath.Join(d, "does-not-exist"), cluster: "foo"}, nil, kustomizeStrategy)
+	if buildErr == "" {
+		t.Fatal("expected a build error for a missing overlay")
+	}
+	if rendered != nil {
+		t.Errorf("expected no rendered YAML on build failure, got: %s", rendered)
 	}
 }
 

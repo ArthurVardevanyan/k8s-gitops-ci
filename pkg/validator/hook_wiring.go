@@ -146,32 +146,35 @@ func appBuildDir(app string) string {
 // failing POST_BUILD_HOOK is reported even though the build itself
 // succeeded. pre/post report which hooks were attempted and how they went,
 // for the caller to fold into the app's aggregated appHookResult under its
-// own lock.
-func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStrategy) (buildErr string, pre, post hookOutcome) {
+// own lock. rendered is the overlay's fully-built YAML on success (nil on
+// any failure) - the caller reuses it for Kyverno policy validation
+// (runKyvernoValidation) instead of rendering the same overlay a second
+// time.
+func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStrategy) (buildErr string, pre, post hookOutcome, rendered []byte) {
 	app := appFromOverlayPath(ov.path)
 	outFile := filepath.Join(appBuildDir(app), filepath.Base(ov.path)+".yaml")
 
 	if cfg != nil && cfg.HasPreBuild {
 		if err := hook.RunPreBuildHook(cfg, ov.path, outFile); err != nil {
-			return fmt.Sprintf("kustomize build %s: pre-build hook: %s", ov.path, err), hookFailed, hookNotDefined
+			return fmt.Sprintf("kustomize build %s: pre-build hook: %s", ov.path, err), hookFailed, hookNotDefined, nil
 		}
 		pre = hookRan
 	}
 
 	out, err := overlay.RenderWithStrategy(app, ov.path, strategy.Strategy, strategy.Exclude)
 	if err != nil {
-		return fmt.Sprintf("kustomize build %s: %s", ov.path, err), pre, post
+		return fmt.Sprintf("kustomize build %s: %s", ov.path, err), pre, post, nil
 	}
 
 	if cfg != nil && cfg.HasPostBuild {
 		if err := os.MkdirAll(filepath.Dir(outFile), 0o750); err != nil {
-			return fmt.Sprintf("kustomize build %s: post-build hook: writing rendered YAML: %s", ov.path, err), pre, hookFailed
+			return fmt.Sprintf("kustomize build %s: post-build hook: writing rendered YAML: %s", ov.path, err), pre, hookFailed, nil
 		}
 		if err := os.WriteFile(outFile, out, 0o600); err != nil {
-			return fmt.Sprintf("kustomize build %s: post-build hook: writing rendered YAML: %s", ov.path, err), pre, hookFailed
+			return fmt.Sprintf("kustomize build %s: post-build hook: writing rendered YAML: %s", ov.path, err), pre, hookFailed, nil
 		}
 		if err := hook.RunPostBuildHook(cfg, outFile, ov.path); err != nil {
-			return fmt.Sprintf("kustomize build %s: post-build hook: %s", ov.path, err), pre, hookFailed
+			return fmt.Sprintf("kustomize build %s: post-build hook: %s", ov.path, err), pre, hookFailed, nil
 		}
 		post = hookRan
 	} else if cfg != nil && cfg.HasPostValidate {
@@ -182,7 +185,7 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 		}
 	}
 
-	return "", pre, post
+	return "", pre, post, out
 }
 
 // runAppPostValidateHooks runs each app's POST_VALIDATE_HOOK (once, after

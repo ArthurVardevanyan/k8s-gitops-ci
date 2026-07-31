@@ -68,22 +68,27 @@ To use Kyverno validation:
 
 1. Point `scripts/pull-policies.sh` (or replace it entirely) at your own
    policy source and rebuild, so `policies.tar.gz` contains real policy
-   manifests under a `base/` directory.
+   manifests under a `kyverno-policies/base/` directory.
 2. Opt in with `--enable-checks kyverno` (there is no dedicated
    `--enable-kyverno` flag — see `docs/DEVELOPMENT.md`'s generic
-   check-enablement section).
-3. `kyverno.NamespaceSelectorLabelKeys` (namespace-label keys to strip
-   `namespaceSelector` gates for, since offline `kyverno apply` has no
-   namespace labels available) is available today and defaults to empty
-   (no stripping) — set it from your own configuration layer if needed.
+   check-enablement section). Once enabled, every successfully-built
+   overlay is validated against the prepared policy bundle - see
+   [CI.md](CI.md)'s Registered checks section.
 
-> **Planned, not yet implemented:** `kyverno.ExcludedRules`
-> (policy/rule combinations to drop from results) and
-> `kyverno.IncludeComponents` (kustomize component paths layered on top of
-> the policy base) are designed but not yet built — see the Kyverno
-> section of the ongoing parity-remediation plan. Once landed, both will
-> follow the same empty/no-op-by-default contract as
-> `NamespaceSelectorLabelKeys`, and will be **runtime-checked exported
-> variables**, not part of the embedded archive — the archive controls
-> _what policies exist_, these vars control _how they're applied and
-> filtered_ once loaded. This note will be removed once they ship.
+Three runtime-checked exported variables (not part of the embedded
+archive - the archive controls _what policies exist_, these control _how
+they're applied and filtered_ once loaded) tune Kyverno validation, all
+empty/no-op by default:
+
+- `kyverno.NamespaceSelectorLabelKeys` — namespace-label keys to strip
+  `namespaceSelector` gates for, since offline `kyverno apply` has no
+  namespace labels available. A policy's `namespaceSelector` is only
+  stripped when its `matchLabels` contains one of these keys - an
+  unconfigured or non-matching selector is left untouched.
+- `kyverno.IncludeComponents` — kustomize component paths (relative to
+  the policy bundle's `overlays/_ci` directory, e.g.
+  `"../../components/restrict-old-registry"`) layered on top of the
+  bundle's `base/` when preparing policies. Defaults to base-only.
+- `kyverno.ExcludedRules` — a `map[string][]string` of policy name to the
+  rule names to drop from that policy's results (an empty slice excludes
+  every rule under that policy). Defaults to empty (nothing excluded).
