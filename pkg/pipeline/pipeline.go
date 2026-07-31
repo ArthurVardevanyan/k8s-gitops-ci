@@ -50,6 +50,7 @@ type Options struct {
 type Result struct {
 	PRValid          bool
 	TitleErr         error
+	TitleSuggestion  string // non-blocking (see github.PRTitleSuggestion) - never a failure reason.
 	UnsignedErr      error
 	ChecklistErr     error
 	ValidatorResult  *validator.Result
@@ -97,6 +98,13 @@ func Run(opts Options) error {
 			log.Error("PR title: %v", res.TitleErr)
 		} else {
 			log.Info("PR title: passed")
+			// Only consulted once the required prefix has already passed -
+			// see github.PRTitleSuggestion and ComposePRChecksSection/
+			// prTitleChild's non-blocking rendering of this.
+			res.TitleSuggestion = github.PRTitleSuggestion(client)
+			if res.TitleSuggestion != "" {
+				log.Warn("PR title suggestion: %s", res.TitleSuggestion)
+			}
 		}
 		res.UnsignedErr = runUnsignedCheck(client)
 		if res.UnsignedErr != nil {
@@ -423,7 +431,7 @@ func composeSections(res *Result, opts Options) []validator.Section {
 	sections := make([]validator.Section, 0, 7)
 
 	// 1. PR Checks
-	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr))
+	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr, res.TitleSuggestion))
 
 	// 2–7. Linting, Static Checks, Kustomize Build, Scaffold Validation,
 	// Scaffold Drift Protection, and Resource Compliance are all fully
