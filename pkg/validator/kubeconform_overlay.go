@@ -9,6 +9,15 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 )
 
+// ExtraNonAppDirs names top-level repository directories that must never be
+// treated as a kustomize "app root", even if one happens to contain a
+// base/, components/, or overlays/ subdirectory (e.g. a vendored example,
+// test-fixture, or internal-tooling directory checked into the repo whose
+// layout coincidentally matches an app's shape). Empty by default - the
+// generic core has nothing to guard against; an org layer may populate it
+// from a Configure()-style seam.
+var ExtraNonAppDirs = map[string]bool{}
+
 // detectAppRoots scans files for kustomize "app root" directories - i.e.
 // directories that directly contain a base/, components/, or overlays/
 // subdirectory - and returns the deduplicated subset that actually have at
@@ -18,12 +27,16 @@ import (
 // via a Kustomize patch/component (e.g. a base WasmPlugin missing its
 // `spec.url`, later supplied by a patch component) or that are never
 // resources at all (e.g. files consumed only as secretGenerator/
-// configMapGenerator data).
+// configMapGenerator data). A file whose top-level directory is listed in
+// ExtraNonAppDirs is skipped entirely, regardless of its shape.
 func detectAppRoots(files []string) []string {
 	seen := map[string]bool{}
 	roots := make([]string, 0, len(files))
 	for _, f := range files {
 		parts := strings.Split(filepath.ToSlash(f), "/")
+		if len(parts) > 0 && ExtraNonAppDirs[parts[0]] {
+			continue
+		}
 		for i, p := range parts {
 			if i == 0 {
 				continue
