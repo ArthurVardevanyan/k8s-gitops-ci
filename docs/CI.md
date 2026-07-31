@@ -225,14 +225,22 @@ enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
   **off** (an org must opt in and supply its own policies — see
   [SCHEMAS.md](SCHEMAS.md)). Once enabled (`--enable-checks kyverno`),
   every successfully-built overlay from this phase's build loop (see
-  [Build Strategies](#build-strategies) above) is batched into one
+  [Build Strategies](#build-strategies) above) **plus every raw changed
+  YAML source file** (excluding `kustomization.yaml`/`.yml`/
+  `Kustomization` files, which aren't real resources) is batched into one
   `kyverno apply` invocation
   (`pkg/validator/kyverno_wiring.go`'s `runKyvernoValidation`) against the
-  prepared policy bundle; results render as a non-blocking "Kyverno
-  Policies" advisory section (`kyverno.FormatComment`'s own doc comment:
-  findings never contribute to `res.Blocking`). A missing `kyverno`/
-  `kustomize` CLI, unpreparable policies, or a write failure all degrade to
-  an empty section rather than failing the run - Kyverno support is
+  prepared policy bundle. The raw-source pass exists because a brand new
+  component not yet referenced by any overlay's `kustomization.yaml`
+  never appears in any rendered overlay output at all, so relying on
+  rendered output alone would let a policy violation in it go completely
+  unnoticed until it's actually wired up; some overlap between the two
+  passes is expected and harmless. Results render as a non-blocking
+  "Kyverno Policies" advisory section (`kyverno.FormatComment`'s own doc
+  comment: findings never contribute to `res.Blocking`, regardless of
+  which pass found them). A missing `kyverno`/`kustomize` CLI,
+  unpreparable policies, or a write failure all degrade to an empty
+  section rather than failing the run - Kyverno support is
   opt-in and best-effort once enabled, not a hard CI dependency.
 
 ## NetworkAttachmentDefinition (NAD) validation
