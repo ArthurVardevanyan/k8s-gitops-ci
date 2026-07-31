@@ -421,6 +421,34 @@ func TestComposeSections_ReusesNADSection(t *testing.T) {
 	}
 }
 
+// TestComposeSections_ReusesScaffoldDriftProtectionSection guards that the
+// unconditional "Scaffold Drift Protection" section phases.go produces
+// (findUnprotectedApps/ComposeDriftProtectionSection in scaffold_wiring.go/
+// compose_sections.go) is relayed into the actual PR comment, the same way
+// Kustomize Build/Scaffold Validation/Resource Compliance/NAD are.
+func TestComposeSections_ReusesScaffoldDriftProtectionSection(t *testing.T) {
+	res := &Result{
+		ValidatorResult: &validator.Result{
+			Sections: []validator.Section{
+				{Name: "Scaffold Drift Protection", Body: "real drift protection body"},
+			},
+		},
+	}
+	sections := composeSections(res, Options{})
+	var found *validator.Section
+	for i := range sections {
+		if sections[i].Name == "Scaffold Drift Protection" {
+			found = &sections[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a Scaffold Drift Protection section to be present")
+	}
+	if found.Body != "real drift protection body" {
+		t.Errorf("expected the section to be reused verbatim, got:\n%s", found.Body)
+	}
+}
+
 // TestBuildReport_UsesProvidersForTitleAndHeader guards against
 // buildReport falling back to hardcoded "GitOps CI Results"/"GitOps CI
 // Pipeline" strings instead of the org-injectable provider.Providers seam

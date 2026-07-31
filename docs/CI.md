@@ -152,6 +152,17 @@ PR didn't cause" (which would need re-running scaffold against the
 merge-base template/config, a real but substantially riskier technique
 this implementation deliberately doesn't attempt).
 
+Separately, every app whose overlays or `.scafctl` template/config
+changed is also checked for whether it has drift **coverage** at all:
+`findUnprotectedApps` (`pkg/validator/scaffold_wiring.go`) flags any app
+that has a scaffold template (so drift detection is actually available
+for it) but has opted out via `SCAFFOLD=false` in its `test.sh` (see
+[HOOKS.md](HOOKS.md)) - these apps are silently skipped by every trigger
+above (`scaffold.HasScaffoldEnabled` gates all three), so a real drift
+there would otherwise go completely unreported. This renders as its own
+"Scaffold Drift Protection" report section, always present,
+non-blocking (a coverage gap warning, not a drift finding).
+
 Separately, `scaffold.CheckReadmeStatus` is a cheap, structural,
 per-PR check of the README's `<!-- scaffold-status -->` table: does it
 list exactly the (app, overlay) pairs that exist on disk today, with no
@@ -329,9 +340,12 @@ independently, once.)
 See `docs/DEVELOPMENT.md`'s
 [Unified PR-comment report](DEVELOPMENT.md#unified-pr-comment-report-pkgvalidatorunified_reportgo-compose_sectionsgo)
 section for the full rendering model (sections, sub-check dropdowns,
-status icons). In short: one PR comment, five top-level sections
-(Linting, Static Checks, Kustomize Build, Scaffold Validation, Resource
-Compliance), each a collapsible `<details>` block; Resource Compliance
+status icons). In short: one PR comment, each top-level section a
+collapsible `<details>` block - PR Checks, Linting, Static Checks,
+Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
+Resource Compliance, NetworkAttachmentDefinition Validation, CI Notes,
+plus Kyverno Policies when the opt-in `kyverno` step is enabled (see
+[Registered checks](#registered-checks) below). Resource Compliance
 additionally groups findings by check ID with an "Accepted Exceptions"
 audit sub-block.
 

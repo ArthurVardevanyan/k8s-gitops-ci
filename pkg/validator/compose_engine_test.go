@@ -96,6 +96,27 @@ func TestComposeKustomizeBuildSection_HookAndGhostTables(t *testing.T) {
 	}
 }
 
+func TestComposeDriftProtectionSection_NoUnprotectedApps(t *testing.T) {
+	s := ComposeDriftProtectionSection(nil)
+	if s.Error {
+		t.Error("expected no error when there are no unprotected apps")
+	}
+	if !strings.Contains(s.Body, "drift protection enabled") {
+		t.Errorf("expected the all-protected message, got:\n%s", s.Body)
+	}
+}
+
+func TestComposeDriftProtectionSection_ListsUnprotectedApps(t *testing.T) {
+	s := ComposeDriftProtectionSection([]string{"myapp", "otherapp"})
+	// Non-blocking - a coverage gap warning, not a drift finding.
+	if s.Error {
+		t.Error("expected drift-protection gaps to be non-blocking")
+	}
+	if !strings.Contains(s.Body, "`myapp`") || !strings.Contains(s.Body, "`otherapp`") {
+		t.Errorf("expected both unprotected apps listed, got:\n%s", s.Body)
+	}
+}
+
 func TestComposeScaffoldValidationSection_NoErrors(t *testing.T) {
 	s := ComposeScaffoldValidationSection("", nil, nil)
 	if s.Error {
