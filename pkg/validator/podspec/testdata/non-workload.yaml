@@ -1,0 +1,13 @@
+kind: Service
+metadata:
+  name: svc
+spec:
+  ports:
+    - name: http
+      port: 80
+---
+kind: ConfigMap
+metadata:
+  name: cm
+data:
+  key: value
