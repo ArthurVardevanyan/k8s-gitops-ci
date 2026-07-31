@@ -211,6 +211,79 @@ spec:
 	}
 }
 
+func TestPreparePoliciesFrom_FallsBackToBasePoliciesWhenKustomizeBuildFails(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "kyverno-policies", "base")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately omit base/kustomization.yaml so `kustomize build` on the
+	// synthesized _ci overlay (which references ../../base as a resource)
+	// fails, regardless of whether the kustomize binary is installed.
+	policy := "apiVersion: kyverno.io/v1\nkind: ClusterPolicy\nmetadata:\n  name: base-policy\nspec:\n  rules: []\n"
+	if err := os.WriteFile(filepath.Join(base, "policy.yaml"), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	policyPath, err := preparePoliciesFrom(dir)
+	if err != nil {
+		t.Fatalf("expected fallback to base policies instead of a hard failure, got error: %v", err)
+	}
+	if policyPath != base {
+		t.Errorf("policyPath = %q, want the base dir %q", policyPath, base)
+	}
+}
+
+func TestPreparePoliciesFrom_HardFailsWhenNoBasePoliciesExistEither(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "kyverno-policies", "base")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No policy files at all under base/ - nothing to fall back to, so
+	// this must still surface the original kustomize build error.
+	if _, err := preparePoliciesFrom(dir); err == nil {
+		t.Error("expected an error when kustomize build fails and no base policies exist")
+	}
+}
+
+func TestCollectPolicies_MissingDir(t *testing.T) {
+	if _, err := collectPolicies(filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
+		t.Error("expected an error for a missing directory")
+	}
+}
+
+func TestCollectPolicies_NotADirectory(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "file.yaml")
+	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := collectPolicies(f); err == nil {
+		t.Error("expected an error when the path is not a directory")
+	}
+}
+
+func TestCollectPolicies_FindsYAMLFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.yml"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files, err := collectPolicies(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(files) != 2 {
+		t.Errorf("expected 2 yaml files, got %d: %v", len(files), files)
+	}
+}
+
 // writePolicyBase writes a minimal base/ ClusterPolicy + kustomization.yaml
 // under dir, matching the on-disk shape PreparePolicies/buildPolicies
 // expect (dir/base/..., with overlays/_ci created alongside it).
