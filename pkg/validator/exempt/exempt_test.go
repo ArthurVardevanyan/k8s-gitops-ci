@@ -178,6 +178,38 @@ func TestEvaluate_ValueUsedWhenTokenEmpty(t *testing.T) {
 	}
 }
 
+func TestDirMatches(t *testing.T) {
+	cases := []struct {
+		dir, file string
+		expect    bool
+	}{
+		{".tekton", ".tekton/pr.yaml", true},
+		{".tekton", ".tekton", true},
+		{".tekton", "apps/foo/.tekton/pr.yaml", false}, // root-anchored only
+		{".tekton", "nottekton/pr.yaml", false},
+		{".tekton", ".tektonfoo/pr.yaml", false}, // must not substring-match
+		{"", ".tekton/pr.yaml", false},
+	}
+	for _, c := range cases {
+		if got := dirMatches(c.dir, c.file); got != c.expect {
+			t.Errorf("dirMatches(%q,%q) = %v want %v", c.dir, c.file, got, c.expect)
+		}
+	}
+}
+
+func TestSelectorMatches_Dir(t *testing.T) {
+	sel := Selector{Check: "sync-options", Kind: "PipelineRun", Dir: ".tekton"}
+	if !SelectorMatches(sel, Scalar{Kind: "PipelineRun", File: ".tekton/pr.yaml"}, "sync-options") {
+		t.Error("expected selector to match a PipelineRun under .tekton/")
+	}
+	if SelectorMatches(sel, Scalar{Kind: "PipelineRun", File: "apps/foo/.tekton/pr.yaml"}, "sync-options") {
+		t.Error("expected selector NOT to match a nested .tekton/ directory")
+	}
+	if SelectorMatches(sel, Scalar{Kind: "Pipeline", File: ".tekton/pr.yaml"}, "sync-options") {
+		t.Error("expected selector NOT to match a different Kind")
+	}
+}
+
 func TestSelectorMatches_Token(t *testing.T) {
 	sel := Selector{Check: IDImageChecksum, Value: "cluster-a"}
 	s := Scalar{Value: "display text (cluster-a)", Token: "cluster-a", File: "x.yaml"}
