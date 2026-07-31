@@ -23,7 +23,6 @@ type Options struct {
 	Revision         string
 	TriggerComment   string
 	LintOnly         bool
-	NoComment        bool
 	Verbose          bool
 	IncludeDeletions bool
 	AssumeOpenShift  bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check; see syncopts.AssumeOpenShift
