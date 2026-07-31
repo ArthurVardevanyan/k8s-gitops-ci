@@ -1,0 +1,12 @@
+kind: ConfigMap
+metadata:
+  name: block-scalar-shell
+data:
+  entrypoint.sh: |
+    #!/bin/sh
+    set -eu
+    echo "home is ${HOME}"
+    echo "path is ${PATH}"
+    redirect() {
+      cmd 1>&2
+    }

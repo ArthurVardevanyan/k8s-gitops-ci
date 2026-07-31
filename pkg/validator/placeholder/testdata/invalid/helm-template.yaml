@@ -1,0 +1,5 @@
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}
+data:
+  greeting: "{{ .Values.greeting }}"

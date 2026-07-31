@@ -1,0 +1,6 @@
+kind: ConfigMap
+metadata:
+  name: env-vars
+data:
+  DT_TAGS: "${DYNATRACE_TAGS}"
+  DT_URL: "${DYNATRACE_API_URL}"
