@@ -1,6 +1,7 @@
 package exempt
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -61,8 +62,12 @@ func Known(id string) bool { return exemptable[id] || id == IDClusterIdentity }
 func Key(id string) string { return AnnotationPrefix + "exempt-" + id }
 
 // Accepts reports whether annotations grant an exact-value exemption.
+// Fails closed: an empty value never matches, even against an empty (but
+// present) annotation - otherwise a finding with an empty
+// annotationValue() (e.g. both Token/Value unset) would be granted a
+// false exemption by any resource with no matching annotation at all.
 func Accepts(annotations map[string]string, id, value string) bool {
-	if annotations == nil {
+	if len(annotations) == 0 || value == "" {
 		return false
 	}
 	return annotations[Key(id)] == value
@@ -84,7 +89,7 @@ func SelectorMatches(sel Selector, s Scalar, id string) bool {
 	if sel.Check != id {
 		return false
 	}
-	if sel.File != "" && !strings.Contains(s.File, sel.File) {
+	if sel.File != "" && !fileMatches(sel.File, s.File) {
 		return false
 	}
 	if sel.Kind != "" && sel.Kind != s.Kind {
@@ -122,6 +127,22 @@ func Evaluate(id string, s Scalar, annotations map[string]string, selectors []Se
 		}
 	}
 	return false, Applied{}
+}
+
+// fileMatches reports whether a selector's File value matches a finding's
+// file path: either an exact basename match (want == filepath.Base(file)),
+// or a "/"+want path-suffix match. This is intentionally anchored rather
+// than a raw substring check - a bare strings.Contains would let
+// File: "app" match unrelated paths like "myapp-config.yaml" or
+// "app-old/whatever.yaml".
+func fileMatches(want, file string) bool {
+	if want == "" {
+		return true
+	}
+	if want == filepath.Base(file) {
+		return true
+	}
+	return strings.HasSuffix(file, "/"+want)
 }
 
 // pathMatches reports whether selPath (a selector's Path field) matches
