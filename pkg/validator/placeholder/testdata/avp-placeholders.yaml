@@ -1,0 +1,8 @@
+kind: Secret
+metadata:
+  name: avp-secrets
+stringData:
+  db-password: <path:secret/data/db#password>
+  vault-token: <vault:secret/data/app#token>
+  aws-key: <aws:secretsmanager/app#key>
+  gcp-secret: <gcp:projects/my-project/secrets/app#secret>

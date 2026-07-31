@@ -1,0 +1,6 @@
+kind: ConfigMap
+metadata:
+  name: clean
+data:
+  greeting: hello world
+  registry: registry.io/repo@sha256:deadbeef

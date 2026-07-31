@@ -1,0 +1,10 @@
+kind: ConfigMap
+metadata:
+  name: sentinel-boundary
+data:
+  # Words that contain a sentinel string as a substring but are not
+  # themselves the sentinel must not be flagged (word-boundary guard).
+  note-one: preparePlacementForRollout
+  note-two: exchangemeeting
+  note-three: fixmefunctioncall
+  note-four: xxxlarge

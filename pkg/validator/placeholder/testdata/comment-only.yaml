@@ -1,0 +1,5 @@
+# password: CHANGEME
+# namespace: <NAMESPACE>
+kind: ConfigMap
+metadata:
+  name: comment-only

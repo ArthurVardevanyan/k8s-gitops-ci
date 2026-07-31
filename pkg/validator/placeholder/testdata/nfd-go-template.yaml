@@ -1,0 +1,6 @@
+kind: NodeFeatureRule
+metadata:
+  name: "{{ .Name }}"
+spec:
+  rules:
+    - name: "{{ .Name }}-rule"

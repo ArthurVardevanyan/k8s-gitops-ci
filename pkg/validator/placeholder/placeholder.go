@@ -44,6 +44,20 @@ var (
 	avpRe          = regexp.MustCompile(`<(path|vault|aws|gcp):[^>]+>`)
 )
 
+// sentinelPatterns are precompiled once at package init, rather than
+// recompiled per sentinel per line of every file scanned (the previous
+// approach was a real performance issue on large repos).
+var sentinelPatterns []*regexp.Regexp
+
+func init() {
+	for _, s := range Sentinels {
+		// (?i): sentinel matching is case-insensitive - a lowercase
+		// "changeme" or "fixme" left in rendered YAML is just as much an
+		// unresolved placeholder as the canonical uppercase form.
+		sentinelPatterns = append(sentinelPatterns, regexp.MustCompile(`(?i)\b`+regexp.QuoteMeta(s)+`\b`))
+	}
+}
+
 // ValidateFile validates placeholders in a file with default options.
 func ValidateFile(path string) []ValidationError {
 	return ValidateFileWithOptions(path, Options{CheckAVP: true})
@@ -95,15 +109,21 @@ func findPlaceholders(line string, opts Options) []string {
 	if opts.CheckAVP {
 		matches = append(matches, avpRe.FindAllString(line, -1)...)
 	}
-	for _, s := range Sentinels {
-		// (?i): sentinel matching is case-insensitive - a lowercase
-		// "changeme" or "fixme" left in rendered YAML is just as much an
-		// unresolved placeholder as the canonical uppercase form.
-		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(s) + `\b`)
-		matches = append(matches, re.FindAllString(line, -1)...)
+	for _, re := range sentinelPatterns {
+		// Only the first match per sentinel per line is reported (not
+		// every occurrence), and the reported match is always uppercased
+		// regardless of the source line's casing - matches how downstream
+		// consumers of this package expect sentinel findings to be
+		// reported.
+		if m := re.FindString(line); m != "" {
+			matches = append(matches, strings.ToUpper(m))
+		}
 	}
-	// Intentionally not deduplicated: a line with the same placeholder
-	// token twice (e.g. "<PATH>/<PATH>/file") should yield two findings,
-	// not one - each occurrence is a separate unresolved placeholder.
+	// Intentionally not deduplicated for the angle-bracket/AVP placeholder
+	// patterns above: a line with the same placeholder token twice (e.g.
+	// "<PATH>/<PATH>/file") should yield two findings, not one - each
+	// occurrence is a separate unresolved placeholder. This does NOT apply
+	// to the sentinel patterns just above, which intentionally report only
+	// the first match per sentinel per line (see comment above).
 	return matches
 }

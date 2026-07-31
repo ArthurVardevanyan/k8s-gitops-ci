@@ -1,0 +1,7 @@
+kind: ConfigMap
+metadata:
+  name: "{{ .Release.Name }}"
+data:
+  db-password: <CHANGE_ME>
+  go-template: "{{ .Values.env }}"
+  argocd-template: "{{.app}}"

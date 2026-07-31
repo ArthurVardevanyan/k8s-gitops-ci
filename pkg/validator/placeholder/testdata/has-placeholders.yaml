@@ -1,0 +1,8 @@
+kind: ConfigMap
+metadata:
+  name: has-placeholders
+  namespace: <NAMESPACE>
+data:
+  password: CHANGEME
+  vault-secret: <path:secret/data/app#password>
+  env-ref: "${HOME}/bin"

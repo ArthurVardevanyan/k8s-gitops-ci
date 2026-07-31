@@ -1,0 +1,9 @@
+kind: ConfigMap
+metadata:
+  name: known-non-placeholders
+data:
+  heredoc-marker: "terminate the block with <EOF> on its own line"
+  heredoc-marker-alt: "or <EOT> if your tool expects that sentinel instead"
+  markup: "<H1>Title</H1><BR><HR>"
+  list: "<UL><LI>one</LI></UL>"
+  table: "<TR><TD>a</TD><TH>b</TH></TR>"
