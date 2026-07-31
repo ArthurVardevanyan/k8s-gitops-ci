@@ -7,7 +7,13 @@ import (
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 )
+
+// kustomizeStrategy is the appBuildStrategy value most buildOverlayWithHooks
+// tests want - plain kustomize, no AVP exclusions - since strategy
+// detection itself is covered by pkg/overlay's own tests.
+var kustomizeStrategy = appBuildStrategy{Strategy: overlay.StrategyKustomize}
 
 func TestResolveHookSource_DefaultFailsClosedToMain(t *testing.T) {
 	if got := resolveHookSource(Options{}); got != hook.SourceMain {
@@ -102,7 +108,7 @@ func TestBuildOverlayWithHooks_NoHooksDefined(t *testing.T) {
 	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
 	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
 
-	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil)
+	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy)
 	if buildErr != "" {
 		t.Errorf("expected a clean build, got error: %q", buildErr)
 	}
@@ -120,7 +126,7 @@ func TestBuildOverlayWithHooks_PreBuildFailureSkipsBuild(t *testing.T) {
 	mustWrite(t, filepath.Join(app, "test.sh"), "#!/bin/sh\nPRE_BUILD_HOOK=fail_pre\nfail_pre() {\n\techo boom >&2\n\texit 1\n}\n")
 
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app])
+	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
 	if buildErr == "" || !strings.Contains(buildErr, "pre-build hook") {
 		t.Errorf("expected a pre-build hook error, got %q", buildErr)
 	}
@@ -154,7 +160,7 @@ check_yaml() {
 
 	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app])
+	buildErr, pre, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
 	if buildErr != "" {
 		t.Fatalf("expected a clean build, got error: %q", buildErr)
 	}
@@ -176,7 +182,7 @@ func TestBuildOverlayWithHooks_PostBuildHookFailureIsReported(t *testing.T) {
 
 	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, _, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app])
+	buildErr, _, post := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
 	if buildErr == "" || !strings.Contains(buildErr, "post-build hook") {
 		t.Errorf("expected a post-build hook error, got %q", buildErr)
 	}

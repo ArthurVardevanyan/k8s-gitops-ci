@@ -83,6 +83,17 @@ func IsExcluded(overlay string, exclude map[string]bool) bool {
 	return exclude[base] || exclude[overlay]
 }
 
+// ExcludeSet builds the map IsExcluded/RenderWithStrategy expect from a
+// plain overlay-name list (e.g. hook.Config.AVPExclude, parsed from a
+// test.sh's AVP_EXCLUDE= directive).
+func ExcludeSet(names []string) map[string]bool {
+	exclude := make(map[string]bool, len(names))
+	for _, n := range names {
+		exclude[n] = true
+	}
+	return exclude
+}
+
 // GetOverlaysToTest maps changed files to the set of overlays to build.
 func GetOverlaysToTest(app string, changedFiles []string, ignoreTestChanges bool) (overlays []string, fullTest bool, trigger string) {
 	if app == "" {
@@ -156,8 +167,26 @@ func buildOverlay(app, overlay string, strategy Strategy, exclude map[string]boo
 			return BuildResult{Overlay: overlay, Err: err}
 		}
 	}
-	isExcluded := IsExcluded(overlay, exclude)
 
+	out, err := RenderWithStrategy(app, overlay, strategy, exclude)
+	if err != nil {
+		return BuildResult{Overlay: overlay, Err: err}
+	}
+
+	if err := os.WriteFile(outFile, out, 0o600); err != nil {
+		return BuildResult{Overlay: overlay, Err: err}
+	}
+	return BuildResult{Overlay: overlay, YAMLFile: outFile}
+}
+
+// RenderWithStrategy renders overlay (an app's overlay directory) per
+// strategy - kustomize or helm, each optionally piped through AVP secret
+// resolution (see Strategy's docs) - unless overlay is in exclude (see
+// IsExcluded/ExcludeSet), in which case an AVP strategy still renders, but
+// skips the AVP substitution step. Callers that don't need AVP/Helm at all
+// can keep using RenderKustomize directly; this is for callers that first
+// resolved an app's Strategy via DetectStrategy.
+func RenderWithStrategy(app, overlay string, strategy Strategy, exclude map[string]bool) ([]byte, error) {
 	var render func() ([]byte, error)
 	switch strategy {
 	case StrategyKustomize, StrategyKustomizeAVP:
@@ -165,26 +194,19 @@ func buildOverlay(app, overlay string, strategy Strategy, exclude map[string]boo
 	case StrategyHelm, StrategyHelmAVP:
 		render = func() ([]byte, error) { return renderHelm(app, overlay) }
 	default:
-		return BuildResult{Overlay: overlay, Err: fmt.Errorf("unknown strategy %q", strategy)}
+		return nil, fmt.Errorf("unknown strategy %q", strategy)
 	}
 
 	out, err := render()
 	if err != nil {
-		return BuildResult{Overlay: overlay, Err: err}
+		return nil, err
 	}
 
-	useAVP := (strategy == StrategyKustomizeAVP || strategy == StrategyHelmAVP) && !isExcluded
+	useAVP := (strategy == StrategyKustomizeAVP || strategy == StrategyHelmAVP) && !IsExcluded(overlay, exclude)
 	if useAVP {
-		out, err = runAVP(out)
-		if err != nil {
-			return BuildResult{Overlay: overlay, Err: err}
-		}
+		return runAVP(out)
 	}
-
-	if err := os.WriteFile(outFile, out, 0o600); err != nil {
-		return BuildResult{Overlay: overlay, Err: err}
-	}
-	return BuildResult{Overlay: overlay, YAMLFile: outFile}
+	return out, nil
 }
 
 // RenderKustomize builds the given kustomize directory (an overlay, or any

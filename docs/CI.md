@@ -65,32 +65,52 @@ pass.
 
 ## Build Strategies
 
-Overlay rendering in the actually-wired pipeline path is
-**Kustomize-only**: `overlay.RenderKustomize` builds via the native
-Kustomize SDK (`sigs.k8s.io/kustomize/api/krusty`), so there's no runtime
-dependency on a `kustomize` binary. Every real caller
-(`pkg/validator/build_wiring.go`'s build-error detection,
-`pkg/validator/kubeconform_overlay.go`'s schema validation over rendered
-overlays, `pkg/ghostpatch/ghostpatch.go`'s drift detection) calls this
-function directly.
+`pkg/validator/phases.go`'s Build + Compliance phase picks a
+`pkg/overlay.Strategy` per app (`overlay.DetectStrategy`, wired via
+`resolveAppBuildStrategies` in `pkg/validator/avp_wiring.go`) before
+rendering any of that app's overlays:
 
-**Not yet wired:** `pkg/overlay.go` additionally implements a full
-`BuildOptions`/`RunBuildLoop`/`Strategy` API supporting Helm chart
-rendering and an `argocd-vault-plugin`-piped variant of both Kustomize
-and Helm (`StrategyKustomizeAVP`/`StrategyHelmAVP` — shells out to
-`argocd-vault-plugin generate -`, resolving `<path:...>`/`<vault:...>`/
-`<aws:...>`/`<gcp:...>` placeholders the way ArgoCD's real AVP plugin
-does at sync time). This code is real and unit-tested, but **no current
-CLI flag or pipeline phase selects it** — there's no `--skip-avp` flag to
-document because there's no AVP invocation path to skip in the first
-place today. `hook.Config.AVPExclude` (parsed from the `test.sh`
-contract's `AVP_EXCLUDE=` line — see [HOOKS.md](HOOKS.md)) is similarly
-parsed but not read by anything outside `pkg/hook`. Don't be misled by
-the `placeholder` check's AVP-pattern recognition (`<path:...>` etc. are
-real regexes in `pkg/validator/placeholder`) into assuming the
-resolution side is wired too — the check only _detects_ unresolved AVP
-tokens in already-rendered/committed YAML, independent of whether
-anything in this repo can _resolve_ them via a build step.
+- A `base/kustomization.yaml` → Kustomize, via the native Kustomize SDK
+  (`sigs.k8s.io/kustomize/api/krusty`) — no runtime dependency on a
+  `kustomize` binary. A `Chart.yaml` alongside it is still built via
+  Kustomize (consumed through its own `helmCharts` inflator).
+- No `kustomization.yaml` but a `base/Chart.yaml` → Helm, via the native
+  chart loader + rendering engine (`helm.sh/helm/v3/pkg/...`) — no
+  runtime dependency on a `helm` binary either, mirroring what
+  `helm template` produces.
+- Either way, if `DetectStrategy` finds an AVP indicator anywhere under
+  the app (a direct `argocd-vault-plugin` reference, an
+  `avp.kubernetes.io` annotation, or a `<path:...>`/`<vault:...>`/
+  `<aws:...>`/`<gcp:...>` placeholder — see
+  `overlay.AppHasAVPIndicators`), that overlay's rendered output is
+  additionally piped through `argocd-vault-plugin generate -`, resolving
+  those placeholders the way ArgoCD's real AVP plugin does at sync time
+  — unless the overlay's basename is listed in that app's `test.sh`
+  `AVP_EXCLUDE=` (`hook.Config.AVPExclude`, now actually read - see
+  [HOOKS.md](HOOKS.md)).
+
+The **`avp`** step ID (default **on**, same generic enable/disable
+mechanism as every other step - see `Options.DisabledChecks`'s doc
+comment) gates this entirely: `--disable-checks avp` forces every app's
+Strategy back to plain Kustomize/Helm regardless of any AVP indicator
+found, for an operator running without the `argocd-vault-plugin` binary
+or a configured secret backend.
+
+Every real caller that needs a fully-rendered overlay - this phase's
+build-error detection (`pkg/validator/hook_wiring.go`'s
+`buildOverlayWithHooks`) - goes through this strategy-aware path
+(`overlay.RenderWithStrategy`). Two callers deliberately still render
+Kustomize-only, unconditionally, via `overlay.RenderKustomize` directly:
+`pkg/validator/kubeconform_overlay.go`'s schema validation over rendered
+overlays (runs during the earlier Linting phase, before any app's
+`test.sh`/strategy is resolved) and `pkg/ghostpatch/ghostpatch.go`'s
+patch-vs-base drift detection (structural, unaffected by secret
+placeholders either way). Don't be misled by the `placeholder` check's
+AVP-pattern recognition (`<path:...>` etc. are real regexes in
+`pkg/validator/placeholder`) into assuming _that_ check resolves
+anything - it only _detects_ unresolved AVP tokens in
+already-rendered/committed YAML, independent of the build-time
+resolution described above.
 
 ## Registered checks
 
@@ -113,11 +133,13 @@ automatically exemptable via its own check ID (see
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens, or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML                                                                                                                                |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID) |
 
-Two standalone (non-registry) steps participate in the same
+Three standalone (non-registry) steps participate in the same
 enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
 [Generic check-enablement mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)):
 
 - **`golangci`** — Go linting via `pkg/lint/golangci`, default **on**.
+- **`avp`** — per-app AVP strategy auto-detection (see
+  [Build Strategies](#build-strategies) above), default **on**.
 - **`kyverno`** — policy validation via `pkg/lint/kyverno`, default
   **off** (an org must opt in and supply its own policies — see
   [SCHEMAS.md](SCHEMAS.md)). **Known limitation:** `stepKyverno` is

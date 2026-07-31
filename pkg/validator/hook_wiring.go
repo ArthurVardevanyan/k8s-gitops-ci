@@ -135,17 +135,21 @@ func appBuildDir(app string) string {
 	return filepath.Join(hookBuildRoot, safe)
 }
 
-// buildOverlayWithHooks builds a single overlay, running the app's
-// PRE_BUILD_HOOK before and POST_BUILD_HOOK after (when defined). It
-// returns a non-empty buildErr (matching buildOverlayError's
-// "kustomize build <overlay>: <cause>" format for build failures, so
-// comments.go's groupBuildErrors still recognizes it) on any failure - a
-// failing PRE_BUILD_HOOK skips the build entirely; a failing POST_BUILD_HOOK
-// is reported even though the build itself succeeded. pre/post report which
-// hooks were attempted and how they went, for the caller to fold into the
-// app's aggregated appHookResult under its own lock.
-func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config) (buildErr string, pre, post hookOutcome) {
-	outFile := filepath.Join(appBuildDir(appFromOverlayPath(ov.path)), filepath.Base(ov.path)+".yaml")
+// buildOverlayWithHooks builds a single overlay - via strategy.Strategy
+// (plain kustomize by default; kustomize/helm optionally piped through AVP
+// secret resolution when the app's content and Options warrant it, see
+// resolveAppBuildStrategies) - running the app's PRE_BUILD_HOOK before and
+// POST_BUILD_HOOK after (when defined). It returns a non-empty buildErr
+// (matching buildOverlayError's "kustomize build <overlay>: <cause>" format
+// for build failures, so comments.go's groupBuildErrors still recognizes
+// it) on any failure - a failing PRE_BUILD_HOOK skips the build entirely; a
+// failing POST_BUILD_HOOK is reported even though the build itself
+// succeeded. pre/post report which hooks were attempted and how they went,
+// for the caller to fold into the app's aggregated appHookResult under its
+// own lock.
+func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStrategy) (buildErr string, pre, post hookOutcome) {
+	app := appFromOverlayPath(ov.path)
+	outFile := filepath.Join(appBuildDir(app), filepath.Base(ov.path)+".yaml")
 
 	if cfg != nil && cfg.HasPreBuild {
 		if err := hook.RunPreBuildHook(cfg, ov.path, outFile); err != nil {
@@ -154,7 +158,7 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config) (buildErr string, pr
 		pre = hookRan
 	}
 
-	out, err := overlay.RenderKustomize(ov.path)
+	out, err := overlay.RenderWithStrategy(app, ov.path, strategy.Strategy, strategy.Exclude)
 	if err != nil {
 		return fmt.Sprintf("kustomize build %s: %s", ov.path, err), pre, post
 	}

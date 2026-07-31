@@ -137,6 +137,63 @@ func TestRunBuildLoop_HelmMissingValues(t *testing.T) {
 	}
 }
 
+func TestRenderWithStrategy_Kustomize(t *testing.T) {
+	dir := makeApp(t)
+	ov := filepath.Join(dir, "overlays", "dev")
+	out, err := RenderWithStrategy(dir, ov, StrategyKustomize, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(out), "dev-cm") {
+		t.Errorf("expected rendered dev overlay, got: %s", out)
+	}
+}
+
+func TestRenderWithStrategy_Helm(t *testing.T) {
+	dir := makeHelmApp(t)
+	ov := filepath.Join(dir, "overlays", "dev")
+	out, err := RenderWithStrategy(dir, ov, StrategyHelm, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(out), "replicas: 3") {
+		t.Errorf("expected the helm-rendered overlay, got: %s", out)
+	}
+}
+
+func TestRenderWithStrategy_KustomizeAVPExcludedSkipsAVP(t *testing.T) {
+	// With the overlay excluded, this must not shell out to
+	// argocd-vault-plugin at all - a clean render is proof the AVP step
+	// was skipped, since the binary isn't available in the test environment.
+	dir := makeApp(t)
+	ov := filepath.Join(dir, "overlays", "dev")
+	out, err := RenderWithStrategy(dir, ov, StrategyKustomizeAVP, ExcludeSet([]string{"dev"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(string(out), "dev-cm") {
+		t.Errorf("expected rendered dev overlay, got: %s", out)
+	}
+}
+
+func TestRenderWithStrategy_UnknownStrategy(t *testing.T) {
+	dir := makeApp(t)
+	ov := filepath.Join(dir, "overlays", "dev")
+	if _, err := RenderWithStrategy(dir, ov, Strategy("bogus"), nil); err == nil {
+		t.Fatal("expected an error for an unknown strategy")
+	}
+}
+
+func TestExcludeSet(t *testing.T) {
+	set := ExcludeSet([]string{"dev", "staging"})
+	if !set["dev"] || !set["staging"] {
+		t.Errorf("expected both names present: %v", set)
+	}
+	if set["prod"] {
+		t.Errorf("expected prod absent: %v", set)
+	}
+}
+
 func TestAssembleManifests(t *testing.T) {
 	rendered := map[string]string{
 		"c/templates/notes.txt":       "irrelevant", // not literally NOTES.txt, kept for path-base check below
