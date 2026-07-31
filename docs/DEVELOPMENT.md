@@ -1,5 +1,12 @@
 # Development
 
+This covers build/test/lint commands, repository structure, and the
+design conventions that keep this a generic, org-agnostic core. See
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for the runtime shape (what actually
+happens when you run a pipeline) and a "Where do I find X?" table
+pointing to every other doc (`CI.md`, `HOOKS.md`, `EXCEPTIONS.md`,
+`TEKTON.md`, `RELEASE.md`, `SECURITY.md`, `SCHEMAS.md`).
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
@@ -8,6 +15,7 @@
 - [CLI Output & PR Comment Format](#cli-output--pr-comment-format)
 - [Building](#building)
 - [Testing](#testing)
+  - [Negative / error-path coverage](#negative--error-path-coverage)
 - [Task Targets Reference](#task-targets-reference)
 
 ## Prerequisites
@@ -180,7 +188,7 @@ time.
    `check.Register`/`exempt.RegisterExemptable`) unless it's explicitly
    guarded against exemption (the only current example is
    `exempt.IDClusterIdentity`, a deliberately non-exemptable structural
-   bucket — see `docs/EXCEPTIONS.md` once written).
+   bucket — see [`EXCEPTIONS.md`](EXCEPTIONS.md)).
 3. Add `testdata/` fixtures under your package (`testdata/` for
    fixtures expected to pass or produce specific findings,
    `testdata/invalid/` for deliberately-malformed inputs) — this repo's
@@ -325,8 +333,10 @@ count:
   instead of silently producing zero. Build errors are then grouped by root
   cause (`groupBuildErrors`/`formatBuildErrors`, so
   N overlays sharing one underlying cause don't repeat it N times), a
-  `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` hooks-defined matrix,
-  files needing `kustomize edit fix`, and a `| Overlay | Target |`
+  `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` hooks-defined matrix
+  (presence only — see [`HOOKS.md`](HOOKS.md) for what actually
+  executes vs. what's currently just detected), files needing
+  `kustomize edit fix`, and a `| Overlay | Target |`
   ghost-patch table (`pkg/ghostpatch.CheckApp`, which renders overlays via
   the krusty SDK directly — no runtime dependency on a `kustomize` binary
   being present).
@@ -357,6 +367,12 @@ whatever `task build`'s dependencies do (currently just `mod`; this may
 grow to include embedded-resource generation, so prefer `task build` even
 when it looks equivalent to the raw command today).
 
+This repo's own release process (versioning, published artifacts) and CI
+infrastructure (the Tekton pipeline that actually runs `task ci` and
+these release steps) are covered in [`RELEASE.md`](RELEASE.md) and
+[`TEKTON.md`](TEKTON.md) — distinct from this section, which is about
+building the binary locally.
+
 ## Testing
 
 ```sh
@@ -370,7 +386,40 @@ Every package's tests live alongside its source
 (`pkg/foo/foo_test.go`), and prefer table-driven tests over one-off
 `Test*` functions per case, matching the existing style.
 
+### Negative / error-path coverage
+
+`testdata/invalid/` (see [Adding a new
+validator](#adding-a-new-validator) above) is this repo's convention for
+deliberately-malformed/false-positive-guard fixtures — inputs that
+superficially resemble a violation but must yield zero findings. Every
+`pkg/validator/*` package that has one was backfilled with real
+`testdata/`/`testdata/invalid/` fixtures during a parity pass; current
+coverage (`task coverage:report`, `go test ./... -cover`) for that pass's
+packages:
+
+| Package                 | Coverage | Notes                                                                                                                                                                                                                                    |
+| ----------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `validator/namedport`   | 87.8%    | —                                                                                                                                                                                                                                        |
+| `validator/podspec`     | 87.7%    | —                                                                                                                                                                                                                                        |
+| `validator/image`       | 81.8%    | —                                                                                                                                                                                                                                        |
+| `validator/syncopts`    | 90.8%    | —                                                                                                                                                                                                                                        |
+| `validator/placeholder` | 97.1%    | —                                                                                                                                                                                                                                        |
+| `validator/rbac`        | 87.2%    | No logic bug found here — pure test backfill.                                                                                                                                                                                            |
+| `lint/shellcheck`       | 70.1%    | Lower because `RunTekton`/`RunEmbedded`'s end-to-end paths skip cleanly (not fail) when no `shellcheck` binary is on `PATH` — they run fully in the real CI image (see [TEKTON.md](TEKTON.md)), just not in every local dev environment. |
+
+Every package above also now has `TestValidateFile_*`/
+`TestValidateFile_MissingFile` coverage over the `ValidateFile`
+code path specifically (previously only `ValidateReader`/`ValidateBytes`
+were exercised in most of them). Don't re-derive these percentages from
+memory in a future doc update — re-run `task coverage:report`/
+`go test ./... -cover` and paste the fresh numbers; they will drift as
+these packages keep changing.
+
 ## Task Targets Reference
+
+See [`CI.md`](CI.md) for what `task ci`'s underlying pipeline
+(`k8s-gitops-ci pipeline`/`ci`) actually checks once built — this table
+is about the local dev-loop `task` targets themselves.
 
 | Target                    | Purpose                                                                                                |
 | ------------------------- | ------------------------------------------------------------------------------------------------------ |
