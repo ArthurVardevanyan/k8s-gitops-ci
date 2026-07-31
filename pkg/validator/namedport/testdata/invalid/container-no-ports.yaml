@@ -1,0 +1,9 @@
+kind: Deployment
+metadata:
+  name: no-ports
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: example.com/app:sha256@sha256:deadbeef

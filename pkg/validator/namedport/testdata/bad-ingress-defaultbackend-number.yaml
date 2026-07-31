@@ -1,0 +1,9 @@
+kind: Ingress
+metadata:
+  name: bad-ing
+spec:
+  defaultBackend:
+    service:
+      name: default-svc
+      port:
+        number: 8080

@@ -1,0 +1,20 @@
+kind: Deployment
+metadata:
+  name: bad-deploy
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 9090
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 9090

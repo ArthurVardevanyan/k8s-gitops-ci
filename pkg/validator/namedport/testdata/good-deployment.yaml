@@ -1,0 +1,18 @@
+kind: Deployment
+metadata:
+  name: good-deploy
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            tcpSocket:
+              port: http

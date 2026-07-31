@@ -1,0 +1,19 @@
+kind: Deployment
+metadata:
+  name: d1
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          ports:
+            - containerPort: 8080
+---
+kind: Service
+metadata:
+  name: s1
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
