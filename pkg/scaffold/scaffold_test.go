@@ -77,6 +77,19 @@ func TestIsChangeGroupDisabled(t *testing.T) {
 	}
 }
 
+func TestIsExcludedCluster(t *testing.T) {
+	orig := ExcludedClusters
+	ExcludedClusters = map[string]bool{"decommissioned-cluster": true}
+	t.Cleanup(func() { ExcludedClusters = orig })
+
+	if !IsExcludedCluster("decommissioned-cluster") {
+		t.Error("expected decommissioned-cluster to be excluded")
+	}
+	if IsExcludedCluster("dev") {
+		t.Error("expected dev to not be excluded")
+	}
+}
+
 func TestChangedOverlayNames(t *testing.T) {
 	got := ChangedOverlayNames("app", []string{"app/overlays/dev/file.yaml", "app/overlays/prod/file.yaml", "app/base/x.yaml"})
 	if len(got) != 2 || got[0] != "dev" || got[1] != "prod" {
@@ -195,6 +208,34 @@ func TestRun_SkipsDisabledOverlay(t *testing.T) {
 	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
 	if summary.Skipped != 1 {
 		t.Errorf("expected 1 skipped overlay, got %d", summary.Skipped)
+	}
+}
+
+func TestRun_SkipsExcludedCluster(t *testing.T) {
+	dir := t.TempDir()
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "decommissioned", "kustomization.yaml"), "resources: []\n")
+
+	origExcluded := ExcludedClusters
+	ExcludedClusters = map[string]bool{"decommissioned": true}
+	t.Cleanup(func() { ExcludedClusters = origExcluded })
+
+	withFakeScafctl(t, func(context.Context, string, string) error {
+		t.Fatal("scafctl should never be invoked when every overlay is excluded")
+		return nil
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"decommissioned"}})
+	if summary.Skipped != 1 {
+		t.Errorf("expected 1 skipped overlay, got %d", summary.Skipped)
+	}
+	if len(summary.SkippedClusters) != 1 || summary.SkippedClusters[0] != "decommissioned" {
+		t.Errorf("expected SkippedClusters to list the excluded overlay, got %v", summary.SkippedClusters)
 	}
 }
 
