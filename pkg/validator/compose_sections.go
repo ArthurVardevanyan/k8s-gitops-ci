@@ -21,29 +21,31 @@ func titleCase(s string) string {
 	return string(r)
 }
 
-// ComposePRChecksSection renders PR-check results.
+// ComposePRChecksSection renders PR-check results. Each of the three checks
+// (title convention, commit signing, checklist) is its own independent
+// collapsible sub-dropdown with its own ✅/❌ status - via the same
+// composeParentFromChildren/ReportSection machinery ComposeLintingSection/
+// ComposeStaticChecksSection already use - rather than a single flat bullet
+// list, so a reader can tell at a glance which specific check(s) failed
+// without reading prose, and each failure's detail is tucked away until
+// expanded instead of always showing inline.
 func ComposePRChecksSection(titleErr, signErr, checklistErr error) Section {
-	var b strings.Builder
-	var hasError bool
-	if titleErr != nil {
-		hasError = true
-		fmt.Fprintf(&b, "- ❌ **PR Title** — %s\n", titleErr)
-	} else {
-		b.WriteString("- ✅ **PR Title**\n")
+	children := []ReportSection{
+		prCheckChild("PR Title", titleErr),
+		prCheckChild("Signed Commits", signErr),
+		prCheckChild("PR Checklist", checklistErr),
 	}
-	if signErr != nil {
-		hasError = true
-		fmt.Fprintf(&b, "- ❌ **Signed Commits** — %s\n", signErr)
-	} else {
-		b.WriteString("- ✅ **Signed Commits**\n")
+	return composeParentFromChildren("PR Checks", children)
+}
+
+// prCheckChild renders one PR-level check's outcome as a ReportSection: a
+// passed check gets a plain "Passed." summary, a failed one carries err's
+// message as its expandable body.
+func prCheckChild(name string, err error) ReportSection {
+	if err != nil {
+		return ReportSection{Name: name, Status: StatusError, Body: err.Error()}
 	}
-	if checklistErr != nil {
-		hasError = true
-		fmt.Fprintf(&b, "- ❌ **PR Checklist** — %s\n", checklistErr)
-	} else {
-		b.WriteString("- ✅ **PR Checklist**\n")
-	}
-	return Section{Name: "PR Checks", Body: b.String(), Error: hasError}
+	return ReportSection{Name: name, Status: StatusPassed, Summary: "Passed."}
 }
 
 // summaryIndentUnit is the non-breaking-space prefix prepended once per

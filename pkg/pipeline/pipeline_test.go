@@ -373,7 +373,7 @@ func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.
 	for _, s := range sections {
 		byName[s.Name] = s
 	}
-	for _, name := range []string{"Kustomize Build", "Scaffold Validation", "Resource Compliance"} {
+	for _, name := range []string{"Kustomize Build", "Scaffold Validation", "Resource Compliance", "NetworkAttachmentDefinition Validation"} {
 		s, ok := byName[name]
 		if !ok {
 			t.Errorf("expected a %q section to be present even in --lint-only mode", name)
@@ -382,6 +382,42 @@ func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.
 		if s.Body != "No results." {
 			t.Errorf("expected %q to fall back to %q, got %q", name, "No results.", s.Body)
 		}
+	}
+}
+
+// TestComposeSections_ReusesNADSection guards against the "unconditionally
+// produced but never surfaced" bug: phases.go's runBuildAndPostBuild always
+// appends a "NetworkAttachmentDefinition Validation" section to
+// validator.Result.Sections (see nad_wiring.go's runNADValidation), but
+// composeSections used to only relay a hardcoded name whitelist that never
+// included it - so the actual PR comment silently never showed NAD findings
+// even though validator.RunAll (and thus the build-yaml/test-all CLI
+// commands, which print every res.Sections entry directly) always produced
+// them. It must now reuse it by name like Kustomize Build/Scaffold
+// Validation/Resource Compliance do.
+func TestComposeSections_ReusesNADSection(t *testing.T) {
+	res := &Result{
+		ValidatorResult: &validator.Result{
+			Sections: []validator.Section{
+				{Name: "NetworkAttachmentDefinition Validation", Body: "real nad body", Error: true},
+			},
+		},
+	}
+	sections := composeSections(res, Options{})
+	var found *validator.Section
+	for i := range sections {
+		if sections[i].Name == "NetworkAttachmentDefinition Validation" {
+			found = &sections[i]
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a NetworkAttachmentDefinition Validation section to be present")
+	}
+	if found.Body != "real nad body" {
+		t.Errorf("expected the NAD section to be reused verbatim, got:\n%s", found.Body)
+	}
+	if !found.Error {
+		t.Error("expected the NAD section's Error flag to be preserved")
 	}
 }
 
