@@ -60,12 +60,39 @@ func TestSanitizeCell(t *testing.T) {
 }
 
 func TestComposeKustomizeBuildSection_NoErrors(t *testing.T) {
-	s := ComposeKustomizeBuildSection(3, nil, nil, nil)
+	s := ComposeKustomizeBuildSection(3, nil, "", nil, "")
 	if s.Error {
 		t.Error("expected no error")
 	}
 	if !strings.Contains(s.Body, "3 overlay(s)") {
 		t.Errorf("unexpected body: %s", s.Body)
+	}
+}
+
+func TestComposeKustomizeBuildSection_GroupsBuildErrorsByRootCause(t *testing.T) {
+	buildErrs := []string{
+		"kustomize build app/overlays/a: accumulating components: no such file or directory",
+		"kustomize build app/overlays/b: accumulating components: no such file or directory",
+	}
+	s := ComposeKustomizeBuildSection(2, buildErrs, "", nil, "")
+	if !s.Error {
+		t.Error("expected an error section")
+	}
+	if !strings.Contains(s.Body, "**2 overlay(s)**") {
+		t.Errorf("expected the two overlays to be grouped under one shared cause, got:\n%s", s.Body)
+	}
+}
+
+func TestComposeKustomizeBuildSection_HookAndGhostTables(t *testing.T) {
+	s := ComposeKustomizeBuildSection(1, nil, "| App | PRE_BUILD |\n| --- | --- |\n| `app` | ✅ defined |", nil, "| Overlay | Target |\n| --- | --- |\n| `app/overlays/a` | Deployment/foo |")
+	if !s.Error {
+		t.Error("expected ghost patches to mark the section as an error")
+	}
+	if !strings.Contains(s.Body, "PRE_BUILD") {
+		t.Errorf("expected the hook table to render, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "Deployment/foo") {
+		t.Errorf("expected the ghost patch table to render, got:\n%s", s.Body)
 	}
 }
 

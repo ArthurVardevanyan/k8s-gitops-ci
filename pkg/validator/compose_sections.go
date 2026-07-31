@@ -200,28 +200,44 @@ func ComposeResourceComplianceSection(findings []check.Finding) Section {
 	return Section{Name: "Resource Compliance", Body: b.String(), Error: true}
 }
 
-// ComposeKustomizeBuildSection renders the Kustomize Build section.
-func ComposeKustomizeBuildSection(overlayCount int, buildErrors map[string]string, hookLines, fixNeeded []string) Section {
+// ComposeKustomizeBuildSection renders the Kustomize Build section: overlay
+// build pass/fail (grouped by root cause via groupBuildErrors/
+// formatBuildErrors so N overlays sharing one underlying error don't repeat
+// it N times), a hooks matrix, files needing `kustomize edit fix`, and any
+// ghost-patch findings.
+//
+// buildErrs are raw error strings in this repo's real overlay-build format
+// ("kustomize build <overlay>: <cause>", see pkg/overlay/overlay.go and
+// comments.go's groupBuildErrors doc comment). hookTable and ghostTable are
+// pre-rendered markdown (typically a table) built by the caller from
+// pkg/hook and pkg/ghostpatch data respectively; empty means "nothing to
+// show" (not "not checked").
+func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, fixNeeded []string, ghostTable string) Section {
 	var b strings.Builder
 	hasError := false
 
 	// Overlay build summary
-	if len(buildErrors) == 0 {
+	groups, other := groupBuildErrors(buildErrs)
+	if len(groups) == 0 && len(other) == 0 {
 		fmt.Fprintf(&b, "- ✅ **Overlay Build** — %d overlay(s) built successfully\n", overlayCount)
 	} else {
 		hasError = true
-		b.WriteString("- ❌ **Overlay Build**\n")
-		for ov, msg := range buildErrors {
-			fmt.Fprintf(&b, "\n%s\n", RenderSubDropdown(ov, "```\n"+strings.TrimSpace(msg)+"\n```"))
+		b.WriteString("- ❌ **Overlay Build**\n\n")
+		if len(groups) > 0 {
+			formatBuildErrors(&b, groups)
 		}
+		for _, e := range other {
+			fmt.Fprintf(&b, "> - %s\n", e)
+		}
+		b.WriteString("\n")
 	}
 
 	// Hook results
-	if len(hookLines) > 0 {
-		b.WriteString(RenderSubDropdown("Hook Results", strings.Join(hookLines, "\n")))
+	if hookTable != "" {
+		b.WriteString(RenderSubDropdown("Hook Results", hookTable))
 		b.WriteString("\n")
 	} else {
-		b.WriteString("- ✅ **Hooks** — no hooks or all passed\n")
+		b.WriteString("- ✅ **Hooks** — no hooks defined\n")
 	}
 
 	// Kustomize fix
@@ -233,6 +249,15 @@ func ComposeKustomizeBuildSection(overlayCount int, buildErrors map[string]strin
 		}
 	} else {
 		b.WriteString("- ✅ **Kustomize Fix** — all kustomization.yaml files are up to date\n")
+	}
+
+	// Ghost patches
+	if ghostTable != "" {
+		hasError = true
+		b.WriteString(RenderSubDropdown("Ghost Patches", ghostTable))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("- ✅ **Ghost Patches** — none detected\n")
 	}
 
 	return Section{Name: "Kustomize Build", Body: b.String(), Error: hasError}

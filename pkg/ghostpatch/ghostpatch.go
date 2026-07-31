@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 )
 
 // Target identifies a kustomize patch target.
@@ -291,8 +293,11 @@ func targetKey(t Target) string {
 	return fmt.Sprintf("%s/%s/%s", t.Kind, t.Name, t.Namespace)
 }
 
-func kustomizeBuild(overlay string) (string, error) {
-	out, err := exec.Command("kustomize", "build", overlay).Output()
+// kustomizeBuild builds the overlay using the native Kustomize SDK (the same
+// engine as pkg/overlay), avoiding a runtime dependency on a `kustomize`
+// binary being installed in the CI image.
+func kustomizeBuild(overlayPath string) (string, error) {
+	out, err := overlay.RenderKustomize(overlayPath)
 	return string(out), err
 }
 

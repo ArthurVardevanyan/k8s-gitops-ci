@@ -327,42 +327,40 @@ func postComment(res *Result, opts Options) error {
 	return github.DeleteComments(client, opts.Providers.ForeignMarkers()...)
 }
 
+// validatorSectionOrFallback looks up a named section in vr.Sections (the
+// fully-realized, nested-dropdown Sections phases.go already builds -
+// Linting/Static Checks/Kustomize Build/Scaffold Validation/Resource
+// Compliance), reusing it verbatim instead of re-deriving it from an
+// already-rendered Body string and composing it a second time (which used
+// to double-nest the markdown). Falls back to a plain "No results." stub
+// when vr is nil (e.g. the validation phase never ran) or the named section
+// wasn't produced (e.g. --lint-only mode, which skips the build phase
+// entirely and so never produces "Kustomize Build" et al).
+func validatorSectionOrFallback(vr *validator.Result, name string) validator.Section {
+	if vr != nil {
+		for _, s := range vr.Sections {
+			if s.Name == name {
+				return s
+			}
+		}
+	}
+	return validator.Section{Name: name, Body: "No results."}
+}
+
 func composeSections(res *Result, opts Options) []validator.Section {
-	var sections []validator.Section
+	sections := make([]validator.Section, 0, 7)
 
 	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr))
 
-	// 2–3. Linting + Static Checks: phases.go already builds these as
-	// fully-realized, nested-dropdown Sections (via ComposeLintingSection/
-	// ComposeStaticChecksSection) during runLintAndStaticChecks - reuse them
-	// by name instead of re-deriving from their already-rendered Body string
-	// and re-composing a second time, which used to double-nest the markdown.
-	if res.ValidatorResult != nil {
-		for _, s := range res.ValidatorResult.Sections {
-			if s.Name == "Linting" || s.Name == "Static Checks" {
-				sections = append(sections, s)
-			}
-		}
-	} else {
-		sections = append(sections, validator.Section{Name: "Linting", Body: "No results."})
-		sections = append(sections, validator.Section{Name: "Static Checks", Body: "No results."})
+	// 2–7. Linting, Static Checks, Kustomize Build, Scaffold Validation, and
+	// Resource Compliance are all fully composed by phases.go during
+	// validator.RunAll - reuse them by name rather than recomposing.
+	for _, name := range []string{"Linting", "Static Checks", "Kustomize Build", "Scaffold Validation", "Resource Compliance"} {
+		sections = append(sections, validatorSectionOrFallback(res.ValidatorResult, name))
 	}
 
-	// 4. Kustomize Build
-	sections = append(sections, validator.ComposeKustomizeBuildSection(0, nil, nil, nil))
-
-	// 5. Scaffold Validation
-	sections = append(sections, validator.ComposeScaffoldValidationSection("", nil, nil))
-
-	// 6. Resource Compliance
-	if res.ValidatorResult != nil {
-		sections = append(sections, validator.ComposeResourceComplianceSection(res.ValidatorResult.Check.Findings))
-	} else {
-		sections = append(sections, validator.Section{Name: "Resource Compliance", Body: "No results."})
-	}
-
-	// 7. CI Notes
+	// 8. CI Notes
 	_ = opts
 	sections = append(sections, validator.ComposeCINotesSection("Pipeline completed."))
 	return sections
