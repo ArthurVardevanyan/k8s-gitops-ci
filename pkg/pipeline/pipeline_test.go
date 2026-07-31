@@ -177,6 +177,67 @@ func TestComposeSections_ReusesAlreadyRenderedLintingSection(t *testing.T) {
 	}
 }
 
+// TestComposeSections_ReusesKustomizeBuildAndResourceCompliance guards a
+// second instance of the same double-composition bug (Kustomize Build and
+// Resource Compliance were also being recomposed a second time from stub/
+// empty args in composeSections, even though phases.go already built full
+// versions of both during runBuildAndPostBuild).
+func TestComposeSections_ReusesKustomizeBuildAndResourceCompliance(t *testing.T) {
+	res := &Result{
+		ValidatorResult: &validator.Result{
+			Sections: []validator.Section{
+				{Name: "Kustomize Build", Body: "real kustomize build body", Error: true},
+				{Name: "Scaffold Validation", Body: "real scaffold body"},
+				{Name: "Resource Compliance", Body: "real resource compliance body", Error: true},
+			},
+		},
+	}
+	sections := composeSections(res, Options{})
+
+	byName := map[string]validator.Section{}
+	for _, s := range sections {
+		byName[s.Name] = s
+	}
+	if byName["Kustomize Build"].Body != "real kustomize build body" {
+		t.Errorf("expected Kustomize Build to be reused verbatim, got:\n%s", byName["Kustomize Build"].Body)
+	}
+	if byName["Resource Compliance"].Body != "real resource compliance body" {
+		t.Errorf("expected Resource Compliance to be reused verbatim, got:\n%s", byName["Resource Compliance"].Body)
+	}
+}
+
+// TestComposeSections_FallsBackWhenValidatorResultMissingSections guards
+// the --lint-only path: runBuildAndPostBuild never runs, so
+// ValidatorResult.Sections only has "Linting"/"Static Checks" - composeSections
+// must still return every section name (with a "No results." fallback body)
+// rather than omitting them or panicking.
+func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.T) {
+	res := &Result{
+		ValidatorResult: &validator.Result{
+			Sections: []validator.Section{
+				{Name: "Linting", Body: "lint body"},
+				{Name: "Static Checks", Body: "static body"},
+			},
+		},
+	}
+	sections := composeSections(res, Options{})
+
+	byName := map[string]validator.Section{}
+	for _, s := range sections {
+		byName[s.Name] = s
+	}
+	for _, name := range []string{"Kustomize Build", "Scaffold Validation", "Resource Compliance"} {
+		s, ok := byName[name]
+		if !ok {
+			t.Errorf("expected a %q section to be present even in --lint-only mode", name)
+			continue
+		}
+		if s.Body != "No results." {
+			t.Errorf("expected %q to fall back to %q, got %q", name, "No results.", s.Body)
+		}
+	}
+}
+
 // TestBuildReport_UsesProvidersForTitleAndHeader guards against
 // buildReport falling back to hardcoded "GitOps CI Results"/"GitOps CI
 // Pipeline" strings instead of the org-injectable provider.Providers seam

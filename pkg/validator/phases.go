@@ -13,6 +13,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/config"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/csv"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/kustomize"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/largefile"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/golangci"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
@@ -21,6 +22,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/shellcheck"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/yamlsyntax"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
@@ -300,6 +302,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	overlays := detectOverlays(changed)
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	var overlayResult check.Result
+	var buildErrs []string
 	if len(overlays) > 0 {
 		overlayWorkers := w
 		if overlayWorkers > len(overlays) {
@@ -318,10 +321,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 				for ov := range jobs {
 					ovStart := time.Now()
 					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
+					buildErr := buildOverlayError(ov.path)
 					tc.RecordStep("Build+Compliance", ov.path, time.Since(ovStart))
 					overlayMu.Lock()
 					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
 					overlayResult.Exempted = append(overlayResult.Exempted, r.Exempted...)
+					if buildErr != "" {
+						buildErrs = append(buildErrs, buildErr)
+					}
 					overlayMu.Unlock()
 				}
 			}()
@@ -353,15 +360,18 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		log.Info("resource compliance: passed")
 	}
 
-	res.Sections = append(res.Sections, Section{
-		Name: "Kustomize Build",
-		Body: fmt.Sprintf("%d overlay(s) checked.", len(overlays)),
-	})
+	apps := uniqueApps(overlays)
+	fixNeeded, _ := kustomize.CheckFix(changed)
+	hookTable := buildHookTable(apps)
+	ghostTable := buildGhostTable(apps)
+	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
 
-	res.Sections = append(res.Sections, Section{
-		Name: "Scaffold Validation",
-		Body: "Scaffold checks complete.",
-	})
+	driftCurrent, driftDiff := scaffold.CheckReadmeStatus()
+	driftSummary := ""
+	if !driftCurrent {
+		driftSummary = driftDiff
+	}
+	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(driftSummary, nil, nil))
 
 	res.Sections = append(res.Sections, ComposeResourceComplianceSection(combinedCheck.Findings))
 	tc.Record("Build+Compliance", time.Since(buildStart), len(overlays) > 1)
