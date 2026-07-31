@@ -473,12 +473,16 @@ func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingCl
 		}
 	}
 
-	// Missing clusters
+	// Missing clusters - overlays scaffold.Run skipped rather than
+	// validated (disabled, or no on-disk directory yet: not yet rolled
+	// out, or removed by this PR). Deliberately non-blocking: this is an
+	// informational "here's what wasn't checked and why" list, not a
+	// finding - see scaffold.Run's own doc comment ("skipped ... never
+	// Failed").
 	if len(missingClusters) == 0 {
 		b.WriteString("- ✅ **Cluster Coverage** — all clusters accounted for\n")
 	} else {
-		hasError = true
-		b.WriteString("- ❌ **Missing Clusters**\n")
+		b.WriteString("- ⚠️ **Missing Clusters** — skipped (not yet rolled out, or removed by this PR)\n")
 		for _, c := range missingClusters {
 			fmt.Fprintf(&b, "  - `%s`\n", c)
 		}

@@ -145,12 +145,17 @@ than failed when it's disabled - either explicitly
 `scaffold.IsOverlayDisabled`) or via change-group 0
 (`scaffold.IsChangeGroupDisabled`) - or has no on-disk directory at all
 (a cluster not yet rolled out, or removed by this PR;
-`scaffold.SkippedClusters`). Any real content mismatch or scafctl
-execution failure is always treated as blocking - a simpler, more
-conservative policy than trying to distinguish "pre-existing drift this
-PR didn't cause" (which would need re-running scaffold against the
-merge-base template/config, a real but substantially riskier technique
-this implementation deliberately doesn't attempt).
+`scaffold.Summary.SkippedClusters`, aggregated per app by
+`runScaffoldValidation` and flattened by `flattenSkippedClusters` into the
+Scaffold Validation section's "Missing Clusters" bullet). Any real content
+mismatch or scafctl execution failure is always treated as blocking - a
+simpler, more conservative policy than trying to distinguish "pre-existing
+drift this PR didn't cause" (which would need re-running scaffold against
+the merge-base template/config, a real but substantially riskier technique
+this implementation deliberately doesn't attempt). Missing clusters
+themselves are **not** blocking, unlike drift/exec failures - a skip is an
+expected, informational "here's what wasn't checked and why", never a
+finding (see `scaffold.Run`'s own doc comment).
 
 Separately, every app whose overlays or `.scafctl` template/config
 changed is also checked for whether it has drift **coverage** at all:
