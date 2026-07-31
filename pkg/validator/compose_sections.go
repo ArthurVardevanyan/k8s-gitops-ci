@@ -236,11 +236,8 @@ func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempte
 		if isBlocking[id] {
 			icon = "❌"
 		}
-		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, displayName(id), len(findings))
-		b.WriteString("| File | Message |\n| --- | --- |\n")
-		for _, f := range findings {
-			fmt.Fprintf(&b, "| %s | %s |\n", f.File, f.Message)
-		}
+		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, complianceTitle(id), len(findings))
+		writeComplianceTable(&b, id, findings)
 		b.WriteString("\n</details>\n\n")
 	}
 
@@ -249,6 +246,107 @@ func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempte
 	}
 
 	return Section{Name: "Resource Compliance", Body: b.String(), Error: len(blocking) > 0}
+}
+
+// complianceTitle returns a check's registered TableSpec.Title (a fuller,
+// more descriptive heading - e.g. "Image Digest Pinning" rather than just
+// "Image-checksum") when one is registered, falling back to displayName(id)
+// for any check id without one (e.g. a newly-added check that hasn't been
+// given a TableSpec entry yet - see register_tables.go).
+func complianceTitle(id string) string {
+	if ts, ok := TableSpecForCheck(id); ok && ts.Title != "" {
+		return ts.Title
+	}
+	return displayName(id)
+}
+
+// writeComplianceTable renders one check's findings as a markdown table into
+// b. When the check id has a registered TableSpec (register_tables.go), its
+// own columns are used (plus its descriptive Preamble, via
+// RenderColumnedTable) instead of a generic two-column dump, and findings
+// that are the same underlying issue fanned out across multiple overlays/
+// build locations - see engine.go's per-unique-document fan-out - are
+// collapsed into a single row (dedupFindingsForTable) whose File cell lists
+// every distinct location instead of repeating an otherwise-identical row
+// once per location. Any check id without a registered TableSpec (e.g. a
+// brand new check that hasn't been given one yet) falls back to the
+// original flat File/Message table, undeduplicated, so it still renders
+// something useful out of the box.
+func writeComplianceTable(b *strings.Builder, id string, findings []check.Finding) {
+	if _, ok := TableSpecForCheck(id); ok {
+		b.WriteString(RenderColumnedTable(dedupFindingsForTable(findings), id))
+		return
+	}
+	b.WriteString("| File | Message |\n| --- | --- |\n")
+	for _, f := range findings {
+		fmt.Fprintf(b, "| %s | %s |\n", f.File, f.Message)
+	}
+}
+
+// dedupFindingsForTable collapses findings that describe the same
+// underlying resource/issue but were fanned out across multiple overlays or
+// build locations (every field but File and CheckID identical - CheckID is
+// already fixed by the caller's per-check grouping, and File is exactly the
+// field fan-out varies on; see runDocChecks/evaluateDoc in engine.go) into a
+// single representative row per group, preserving first-seen order. The
+// representative's File becomes the sorted, backtick-quoted, comma-joined
+// list of every distinct file the finding occurred in, and its Count
+// records how many locations were merged (informational; no current
+// TableSpec column reads it, but see check.CountMode/Finding.Count).
+//
+// This applies one generic key to every check rather than requiring each
+// check to supply its own TableSpec.DedupKey - the fan-out this addresses
+// is structural to the engine, not check-specific.
+func dedupFindingsForTable(findings []check.Finding) []check.Finding {
+	type group struct {
+		rep   check.Finding
+		files []string
+		seen  map[string]bool
+	}
+	order := make([]string, 0, len(findings))
+	groups := make(map[string]*group, len(findings))
+	for _, f := range findings {
+		key := findingDedupKey(f)
+		g, ok := groups[key]
+		if !ok {
+			g = &group{rep: f, seen: map[string]bool{}}
+			groups[key] = g
+			order = append(order, key)
+		}
+		if f.File != "" && !g.seen[f.File] {
+			g.seen[f.File] = true
+			g.files = append(g.files, f.File)
+		}
+	}
+	out := make([]check.Finding, 0, len(order))
+	for _, key := range order {
+		g := groups[key]
+		rep := g.rep
+		rep.Count = len(g.files)
+		if len(g.files) > 0 {
+			sort.Strings(g.files)
+			rep.File = joinBackticked(g.files)
+		}
+		out = append(out, rep)
+	}
+	return out
+}
+
+// findingDedupKey is the generic (File- and CheckID-independent) identity a
+// finding is grouped by for dedupFindingsForTable.
+func findingDedupKey(f check.Finding) string {
+	return strings.Join([]string{f.Kind, f.Name, f.Namespace, f.Container, f.Path, f.Value, f.Message}, "\x1f")
+}
+
+// joinBackticked renders a sorted file list as backtick-quoted, comma-joined
+// markdown (e.g. "`a.yaml`, `b.yaml`"), used for dedupFindingsForTable's
+// synthesized multi-location File cell.
+func joinBackticked(files []string) string {
+	quoted := make([]string, len(files))
+	for i, f := range files {
+		quoted[i] = fmt.Sprintf("`%s`", f)
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // renderAcceptedExceptions writes the "Accepted Exceptions" audit sub-block

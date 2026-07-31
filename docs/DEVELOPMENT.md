@@ -357,7 +357,20 @@ fix`, and a `| Overlay | Target |` ghost-patch table
   (`renderAcceptedExceptions`, table `| Resource | Value | Scope |`) built
   from applied exemptions (`check.Result.Exempted` /
   `[]exempt.Applied`), labeled `(pre-existing)` when none of the
-  exemptions were applied to a directly-modified resource.
+  exemptions were applied to a directly-modified resource. Each check-ID
+  group's table itself (`writeComplianceTable`) uses that check's
+  registered `check.TableSpec` (`register_tables.go`'s `checkTableSpecs`)
+  when one exists — its own descriptive title/preamble and columns via
+  `RenderColumnedTable`, e.g. `image-checksum` renders Kind/Name/Image/File
+  columns rather than a flat two-column dump — falling back to a generic
+  `| File | Message |` table for any check id without one. Before
+  rendering, `dedupFindingsForTable` collapses findings that are the same
+  underlying resource/issue fanned out across multiple overlays/build
+  locations (identical Kind/Name/Message etc., differing only in `File` -
+  see `engine.go`'s per-unique-document fan-out) into a single row whose
+  File cell lists every distinct location, so the same issue doesn't repeat
+  once per overlay it happens to appear in; the header's `(N finding(s))`
+  count still reflects every raw, pre-dedup finding.
 
 ## Building
 
