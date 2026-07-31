@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,81 @@ func TestValidatePRTitle_Patterns(t *testing.T) {
 			t.Errorf("%q should be invalid", s)
 		}
 	}
+}
+
+// TestPRTitleSuggestion covers the non-blocking TitleSuggestion hook:
+// disabled by default (nil hook), only consulted once the required
+// Conventional-Commits prefix already passes, and never triggered for an
+// unavailable client.
+func TestPRTitleSuggestion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake gh shell script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGh := filepath.Join(dir, "gh")
+	script := "#!/bin/sh\necho \"$FAKE_GH_TITLE\"\n"
+	if err := os.WriteFile(fakeGh, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake gh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	c := NewClient("https://github.com/org/repo", "1")
+
+	suggestUnlessJira := func(title string) string {
+		if !strings.Contains(title, "JIRA") {
+			return "consider referencing a ticket"
+		}
+		return ""
+	}
+
+	t.Run("nil hook disables suggestions", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = nil
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "feat: add thing")
+		if got := PRTitleSuggestion(c); got != "" {
+			t.Errorf("expected no suggestion when TitleSuggestion is nil, got %q", got)
+		}
+	})
+
+	t.Run("passing title with nothing to suggest", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "feat: add JIRA-123 support")
+		if got := PRTitleSuggestion(c); got != "" {
+			t.Errorf("expected no suggestion, got %q", got)
+		}
+	})
+
+	t.Run("passing title with a suggestion", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "feat: add thing")
+		if got := PRTitleSuggestion(c); got != "consider referencing a ticket" {
+			t.Errorf("PRTitleSuggestion = %q, want suggestion", got)
+		}
+	})
+
+	t.Run("failing required prefix suppresses suggestion", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "not conventional")
+		if got := PRTitleSuggestion(c); got != "" {
+			t.Errorf("expected no suggestion when the required prefix fails, got %q", got)
+		}
+	})
+
+	t.Run("unavailable client", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		if got := PRTitleSuggestion(NewDisabledClient()); got != "" {
+			t.Errorf("expected no suggestion for an unavailable client, got %q", got)
+		}
+	})
 }
 
 func TestValidatePRChecklist_Logic(t *testing.T) {

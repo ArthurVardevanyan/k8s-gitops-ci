@@ -28,10 +28,15 @@ func titleCase(s string) string {
 // ComposeStaticChecksSection already use - rather than a single flat bullet
 // list, so a reader can tell at a glance which specific check(s) failed
 // without reading prose, and each failure's detail is tucked away until
-// expanded instead of always showing inline.
-func ComposePRChecksSection(titleErr, signErr, checklistErr error) Section {
+// expanded instead of always showing inline. titleSuggestion, when
+// non-empty, is a non-blocking note (see github.TitleSuggestion/
+// github.PRTitleSuggestion) folded into an otherwise-passing "PR Title"
+// child as a ⚠️ warning rather than promoted to a failure - an org's
+// optional title convention (e.g. a ticket-reference suffix) never blocks
+// the pipeline, unlike the required Conventional-Commits prefix (titleErr).
+func ComposePRChecksSection(titleErr, signErr, checklistErr error, titleSuggestion string) Section {
 	children := []ReportSection{
-		prCheckChild("PR Title", titleErr),
+		prTitleChild(titleErr, titleSuggestion),
 		prCheckChild("Signed Commits", signErr),
 		prCheckChild("PR Checklist", checklistErr),
 	}
@@ -46,6 +51,21 @@ func prCheckChild(name string, err error) ReportSection {
 		return ReportSection{Name: name, Status: StatusError, Body: err.Error()}
 	}
 	return ReportSection{Name: name, Status: StatusPassed, Summary: "Passed."}
+}
+
+// prTitleChild renders the "PR Title" check outcome. A non-empty
+// titleSuggestion is only ever consulted when titleErr is nil (the
+// required prefix already passed - see github.PRTitleSuggestion, which
+// itself withholds a suggestion until the required check passes), so a
+// hard title failure is never diluted by also showing a suggestion.
+func prTitleChild(titleErr error, titleSuggestion string) ReportSection {
+	if titleErr != nil {
+		return ReportSection{Name: "PR Title", Status: StatusError, Body: titleErr.Error()}
+	}
+	if titleSuggestion != "" {
+		return ReportSection{Name: "PR Title", Status: StatusWarning, Body: "Passed. Suggestion: " + titleSuggestion}
+	}
+	return ReportSection{Name: "PR Title", Status: StatusPassed, Summary: "Passed."}
 }
 
 // summaryIndentUnit is the non-breaking-space prefix prepended once per

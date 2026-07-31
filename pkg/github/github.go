@@ -83,6 +83,34 @@ func ValidatePRTitleString(title string) error {
 	return fmt.Errorf("PR title %q does not follow Conventional Commits (expected prefix like feat:, fix:, chore:)", title)
 }
 
+// TitleSuggestion optionally checks additional, non-blocking PR-title
+// conventions once title already satisfies the required Conventional
+// Commits prefix (see ValidatePRTitleString) - e.g. an org's ticket-
+// reference suffix convention that's encouraged but not enforced. It
+// returns a human-readable suggestion, or "" when there's nothing to
+// suggest. nil by default (no suggestion checks); an org layer may set
+// this from a Configure()-style seam. Unlike ValidatePRTitleString, a
+// non-empty return here never blocks the pipeline (see PRTitleSuggestion/
+// validator.ComposePRChecksSection's non-blocking rendering of it).
+var TitleSuggestion func(title string) string
+
+// PRTitleSuggestion returns the current PR's non-blocking title
+// suggestion from the TitleSuggestion hook, or "" when: the client has no
+// PR context, no TitleSuggestion hook is configured, the title could not
+// be fetched, the required prefix hasn't already passed ValidatePRTitleString
+// (a hard failure already covers that case - piling a suggestion on top
+// would just be noise), or the hook itself has nothing to suggest.
+func PRTitleSuggestion(c *Client) string {
+	if TitleSuggestion == nil || !c.IsAvailable() {
+		return ""
+	}
+	title, err := c.gh("pr", "view", c.pr, "--json", "title", "--jq", ".title")
+	if err != nil || ValidatePRTitleString(title) != nil {
+		return ""
+	}
+	return TitleSuggestion(title)
+}
+
 // ValidatePRChecklist validates the PR body checklist per spec.
 func ValidatePRChecklist(c *Client) error {
 	if !c.IsAvailable() {

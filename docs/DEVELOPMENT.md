@@ -134,13 +134,18 @@ since PAC's own controller manages their lifecycle rather than Argo CD),
 `pkg/scaffold`'s `Binary`/`ConfigSource` (retarget the scaffolding
 CLI/config-source name) and `ExcludedClusters` (permanently skip named
 overlays from scaffold-drift validation, independent of the per-app
-`IsOverlayDisabled`/`IsChangeGroupDisabled` config-driven opt-outs), and
+`IsOverlayDisabled`/`IsChangeGroupDisabled` config-driven opt-outs),
 `pkg/validator`'s `ExtraNonAppDirs` (extra top-level repository
 directories - e.g. a vendored example or internal-tooling directory
 whose layout coincidentally matches an app's `base`/`overlays` shape -
-that `detectAppRoots` must never treat as an app root). The
-contract is always **"empty/nil is a true no-op"** — never assume a
-default value that changes behavior when unset.
+that `detectAppRoots` must never treat as an app root), and
+`pkg/github`'s `TitleSuggestion` (an optional, always-non-blocking
+PR-title convention check - e.g. an org's ticket-reference suffix -
+layered on top of the required Conventional Commits prefix; see
+`PRTitleSuggestion` and `ComposePRChecksSection`'s rendering of it as a
+warning, never a failure). The contract is always **"empty/nil is a
+true no-op"** — never assume a default value that changes behavior when
+unset.
 
 ### The "core data + org-injectable override" pattern
 

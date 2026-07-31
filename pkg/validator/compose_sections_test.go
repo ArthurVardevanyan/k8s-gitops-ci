@@ -10,7 +10,7 @@ import (
 )
 
 func TestComposePRChecksSection(t *testing.T) {
-	s := ComposePRChecksSection(errors.New("title"), nil, nil)
+	s := ComposePRChecksSection(errors.New("title"), nil, nil, "")
 	if !s.Error {
 		t.Errorf("expected error section")
 	}
@@ -23,7 +23,7 @@ func TestComposePRChecksSection(t *testing.T) {
 // than a single flat bullet list, so a reader can tell exactly which
 // check(s) failed at a glance and expand only the failing one(s).
 func TestComposePRChecksSection_EachCheckIsItsOwnSubDropdown(t *testing.T) {
-	s := ComposePRChecksSection(errors.New("bad title"), nil, errors.New("missing checklist item"))
+	s := ComposePRChecksSection(errors.New("bad title"), nil, errors.New("missing checklist item"), "")
 	if strings.Count(s.Body, "<details>") != 3 {
 		t.Errorf("expected 3 sub-dropdowns (one per PR check), got:\n%s", s.Body)
 	}
@@ -39,12 +39,42 @@ func TestComposePRChecksSection_EachCheckIsItsOwnSubDropdown(t *testing.T) {
 }
 
 func TestComposePRChecksSection_AllPassed(t *testing.T) {
-	s := ComposePRChecksSection(nil, nil, nil)
+	s := ComposePRChecksSection(nil, nil, nil, "")
 	if s.Error {
 		t.Errorf("expected no error when all three checks pass")
 	}
 	if strings.Count(s.Body, "Passed.") != 3 {
 		t.Errorf("expected all 3 checks to report Passed., got:\n%s", s.Body)
+	}
+}
+
+// TestComposePRChecksSection_TitleSuggestionIsNonBlocking guards that a
+// non-empty titleSuggestion (see github.PRTitleSuggestion) surfaces as a
+// warning note on an otherwise-passing "PR Title" child, without ever
+// tripping the section's blocking Error flag - an org's optional title
+// convention must never fail the pipeline the way titleErr does.
+func TestComposePRChecksSection_TitleSuggestionIsNonBlocking(t *testing.T) {
+	s := ComposePRChecksSection(nil, nil, nil, "consider referencing a ticket, e.g. JIRA-123")
+	if s.Error {
+		t.Errorf("expected a title suggestion to never be blocking")
+	}
+	if !strings.Contains(s.Body, "PR Title") || !strings.Contains(s.Body, "consider referencing a ticket") {
+		t.Errorf("expected the PR Title sub-dropdown to carry the suggestion, got:\n%s", s.Body)
+	}
+}
+
+// TestComposePRChecksSection_TitleErrSuppressesSuggestion guards that a
+// blocking titleErr is never diluted by also showing titleSuggestion -
+// callers (github.PRTitleSuggestion) already withhold a suggestion once
+// the required check fails, but the render layer must not surface a
+// stale/mistakenly-passed suggestion string alongside a hard failure either.
+func TestComposePRChecksSection_TitleErrSuppressesSuggestion(t *testing.T) {
+	s := ComposePRChecksSection(errors.New("bad title"), nil, nil, "consider referencing a ticket")
+	if !s.Error {
+		t.Errorf("expected the section to report an error")
+	}
+	if strings.Contains(s.Body, "consider referencing a ticket") {
+		t.Errorf("expected a blocking title error to suppress the suggestion, got:\n%s", s.Body)
 	}
 }
 
