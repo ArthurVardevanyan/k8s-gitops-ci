@@ -16,6 +16,38 @@ func TestComposePRChecksSection(t *testing.T) {
 	}
 }
 
+// TestComposePRChecksSection_EachCheckIsItsOwnSubDropdown guards that PR
+// Title/Signed Commits/PR Checklist each render as their own independent
+// collapsible sub-dropdown (via composeParentFromChildren, matching
+// ComposeLintingSection/ComposeStaticChecksSection's convention) rather
+// than a single flat bullet list, so a reader can tell exactly which
+// check(s) failed at a glance and expand only the failing one(s).
+func TestComposePRChecksSection_EachCheckIsItsOwnSubDropdown(t *testing.T) {
+	s := ComposePRChecksSection(errors.New("bad title"), nil, errors.New("missing checklist item"))
+	if strings.Count(s.Body, "<details>") != 3 {
+		t.Errorf("expected 3 sub-dropdowns (one per PR check), got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "PR Title") || !strings.Contains(s.Body, "bad title") {
+		t.Errorf("expected the PR Title sub-dropdown with its error, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "Signed Commits") {
+		t.Errorf("expected a Signed Commits sub-dropdown even when it passed, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "PR Checklist") || !strings.Contains(s.Body, "missing checklist item") {
+		t.Errorf("expected the PR Checklist sub-dropdown with its error, got:\n%s", s.Body)
+	}
+}
+
+func TestComposePRChecksSection_AllPassed(t *testing.T) {
+	s := ComposePRChecksSection(nil, nil, nil)
+	if s.Error {
+		t.Errorf("expected no error when all three checks pass")
+	}
+	if strings.Count(s.Body, "Passed.") != 3 {
+		t.Errorf("expected all 3 checks to report Passed., got:\n%s", s.Body)
+	}
+}
+
 func TestComposeLintingSection(t *testing.T) {
 	outcomes := []CheckOutcome{{Name: "golangci", Status: StatusError}}
 	s := ComposeLintingSection(outcomes, map[string]string{"golangci": "issues"})
