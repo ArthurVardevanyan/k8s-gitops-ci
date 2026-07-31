@@ -448,12 +448,13 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	ghostTable := buildGhostTable(apps)
 	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
 
-	driftCurrent, driftDiff := scaffold.CheckReadmeStatus()
-	driftSummary := ""
-	if !driftCurrent {
-		driftSummary = driftDiff
+	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
+	driftLines := scaffoldResult.DriftLines
+	if readmeCurrent, readmeDiff := scaffold.CheckReadmeStatus(); !readmeCurrent {
+		driftLines = append(driftLines, readmeDiff)
+		log.ErrorInSection("Scaffold", "%s", readmeDiff)
 	}
-	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(driftSummary, nil, nil))
+	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(driftLines, "\n"), scaffoldResult.ExecErrors, nil))
 
 	res.Sections = append(res.Sections, ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted))
 	tc.Record("Build+Compliance", time.Since(buildStart), len(overlays) > 1)
