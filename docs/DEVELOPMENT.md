@@ -5,6 +5,7 @@
 - [Prerequisites](#prerequisites)
 - [Repository Structure](#repository-structure)
 - [Design Conventions](#design-conventions)
+- [CLI Output & PR Comment Format](#cli-output--pr-comment-format)
 - [Building](#building)
 - [Testing](#testing)
 - [Task Targets Reference](#task-targets-reference)
@@ -169,6 +170,121 @@ time.
 4. Write table-driven tests (`[]struct{ name string; ... }` +
    `t.Run(tt.name, ...)`) matching the style already used across
    `pkg/validator/*`.
+
+## CLI Output & PR Comment Format
+
+### Logger banner and section headers (`pkg/logger`)
+
+`Logger` writes timestamped `[HH:MM:SS] [LEVEL] message` lines to stdout
+(and optionally a log file). `Header(title)` prints a boxed section banner
+(a `====...====` divider, then an indented `title` line, then another
+divider, 60 columns wide) and records `title`
+as the current section for error attribution; `SubHeader` prints a lighter
+40-column variant. `RecordBuild`/`RecordPass`/`RecordFailure` (and their
+`InSection` variants, for use from goroutines where the shared "current
+section" may have been overwritten by another goroutine) feed a final
+`Summary()` banner:
+
+```text
+============================================================
+  RESULTS SUMMARY
+============================================================
+  Builds: 4 | Passes: 3 | Failures: 1
+  Warnings: 2
+  Errors: 1 (see details above)
+  Failed sections:
+    - Build+Compliance
+============================================================
+```
+
+`Logger.Scope()` returns a `ScopedLogger` that buffers a goroutine's log
+lines and flushes them atomically (`Flush()`) once the goroutine finishes,
+so concurrent phases (linting, static checks, per-overlay builds) don't
+interleave their output line-by-line — verbose mode (`--verbose`) streams
+immediately instead, for debugging hangs.
+
+### Timing table (`pkg/validator/timing.go`)
+
+`TimingCollector.Record(name, duration, parallel bool)` records a top-level
+phase; `RecordStep(phase, name, duration)` records a sub-step nested under
+a phase (e.g. one linter, or one overlay's build). `SetConcurrency(cpus,
+concurrency)` records the worker-pool size used for the run. `Summary`
+renders a fixed-width table, phases flush-left and sub-steps indented and
+sorted longest-first, with a parallelism-efficiency line
+(`sum(phase durations) / wall-clock duration`, e.g. `3.2x` means phases
+that together took 3.2x the wall-clock time ran in parallel) and a
+concurrency footer:
+
+```text
+--------------------------------------------------------------
+Step                              Duration  Mode
+--------------------------------------------------------------
+Linting                              1.203s  parallel
+  golangci-lint                       980ms  parallel
+  kubeconform                         640ms  parallel
+Static Checks                         310ms  parallel
+Build+Compliance                     2.010s  parallel
+--------------------------------------------------------------
+TOTAL (wall)                         3.523s
+TOTAL (sum)                          3.523s
+Parallelism                             2.1x
+Concurrency                                8  (4 CPUs × 2)
+--------------------------------------------------------------
+```
+
+### Unified PR-comment report (`pkg/validator/unified_report.go`, `compose_sections.go`)
+
+The PR comment is a single markdown `Report` (one `<!-- marker -->`-tagged
+comment, upserted via `pkg/github`) built from a flat `[]Section`
+(`Name`, `Body`, `Error bool`) — the top-level collapsible `<details>`
+blocks a reader sees first. Each top-level `Section` is composed by a
+`Compose*Section` function in `compose_sections.go` (`ComposeLintingSection`,
+`ComposeStaticChecksSection`, `ComposeKustomizeBuildSection`,
+`ComposeScaffoldValidationSection`, `ComposeResourceComplianceSection`,
+...), and `pipeline.go`'s `composeSections` assembles the final ordered
+list — reusing sections `phases.go` already built onto
+`Result.Sections` by name (`validatorSectionOrFallback`) rather than
+re-deriving/re-composing them a second time with different (often
+stub) inputs.
+
+Within a top-level `Section`, individual sub-checks nest as their own
+collapsible `<details>` via the richer `ReportSection{Name, Status,
+Summary, Body}` type (`Status` is a `SectionStatus`: `StatusPassed` /
+`StatusInfo` / `StatusWarning` / `StatusError`, each with its own icon —
+`✅`/`ℹ️`/`⚠️`/`❌` — via `SectionStatus.Icon()`). `renderSubDropdown`
+renders one `ReportSection` at an arbitrary nesting depth (`summaryIndent`
+adds `&nbsp;`-padding per level, since GitHub doesn't indent `<details>`
+bodies); `composeParentFromChildren` renders a list of children and rolls
+their statuses up into the parent `Section.Error`. `CheckOutcome{Name,
+Status, Skipped, Note}` records whether an individual lint/static check
+ran, was skipped, or passed, so **every** linter/static-check always
+renders its own sub-dropdown (via `composeCheckChild`) — even when
+everything passed — instead of silently vanishing once there's nothing to
+report.
+
+Three sections carry real, richer per-check data instead of a placeholder
+count:
+
+- **Kustomize Build** (`ComposeKustomizeBuildSection`) — overlay build
+  errors grouped by root cause (`groupBuildErrors`/`formatBuildErrors`, so
+  N overlays sharing one underlying cause don't repeat it N times), a
+  `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` hooks-defined matrix,
+  files needing `kustomize edit fix`, and a `| Overlay | Target |`
+  ghost-patch table (`pkg/ghostpatch.CheckApp`, which renders overlays via
+  the krusty SDK directly — no runtime dependency on a `kustomize` binary
+  being present).
+- **Scaffold Validation** (`ComposeScaffoldValidationSection`) — real
+  README-drift detection (`pkg/scaffold.CheckReadmeStatus`).
+- **Resource Compliance** (`ComposeResourceComplianceSection`) — findings
+  grouped by `CheckID` into per-check nested `<details>` (❌ when a check
+  has a finding in a directly-modified file — blocking — vs ⚠️ for a
+  pre-existing, non-blocking finding only), sorted alphabetically by check
+  ID (this generic core has no fixed, org-defined check ordering to
+  hardcode), plus an "Accepted Exceptions" audit sub-block
+  (`renderAcceptedExceptions`, table `| Resource | Value | Scope |`) built
+  from applied exemptions (`check.Result.Exempted` /
+  `[]exempt.Applied`), labeled `(pre-existing)` when none of the
+  exemptions were applied to a directly-modified resource.
 
 ## Building
 
