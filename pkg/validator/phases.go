@@ -69,49 +69,72 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 
 	// ── linting ──────────────────────────────────────────────────────────────
 	lintReports := map[string]string{}
+	var lintOutcomes []CheckOutcome
 	var lintMu sync.Mutex
 	var lintWg sync.WaitGroup
 
-	runLintStep := func(name string, fn func(sl *logger.ScopedLogger) (string, bool)) {
+	// lintStepResult is what each linter closure returns: a failure report
+	// (empty when it passed/was skipped) plus enough to build a CheckOutcome
+	// so the Linting section can always render a full sub-check breakdown,
+	// not just a flattened bullet that disappears once a check is clean.
+	type lintStepResult struct {
+		report  string
+		status  SectionStatus
+		skipped bool
+		note    string
+	}
+
+	runLintStep := func(name string, fn func(sl *logger.ScopedLogger) lintStepResult) {
 		lintWg.Add(1)
 		go func() {
 			defer lintWg.Done()
 			start := time.Now()
 			sl := log.Scope()
-			report, ok := fn(sl)
+			r := fn(sl)
 			sl.Flush()
 			tc.RecordStep("Linting", name, time.Since(start))
-			if ok {
-				lintMu.Lock()
-				lintReports[name] = report
-				lintMu.Unlock()
+			lintMu.Lock()
+			if r.report != "" {
+				lintReports[name] = r.report
 			}
+			lintOutcomes = append(lintOutcomes, CheckOutcome{Name: name, Status: r.status, Skipped: r.skipped, Note: r.note})
+			lintMu.Unlock()
 		}()
 	}
 
-	runLintStep("markdownlint", func(sl *logger.ScopedLogger) (string, bool) {
+	runLintStep("markdownlint", func(sl *logger.ScopedLogger) lintStepResult {
 		if mdOut, err := markdownlint.Run(changed); err == nil {
 			sl.Info("markdownlint: passed")
-			return mdOut, true
+			return lintStepResult{status: StatusPassed}
 		} else if !errors.Is(err, markdownlint.ErrCLINotFound) {
 			sl.ErrorInSection("Markdownlint", "markdownlint: %s", err)
-			return err.Error(), true
+			detail := mdOut
+			if detail == "" {
+				detail = err.Error()
+			}
+			return lintStepResult{report: detail, status: StatusError}
 		}
-		return "", false
+		sl.Debug("markdownlint: not found in PATH, skipping")
+		return lintStepResult{status: StatusPassed, skipped: true, note: "markdownlint not found in PATH."}
 	})
 
-	runLintStep("prettier", func(sl *logger.ScopedLogger) (string, bool) {
+	runLintStep("prettier", func(sl *logger.ScopedLogger) lintStepResult {
 		if pOut, err := prettier.Run(changed, nil); err == nil {
 			sl.Info("prettier: passed")
-			return pOut, true
+			return lintStepResult{status: StatusPassed}
 		} else if !errors.Is(err, prettier.ErrCLINotFound) {
 			sl.ErrorInSection("Prettier", "prettier: %s", err)
-			return err.Error(), true
+			detail := pOut
+			if detail == "" {
+				detail = err.Error()
+			}
+			return lintStepResult{report: detail, status: StatusError}
 		}
-		return "", false
+		sl.Debug("prettier: not found in PATH, skipping")
+		return lintStepResult{status: StatusPassed, skipped: true, note: "prettier not found in PATH."}
 	})
 
-	runLintStep("shellcheck", func(sl *logger.ScopedLogger) (string, bool) {
+	runLintStep("shellcheck", func(sl *logger.ScopedLogger) lintStepResult {
 		if scViolations, _, scErr := shellcheck.Run(changed); scErr == nil {
 			if len(scViolations) > 0 {
 				var sb strings.Builder
@@ -119,29 +142,43 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 					fmt.Fprintf(&sb, "%s:%d: %s\n", v.File, v.Line, v.Message)
 				}
 				sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", len(scViolations))
-				return sb.String(), true
+				return lintStepResult{report: sb.String(), status: StatusError}
 			}
 			sl.Info("shellcheck: passed")
+			return lintStepResult{status: StatusPassed}
 		} else if !errors.Is(scErr, shellcheck.ErrCLINotFound) {
 			sl.ErrorInSection("Shellcheck", "shellcheck: %s", scErr)
-			return scErr.Error(), true
+			return lintStepResult{report: scErr.Error(), status: StatusError}
 		}
-		return "", false
+		sl.Debug("shellcheck: not found in PATH, skipping")
+		return lintStepResult{status: StatusPassed, skipped: true, note: "shellcheck not found in PATH."}
 	})
 
 	if stepEnabled(stepGolangci, disabled, enabled) {
-		runLintStep("golangci", func(sl *logger.ScopedLogger) (string, bool) {
+		runLintStep("golangci", func(sl *logger.ScopedLogger) lintStepResult {
 			glOut, err := golangci.Run(changed)
 			if err != nil && !errors.Is(err, golangci.ErrCLINotFound) {
 				sl.ErrorInSection("Golangci", "golangci: %s", err)
-				return err.Error(), true
+				detail := glOut
+				if detail == "" {
+					detail = err.Error()
+				}
+				return lintStepResult{report: detail, status: StatusError}
+			}
+			if err != nil {
+				sl.Debug("golangci: not found in PATH, skipping")
+				return lintStepResult{status: StatusPassed, skipped: true, note: "golangci-lint not found in PATH."}
 			}
 			sl.Info("golangci-lint: passed")
-			return glOut, true
+			return lintStepResult{status: StatusPassed}
 		})
+	} else {
+		lintMu.Lock()
+		lintOutcomes = append(lintOutcomes, CheckOutcome{Name: "golangci", Status: StatusPassed, Skipped: true, Note: "Disabled."})
+		lintMu.Unlock()
 	}
 
-	runLintStep("kubeconform", func(sl *logger.ScopedLogger) (string, bool) {
+	runLintStep("kubeconform", func(sl *logger.ScopedLogger) lintStepResult {
 		yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
 		kcOpts := kubeconform.DefaultOptions()
 		if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
@@ -151,89 +188,91 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		if kcRes, err := validateWithRenderedOverlays(yamlFiles, kcOpts); err == nil && kcRes != nil {
 			if kcRes.Invalid > 0 || kcRes.Errors > 0 {
 				sl.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
-				return kcRes.Summary(), true
+				return lintStepResult{report: kcRes.Summary(), status: StatusError}
 			}
 			sl.Info("kubeconform: passed")
 		}
-		return "", false
+		return lintStepResult{status: StatusPassed}
 	})
 
 	lintWg.Wait()
 
-	res.Sections = append(res.Sections, ComposeLintingSection(lintReports))
+	res.Sections = append(res.Sections, ComposeLintingSection(lintOutcomes, lintReports))
 	tc.Record("Linting", time.Since(phaseStart), true)
 
 	// ── static checks ────────────────────────────────────────────────────────
 	staticStart := time.Now()
 	log.Header("Static Checks")
 	staticReports := map[string]string{}
+	var staticOutcomes []CheckOutcome
 	var staticMu sync.Mutex
 	var staticWg sync.WaitGroup
 
-	runStaticStep := func(name string, fn func(sl *logger.ScopedLogger) (string, bool)) {
+	runStaticStep := func(name string, fn func(sl *logger.ScopedLogger) lintStepResult) {
 		staticWg.Add(1)
 		go func() {
 			defer staticWg.Done()
 			start := time.Now()
 			sl := log.Scope()
-			report, ok := fn(sl)
+			r := fn(sl)
 			sl.Flush()
 			tc.RecordStep("Static Checks", name, time.Since(start))
-			if ok {
-				staticMu.Lock()
-				staticReports[name] = report
-				staticMu.Unlock()
+			staticMu.Lock()
+			if r.report != "" {
+				staticReports[name] = r.report
 			}
+			staticOutcomes = append(staticOutcomes, CheckOutcome{Name: name, Status: r.status, Skipped: r.skipped, Note: r.note})
+			staticMu.Unlock()
 		}()
 	}
 
-	runStaticStep("large-file", func(sl *logger.ScopedLogger) (string, bool) {
+	runStaticStep("large-file", func(sl *logger.ScopedLogger) lintStepResult {
 		if violations := largefile.Check(changed, largefile.DefaultMaxSize, nil); len(violations) > 0 {
 			var sb strings.Builder
 			for _, v := range violations {
 				sb.WriteString(v.String() + "\n")
 			}
 			sl.ErrorInSection("LargeFile", "%d large file violation(s)", len(violations))
-			return sb.String(), true
+			return lintStepResult{report: sb.String(), status: StatusError}
 		}
 		sl.Info("large-file check: passed")
-		return "", false
+		return lintStepResult{status: StatusPassed}
 	})
 
-	runStaticStep("YAML-syntax", func(sl *logger.ScopedLogger) (string, bool) {
+	runStaticStep("YAML-syntax", func(sl *logger.ScopedLogger) lintStepResult {
 		if yvs, _ := yamlsyntax.CheckFiles(changed); len(yvs) > 0 {
 			var sb strings.Builder
 			for _, v := range yvs {
 				fmt.Fprintf(&sb, "%s: %s\n", v.File, v.Message)
 			}
 			sl.ErrorInSection("YAMLSyntax", "%d YAML syntax error(s)", len(yvs))
-			return sb.String(), true
+			return lintStepResult{report: sb.String(), status: StatusError}
 		}
 		sl.Info("YAML-syntax check: passed")
-		return "", false
+		return lintStepResult{status: StatusPassed}
 	})
 
-	runStaticStep("config-sort", func(sl *logger.ScopedLogger) (string, bool) {
+	runStaticStep("config-sort", func(sl *logger.ScopedLogger) lintStepResult {
 		if sorted, err := config.CheckSortOrder(); err == nil && len(sorted) > 0 {
 			sl.ErrorInSection("ConfigSort", "%d unsorted config file(s)", len(sorted))
-			return config.FormatUnsortedError(sorted), true
+			return lintStepResult{report: config.FormatUnsortedError(sorted), status: StatusError}
 		}
 		sl.Info("config-sort check: passed")
-		return "", false
+		return lintStepResult{status: StatusPassed}
 	})
 
-	runStaticStep("startingCSV", func(sl *logger.ScopedLogger) (string, bool) {
+	runStaticStep("startingCSV", func(sl *logger.ScopedLogger) lintStepResult {
 		if mismatches, err := csv.CheckStartingCSVFolderMatch(changed); err == nil && len(mismatches) > 0 {
 			sl.ErrorInSection("StartingCSV", "%d startingCSV mismatch(es)", len(mismatches))
-			return csv.FormatMismatches(mismatches), true
+			return lintStepResult{report: csv.FormatMismatches(mismatches), status: StatusError}
 		}
 		sl.Info("startingCSV check: passed")
-		return "", false
+		return lintStepResult{status: StatusPassed}
 	})
 
 	staticWg.Wait()
 
-	res.Sections = append(res.Sections, ComposeStaticChecksSection(staticReports))
+	res.Sections = append(res.Sections, ComposeStaticChecksSection(staticOutcomes, staticReports))
 	tc.Record("Static Checks", time.Since(staticStart), true)
 }
 

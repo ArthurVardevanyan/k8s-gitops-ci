@@ -64,6 +64,18 @@ type CheckOutcome struct {
 	Note    string        // Short note shown when expanded (e.g. "No markdown files changed.")
 }
 
+// ReportSection represents a single collapsible sub-section that can be
+// nested under a top-level Section via renderSubDropdown. Unlike the
+// top-level Section type (Name/Body/bool Error), it carries a full
+// SectionStatus plus a short Summary shown when the section passed and
+// there's no need for a full Body.
+type ReportSection struct {
+	Name    string        // Display name (e.g. "Markdownlint")
+	Status  SectionStatus // Pass/Warning/Error
+	Summary string        // Brief note shown when expanded and Body is empty (e.g. "Passed.")
+	Body    string        // Full markdown content (tables, code fences, etc.) - empty when passed
+}
+
 // Render produces the markdown report.
 func (r *Report) Render() string {
 	var b strings.Builder

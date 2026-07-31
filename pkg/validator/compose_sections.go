@@ -43,42 +43,148 @@ func ComposePRChecksSection(titleErr, signErr, checklistErr error) Section {
 	return Section{Name: "PR Checks", Body: b.String(), Error: hasError}
 }
 
-// ComposeLintingSection renders lint subsection.
-func ComposeLintingSection(reports map[string]string) Section {
-	var b strings.Builder
-	var hasError bool
-	for _, name := range []string{"markdownlint", "prettier", "shellcheck", "golangci", "kubeconform"} {
-		out := reports[name]
-		icon := "✅"
-		if out != "" {
-			hasError = true
-			icon = "⚠️"
-		}
-		fmt.Fprintf(&b, "- %s **%s**\n", icon, titleCase(name))
-		if out != "" {
-			fmt.Fprintf(&b, "\n```\n%s\n```\n", strings.TrimSpace(out))
-		}
+// summaryIndentUnit is the non-breaking-space prefix prepended once per
+// nesting level to visually indent a <details> summary label. GitHub strips
+// inline CSS and never indents <details> bodies, so the label itself is
+// shifted instead.
+const summaryIndentUnit = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+
+// summaryIndent returns the &nbsp; prefix for a summary at the given
+// structural depth (1 = a first-level sub-dropdown beneath a top-level
+// "Expand:" section). Depth 0 (the top-level sections) returns no indent.
+func summaryIndent(depth int) string {
+	if depth < 1 {
+		return ""
 	}
-	return Section{Name: "Linting", Body: b.String(), Error: hasError}
+	return strings.Repeat(summaryIndentUnit, depth)
 }
 
-// ComposeStaticChecksSection renders static checks subsection.
-func ComposeStaticChecksSection(reports map[string]string) Section {
-	var b strings.Builder
-	var hasError bool
-	for _, name := range []string{"large-file", "YAML-syntax", "config-sort", "startingCSV", "placeholder", "cluster-identity"} {
-		out := reports[name]
-		icon := "✅"
-		if out != "" {
-			hasError = true
-			icon = "⚠️"
-		}
-		fmt.Fprintf(&b, "- %s **%s**\n", icon, name)
-		if out != "" {
-			fmt.Fprintf(&b, "\n```\n%s\n```\n", strings.TrimSpace(out))
-		}
+// renderSubDropdown writes a ReportSection as a nested <details> dropdown at
+// the given structural depth: an icon + name summary followed by the
+// section's Body, or its Summary when the section passed (Body empty).
+func renderSubDropdown(sb *strings.Builder, s ReportSection, depth int) {
+	fmt.Fprintf(sb, "<details>\n<summary>%s%s %s</summary>\n\n", summaryIndent(depth), s.Status.Icon(), s.Name)
+	if s.Body != "" {
+		sb.WriteString(s.Body)
+	} else {
+		sb.WriteString(s.Summary)
 	}
-	return Section{Name: "Static Checks", Body: b.String(), Error: hasError}
+	sb.WriteString("\n\n</details>\n\n")
+}
+
+// RenderSubDropdown wraps a plain title/body pair in a single first-level
+// (depth 1) nested dropdown, with no status icon - unchanged from its prior
+// behavior. Kept as the simple string-in-string-out helper existing callers
+// (ComposeKustomizeBuildSection, ComposeScaffoldValidationSection) already
+// use; new call sites needing a full ReportSection (status icon, pass/skip
+// summary, arbitrary depth) should use renderSubDropdown directly.
+func RenderSubDropdown(title, body string) string {
+	return fmt.Sprintf("<details>\n<summary>%s%s</summary>\n\n%s\n\n</details>", summaryIndent(1), title, body)
+}
+
+// checkDisplayName maps raw check names (matching the keys phases.go's
+// report maps and CheckOutcome.Name use) to their display label in the PR
+// comment.
+var checkDisplayName = map[string]string{
+	"large-file":   "Large File",
+	"YAML-syntax":  "YAML Syntax",
+	"config-sort":  "Config Sort Order",
+	"startingCSV":  "Starting CSV",
+	"golangci":     "golangci-lint",
+	"kubeconform":  "Kubeconform",
+	"markdownlint": "Markdownlint",
+	"prettier":     "Prettier",
+	"shellcheck":   "Shellcheck",
+}
+
+// displayName returns the proper display name for a raw check name,
+// falling back to titleCase(name) for anything not in checkDisplayName.
+func displayName(name string) string {
+	if d, ok := checkDisplayName[name]; ok {
+		return d
+	}
+	return titleCase(name)
+}
+
+// composeCheckChild builds a nested-dropdown ReportSection for a single
+// named check. A non-empty failure report (reports[rawName]) takes
+// precedence over the recorded outcome, and includes any fix-command hint
+// fixHints can generate for that check. A missing outcome (the check didn't
+// run at all, e.g. disabled) renders as a non-failing "Not run" child
+// instead of silently vanishing from the report.
+func composeCheckChild(rawName string, outcomes map[string]CheckOutcome, reports map[string]string) ReportSection {
+	display := displayName(rawName)
+	if report := reports[rawName]; report != "" {
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "```\n%s\n```\n", strings.TrimSpace(truncateDetails(report, 4000)))
+		if hints := fixHints([]LintFinding{{Check: rawName}}); len(hints) > 0 {
+			sb.WriteString("\n**Fix command:**\n")
+			for _, h := range hints {
+				fmt.Fprintf(&sb, "- `%s`\n", h)
+			}
+		}
+		return ReportSection{Name: display, Status: StatusError, Body: sb.String()}
+	}
+	o, ok := outcomes[rawName]
+	if !ok {
+		return ReportSection{Name: display, Status: StatusPassed, Summary: "Not run."}
+	}
+	summary := o.Note
+	if summary == "" {
+		summary = "Passed."
+	}
+	return ReportSection{Name: display, Status: o.Status, Summary: summary}
+}
+
+// composeParentFromChildren renders children as nested sub-dropdowns (depth
+// 1) and returns a parent Section whose Error is set when any child's
+// status is StatusError. The parent always has a Body, so the full
+// sub-check breakdown is visible even when every child passed.
+func composeParentFromChildren(name string, children []ReportSection) Section {
+	hasError := false
+	var sb strings.Builder
+	for _, c := range children {
+		if c.Status == StatusError {
+			hasError = true
+		}
+		renderSubDropdown(&sb, c, 1)
+	}
+	return Section{Name: name, Body: sb.String(), Error: hasError}
+}
+
+// ComposeLintingSection renders the Linting section. Every linter
+// (markdownlint, prettier, shellcheck, golangci, kubeconform) is always
+// rendered as its own nested sub-dropdown showing its pass/skip/fail state
+// (driven by outcomes), so the full breakdown is visible even when
+// everything passed - not just a flat bullet list that disappears once a
+// check is clean.
+func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string) Section {
+	byName := make(map[string]CheckOutcome, len(outcomes))
+	for _, o := range outcomes {
+		byName[o.Name] = o
+	}
+	order := []string{"markdownlint", "prettier", "shellcheck", "golangci", "kubeconform"}
+	children := make([]ReportSection, 0, len(order))
+	for _, name := range order {
+		children = append(children, composeCheckChild(name, byName, reports))
+	}
+	return composeParentFromChildren("Linting", children)
+}
+
+// ComposeStaticChecksSection renders the Static Checks section the same way
+// ComposeLintingSection does: every check always shown as its own nested
+// sub-dropdown, driven by outcomes.
+func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]string) Section {
+	byName := make(map[string]CheckOutcome, len(outcomes))
+	for _, o := range outcomes {
+		byName[o.Name] = o
+	}
+	order := []string{"large-file", "YAML-syntax", "config-sort", "startingCSV"}
+	children := make([]ReportSection, 0, len(order))
+	for _, name := range order {
+		children = append(children, composeCheckChild(name, byName, reports))
+	}
+	return composeParentFromChildren("Static Checks", children)
 }
 
 // ComposeResourceComplianceSection renders generic compliance tables.
@@ -183,9 +289,4 @@ func ComposeKyvernoSection(body string) Section {
 // ComposeCINotesSection renders CI notes.
 func ComposeCINotesSection(body string) Section {
 	return Section{Name: "CI Notes", Body: body}
-}
-
-// RenderSubDropdown wraps a section in a nested dropdown.
-func RenderSubDropdown(title, body string) string {
-	return fmt.Sprintf("<details>\n<summary>%s</summary>\n\n%s\n\n</details>", title, body)
 }
