@@ -25,6 +25,14 @@ type Scalar struct {
 // Selector configures an EXEMPTIONS entry.
 type Selector struct {
 	Check, File, Kind, Name, Namespace, Match, Value, Path string
+
+	// Dir, when set, requires the finding's file path to begin with
+	// dir+"/" (i.e. dir is a directory at the repository root, such as
+	// ".tekton"). Unlike File (basename/path-suffix matching), this is a
+	// root-anchored path-prefix match - it intentionally does NOT match
+	// a same-named directory nested elsewhere in the repo (e.g.
+	// "apps/foo/.tekton/x.yaml" does not match Dir: ".tekton").
+	Dir string
 }
 
 // Applied records an accepted exemption.
@@ -110,6 +118,9 @@ func SelectorMatches(sel Selector, s Scalar, id string) bool {
 	if sel.Path != "" && !pathMatches(sel.Path, s.Path) {
 		return false
 	}
+	if sel.Dir != "" && !dirMatches(sel.Dir, s.File) {
+		return false
+	}
 	return true
 }
 
@@ -127,6 +138,20 @@ func Evaluate(id string, s Scalar, annotations map[string]string, selectors []Se
 		}
 	}
 	return false, Applied{}
+}
+
+// dirMatches reports whether file lives under a top-level repository
+// directory named dir - i.e. file == dir, or file has a "dir/" prefix.
+// Root-anchored on purpose (see Selector.Dir's doc comment): this must not
+// degrade to a substring/suffix check, or a nested same-named directory
+// elsewhere in the repo would match too.
+func dirMatches(dir, file string) bool {
+	dir = strings.Trim(dir, "/")
+	if dir == "" {
+		return false
+	}
+	file = strings.TrimPrefix(file, "./")
+	return file == dir || strings.HasPrefix(file, dir+"/")
 }
 
 // fileMatches reports whether a selector's File value matches a finding's

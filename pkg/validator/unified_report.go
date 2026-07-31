@@ -80,9 +80,12 @@ type ReportSection struct {
 func (r *Report) Render() string {
 	var b strings.Builder
 	b.WriteString(r.Marker + "\n")
-	if r.Header != "" {
-		fmt.Fprintf(&b, "# %s\n\n", r.Header)
-	}
+	// Only Title is rendered as the comment's single heading. Header
+	// (org-injectable via Providers.PipelineHeader()) is kept on the
+	// struct for other consumers (e.g. the console banner in
+	// pkg/pipeline), but rendering both here previously produced two
+	// redundant top-level headings ("# GitOps CI Pipeline" followed
+	// immediately by "## GitOps CI Results") in every PR comment.
 	fmt.Fprintf(&b, "## %s\n\n", r.Title)
 	if !r.Timestamp.IsZero() {
 		fmt.Fprintf(&b, "_Last Updated: %s_\n\n", r.Timestamp.UTC().Format(time.RFC3339))

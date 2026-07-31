@@ -24,7 +24,6 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
 // Step IDs for standalone (non-check-registry) lint/build steps that
@@ -284,8 +283,11 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	log.Header("Build + Compliance")
 	w := Workers(opts)
 
-	// Resolve selectors from hook config (empty for now; org layer injects via Options).
-	var selectors []exempt.Selector
+	// Built-in selectors (e.g. the Tekton Pipelines-as-code .tekton/
+	// default, see tekton_exemptions.go) plus any hook-provided EXEMPTIONS
+	// (currently none wired from Options - org layer injects via Options
+	// in the future).
+	selectors := builtinExemptSelectors()
 
 	disabled := toIDSet(opts.DisabledChecks)
 

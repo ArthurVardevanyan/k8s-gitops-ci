@@ -15,8 +15,27 @@ func TestReportRender(t *testing.T) {
 		Sections:  []Section{{Name: "S", Body: "b", Error: true}},
 	}
 	out := r.Render()
-	if !strings.Contains(out, "H") || !strings.Contains(out, "S") {
+	if !strings.Contains(out, "T") || !strings.Contains(out, "S") {
 		t.Errorf("missing rendered parts: %s", out)
+	}
+}
+
+// TestReportRender_DoesNotDuplicateHeader guards against the PR comment
+// regressing to rendering both Header ("# GitOps CI Pipeline") and Title
+// ("## GitOps CI Results") as two separate, redundant top-level headings.
+// Only Title should ever be rendered into the comment body.
+func TestReportRender_DoesNotDuplicateHeader(t *testing.T) {
+	r := &Report{
+		Marker: "<!-- m -->",
+		Title:  "GitOps CI Results",
+		Header: "GitOps CI Pipeline",
+	}
+	out := r.Render()
+	if strings.Contains(out, "# GitOps CI Pipeline") {
+		t.Errorf("Header must not be rendered as a separate heading anymore: %s", out)
+	}
+	if !strings.Contains(out, "## GitOps CI Results") {
+		t.Errorf("expected Title to render as the sole heading: %s", out)
 	}
 }
 

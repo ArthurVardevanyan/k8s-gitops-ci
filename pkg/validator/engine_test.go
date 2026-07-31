@@ -172,6 +172,53 @@ func TestFanOutExemption(t *testing.T) {
 	}
 }
 
+func TestRunDocChecks_TektonPACPipelineRun_ExemptFromSyncOptionsAndNamespace(t *testing.T) {
+	// PipelineRun manifests under a top-level .tekton/ directory are
+	// managed directly by the Tekton Pipelines-as-code controller, not
+	// synced by Argo CD - so they're exempt from sync-options and
+	// namespace by default (see tekton_exemptions.go).
+	d := t.TempDir()
+	t.Chdir(d)
+
+	doc := `kind: PipelineRun
+apiVersion: tekton.dev/v1
+metadata:
+  name: overlay-test
+`
+	if err := os.MkdirAll(".tekton", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tektonFile := filepath.Join(".tekton", "overlay-test.yaml")
+	if err := os.WriteFile(tektonFile, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Same doc under a non-.tekton path must still be flagged - guards
+	// against the exemption leaking beyond the .tekton/ directory.
+	elsewhereFile := filepath.Join("apps", "foo", "base.yaml")
+	if err := os.MkdirAll(filepath.Join("apps", "foo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(elsewhereFile, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := runDocChecks([]string{tektonFile, elsewhereFile}, builtinExemptSelectors(), 1, nil)
+
+	byFileAndCheck := map[string]bool{}
+	for _, f := range res.Findings {
+		byFileAndCheck[f.File+"/"+f.CheckID] = true
+	}
+	for _, checkID := range []string{"sync-options", "namespace"} {
+		if byFileAndCheck[tektonFile+"/"+checkID] {
+			t.Errorf("expected %s under .tekton/ to be exempt, got a finding", checkID)
+		}
+		if !byFileAndCheck[elsewhereFile+"/"+checkID] {
+			t.Errorf("expected %s outside .tekton/ to still be flagged", checkID)
+		}
+	}
+}
+
 func TestFanOutExemption_NoMatch_NoRecordedExemption(t *testing.T) {
 	findings := []check.Finding{{CheckID: "namespace", File: "", Value: "keep-me"}}
 	selectors := []exempt.Selector{{Check: "namespace", Value: "skip-me"}}
