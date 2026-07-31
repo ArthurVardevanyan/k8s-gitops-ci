@@ -1,0 +1,14 @@
+kind: Ingress
+metadata:
+  name: bad-ing
+spec:
+  rules:
+    - host: example.com
+      http:
+        paths:
+          - path: /
+            backend:
+              service:
+                name: svc
+                port:
+                  number: 80

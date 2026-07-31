@@ -1,0 +1,6 @@
+kind: Service
+metadata:
+  name: externalname-svc
+spec:
+  type: ExternalName
+  externalName: example.com

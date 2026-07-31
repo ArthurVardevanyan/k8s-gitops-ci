@@ -1,0 +1,5 @@
+kind: ConfigMap
+metadata:
+  name: cm
+data:
+  key: value

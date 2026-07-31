@@ -35,7 +35,14 @@ type DeduplicatedError struct {
 }
 
 func (d DeduplicatedError) String() string {
-	return fmt.Sprintf("%s %q %s (%d overlay(s))", d.Kind, d.Name, d.Issue, d.Count)
+	loc := ""
+	if d.Path != "" {
+		loc = " at " + d.Path
+	}
+	if d.Container != "" {
+		return fmt.Sprintf("%s %q container %q %s%s (%d overlay(s))", d.Kind, d.Name, d.Container, d.Issue, loc, d.Count)
+	}
+	return fmt.Sprintf("%s %q %s%s (%d overlay(s))", d.Kind, d.Name, d.Issue, loc, d.Count)
 }
 
 // ValidateFile validates named ports in a file.
@@ -143,7 +150,7 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 					continue
 				}
 				portName := quickString(findKey(p, "name"))
-				if portName == "" {
+				if strings.TrimSpace(portName) == "" {
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name, Container: cname,
 						Path:  fmt.Sprintf("%s.ports[%d]", containersPath, i),
@@ -180,11 +187,6 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 
 func validateService(mapping *yaml.Node, kind, name, source string) []ValidationError {
 	var errs []ValidationError
-	if meta := findKey(mapping, "metadata"); meta != nil && meta.Kind == yaml.MappingNode {
-		if quickString(findKey(meta, "name")) == "" {
-			return nil
-		}
-	}
 	spec := findKey(mapping, "spec")
 	if spec == nil || spec.Kind != yaml.MappingNode {
 		return nil
@@ -202,7 +204,7 @@ func validateService(mapping *yaml.Node, kind, name, source string) []Validation
 			continue
 		}
 		portName := quickString(findKey(p, "name"))
-		if portName == "" {
+		if strings.TrimSpace(portName) == "" {
 			errs = append(errs, ValidationError{
 				File: source, Kind: kind, Name: name,
 				Path:  fmt.Sprintf("spec.ports[%d]", i),
@@ -285,10 +287,10 @@ func validateIngress(mapping *yaml.Node, kind, name, source string) []Validation
 }
 
 func isNumericPort(n *yaml.Node) bool {
-	if n == nil {
+	if n == nil || n.Kind != yaml.ScalarNode {
 		return false
 	}
-	_, err := strconv.Atoi(n.Value)
+	_, err := strconv.Atoi(strings.TrimSpace(n.Value))
 	return err == nil
 }
 
@@ -300,7 +302,7 @@ func Deduplicate(errors []ValidationError, maxFiles int) []DeduplicatedError {
 	seen := make(map[string]*DeduplicatedError)
 	order := make([]string, 0, len(errors))
 	for _, e := range errors {
-		key := e.Kind + "/" + e.Name + "/" + e.Container + "/" + e.Issue
+		key := e.Kind + "/" + e.Name + "/" + e.Container + "/" + e.Path + "/" + e.Issue
 		if d, ok := seen[key]; ok {
 			d.Count++
 			if len(d.Files) < maxFiles && !contains(d.Files, e.File) {

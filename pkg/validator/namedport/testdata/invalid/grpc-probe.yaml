@@ -1,0 +1,14 @@
+kind: Deployment
+metadata:
+  name: grpc-probe
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          ports:
+            - name: grpc
+              containerPort: 9090
+          livenessProbe:
+            grpc:
+              port: 9090

@@ -1,0 +1,14 @@
+kind: Deployment
+metadata:
+  name: exec-probe
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            exec:
+              command: ["cat", "/tmp/healthy"]
