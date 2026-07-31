@@ -96,7 +96,10 @@ func findPlaceholders(line string, opts Options) []string {
 		matches = append(matches, avpRe.FindAllString(line, -1)...)
 	}
 	for _, s := range Sentinels {
-		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(s) + `\b`)
+		// (?i): sentinel matching is case-insensitive - a lowercase
+		// "changeme" or "fixme" left in rendered YAML is just as much an
+		// unresolved placeholder as the canonical uppercase form.
+		re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(s) + `\b`)
 		matches = append(matches, re.FindAllString(line, -1)...)
 	}
 	// Intentionally not deduplicated: a line with the same placeholder

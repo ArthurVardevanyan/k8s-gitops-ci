@@ -69,6 +69,22 @@ func TestValidateReaderWithOptions_ContextPopulated(t *testing.T) {
 	}
 }
 
+func TestValidateReaderWithOptions_SentinelCaseInsensitive(t *testing.T) {
+	// Regression: sentinel matching used to be case-sensitive, so a
+	// lowercase or mixed-case sentinel value slipped through un-flagged.
+	cases := []string{
+		"password: changeme\n",
+		"todo: FixMe later\n",
+		"value: Placeholder\n",
+	}
+	for _, line := range cases {
+		errs := ValidateReaderWithOptions(strings.NewReader(line), "x.yaml", Options{})
+		if len(errs) != 1 {
+			t.Errorf("line %q: expected 1 finding for a non-canonical-case sentinel, got %d: %v", line, len(errs), errs)
+		}
+	}
+}
+
 func TestValidateReaderWithOptions_DuplicateTokenOnOneLine_TwoFindings(t *testing.T) {
 	// Regression: findPlaceholders used to dedupe matches per line, so a
 	// line with the same placeholder token twice only produced one
