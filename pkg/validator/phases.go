@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
@@ -54,11 +55,12 @@ func stepEnabled(id string, disabled, enabled map[string]bool) bool {
 	return !disabled[id]
 }
 
-// runLintAndStaticChecks runs all linters and static checks, populating sections.
+// runLintAndStaticChecks runs all linters and static checks concurrently
+// (each linter/check is independent - different tools, different file
+// filters, no shared mutable state besides the mutex-guarded report maps
+// below), populating sections and per-step timing.
 func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector) {
 	phaseStart := time.Now()
-	w := Workers(opts)
-	_ = w
 
 	disabled := toIDSet(opts.DisabledChecks)
 	enabled := toIDSet(opts.EnabledChecks)
@@ -67,110 +69,172 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 
 	// ── linting ──────────────────────────────────────────────────────────────
 	lintReports := map[string]string{}
+	var lintMu sync.Mutex
+	var lintWg sync.WaitGroup
 
-	if mdOut, err := markdownlint.Run(changed); err == nil {
-		lintReports["markdownlint"] = mdOut
-		log.Info("markdownlint: passed")
-	} else if !errors.Is(err, markdownlint.ErrCLINotFound) {
-		lintReports["markdownlint"] = err.Error()
-		log.ErrorInSection("Markdownlint", "markdownlint: %s", err)
-	}
-
-	if pOut, err := prettier.Run(changed, nil); err == nil {
-		lintReports["prettier"] = pOut
-		log.Info("prettier: passed")
-	} else if !errors.Is(err, prettier.ErrCLINotFound) {
-		lintReports["prettier"] = err.Error()
-		log.ErrorInSection("Prettier", "prettier: %s", err)
-	}
-
-	if scViolations, _, scErr := shellcheck.Run(changed); scErr == nil {
-		if len(scViolations) > 0 {
-			var sb strings.Builder
-			for _, v := range scViolations {
-				fmt.Fprintf(&sb, "%s:%d: %s\n", v.File, v.Line, v.Message)
+	runLintStep := func(name string, fn func(sl *logger.ScopedLogger) (string, bool)) {
+		lintWg.Add(1)
+		go func() {
+			defer lintWg.Done()
+			start := time.Now()
+			sl := log.Scope()
+			report, ok := fn(sl)
+			sl.Flush()
+			tc.RecordStep("Linting", name, time.Since(start))
+			if ok {
+				lintMu.Lock()
+				lintReports[name] = report
+				lintMu.Unlock()
 			}
-			lintReports["shellcheck"] = sb.String()
-			log.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", len(scViolations))
-		} else {
-			log.Info("shellcheck: passed")
-		}
-	} else if !errors.Is(scErr, shellcheck.ErrCLINotFound) {
-		lintReports["shellcheck"] = scErr.Error()
-		log.ErrorInSection("Shellcheck", "shellcheck: %s", scErr)
+		}()
 	}
+
+	runLintStep("markdownlint", func(sl *logger.ScopedLogger) (string, bool) {
+		if mdOut, err := markdownlint.Run(changed); err == nil {
+			sl.Info("markdownlint: passed")
+			return mdOut, true
+		} else if !errors.Is(err, markdownlint.ErrCLINotFound) {
+			sl.ErrorInSection("Markdownlint", "markdownlint: %s", err)
+			return err.Error(), true
+		}
+		return "", false
+	})
+
+	runLintStep("prettier", func(sl *logger.ScopedLogger) (string, bool) {
+		if pOut, err := prettier.Run(changed, nil); err == nil {
+			sl.Info("prettier: passed")
+			return pOut, true
+		} else if !errors.Is(err, prettier.ErrCLINotFound) {
+			sl.ErrorInSection("Prettier", "prettier: %s", err)
+			return err.Error(), true
+		}
+		return "", false
+	})
+
+	runLintStep("shellcheck", func(sl *logger.ScopedLogger) (string, bool) {
+		if scViolations, _, scErr := shellcheck.Run(changed); scErr == nil {
+			if len(scViolations) > 0 {
+				var sb strings.Builder
+				for _, v := range scViolations {
+					fmt.Fprintf(&sb, "%s:%d: %s\n", v.File, v.Line, v.Message)
+				}
+				sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", len(scViolations))
+				return sb.String(), true
+			}
+			sl.Info("shellcheck: passed")
+		} else if !errors.Is(scErr, shellcheck.ErrCLINotFound) {
+			sl.ErrorInSection("Shellcheck", "shellcheck: %s", scErr)
+			return scErr.Error(), true
+		}
+		return "", false
+	})
 
 	if stepEnabled(stepGolangci, disabled, enabled) {
-		if glOut, err := golangci.Run(changed); err != nil && !errors.Is(err, golangci.ErrCLINotFound) {
-			lintReports["golangci"] = err.Error()
-			log.ErrorInSection("Golangci", "golangci: %s", err)
-		} else {
-			lintReports["golangci"] = glOut
-			log.Info("golangci-lint: passed")
-		}
+		runLintStep("golangci", func(sl *logger.ScopedLogger) (string, bool) {
+			glOut, err := golangci.Run(changed)
+			if err != nil && !errors.Is(err, golangci.ErrCLINotFound) {
+				sl.ErrorInSection("Golangci", "golangci: %s", err)
+				return err.Error(), true
+			}
+			sl.Info("golangci-lint: passed")
+			return glOut, true
+		})
 	}
 
-	yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
-	kcOpts := kubeconform.DefaultOptions()
-	if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
-		kcOpts.SchemaDir = schemaDir
-		defer cleanup()
-	}
-	if kcRes, err := validateWithRenderedOverlays(yamlFiles, kcOpts); err == nil && kcRes != nil {
-		if kcRes.Invalid > 0 || kcRes.Errors > 0 {
-			lintReports["kubeconform"] = kcRes.Summary()
-			log.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
-		} else {
-			log.Info("kubeconform: passed")
+	runLintStep("kubeconform", func(sl *logger.ScopedLogger) (string, bool) {
+		yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
+		kcOpts := kubeconform.DefaultOptions()
+		if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
+			kcOpts.SchemaDir = schemaDir
+			defer cleanup()
 		}
-	}
+		if kcRes, err := validateWithRenderedOverlays(yamlFiles, kcOpts); err == nil && kcRes != nil {
+			if kcRes.Invalid > 0 || kcRes.Errors > 0 {
+				sl.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
+				return kcRes.Summary(), true
+			}
+			sl.Info("kubeconform: passed")
+		}
+		return "", false
+	})
+
+	lintWg.Wait()
 
 	res.Sections = append(res.Sections, ComposeLintingSection(lintReports))
-	tc.Record("Linting", time.Since(phaseStart))
+	tc.Record("Linting", time.Since(phaseStart), true)
 
 	// ── static checks ────────────────────────────────────────────────────────
 	staticStart := time.Now()
 	log.Header("Static Checks")
 	staticReports := map[string]string{}
+	var staticMu sync.Mutex
+	var staticWg sync.WaitGroup
 
-	if violations := largefile.Check(changed, largefile.DefaultMaxSize, nil); len(violations) > 0 {
-		var sb strings.Builder
-		for _, v := range violations {
-			sb.WriteString(v.String() + "\n")
+	runStaticStep := func(name string, fn func(sl *logger.ScopedLogger) (string, bool)) {
+		staticWg.Add(1)
+		go func() {
+			defer staticWg.Done()
+			start := time.Now()
+			sl := log.Scope()
+			report, ok := fn(sl)
+			sl.Flush()
+			tc.RecordStep("Static Checks", name, time.Since(start))
+			if ok {
+				staticMu.Lock()
+				staticReports[name] = report
+				staticMu.Unlock()
+			}
+		}()
+	}
+
+	runStaticStep("large-file", func(sl *logger.ScopedLogger) (string, bool) {
+		if violations := largefile.Check(changed, largefile.DefaultMaxSize, nil); len(violations) > 0 {
+			var sb strings.Builder
+			for _, v := range violations {
+				sb.WriteString(v.String() + "\n")
+			}
+			sl.ErrorInSection("LargeFile", "%d large file violation(s)", len(violations))
+			return sb.String(), true
 		}
-		staticReports["large-file"] = sb.String()
-		log.ErrorInSection("LargeFile", "%d large file violation(s)", len(violations))
-	} else {
-		log.Info("large-file check: passed")
-	}
+		sl.Info("large-file check: passed")
+		return "", false
+	})
 
-	if yvs, _ := yamlsyntax.CheckFiles(changed); len(yvs) > 0 {
-		var sb strings.Builder
-		for _, v := range yvs {
-			fmt.Fprintf(&sb, "%s: %s\n", v.File, v.Message)
+	runStaticStep("YAML-syntax", func(sl *logger.ScopedLogger) (string, bool) {
+		if yvs, _ := yamlsyntax.CheckFiles(changed); len(yvs) > 0 {
+			var sb strings.Builder
+			for _, v := range yvs {
+				fmt.Fprintf(&sb, "%s: %s\n", v.File, v.Message)
+			}
+			sl.ErrorInSection("YAMLSyntax", "%d YAML syntax error(s)", len(yvs))
+			return sb.String(), true
 		}
-		staticReports["YAML-syntax"] = sb.String()
-		log.ErrorInSection("YAMLSyntax", "%d YAML syntax error(s)", len(yvs))
-	} else {
-		log.Info("YAML-syntax check: passed")
-	}
+		sl.Info("YAML-syntax check: passed")
+		return "", false
+	})
 
-	if sorted, err := config.CheckSortOrder(); err == nil && len(sorted) > 0 {
-		staticReports["config-sort"] = config.FormatUnsortedError(sorted)
-		log.ErrorInSection("ConfigSort", "%d unsorted config file(s)", len(sorted))
-	} else {
-		log.Info("config-sort check: passed")
-	}
+	runStaticStep("config-sort", func(sl *logger.ScopedLogger) (string, bool) {
+		if sorted, err := config.CheckSortOrder(); err == nil && len(sorted) > 0 {
+			sl.ErrorInSection("ConfigSort", "%d unsorted config file(s)", len(sorted))
+			return config.FormatUnsortedError(sorted), true
+		}
+		sl.Info("config-sort check: passed")
+		return "", false
+	})
 
-	if mismatches, err := csv.CheckStartingCSVFolderMatch(changed); err == nil && len(mismatches) > 0 {
-		staticReports["startingCSV"] = csv.FormatMismatches(mismatches)
-		log.ErrorInSection("StartingCSV", "%d startingCSV mismatch(es)", len(mismatches))
-	} else {
-		log.Info("startingCSV check: passed")
-	}
+	runStaticStep("startingCSV", func(sl *logger.ScopedLogger) (string, bool) {
+		if mismatches, err := csv.CheckStartingCSVFolderMatch(changed); err == nil && len(mismatches) > 0 {
+			sl.ErrorInSection("StartingCSV", "%d startingCSV mismatch(es)", len(mismatches))
+			return csv.FormatMismatches(mismatches), true
+		}
+		sl.Info("startingCSV check: passed")
+		return "", false
+	})
+
+	staticWg.Wait()
 
 	res.Sections = append(res.Sections, ComposeStaticChecksSection(staticReports))
-	tc.Record("Static Checks", time.Since(staticStart))
+	tc.Record("Static Checks", time.Since(staticStart), true)
 }
 
 // runBuildAndPostBuild runs the registry-driven doc + overlay check engine.
@@ -189,16 +253,45 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
 	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
 
-	// Overlay engine - overlays detected from changed files.
+	// Overlay engine - overlays detected from changed files. Each overlay is
+	// independent (its own checks over its own path/cluster), so fan them out
+	// across a bounded worker pool instead of one-at-a-time; this mirrors the
+	// job-queue pattern runDocChecks/runOverlayChecks already use internally
+	// for per-file/per-overlay checks, one level up.
 	overlays := detectOverlays(changed)
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	var overlayResult check.Result
 	if len(overlays) > 0 {
-		for _, ov := range overlays {
-			r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, w, disabled)
-			overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
-			overlayResult.Exempted = append(overlayResult.Exempted, r.Exempted...)
+		overlayWorkers := w
+		if overlayWorkers > len(overlays) {
+			overlayWorkers = len(overlays)
 		}
+		if overlayWorkers < 1 {
+			overlayWorkers = 1
+		}
+		jobs := make(chan overlayRef, len(overlays))
+		var overlayMu sync.Mutex
+		var overlayWg sync.WaitGroup
+		for i := 0; i < overlayWorkers; i++ {
+			overlayWg.Add(1)
+			go func() {
+				defer overlayWg.Done()
+				for ov := range jobs {
+					ovStart := time.Now()
+					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
+					tc.RecordStep("Build+Compliance", ov.path, time.Since(ovStart))
+					overlayMu.Lock()
+					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
+					overlayResult.Exempted = append(overlayResult.Exempted, r.Exempted...)
+					overlayMu.Unlock()
+				}
+			}()
+		}
+		for _, ov := range overlays {
+			jobs <- ov
+		}
+		close(jobs)
+		overlayWg.Wait()
 	}
 
 	// Merge and classify.
@@ -232,7 +325,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	})
 
 	res.Sections = append(res.Sections, ComposeResourceComplianceSection(combinedCheck.Findings))
-	tc.Record("Build+Compliance", time.Since(buildStart))
+	tc.Record("Build+Compliance", time.Since(buildStart), len(overlays) > 1)
 }
 
 // overlayRef pairs an overlay path with its cluster name.
