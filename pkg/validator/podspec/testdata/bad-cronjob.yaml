@@ -1,0 +1,11 @@
+kind: CronJob
+metadata:
+  name: bad-cj
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: c
+              image: example.com/app@sha256:deadbeef

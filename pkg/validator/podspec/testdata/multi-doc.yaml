@@ -1,0 +1,17 @@
+kind: Deployment
+metadata:
+  name: d1
+spec:
+  template:
+    spec:
+      containers:
+        - name: c
+          image: example.com/app@sha256:deadbeef
+---
+kind: Pod
+metadata:
+  name: p1
+spec:
+  containers:
+    - name: c
+      image: example.com/app@sha256:deadbeef

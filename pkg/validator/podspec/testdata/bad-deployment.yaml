@@ -1,0 +1,9 @@
+kind: Deployment
+metadata:
+  name: bad
+spec:
+  template:
+    spec:
+      containers:
+        - name: c
+          image: example.com/app@sha256:deadbeef

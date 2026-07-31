@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -113,16 +114,10 @@ func FormatComment(errs []ValidationError) string {
 	var b strings.Builder
 	b.WriteString(Marker + "\n")
 	b.WriteString("### Pod Spec / Security Context Fields Missing\n\n")
-	b.WriteString("| Resource | Missing Fields |\n")
-	b.WriteString("| --- | --- |\n")
+	b.WriteString("| Resource | Path | Missing Fields |\n")
+	b.WriteString("| --- | --- | --- |\n")
 	for _, e := range errs {
-		b.WriteString("| ")
-		b.WriteString(e.Kind)
-		b.WriteString("/")
-		b.WriteString(e.Name)
-		b.WriteString(" | ")
-		b.WriteString(strings.Join(e.MissingFields, ", "))
-		b.WriteString(" |\n")
+		fmt.Fprintf(&b, "| %s/%s | `%s` | %s |\n", e.Kind, e.Name, e.Path, strings.Join(e.MissingFields, ", "))
 	}
 	b.WriteString("\n<details><summary>Recommended defaults</summary>\n\n")
 	b.WriteString("```yaml\n")
@@ -142,7 +137,13 @@ func FormatDeduplicatedComment(deduped []DeduplicatedError) string {
 	b.WriteString("| Resource | Path | Missing Fields | Overlays |\n")
 	b.WriteString("| --- | --- | --- | --- |\n")
 	for _, d := range deduped {
-		fmt.Fprintf(&b, "| %s/%s | %s | %s | %d |\n", d.Kind, d.Name, d.Path, strings.Join(d.MissingFields, ", "), d.Count)
+		var overlays string
+		if d.Count == 1 && len(d.Files) == 1 {
+			overlays = d.Files[0]
+		} else {
+			overlays = strconv.Itoa(d.Count)
+		}
+		fmt.Fprintf(&b, "| %s/%s | %s | %s | %s |\n", d.Kind, d.Name, d.Path, strings.Join(d.MissingFields, ", "), overlays)
 	}
 	b.WriteString("\n<details><summary>Recommended defaults</summary>\n\n")
 	b.WriteString("```yaml\n")
@@ -248,11 +249,23 @@ func validateContainerFields(source, kind, name string, podSpec *yaml.Node, podP
 					})
 				}
 			}
-			if findKey(cont, "resources") == nil {
+			resNode := findKey(cont, "resources")
+			var missingRes []string
+			if resNode == nil || resNode.Kind != yaml.MappingNode {
+				missingRes = []string{"resources.requests", "resources.limits"}
+			} else {
+				if findKey(resNode, "requests") == nil {
+					missingRes = append(missingRes, "resources.requests")
+				}
+				if findKey(resNode, "limits") == nil {
+					missingRes = append(missingRes, "resources.limits")
+				}
+			}
+			if len(missingRes) > 0 {
 				path := fmt.Sprintf("%s.%s[]", podPath, listKey)
 				errs = append(errs, ValidationError{
 					File: source, Kind: kind, Name: name, Container: cname,
-					MissingFields: []string{"resources.requests", "resources.limits"}, Path: path,
+					MissingFields: missingRes, Path: path,
 				})
 			}
 		}
