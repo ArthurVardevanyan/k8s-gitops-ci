@@ -42,7 +42,7 @@ flowchart TD
 | Local PR check        | `k8s-gitops-ci pipeline --revision <sha> --target-branch <branch>` | `git diff <target>...<revision>`                                                                                                                                                                                                                                                                                                                                                                                |
 | Working-tree scan     | `k8s-gitops-ci test-all [dirs...]`                                 | every file under the given positional directories (not a diff — the full tree under each path); with no positional dirs, falls back to the same changeset resolution as `pipeline` (see below)                                                                                                                                                                                                                  |
 | Uncommitted-diff scan | `k8s-gitops-ci scan-all`                                           | **`git diff` + `git diff --cached`** in the current working tree — despite the name, this does **not** scan every file in the repository; it only sees uncommitted changes, since it passes no `--dirs`/`--url`/`--pr`/`--revision` and `resolveChangeset` falls back to a working-tree diff when none of those are set. To validate the _entire_ repository regardless of git state, use `test-all .` instead. |
-| Ad-hoc overlay build  | `k8s-gitops-ci build-yaml --app <app> --cluster <cluster>`         | Same fallback as `scan-all` (uncommitted working-tree diff) — see the known limitation immediately below.                                                                                                                                                                                                                                                                                                       |
+| Ad-hoc overlay build  | `k8s-gitops-ci build-yaml --app <app> --cluster <cluster>`         | Targeted, git-independent: the given app(s)/cluster(s)' `base/` + matching `overlays/<cluster>` directories only — see `--app`/`--cluster` below.                                                                                                                                                                                                                                                               |
 
 `test-all` and `scan-all` accept the same changeset-scoping and
 check-enablement flags as `pipeline` — `--url`/`--pr`/`--target-branch`
@@ -50,30 +50,40 @@ check-enablement flags as `pipeline` — `--url`/`--pr`/`--target-branch`
 prefixes — a filter, distinct from `test-all`'s positional `[dirs...]`,
 which instead _replaces_ the changeset source with a full-tree walk),
 `--disable-checks`/`--enable-checks`, `--hook-source`, `--concurrency`,
-`--assume-openshift`, and `--app`/`--cluster` (see the known limitation
-below). This lets a failing `pipeline --url ... --pr ...` run be
-reproduced locally with `test-all`/`scan-all` using an equivalent flag
-set, and vice versa.
+`--assume-openshift`, and `--app`/`--cluster` (below). This lets a
+failing `pipeline --url ... --pr ...` run be reproduced locally with
+`test-all`/`scan-all` using an equivalent flag set, and vice versa.
 
 `--lint-only` (pipeline mode only) skips the Build Overlays + Resource
 Compliance phase entirely — useful for a fast Linting/Static-Checks-only
 pass.
 
-> **Known limitation — `--app`/`--cluster` are currently unwired.** > `Options.Apps`/`Options.Clusters` are threaded all the way from the
-> `pipeline`/`test-all`/`scan-all`/`build-yaml` CLI flags down to
-> `validator.Options`, but as of
-> this writing **nothing in `pkg/validator` reads either field** to scope
-> the changeset or the overlay set — `resolveChangeset` only ever looks
-> at `Dirs`/`RepoURL`/`PR`/`BaseRef`/`IncludeDeletions`. (`pkg/scaffold.Run`
-> takes its own, unrelated per-app `RunOptions.App` - see
-> [Scaffold Validation](#scaffold-validation) below - and is unaffected by
-> this limitation; it's driven entirely by the resolved changeset, not
-> `Options.Apps`/`Clusters`.) Practically: `k8s-gitops-ci build-yaml --app
-foo --cluster bar` today behaves identically to `k8s-gitops-ci scan-all`
-> (an uncommitted-working-tree-diff scan across the whole repo) — the
-> `--app`/`--cluster` values are silently accepted and then have no
-> effect. Verify against the current code before relying on app/cluster
-> scoping actually narrowing a run.
+**`--app`/`--cluster` targeting** (`Options.Apps`/`Options.Clusters`,
+repeatable flags) is resolved by `resolveTargetOverlays`
+(`pkg/validator/target_wiring.go`) and takes priority over every other
+changeset source (`Dirs`, diff-based resolution) when either is set —
+entirely independent of git history/diffing, unlike every other mode:
+
+- Both given: every `(app, cluster)` combination whose
+  `overlays/<cluster>` directory actually exists on disk, plus that
+  app's `base/`. A combination that doesn't exist on disk is silently
+  skipped (not an error) so one typo in a multi-app/-cluster invocation
+  doesn't abort the whole run; an app with none of the given clusters
+  is skipped entirely.
+- `--app` only: that app's entire directory (`base/` + every overlay).
+- `--cluster` only: every app discovered in the repository (via
+  `changeset.GetAllFiles` + the same app-root detection kubeconform
+  validation uses) that has an `overlays/<cluster>` directory for one
+  of the given cluster names.
+
+An error is returned only if nothing resolves to anything on disk at
+all (every value was a typo, or no app in the repo has a matching
+cluster) — a silently-empty, always-passing run would be more
+surprising than a hard failure here. (`pkg/scaffold.Run` takes its own,
+unrelated per-app `RunOptions.App` — see
+[Scaffold Validation](#scaffold-validation) below — driven entirely by
+the resolved changeset, not `Options.Apps`/`Clusters`, so it's
+unaffected either way.)
 
 ## Build Strategies
 
