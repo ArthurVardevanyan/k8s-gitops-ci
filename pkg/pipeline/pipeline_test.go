@@ -2,10 +2,14 @@ package pipeline
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 )
 
 func TestIsValidPR(t *testing.T) {
@@ -129,6 +133,103 @@ func TestComposeSections(t *testing.T) {
 	}
 	if !sections[0].Error {
 		t.Errorf("expected PR checks error")
+	}
+}
+
+// TestBuildReport_UsesProvidersForTitleAndHeader guards against
+// buildReport falling back to hardcoded "GitOps CI Results"/"GitOps CI
+// Pipeline" strings instead of the org-injectable provider.Providers seam
+// (opts.Providers.ReportTitle()/PipelineHeader()) - the same seam already
+// correctly used for ReportMarker() two lines above in the original code.
+func TestBuildReport_UsesProvidersForTitleAndHeader(t *testing.T) {
+	res := &Result{ReproduceCommand: "go run ./cmd/k8s-gitops-ci pipeline"}
+	opts := Options{Providers: provider.Providers{Branding: fakeBranding{}}}
+
+	report := buildReport(res, opts)
+
+	if report.Title != "CUSTOM TITLE" {
+		t.Errorf("Title = %q, want the Branding provider's ReportTitle()", report.Title)
+	}
+	if report.Header != "CUSTOM HEADER" {
+		t.Errorf("Header = %q, want the Branding provider's PipelineHeader()", report.Header)
+	}
+	if report.Marker != "<!-- custom-marker -->" {
+		t.Errorf("Marker = %q, want the Branding provider's ReportMarker()", report.Marker)
+	}
+}
+
+// TestBuildReport_DefaultsWhenNoProviders guards the generic (no org
+// Branding wired) fallback path still working post-refactor.
+func TestBuildReport_DefaultsWhenNoProviders(t *testing.T) {
+	report := buildReport(&Result{}, Options{})
+	if report.Title != "GitOps CI Results" {
+		t.Errorf("Title = %q, want the generic default", report.Title)
+	}
+	if report.Header != "GitOps CI Pipeline" {
+		t.Errorf("Header = %q, want the generic default", report.Header)
+	}
+}
+
+type fakeBranding struct{}
+
+func (fakeBranding) ReportMarker() string   { return "<!-- custom-marker -->" }
+func (fakeBranding) ReportTitle() string    { return "CUSTOM TITLE" }
+func (fakeBranding) PipelineHeader() string { return "CUSTOM HEADER" }
+
+type fakeCommentPolicy struct{ markers []string }
+
+func (f fakeCommentPolicy) ForeignMarkers() []string { return f.markers }
+
+// installFakeGH writes an executable "gh" shim to a temp dir, prepends it
+// to PATH for the test's duration, and returns the path to a log file every
+// invocation's args are appended to. Used to assert postComment actually
+// queries/deletes by a given marker without hitting the real GitHub API.
+func installFakeGH(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "invocations.log")
+	script := fmt.Sprintf(`#!/bin/sh
+{
+  printf 'ARGS:'
+  for a in "$@"; do printf ' %%s' "$a"; done
+  printf '\n'
+} >> %q
+exit 0
+`, logPath)
+	shPath := filepath.Join(dir, "gh")
+	if err := os.WriteFile(shPath, []byte(script), 0o755); err != nil { //nolint:gosec // test-only executable shim
+		t.Fatalf("writing fake gh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return logPath
+}
+
+// TestPostComment_QueriesForeignMarkersFromCommentPolicy guards against
+// opts.Providers.ForeignMarkers() being defined but never actually called:
+// postComment must query for (and attempt to delete) comments matching
+// every marker the CommentPolicy provider returns, not just the built-in
+// LegacyMarkers() set.
+func TestPostComment_QueriesForeignMarkersFromCommentPolicy(t *testing.T) {
+	logPath := installFakeGH(t)
+	opts := Options{
+		URL: "https://github.com/example-org/example-repo",
+		PR:  "42",
+		Providers: provider.Providers{
+			CommentPolicy: fakeCommentPolicy{markers: []string{"<!-- some-foreign-bot -->"}},
+		},
+	}
+	res := &Result{ReproduceCommand: "go run ./cmd/k8s-gitops-ci pipeline"}
+
+	if err := postComment(res, opts); err != nil {
+		t.Fatalf("postComment: %v", err)
+	}
+
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("reading invocation log: %v", err)
+	}
+	if !strings.Contains(string(log), "some-foreign-bot") {
+		t.Errorf("expected postComment to query for the CommentPolicy's foreign marker, got log:\n%s", log)
 	}
 }
 
