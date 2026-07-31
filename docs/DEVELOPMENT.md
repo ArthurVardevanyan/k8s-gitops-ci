@@ -210,22 +210,30 @@ time.
 (a `====...====` divider, then an indented `title` line, then another
 divider, 60 columns wide) and records `title`
 as the current section for error attribution; `SubHeader` prints a lighter
-40-column variant. `RecordBuild`/`RecordPass`/`RecordFailure` (and their
-`InSection` variants, for use from goroutines where the shared "current
-section" may have been overwritten by another goroutine) feed a final
+40-column variant. `Error`/`ErrorInSection` (the latter for use from
+goroutines where the shared "current section" may have been overwritten by
+another goroutine) track errors and failed sections, feeding a final
 `Summary()` banner:
 
 ```text
 ============================================================
   RESULTS SUMMARY
 ============================================================
-  Builds: 4 | Passes: 3 | Failures: 1
   Warnings: 2
   Errors: 1 (see details above)
   Failed sections:
     - Build+Compliance
 ============================================================
 ```
+
+`Info`/`Warn`/`Error`/`Debug` are for single structured log lines — a
+multi-line message passed to one of these still gets the `[time] [LEVEL]`
+prefix on every resulting line (see `write`'s per-line split), so a
+multi-finding tool summary doesn't degrade into "first line tagged, rest
+bare" output. For an already-formatted, potentially multi-line block meant
+to be printed verbatim instead (e.g. `Summary()` itself, or a rendered
+section body) use `Raw(msg)`, which prints with no prefix at all, matching
+the no-prefix convention `Header`/`SubHeader` already use for banner lines.
 
 `Logger.Scope()` returns a `ScopedLogger` that buffers a goroutine's log
 lines and flushes them atomically (`Flush()`) once the goroutine finishes,
@@ -274,6 +282,16 @@ run). `pipeline.Run` calls `printFailedSectionDetail` under `--verbose`
 section's full `Body` to the console too, so `--verbose` alone is enough
 to see e.g. exactly which file/check produced a Resource Compliance
 finding, not just the count.
+
+`Section.Body` is always GitHub-flavored markdown built for the PR
+comment's `<details>`/`<summary>` dropdown renderer (literal HTML tags,
+`&nbsp;` indentation, `**bold**`), which would show up as raw markup on a
+plain terminal. `printFailedSectionDetail` runs each errored section's
+`Body` through `sanitizeSectionBodyForConsole`
+(`pkg/pipeline/console_format.go`) first — converting `<summary>X</summary>`
+to a plain `X:` label and stripping the rest — and prints the result via
+`Logger.Raw` rather than `Info`, since it's a pre-formatted block, not a
+single structured log line.
 
 ### Pipeline exit code (`pipeline.Run`)
 

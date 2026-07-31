@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,55 @@ func TestLogger_Error(t *testing.T) {
 	}
 }
 
+// TestLogger_Error_MultilinePrefixesEveryLine guards against a regression
+// where a multi-line Error/ErrorInSection message (e.g. a lint tool's
+// multi-finding summary, such as kubeconform's Result.Summary()) only got
+// the "[time] [ERROR]" prefix on its first line, with every subsequent line
+// printed bare - see write()'s per-line-split loop.
+func TestLogger_Error_MultilinePrefixesEveryLine(t *testing.T) {
+	logPath := t.TempDir() + "/test.log"
+	l := NewLogger(false, logPath)
+	l.Error("line one\nline two\nline three")
+	l.Close()
+
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	data := string(raw)
+	for _, want := range []string{"] [ERROR] line one", "] [ERROR] line two", "] [ERROR] line three"} {
+		if !strings.Contains(data, want) {
+			t.Errorf("expected every line to carry its own prefix; missing %q in: %s", want, data)
+		}
+	}
+}
+
+// TestLogger_Raw guards Raw()'s no-prefix contract for pre-formatted,
+// potentially multi-line blocks (e.g. Summary() or a rendered section body)
+// - unlike Info/Warn/Error/Debug, none of Raw's lines should carry a
+// "[time] [LEVEL]" tag, matching the existing Header/SubHeader convention.
+func TestLogger_Raw(t *testing.T) {
+	logPath := t.TempDir() + "/test.log"
+	l := NewLogger(false, logPath)
+	l.Raw("first line\nsecond line")
+	l.Raw("")
+	l.Close()
+
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	data := string(raw)
+	if strings.Contains(data, "[INFO]") || strings.Contains(data, "[ERROR]") {
+		t.Errorf("expected Raw() output to carry no level tag, got: %s", data)
+	}
+	for _, want := range []string{"first line", "second line"} {
+		if !strings.Contains(data, want) {
+			t.Errorf("expected %q in Raw() output, got: %s", want, data)
+		}
+	}
+}
+
 func TestLogger_HasFailures(t *testing.T) {
 	l := NewLogger(false, "")
 	if l.HasFailures() {
@@ -37,38 +87,8 @@ func TestLogger_HasFailures(t *testing.T) {
 	}
 }
 
-func TestLogger_RecordBuildPass(t *testing.T) {
-	l := NewLogger(false, "")
-	l.RecordBuild()
-	l.RecordBuild()
-	l.RecordPass()
-
-	summary := l.Summary()
-	if !strings.Contains(summary, "Builds: 2") {
-		t.Errorf("expected Builds: 2 in summary, got: %s", summary)
-	}
-	if !strings.Contains(summary, "Passes: 1") {
-		t.Errorf("expected Passes: 1 in summary, got: %s", summary)
-	}
-}
-
-func TestLogger_RecordFailure(t *testing.T) {
-	l := NewLogger(false, "")
-	l.RecordFailure()
-
-	if !l.HasFailures() {
-		t.Error("expected HasFailures() after RecordFailure()")
-	}
-	summary := l.Summary()
-	if !strings.Contains(summary, "Failures: 1") {
-		t.Errorf("expected Failures: 1 in summary, got: %s", summary)
-	}
-}
-
 func TestLogger_Summary(t *testing.T) {
 	l := NewLogger(false, "")
-	l.RecordBuild()
-	l.RecordPass()
 	l.Error("test error")
 
 	summary := l.Summary()
@@ -103,14 +123,9 @@ func TestLogger_ErrorInSectionSurfacesInSummary(t *testing.T) {
 func TestLogger_SummaryFailedSections(t *testing.T) {
 	l := NewLogger(false, "")
 	l.Header("YAML Syntax")
-	l.RecordBuild()
-	l.RecordPass()
 	l.Header("Shellcheck")
-	l.RecordBuild()
-	l.RecordFailure()
 	l.Error("shellcheck: something bad")
 	l.Header("Kubeconform")
-	l.RecordBuild()
 	l.Error("kubeconform: invalid schema")
 
 	summary := l.Summary()
@@ -140,8 +155,6 @@ func TestLogger_SummaryFailedSections(t *testing.T) {
 func TestLogger_SetSection(t *testing.T) {
 	l := NewLogger(false, "")
 	l.Header("Build")
-	l.RecordBuild()
-	l.RecordPass()
 
 	// SetSection changes the active section without printing a header
 	l.SetSection("Sync Options Check")
@@ -184,20 +197,6 @@ func TestLogger_ErrorInSection(t *testing.T) {
 	errors := l.Errors()
 	if len(errors) != 1 || !strings.Contains(errors[0], "error in B") {
 		t.Errorf("unexpected errors: %v", errors)
-	}
-}
-
-func TestLogger_RecordFailureInSection(t *testing.T) {
-	l := NewLogger(false, "")
-	l.Header("CRB Check")
-	l.RecordFailureInSection("Image Pinning")
-
-	sections := l.FailedSections()
-	if len(sections) != 1 {
-		t.Fatalf("expected 1 failed section, got %d: %v", len(sections), sections)
-	}
-	if sections[0] != "Image Pinning" {
-		t.Errorf("expected 'Image Pinning', got: %v", sections)
 	}
 }
 
@@ -302,28 +301,6 @@ func TestScopedLogger_DebugNotBuffered(t *testing.T) {
 	}
 }
 
-func TestScopedLogger_CountersDelegateImmediately(t *testing.T) {
-	l := NewLogger(false, "")
-	s := l.Scope()
-
-	s.RecordBuild()
-	s.RecordBuild()
-	s.RecordPass()
-	s.RecordFailure()
-
-	// Counters should be on parent immediately (before Flush)
-	summary := l.Summary()
-	if !strings.Contains(summary, "Builds: 2") {
-		t.Errorf("expected Builds: 2 in summary, got: %s", summary)
-	}
-	if !strings.Contains(summary, "Passes: 1") {
-		t.Errorf("expected Passes: 1 in summary, got: %s", summary)
-	}
-	if !strings.Contains(summary, "Failures: 1") {
-		t.Errorf("expected Failures: 1 in summary, got: %s", summary)
-	}
-}
-
 func TestScopedLogger_ErrorTracksInParent(t *testing.T) {
 	l := NewLogger(false, "")
 	l.SetSection("Build YAML")
@@ -369,6 +346,11 @@ func TestScopedLogger_WarnTracksInParent(t *testing.T) {
 	}
 }
 
+// TestScopedLogger_ConcurrentFlush guards concurrent-safety of independent
+// ScopedLoggers sharing one parent Logger: many goroutines each buffer
+// output and record an error via their own scope, then Flush - the parent's
+// error count must end up exactly right with no lost/duplicated updates
+// (run with -race to catch data races on the shared parent state).
 func TestScopedLogger_ConcurrentFlush(t *testing.T) {
 	l := NewLogger(false, "")
 	var wg sync.WaitGroup
@@ -380,31 +362,14 @@ func TestScopedLogger_ConcurrentFlush(t *testing.T) {
 			for j := 0; j < 50; j++ {
 				s.Info("goroutine %d message %d", id, j)
 			}
-			s.RecordBuild()
-			s.RecordPass()
+			s.ErrorInSection("Concurrent", "goroutine %d failed", id)
 			s.Flush()
 		}(i)
 	}
 	wg.Wait()
 
-	summary := l.Summary()
-	if !strings.Contains(summary, "Builds: 10") {
-		t.Errorf("expected Builds: 10, got: %s", summary)
-	}
-	if !strings.Contains(summary, "Passes: 10") {
-		t.Errorf("expected Passes: 10, got: %s", summary)
-	}
-}
-
-func TestScopedLogger_RecordFailureInSection(t *testing.T) {
-	l := NewLogger(false, "")
-	s := l.Scope()
-
-	s.RecordFailureInSection("Scaffold")
-
-	sections := l.FailedSections()
-	if len(sections) != 1 || sections[0] != "Scaffold" {
-		t.Errorf("expected 'Scaffold' in failed sections, got: %v", sections)
+	if len(l.Errors()) != 10 {
+		t.Errorf("expected 10 errors, got %d", len(l.Errors()))
 	}
 }
 
