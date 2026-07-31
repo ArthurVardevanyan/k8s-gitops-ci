@@ -291,26 +291,40 @@ func commentSkipReason(opts Options) (reason string, skip bool) {
 	return "", false
 }
 
+// buildReport constructs the unified PR-comment report from the run result,
+// pulling Title/Header/Marker from the org-injectable provider.Providers
+// seam (opts.Providers) rather than hardcoding generic-sounding defaults, so
+// an org's Branding provider actually takes effect on every rendered field.
+func buildReport(res *Result, opts Options) validator.Report {
+	marker := opts.Providers.ReportMarker()
+	if marker == "" {
+		marker = "<!-- gitops-ci-report -->"
+	}
+	return validator.Report{
+		Marker:   marker,
+		Title:    opts.Providers.ReportTitle(),
+		Header:   opts.Providers.PipelineHeader(),
+		Sections: composeSections(res, opts),
+		Body:     "```bash\n" + res.ReproduceCommand + "\n```",
+	}
+}
+
 func postComment(res *Result, opts Options) error {
 	client := github.NewClient(opts.URL, opts.PR)
 	if !client.IsAvailable() {
 		return nil
 	}
-	marker := opts.Providers.ReportMarker()
-	if marker == "" {
-		marker = "<!-- gitops-ci-report -->"
-	}
-	report := validator.Report{
-		Marker:   marker,
-		Title:    "GitOps CI Results",
-		Header:   "GitOps CI Pipeline",
-		Sections: composeSections(res, opts),
-		Body:     "```bash\n" + res.ReproduceCommand + "\n```",
-	}
-	if err := github.UpsertComment(client, marker, report.Render()); err != nil {
+	report := buildReport(res, opts)
+	if err := github.UpsertComment(client, report.Marker, report.Render()); err != nil {
 		return err
 	}
-	return github.DeleteComments(client, validator.LegacyMarkers()...)
+	if err := github.DeleteComments(client, validator.LegacyMarkers()...); err != nil {
+		return err
+	}
+	// Prune unwanted third-party bot comments as configured by the
+	// CommentPolicy provider (e.g. an org-specific bot comment). No-op when
+	// no provider is wired, since ForeignMarkers() returns nil by default.
+	return github.DeleteComments(client, opts.Providers.ForeignMarkers()...)
 }
 
 func composeSections(res *Result, opts Options) []validator.Section {
