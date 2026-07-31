@@ -21,12 +21,32 @@ anything that looks like it might be org-specific.
 
 ## Documentation
 
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the top-level entry
+  point: runtime flow, package map, and a "Where do I find X?" table
+  pointing to every doc below.
+- [docs/CI.md](docs/CI.md) — the detailed pipeline reference: phases,
+  every mode (`pipeline`/`test-all`/`scan-all`/`build-yaml`) with its
+  exact changeset source, the full registered-check table, and the
+  direct-vs-external finding classification.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — build/test/lint commands,
   Task target reference, repository structure, and (most important for
   making changes) the design conventions: the `provider.Providers`
   seam, exported-override-var pattern, the "core data + org-injectable
   override" pattern, and the generic check-enablement mechanism
   (`DisabledChecks`/`EnabledChecks`).
+- [docs/HOOKS.md](docs/HOOKS.md) — the `test.sh` hook contract and,
+  importantly, which directives are actually wired vs. parsed-but-unused
+  today.
+- [docs/EXCEPTIONS.md](docs/EXCEPTIONS.md) — the unified exemption
+  framework's two modes (annotation vs. `EXEMPTIONS=(...)` selector),
+  which one actually takes effect today, and exemptable check IDs.
+- [docs/TEKTON.md](docs/TEKTON.md) — this repo's own Tekton
+  `PipelineRun`/Pipelines-as-Code trigger/caching setup.
+- [docs/RELEASE.md](docs/RELEASE.md) — versioning (git-cliff +
+  Conventional Commits), and the release flow's actual published
+  artifacts.
+- [docs/SECURITY.md](docs/SECURITY.md) — trust model, `exec.Command`
+  audit table, file-permission rationale.
 - [docs/SCHEMAS.md](docs/SCHEMAS.md) — how embedded kubeconform
   schemas / Kyverno policies work, and how an org supplies its own
   CRD schemas or real Kyverno policies.

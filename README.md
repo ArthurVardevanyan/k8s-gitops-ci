@@ -102,8 +102,25 @@ pattern, and the generic check-enablement mechanism).
 
 ## Documentation
 
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the top-level entry
+  point: runtime flow, package map, and a "Where do I find X?" table
+- [`docs/CI.md`](docs/CI.md) — pipeline phases, every mode
+  (`pipeline`/`test-all`/`scan-all`/`build-yaml`), the full registered-
+  check list, and the direct-vs-external finding classification
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — build/test/lint,
   repository structure, design conventions, how to add a new validator
+- [`docs/HOOKS.md`](docs/HOOKS.md) — the `test.sh` contract
+  (`SCAFFOLD=`/`AVP_EXCLUDE=`/`EXEMPTIONS=(...)`/hook directives) and
+  which of them are actually wired today
+- [`docs/EXCEPTIONS.md`](docs/EXCEPTIONS.md) — the exemption framework:
+  annotation vs. `EXEMPTIONS` selector modes, exemptable check IDs,
+  adding exemption support to a new check
+- [`docs/TEKTON.md`](docs/TEKTON.md) — this repo's own Tekton
+  `PipelineRun`/PaC-trigger/caching setup
+- [`docs/RELEASE.md`](docs/RELEASE.md) — versioning, changelog, and
+  published-artifact scope
+- [`docs/SECURITY.md`](docs/SECURITY.md) — trust model, `exec.Command`
+  audit, file-permission rationale
 - [`docs/SCHEMAS.md`](docs/SCHEMAS.md) — how embedded kubeconform
   schemas / Kyverno policies work, and how to supply your own CRD
   schemas or real Kyverno policies
