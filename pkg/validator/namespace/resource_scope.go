@@ -339,6 +339,8 @@ var resourceScope = map[string]bool{
 	"kueue.x-k8s.io/MultiKueueCluster":                                        true,
 	"kueue.x-k8s.io/MultiKueueConfig":                                         true,
 	"kueue.x-k8s.io/ResourceFlavor":                                           true,
+	"kustomize.config.k8s.io/Component":                                       true, // Kustomize build-time config object; namespace is not a required field
+	"kustomize.config.k8s.io/Kustomization":                                   true, // Kustomize build-time config object; namespace is not a required field
 	"kyverno.io/AdmissionReport":                                              false,
 	"kyverno.io/BackgroundScanReport":                                         false,
 	"kyverno.io/CleanupPolicy":                                                false,

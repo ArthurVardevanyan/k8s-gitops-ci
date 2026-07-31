@@ -46,6 +46,18 @@ metadata:
 	}
 }
 
+func TestValidateBytes_KustomizationResource(t *testing.T) {
+	data := []byte(`apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - base
+`)
+	errs := ValidateBytes(data, "kustomization.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for Kustomization: %v", errs)
+	}
+}
+
 func TestValidateBytes_UnknownResource(t *testing.T) {
 	data := []byte(`kind: Widget
 apiVersion: custom.example.com/v1
