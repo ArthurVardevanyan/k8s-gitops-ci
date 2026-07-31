@@ -357,12 +357,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// job-queue pattern runDocChecks/runOverlayChecks already use internally
 	// for per-file/per-overlay checks, one level up.
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
+	kyvernoEnabled := stepEnabled(stepKyverno, disabled, enabled)
 	var overlayResult check.Result
 	buildErrs := make([]string, 0, len(overlays))
 	hookResults := make(map[string]*appHookResult, len(apps))
 	for _, app := range apps {
 		hookResults[app] = &appHookResult{}
 	}
+	var kyvernoOutputs []kyvernoOutput
 	if len(overlays) > 0 {
 		overlayWorkers := w
 		if overlayWorkers > len(overlays) {
@@ -382,7 +384,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					ovStart := time.Now()
 					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
 					app := appFromOverlayPath(ov.path)
-					buildErr, pre, post := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app])
+					buildErr, pre, post, rendered := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app])
 					tc.RecordStep("Build+Compliance", ov.path, time.Since(ovStart))
 					overlayMu.Lock()
 					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
@@ -390,6 +392,8 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					if buildErr != "" {
 						buildErrs = append(buildErrs, buildErr)
 						log.ErrorInSection("Hooks", "%s", buildErr)
+					} else if kyvernoEnabled && len(rendered) > 0 {
+						kyvernoOutputs = append(kyvernoOutputs, kyvernoOutput{overlay: ov.path, data: rendered})
 					}
 					if hr := hookResults[app]; hr != nil {
 						hr.PreBuild = mergeHookOutcome(hr.PreBuild, pre)
@@ -413,6 +417,10 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	for _, err := range hookExemptErrs {
 		buildErrs = append(buildErrs, err)
 		log.ErrorInSection("Hooks", "%s", err)
+	}
+
+	if kyvernoEnabled {
+		res.Sections = append(res.Sections, runKyvernoValidation(kyvernoOutputs, log))
 	}
 
 	// Merge and classify.

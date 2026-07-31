@@ -389,14 +389,27 @@ func postComment(res *Result, opts Options) error {
 // wasn't produced (e.g. --lint-only mode, which skips the build phase
 // entirely and so never produces "Kustomize Build" et al).
 func validatorSectionOrFallback(vr *validator.Result, name string) validator.Section {
-	if vr != nil {
-		for _, s := range vr.Sections {
-			if s.Name == name {
-				return s
-			}
-		}
+	if s, ok := validatorSection(vr, name); ok {
+		return s
 	}
 	return validator.Section{Name: name, Body: "No results."}
+}
+
+// validatorSection looks up a named section in vr.Sections, reporting
+// whether it was found - unlike validatorSectionOrFallback, callers for
+// whom "not produced at all" (e.g. an opt-in phase that never ran) means
+// something different than "produced, found nothing" use this to omit the
+// section entirely instead of rendering a fallback stub.
+func validatorSection(vr *validator.Result, name string) (validator.Section, bool) {
+	if vr == nil {
+		return validator.Section{}, false
+	}
+	for _, s := range vr.Sections {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return validator.Section{}, false
 }
 
 func composeSections(res *Result, opts Options) []validator.Section {
@@ -405,14 +418,23 @@ func composeSections(res *Result, opts Options) []validator.Section {
 	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr))
 
-	// 2–7. Linting, Static Checks, Kustomize Build, Scaffold Validation, and
-	// Resource Compliance are all fully composed by phases.go during
-	// validator.RunAll - reuse them by name rather than recomposing.
-	for _, name := range []string{"Linting", "Static Checks", "Kustomize Build", "Scaffold Validation", "Resource Compliance"} {
+	// 2–8. Linting, Static Checks, Kustomize Build, Scaffold Validation,
+	// Resource Compliance, and Kyverno Policies are all fully composed by
+	// phases.go during validator.RunAll - reuse them by name rather than
+	// recomposing. Kyverno Policies is only ever produced when the "kyverno"
+	// step is enabled (default off - see docs/CI.md#registered-checks);
+	// validatorSectionOrFallback's "No results." stub for a name phases.go
+	// never produced would be misleading here (it'd read as "checked, found
+	// nothing" rather than "not run"), so it's appended only when present.
+	names := []string{"Linting", "Static Checks", "Kustomize Build", "Scaffold Validation", "Resource Compliance"}
+	for _, name := range names {
 		sections = append(sections, validatorSectionOrFallback(res.ValidatorResult, name))
 	}
+	if s, ok := validatorSection(res.ValidatorResult, "Kyverno Policies"); ok {
+		sections = append(sections, s)
+	}
 
-	// 8. CI Notes
+	// 9. CI Notes
 	_ = opts
 	sections = append(sections, validator.ComposeCINotesSection("Pipeline completed."))
 	return sections
