@@ -299,7 +299,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// across a bounded worker pool instead of one-at-a-time; this mirrors the
 	// job-queue pattern runDocChecks/runOverlayChecks already use internally
 	// for per-file/per-overlay checks, one level up.
-	overlays := detectOverlays(changed)
+	overlays := detectOverlaysForChanges(changed)
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	var overlayResult check.Result
 	var buildErrs []string
@@ -380,29 +380,6 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 // overlayRef pairs an overlay path with its cluster name.
 type overlayRef struct {
 	path, cluster string
-}
-
-// detectOverlays heuristically finds overlay dirs from changed files.
-// An "overlay" is any directory two levels under an "overlays/" segment
-// (e.g. apps/myapp/overlays/mycluster).
-func detectOverlays(files []string) []overlayRef {
-	seen := map[string]bool{}
-	var refs []overlayRef
-	for _, f := range files {
-		parts := strings.Split(filepath.ToSlash(f), "/")
-		for i, p := range parts {
-			if p == "overlays" && i+1 < len(parts) {
-				ovDir := filepath.Join(parts[:i+2]...)
-				cluster := parts[i+1]
-				if !seen[ovDir] {
-					seen[ovDir] = true
-					refs = append(refs, overlayRef{path: ovDir, cluster: cluster})
-				}
-				break
-			}
-		}
-	}
-	return refs
 }
 
 // toIDSet converts a slice of IDs (from DisabledChecks or EnabledChecks)

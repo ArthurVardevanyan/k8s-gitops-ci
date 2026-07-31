@@ -29,7 +29,17 @@ func detectAppRoots(files []string) []string {
 				continue
 			}
 			if p == "base" || p == "components" || p == "overlays" {
-				root := filepath.Join(parts[:i]...)
+				// strings.Join (not filepath.Join, which drops leading empty
+				// path components) so an absolute input path's leading "/"
+				// is preserved - parts[0] is "" for an absolute unix path,
+				// and filepath.Join silently discards leading empty
+				// elements, turning "/tmp/foo/app1" into the relative
+				// "tmp/foo/app1" and breaking every filesystem check
+				// (overlay.FindAllOverlays, os.Stat, ...) done against root
+				// afterwards when the caller passes absolute paths (e.g.
+				// Options.Dirs-based local runs, as opposed to git-diff's
+				// always-repo-relative paths).
+				root := filepath.FromSlash(strings.Join(parts[:i], "/"))
 				if !seen[root] {
 					seen[root] = true
 					roots = append(roots, root)

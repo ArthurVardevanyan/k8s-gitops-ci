@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -210,7 +211,14 @@ func (c *Client) ghStdin(stdin string, args ...string) (string, error) {
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	if repo := c.env("GH_REPO"); repo != "" {
-		cmd.Env = append(cmd.Env, "GH_REPO="+repo)
+		// Start from the parent's environment (os.Environ()), not a nil/empty
+		// Cmd.Env - exec.Cmd treats a non-nil Env as the *complete* child
+		// environment (no implicit inheritance), so appending onto a nil
+		// slice here would previously strip PATH/HOME/GH_TOKEN etc. from the
+		// gh subprocess, causing it to fail to find its config/auth and exit
+		// with "not authenticated" (status 4) even when `gh auth status` is
+		// fine in the parent shell.
+		cmd.Env = append(os.Environ(), "GH_REPO="+repo)
 	}
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)

@@ -1,6 +1,49 @@
 package github
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+// TestGhStdin_InheritsParentEnv guards against a regression where ghStdin
+// built cmd.Env by appending onto a nil slice (cmd.Env = append(cmd.Env,
+// "GH_REPO=...")), which per os/exec semantics replaces rather than extends
+// the child's environment - stripping PATH/HOME/GH_TOKEN/etc. from the gh
+// subprocess and causing spurious "not authenticated" (exit status 4)
+// failures even when gh itself is correctly authenticated in the parent
+// shell. This installs a fake `gh` on PATH that echoes the env vars it saw,
+// so we can assert the child process still sees the parent's environment
+// (not just GH_REPO) alongside the injected GH_REPO override.
+func TestGhStdin_InheritsParentEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake gh shell script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGh := filepath.Join(dir, "gh")
+	script := "#!/bin/sh\necho \"MARKER=$GITOPS_CI_TEST_MARKER\"\necho \"REPO=$GH_REPO\"\n"
+	if err := os.WriteFile(fakeGh, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake gh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GITOPS_CI_TEST_MARKER", "inherited")
+
+	c := &Client{repo: "org/repo", pr: "1", env: func(k string) string {
+		if k == "GH_REPO" {
+			return "org/repo"
+		}
+		return ""
+	}}
+	out, err := c.gh("pr", "view")
+	if err != nil {
+		t.Fatalf("gh() error: %v", err)
+	}
+	want := "MARKER=inherited\nREPO=org/repo"
+	if out != want {
+		t.Errorf("gh() output = %q, want %q (parent env not inherited alongside GH_REPO)", out, want)
+	}
+}
 
 func TestClient_Repo(t *testing.T) {
 	c := NewClient("https://github.com/oakwood-commons/scafctl", "3")

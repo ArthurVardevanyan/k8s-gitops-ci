@@ -11,8 +11,44 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 )
 
+// detectOverlaysForChanges maps a PR's changed files to the overlays that
+// actually need building/checking. Unlike the old naive "any path segment
+// literally named overlays/" heuristic, this is app-aware: it finds each
+// touched app root (detectAppRoots, defined in kubeconform_overlay.go and
+// already shared with the kubeconform-over-rendered-overlays path), asks
+// overlay.GetOverlaysToTest which overlays that app's changes imply
+// (cluster-specific vs. a base/component change that could affect every
+// overlay), and - for base/component changes spanning more than one
+// overlay - narrows that down further via overlay.FilterOverlaysByRefs,
+// which actually parses each overlay's kustomization reference chain to see
+// whether it depends on the changed directory at all. This is what allows a
+// change to a shared base file (with no "overlays/" segment anywhere in its
+// path) to still resolve to the correct overlay(s), instead of silently
+// producing zero overlays.
+func detectOverlaysForChanges(changed []string) []overlayRef {
+	apps := detectAppRoots(changed)
+	seen := map[string]bool{}
+	var refs []overlayRef
+	for _, app := range apps {
+		overlays, _, trigger := overlay.GetOverlaysToTest(app, changed, false)
+		if (trigger == "base" || trigger == "component") && len(overlays) > 1 {
+			overlays = overlay.FilterOverlaysByRefs(app, overlays, changed)
+		}
+		for _, ov := range overlays {
+			ov = filepath.ToSlash(ov)
+			if seen[ov] {
+				continue
+			}
+			seen[ov] = true
+			refs = append(refs, overlayRef{path: ov, cluster: filepath.Base(ov)})
+		}
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].path < refs[j].path })
+	return refs
+}
+
 // appFromOverlayPath extracts the app root from an overlay path detected by
-// detectOverlays (e.g. "apps/myapp/overlays/mycluster" -> "apps/myapp").
+// detectOverlaysForChanges (e.g. "apps/myapp/overlays/mycluster" -> "apps/myapp").
 func appFromOverlayPath(ovPath string) string {
 	slash := filepath.ToSlash(ovPath)
 	if idx := strings.Index(slash, "/overlays/"); idx >= 0 {

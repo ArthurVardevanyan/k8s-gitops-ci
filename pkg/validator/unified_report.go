@@ -122,6 +122,24 @@ func LegacyMarkers() []string {
 }
 
 // ReproduceCommand returns a shell snippet to reproduce the run locally.
+//
+// This must stay in sync with every Options field that changes what actually
+// gets validated (as opposed to purely cosmetic/output fields like Verbose) -
+// otherwise the printed command silently reproduces a different, narrower
+// run than the one that actually failed. IncludePrefixes (--dirs) in
+// particular scopes the whole changeset, so omitting it here previously
+// meant "reproduce locally" could pass locally while the original run
+// (scoped to specific directories) failed, or vice versa.
 func ReproduceCommand(opts Options) string {
-	return fmt.Sprintf("go run ./cmd/k8s-gitops-ci pipeline --url=%q --pr=%s --target-branch=%q", opts.RepoURL, opts.PR, opts.BaseRef)
+	cmd := fmt.Sprintf("go run ./cmd/k8s-gitops-ci pipeline --url=%q --pr=%s --target-branch=%q", opts.RepoURL, opts.PR, opts.BaseRef)
+	if len(opts.IncludePrefixes) > 0 {
+		cmd += fmt.Sprintf(" --dirs=%q", strings.Join(opts.IncludePrefixes, ","))
+	}
+	if len(opts.DisabledChecks) > 0 {
+		cmd += fmt.Sprintf(" --disable-checks=%q", strings.Join(opts.DisabledChecks, ","))
+	}
+	if len(opts.EnabledChecks) > 0 {
+		cmd += fmt.Sprintf(" --enable-checks=%q", strings.Join(opts.EnabledChecks, ","))
+	}
+	return cmd
 }

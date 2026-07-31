@@ -40,6 +40,84 @@ func TestUniqueApps_Empty(t *testing.T) {
 	}
 }
 
+// TestDetectOverlaysForChanges_BaseChangeResolvesOverlay guards the fix for
+// a change to a shared base file (no "overlays/" path segment anywhere)
+// silently resolving to zero overlays - previously the naive
+// path-segment-based detector couldn't see any overlay was affected at all.
+// This reproduces the reported HomeLab scenario: a PR only touching
+// "<app>/base/config.json" must still resolve to that app's overlay(s).
+func TestDetectOverlaysForChanges_BaseChangeResolvesOverlay(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "kubernetes", "renovate")
+	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources:\n  - config.json\n")
+	mustWrite(t, filepath.Join(app, "base", "config.json"), "{}\n")
+	mustWrite(t, filepath.Join(app, "overlays", "okd", "kustomization.yaml"), "resources:\n  - ../../base\n")
+
+	changed := []string{filepath.Join(app, "base", "config.json")}
+	overlays := detectOverlaysForChanges(changed)
+	if len(overlays) != 1 {
+		t.Fatalf("expected 1 overlay detected from a base-only change, got %d: %v", len(overlays), overlays)
+	}
+	want := filepath.ToSlash(filepath.Join(app, "overlays", "okd"))
+	if overlays[0].path != want {
+		t.Errorf("overlays[0].path = %q, want %q", overlays[0].path, want)
+	}
+	if overlays[0].cluster != "okd" {
+		t.Errorf("overlays[0].cluster = %q, want %q", overlays[0].cluster, "okd")
+	}
+}
+
+// TestDetectOverlaysForChanges_ComponentChangeScopesToReferencingOverlay
+// exercises the ref-chain-scoping path (overlay.FilterOverlaysByRefs): a
+// component change affecting several overlays should only resolve to the
+// overlay(s) that actually reference that component version, not every
+// overlay under the app.
+func TestDetectOverlaysForChanges_ComponentChangeScopesToReferencingOverlay(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "kyverno")
+	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources:\n  - namespace.yaml\n")
+	mustWrite(t, filepath.Join(app, "base", "namespace.yaml"), "kind: Namespace\n")
+	mustWrite(t, filepath.Join(app, "components", "widget", "1.0.0", "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
+	mustWrite(t, filepath.Join(app, "components", "widget", "1.0.0", "deployment.yaml"), "kind: Deployment\n")
+	mustWrite(t, filepath.Join(app, "components", "widget", "2.0.0", "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
+	mustWrite(t, filepath.Join(app, "components", "widget", "2.0.0", "deployment.yaml"), "kind: Deployment\n")
+	mustWrite(t, filepath.Join(app, "overlays", "pd01", "kustomization.yaml"), "resources:\n  - ../../base\ncomponents:\n  - ../../components/widget/1.0.0\n")
+	mustWrite(t, filepath.Join(app, "overlays", "pd02", "kustomization.yaml"), "resources:\n  - ../../base\ncomponents:\n  - ../../components/widget/2.0.0\n")
+
+	changed := []string{filepath.Join(app, "components", "widget", "2.0.0", "deployment.yaml")}
+	overlays := detectOverlaysForChanges(changed)
+	if len(overlays) != 1 {
+		t.Fatalf("expected 1 overlay scoped to the 2.0.0-referencing overlay, got %d: %v", len(overlays), overlays)
+	}
+	if overlays[0].cluster != "pd02" {
+		t.Errorf("overlays[0].cluster = %q, want %q", overlays[0].cluster, "pd02")
+	}
+}
+
+// TestDetectOverlaysForChanges_DirectOverlayChange keeps covering the
+// simple, already-working "overlays/<cluster>/..." case.
+func TestDetectOverlaysForChanges_DirectOverlayChange(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	mustWrite(t, filepath.Join(app, "overlays", "dev", "kustomization.yaml"), "resources: []\n")
+
+	changed := []string{filepath.Join(app, "overlays", "dev", "kustomization.yaml")}
+	overlays := detectOverlaysForChanges(changed)
+	if len(overlays) != 1 || overlays[0].cluster != "dev" {
+		t.Fatalf("expected 1 overlay for cluster dev, got %v", overlays)
+	}
+}
+
+// TestDetectOverlaysForChanges_UnrelatedChangeYieldsNoOverlays ensures
+// changes outside any app (no overlays/base/components ancestor) don't
+// spuriously produce overlays.
+func TestDetectOverlaysForChanges_UnrelatedChangeYieldsNoOverlays(t *testing.T) {
+	overlays := detectOverlaysForChanges([]string{"README.md", "docs/foo.md"})
+	if len(overlays) != 0 {
+		t.Errorf("expected no overlays, got %v", overlays)
+	}
+}
+
 func TestBuildOverlayError_MissingOverlay(t *testing.T) {
 	d := t.TempDir()
 	err := buildOverlayError(filepath.Join(d, "does-not-exist"))

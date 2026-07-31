@@ -47,8 +47,14 @@ pkg/
                      shellcheck, yamlsyntax)
   pipeline/          top-level pipeline orchestration (PR checks + calls
                      into pkg/validator)
-  overlay/           kustomize/Helm overlay discovery and build
-  kustomize/          kustomization.yaml `edit fix` checking
+  overlay/           kustomize/Helm overlay discovery and build, including
+                     GetOverlaysToTest (which overlays a change implies)
+                     and FilterOverlaysByRefs (narrows a base/component
+                     change down to just the overlay(s) that reference it)
+  kustomize/          kustomization.yaml `edit fix` checking, plus
+                     ResolveRefs (recursive resources/components/bases
+                     reference-chain resolution used by
+                     overlay.FilterOverlaysByRefs)
   ghostpatch/        detects kustomize patches that target nothing
   scaffold/          scafctl CLI wrapper for scaffold-drift checking
   configdiff/        detects which apps/clusters a repo-config change affects
@@ -232,6 +238,32 @@ Concurrency                                8  (4 CPUs × 2)
 --------------------------------------------------------------
 ```
 
+### `--verbose` console detail without `--comment` (`pkg/pipeline/pipeline.go`)
+
+Every phase composes a detail-bearing `Section` (the actual file/message
+list behind a step's summary "N violation(s)" log line) onto
+`ValidatorResult.Sections`, but that has historically only ever been
+rendered into the PR comment body via `composeSections`/`postComment` —
+which is skipped whenever `--comment` isn't passed (e.g. a local/CLI-only
+run). `pipeline.Run` calls `printFailedSectionDetail` under `--verbose`
+(independent of whether a comment is posted) to print every errored
+section's full `Body` to the console too, so `--verbose` alone is enough
+to see e.g. exactly which file/check produced a Resource Compliance
+finding, not just the count.
+
+### Pipeline exit code (`pipeline.Run`)
+
+`validator.RunAll`'s returned `error` is only ever non-nil for a hard setup
+failure (e.g. failing to resolve the changeset) — a run that completes but
+finds blocking/error-level findings still returns a nil error, signaling
+that instead via `ValidatorResult.Blocking` (set from Resource Compliance
+direct findings) and the validator's own `Logger.HasFailures()` (sees any
+`Error`/`ErrorInSection` call across every phase — Linting, Static Checks,
+Kustomize Build, ...). `pipeline.Run`'s `validatorResultFailed` helper
+checks both, and `Run` returns a non-nil error (and the CLI exits non-zero)
+whenever either is true, in addition to the PR-validation error fields
+(`TitleErr`/`UnsignedErr`) it already checked.
+
 ### Unified PR-comment report (`pkg/validator/unified_report.go`, `compose_sections.go`)
 
 The PR comment is a single markdown `Report` (one `<!-- marker -->`-tagged
@@ -265,8 +297,20 @@ report.
 Three sections carry real, richer per-check data instead of a placeholder
 count:
 
-- **Kustomize Build** (`ComposeKustomizeBuildSection`) — overlay build
-  errors grouped by root cause (`groupBuildErrors`/`formatBuildErrors`, so
+- **Kustomize Build** (`ComposeKustomizeBuildSection`) — the overlay set
+  itself is resolved by `detectOverlaysForChanges`
+  (`pkg/validator/build_wiring.go`), which is app-aware rather than a bare
+  "any path segment literally named `overlays/`" match: it finds each
+  changed app root (`detectAppRoots`), asks `overlay.GetOverlaysToTest`
+  whether the change is cluster-specific or a base/component change (which
+  could affect every overlay of that app), and for the latter narrows that
+  down via `overlay.FilterOverlaysByRefs` (which parses each overlay's
+  kustomization `resources`/`components`/`bases` reference chain via
+  `kustomize.ResolveRefs` to see whether it actually depends on the changed
+  directory) - so a change to a shared base file, with no `overlays/`
+  segment anywhere in its path, still resolves to the right overlay(s)
+  instead of silently producing zero. Build errors are then grouped by root
+  cause (`groupBuildErrors`/`formatBuildErrors`, so
   N overlays sharing one underlying cause don't repeat it N times), a
   `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` hooks-defined matrix,
   files needing `kustomize edit fix`, and a `| Overlay | Target |`

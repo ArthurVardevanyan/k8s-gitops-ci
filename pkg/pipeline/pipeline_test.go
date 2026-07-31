@@ -9,9 +9,98 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
 )
+
+// TestPrintFailedSectionDetail_PrintsBodyOfErroredSections guards against a
+// regression where a section's composed detail (the actual finding
+// list/messages behind a "N violation(s)" summary line) is only ever
+// rendered into the PR comment body, and gets silently discarded on
+// --verbose CLI-only runs (no --comment) - see Run's call to
+// printFailedSectionDetail.
+func TestPrintFailedSectionDetail_PrintsBodyOfErroredSections(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "out.log")
+	log := logger.NewLogger(true, logPath)
+	defer log.Close()
+
+	vr := &validator.Result{
+		Sections: []validator.Section{
+			{Name: "Linting", Body: "linting all good", Error: false},
+			{Name: "Resource Compliance", Body: "| Check | File | Message |\n| --- | --- | --- |\n| psa | ns.yaml | missing label |", Error: true},
+			{Name: "Kustomize Build", Body: "kustomize build apps/foo/overlays/bar: some error", Error: true},
+		},
+	}
+	printFailedSectionDetail(vr, log)
+	log.Close()
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	got := string(data)
+	if strings.Contains(got, "linting all good") {
+		t.Errorf("did not expect non-error section body to be printed: %s", got)
+	}
+	for _, want := range []string{"Resource Compliance", "missing label", "Kustomize Build", "kustomize build apps/foo/overlays/bar"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected log output to contain %q, got: %s", want, got)
+		}
+	}
+}
+
+// TestPrintFailedSectionDetail_NilResult ensures a nil ValidatorResult (e.g.
+// validator.RunAll itself failed) doesn't panic.
+func TestPrintFailedSectionDetail_NilResult(t *testing.T) {
+	log := logger.NewLogger(true, "")
+	printFailedSectionDetail(nil, log)
+}
+
+// TestValidatorResultFailed_BlockingFindings guards a regression where
+// Run's exit-code check only inspected res.ValidationErr (the Go error
+// RunAll returns, which is nil for a completed-but-failing run) and never
+// vr.Blocking/vr.Logger.HasFailures(), so a PR with blocking Resource
+// Compliance findings (or any failed Linting/Static Checks/Build section)
+// still exited 0 and printed "All checks passed!".
+func TestValidatorResultFailed_BlockingFindings(t *testing.T) {
+	vr := &validator.Result{Blocking: true, Logger: logger.NewLogger(false, "")}
+	if !validatorResultFailed(vr) {
+		t.Error("expected validatorResultFailed to be true when vr.Blocking is set")
+	}
+}
+
+// TestValidatorResultFailed_LoggerHasFailures covers the non-Blocking case:
+// a failed Linting/Static Checks/Build section (which never sets
+// vr.Blocking - that's set only from Resource Compliance direct findings)
+// still recorded an error via the validator's own Logger, and must still
+// fail the run.
+func TestValidatorResultFailed_LoggerHasFailures(t *testing.T) {
+	log := logger.NewLogger(false, "")
+	log.ErrorInSection("Linting", "shellcheck: 1 violation")
+	vr := &validator.Result{Blocking: false, Logger: log}
+	if !validatorResultFailed(vr) {
+		t.Error("expected validatorResultFailed to be true when the validator logger recorded a failure")
+	}
+}
+
+// TestValidatorResultFailed_PassingRun ensures a clean run doesn't get
+// spuriously marked as failed.
+func TestValidatorResultFailed_PassingRun(t *testing.T) {
+	vr := &validator.Result{Blocking: false, Logger: logger.NewLogger(false, "")}
+	if validatorResultFailed(vr) {
+		t.Error("expected validatorResultFailed to be false for a clean run")
+	}
+}
+
+// TestValidatorResultFailed_Nil ensures a nil ValidatorResult (e.g.
+// RunAll itself hard-failed, so res.ValidationErr already covers it)
+// doesn't panic and doesn't spuriously report failure on its own.
+func TestValidatorResultFailed_Nil(t *testing.T) {
+	if validatorResultFailed(nil) {
+		t.Error("expected validatorResultFailed(nil) to be false")
+	}
+}
 
 func TestIsValidPR(t *testing.T) {
 	if isValidPR("") {

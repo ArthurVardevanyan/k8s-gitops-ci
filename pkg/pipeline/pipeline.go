@@ -119,6 +119,19 @@ func Run(opts Options) error {
 
 	res.ReproduceCommand = validator.ReproduceCommand(vopts)
 
+	// Every phase (Linting, Static Checks, Build+Compliance, ...) composes a
+	// detail-bearing Section per check (the actual file/message list behind
+	// a step's summary "N violation(s)" log line), but res.Sections is
+	// otherwise only ever rendered into the PR comment body - which is
+	// skipped whenever --comment isn't passed (e.g. local/CLI-only runs).
+	// Print the failing sections' full detail to the console here so
+	// --verbose is self-sufficient without requiring --comment; this
+	// applies uniformly to every section (linting, static checks, build,
+	// scaffold, resource compliance), not just one of them.
+	if opts.Verbose {
+		printFailedSectionDetail(vr, log)
+	}
+
 	if reason, skip := commentSkipReason(opts); skip {
 		log.Info("comment posting skipped: %s", reason)
 	} else if err := postComment(res, opts); err != nil {
@@ -137,12 +150,49 @@ func Run(opts Options) error {
 		log.Info("  %s", res.ReproduceCommand)
 	}
 
-	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil {
+	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil || validatorResultFailed(vr) {
 		log.Error("pipeline completed with failures")
 		return fmt.Errorf("pipeline completed with failures")
 	}
 	log.Info("All checks passed!")
 	return nil
+}
+
+// validatorResultFailed reports whether the validator's own run found any
+// blocking/error-level condition. res.ValidationErr is only ever non-nil for
+// a hard setup failure inside validator.RunAll (e.g. failing to resolve the
+// changeset) - RunAll always returns a nil error for a run that completed
+// but found blocking/error-level findings, communicating that instead via
+// vr.Blocking (Resource Compliance direct findings) and vr.Logger's
+// recorded errors/failed sections (see vr.Logger.Summary()'s
+// "Errors"/"Failed sections", the same counters HasFailures() reads).
+// Previously Run's failure check only looked at res.ValidationErr, so a PR
+// with blocking Resource Compliance findings, or any failed Linting/Static
+// Checks/Build section, still exited 0 and printed "All checks passed!".
+func validatorResultFailed(vr *validator.Result) bool {
+	if vr == nil {
+		return false
+	}
+	return vr.Blocking || (vr.Logger != nil && vr.Logger.HasFailures())
+}
+
+// printFailedSectionDetail logs the full Body of every errored section in
+// vr.Sections to the console. This is the console-output analog of what
+// composeSections/postComment already does for the PR comment - see the
+// comment at its call site in Run for why this is needed independently of
+// comment posting.
+func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
+	if vr == nil {
+		return
+	}
+	for _, s := range vr.Sections {
+		if !s.Error || strings.TrimSpace(s.Body) == "" {
+			continue
+		}
+		log.Info("")
+		log.Info("--- %s: detail ---", s.Name)
+		log.Info("%s", s.Body)
+	}
 }
 
 // setupWorkdir clones opts.URL (when set) to a temp directory, checks out

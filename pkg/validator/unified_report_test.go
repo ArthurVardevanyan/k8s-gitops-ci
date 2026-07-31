@@ -54,3 +54,39 @@ func TestReproduceCommand_UsesRealBinaryPath(t *testing.T) {
 		t.Errorf("ReproduceCommand = %q, want it to invoke ./cmd/k8s-gitops-ci", got)
 	}
 }
+
+// TestReproduceCommand_IncludesScopingFlags guards against the reproduce
+// command silently dropping --dirs/--disable-checks/--enable-checks, which
+// would make it reproduce a broader (or narrower) changeset than the run
+// that actually failed.
+func TestReproduceCommand_IncludesScopingFlags(t *testing.T) {
+	got := ReproduceCommand(Options{
+		RepoURL:         "https://example.com/repo.git",
+		PR:              "42",
+		BaseRef:         "main",
+		IncludePrefixes: []string{"kubernetes/", "tekton/", ".tekton/", "okd/"},
+		DisabledChecks:  []string{"sync-options"},
+		EnabledChecks:   []string{"kyverno"},
+	})
+	for _, want := range []string{
+		`--dirs="kubernetes/,tekton/,.tekton/,okd/"`,
+		`--disable-checks="sync-options"`,
+		`--enable-checks="kyverno"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ReproduceCommand() = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestReproduceCommand_NoScopingFlagsWhenUnset ensures the base case (no
+// --dirs/--disable-checks/--enable-checks passed) doesn't grow spurious
+// empty flags.
+func TestReproduceCommand_NoScopingFlagsWhenUnset(t *testing.T) {
+	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "main"})
+	for _, unwanted := range []string{"--dirs=", "--disable-checks=", "--enable-checks="} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("ReproduceCommand() = %q, unexpectedly contains %q", got, unwanted)
+		}
+	}
+}
