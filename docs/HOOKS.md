@@ -3,9 +3,8 @@
 Every app can carry an optional `test.sh` at its root
 (`hook.FindTestScript(app)` → `<app>/test.sh`) that declares a small set
 of directives. This document describes `pkg/hook`'s actual, current
-behavior — including which directives are fully wired end-to-end and
-which are still parsed but not yet connected to anything (see
-**Current Limitations** below).
+behavior, and exactly how each directive is wired into the pipeline (see
+**Current Limitations** for anything not yet connected end-to-end).
 
 ## The `test.sh` contract
 
@@ -21,7 +20,7 @@ empty/false).
 | Directive                                                      | Syntax                                                                  | Effect                                                                                                                                                                                    |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SCAFFOLD=`                                                    | `SCAFFOLD=false` (or `true`/`yes`/`1`)                                  | Opts an app out of scaffold-drift validation. Defaults to `true` (enabled) when absent.                                                                                                   |
-| `AVP_EXCLUDE=`                                                 | `AVP_EXCLUDE="cluster1 cluster2"`                                       | Space-separated list of overlay names to exclude from AVP secret resolution — see the **Current Limitations** note below; this is parsed but not read by anything downstream today.       |
+| `AVP_EXCLUDE=`                                                 | `AVP_EXCLUDE="cluster1 cluster2"`                                       | Space-separated list of overlay names to exclude from AVP secret resolution — see [CI.md](CI.md)'s Build Strategies section.                                                              |
 | `EXEMPTIONS=(...)` or `EXEMPTIONS="..."`                       | see below                                                               | Per-app exemption selectors, merged into every check run during the Build + Compliance phase (see **`EXEMPTIONS=(...)` wiring** below).                                                   |
 | `PRE_BUILD_HOOK=` / `POST_BUILD_HOOK=` / `POST_VALIDATE_HOOK=` | `PRE_BUILD_HOOK=<cmd>` (optionally `export`-prefixed, like `SCAFFOLD=`) | Names a shell function (defined elsewhere in the same `test.sh`) or external command to invoke around the build — see **Hook execution** below. `<cmd>` empty/absent means "not defined". |
 
@@ -140,8 +139,7 @@ any app's `test.sh` - every app in the same run shares one resolved
 
 ## Current Limitations
 
-- **`AVP_EXCLUDE=` is parsed, but never read outside `pkg/hook`.**
-  `hook.Config.AVPExclude` is populated correctly, but grep across
-  `pkg/validator`/`pkg/overlay`/`cmd/k8s-gitops-ci` shows nothing reads
-  it — consistent with `pkg/overlay`'s AVP build strategy itself being
-  unwired today (see [CI.md](CI.md)'s Build Strategies section).
+None currently known - every directive in the table above is parsed
+_and_ connected to real behavior. See [CI.md](CI.md)'s Build Strategies
+section for exactly which overlay-rendering call sites `AVP_EXCLUDE=`
+does (and, deliberately, doesn't) affect.

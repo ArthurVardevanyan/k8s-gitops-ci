@@ -324,9 +324,19 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	overlays := detectOverlaysForChanges(changed)
 	apps := uniqueApps(overlays)
 
+	disabled := toIDSet(opts.DisabledChecks)
+	enabled := toIDSet(opts.EnabledChecks)
+
 	hookSource := resolveHookSource(opts)
 	hookCfgs := resolveAppHookConfigs(apps, hookSource)
 	defer cleanupAppHookConfigs(hookCfgs)
+
+	// AVP ("avp" step, default-on - see stepAVP/stepEnabled and Options'
+	// DisabledChecks doc comment) auto-detects, per app, whether its
+	// overlays need to be piped through argocd-vault-plugin secret
+	// resolution before the rest of this phase's checks run against them.
+	avpEnabled := stepEnabled(stepAVP, disabled, enabled)
+	appStrategies := resolveAppBuildStrategies(apps, avpEnabled, hookCfgs)
 
 	// Built-in selectors (e.g. the Tekton Pipelines-as-code .tekton/
 	// default, see tekton_exemptions.go) plus every app's hook-provided
@@ -335,8 +345,6 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// blocking build error below rather than silently dropped.
 	hookSelectors, hookExemptErrs := hookExemptSelectorsAndErrors(hookCfgs)
 	selectors := append(builtinExemptSelectors(), hookSelectors...)
-
-	disabled := toIDSet(opts.DisabledChecks)
 
 	// Doc engine over all changed YAML files.
 	yamlFiles := filterYAML(changed)
@@ -374,7 +382,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					ovStart := time.Now()
 					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
 					app := appFromOverlayPath(ov.path)
-					buildErr, pre, post := buildOverlayWithHooks(ov, hookCfgs[app])
+					buildErr, pre, post := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app])
 					tc.RecordStep("Build+Compliance", ov.path, time.Since(ovStart))
 					overlayMu.Lock()
 					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
