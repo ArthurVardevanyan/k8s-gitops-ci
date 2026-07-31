@@ -46,9 +46,15 @@ func RunAll(opts Options) (*Result, error) {
 func resolveChangeset(opts Options) ([]string, error) {
 	var files []string
 	var err error
-	if len(opts.Dirs) > 0 {
+	switch {
+	case len(opts.Apps) > 0 || len(opts.Clusters) > 0:
+		// Targeted ad-hoc validation (build-yaml --app/--cluster) takes
+		// priority over Dirs/diff-based resolution - see
+		// resolveTargetOverlays.
+		files, err = resolveTargetOverlays(opts)
+	case len(opts.Dirs) > 0:
 		files, err = changeset.GetFilesUnderDirs(opts.Dirs)
-	} else {
+	default:
 		files, err = changeset.GetChangedFiles(changeset.Options{
 			RepoURL:          opts.RepoURL,
 			PR:               opts.PR,
