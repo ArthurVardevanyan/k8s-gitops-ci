@@ -1,0 +1,16 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: multi-step
+spec:
+  steps:
+    - name: bash-step
+      script: |
+        #!/usr/bin/env bash
+        echo "bash step"
+    - name: python-step
+      script: |
+        #!/usr/bin/env python3
+        print("python step")
+    - name: no-script-step
+      image: busybox

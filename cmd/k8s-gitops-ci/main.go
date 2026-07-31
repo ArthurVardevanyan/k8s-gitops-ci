@@ -254,16 +254,48 @@ func runPrettier(args []string) error {
 	return nil
 }
 
+// runShellcheck runs all three shellcheck extraction modes over args: raw
+// shell script files, bash steps embedded in Tekton Task manifests, and
+// bash embedded in workload container commands / ConfigMap .sh keys -
+// consistent with how the other standalone lint subcommands are
+// structured (one CLI entry point covering everything the Linting phase
+// wires in).
 func runShellcheck(args []string) error {
+	total := 0
+
 	violations, out, err := shellcheck.Run(args)
 	if out != "" {
 		fmt.Print(out)
 	}
-	if len(violations) > 0 {
-		return fmt.Errorf("%d shellcheck violation(s)", len(violations))
-	}
+	total += len(violations)
 	if err != nil && !errors.Is(err, shellcheck.ErrCLINotFound) {
 		return err
+	}
+
+	tektonResults, tErr := shellcheck.RunTekton(args)
+	for _, r := range tektonResults {
+		if r.Output != "" {
+			fmt.Print(r.Output)
+		}
+		total += len(r.Violations)
+	}
+	if tErr != nil && !errors.Is(tErr, shellcheck.ErrCLINotFound) {
+		return tErr
+	}
+
+	embeddedResults, eErr := shellcheck.RunEmbedded(args)
+	for _, r := range embeddedResults {
+		if r.Output != "" {
+			fmt.Print(r.Output)
+		}
+		total += len(r.Violations)
+	}
+	if eErr != nil && !errors.Is(eErr, shellcheck.ErrCLINotFound) {
+		return eErr
+	}
+
+	if total > 0 {
+		return fmt.Errorf("%d shellcheck violation(s)", total)
 	}
 	return nil
 }

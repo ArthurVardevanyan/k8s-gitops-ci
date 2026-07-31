@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -136,23 +137,54 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	})
 
 	runLintStep("shellcheck", func(sl *logger.ScopedLogger) lintStepResult {
+		if _, err := exec.LookPath("shellcheck"); err != nil {
+			sl.Debug("shellcheck: not found in PATH, skipping")
+			return lintStepResult{status: StatusPassed, skipped: true, note: "shellcheck not found in PATH."}
+		}
+
+		var sb strings.Builder
+		blocking, warning := 0, 0
+
+		// Raw shell script files: always direct/blocking - they're
+		// literally files in this changeset's diff, so any finding here
+		// is the author's own responsibility to fix.
 		if scViolations, _, scErr := shellcheck.Run(changed); scErr == nil {
-			if len(scViolations) > 0 {
-				var sb strings.Builder
-				for _, v := range scViolations {
-					fmt.Fprintf(&sb, "%s:%d: %s\n", v.File, v.Line, v.Message)
-				}
-				sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", len(scViolations))
-				return lintStepResult{report: sb.String(), status: StatusError}
+			for _, v := range scViolations {
+				fmt.Fprintf(&sb, "%s:%d: %s\n", v.File, v.Line, v.Message)
 			}
-			sl.Info("shellcheck: passed")
-			return lintStepResult{status: StatusPassed}
+			blocking += len(scViolations)
 		} else if !errors.Is(scErr, shellcheck.ErrCLINotFound) {
 			sl.ErrorInSection("Shellcheck", "shellcheck: %s", scErr)
 			return lintStepResult{report: scErr.Error(), status: StatusError}
 		}
-		sl.Debug("shellcheck: not found in PATH, skipping")
-		return lintStepResult{status: StatusPassed, skipped: true, note: "shellcheck not found in PATH."}
+
+		// Tekton Task step scripts and embedded container-command/
+		// ConfigMap scripts: classified direct (blocking) vs. external
+		// (warning-only) by whether the script's source YAML file was
+		// itself changed in this diff, or only pulled in because the
+		// overlay it lives in was affected by an unrelated base/
+		// component change elsewhere - the same distinction
+		// finalizeCompliance already draws for doc/overlay check
+		// findings in the Build+Compliance phase (a base/component
+		// change ripples to every overlay that depends on it, and an
+		// issue in a file the author never touched shouldn't block
+		// their PR).
+		yamlChanged := filterYAML(changed)
+		blocking += writeShellcheckExtractionReport(&sb, "", yamlChanged)
+
+		external := externalOverlayYAMLFiles(changed)
+		warning += writeShellcheckExtractionReport(&sb, " (external)", external)
+
+		if blocking > 0 {
+			sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", blocking)
+			return lintStepResult{report: sb.String(), status: StatusError}
+		}
+		if warning > 0 {
+			sl.Info("shellcheck: passed (%d external/non-blocking warning(s))", warning)
+			return lintStepResult{report: sb.String(), status: StatusPassed, note: fmt.Sprintf("%d external warning(s) in overlay files not directly changed (non-blocking).", warning)}
+		}
+		sl.Info("shellcheck: passed")
+		return lintStepResult{status: StatusPassed}
 	})
 
 	if stepEnabled(stepGolangci, disabled, enabled) {
@@ -408,6 +440,61 @@ func filterYAML(files []string) []string {
 				out = append(out, f)
 			}
 		}
+	}
+	return out
+}
+
+// writeShellcheckExtractionReport runs both the Tekton-step and embedded-
+// script shellcheck extractors over files, appends a human-readable report
+// line per violation to sb (labelSuffix distinguishes direct vs. external
+// findings in that report), and returns the total violation count.
+func writeShellcheckExtractionReport(sb *strings.Builder, labelSuffix string, files []string) int {
+	total := 0
+	tektonResults, _ := shellcheck.RunTekton(files)
+	for _, r := range tektonResults {
+		for _, v := range r.Violations {
+			fmt.Fprintf(sb, "%s:%d: [Tekton %s/%s]%s %s\n", v.File, v.Line, r.TaskName, r.StepName, labelSuffix, v.Message)
+		}
+		total += len(r.Violations)
+	}
+	embeddedResults, _ := shellcheck.RunEmbedded(files)
+	for _, r := range embeddedResults {
+		for _, v := range r.Violations {
+			fmt.Fprintf(sb, "%s:%d: [%s/%s %s]%s %s\n", v.File, v.Line, r.ResourceKind, r.ResourceName, r.ContainerName, labelSuffix, v.Message)
+		}
+		total += len(r.Violations)
+	}
+	return total
+}
+
+// externalOverlayYAMLFiles returns every YAML file under every overlay
+// affected by changed (per detectOverlaysForChanges) that was NOT itself
+// part of changed - i.e. files pulled in only because a shared base/
+// component the overlay depends on changed elsewhere. Findings extracted
+// from these files are reported as non-blocking warnings (see the
+// shellcheck lint step above), mirroring finalizeCompliance's identical
+// direct/indirect split for doc/overlay check findings.
+func externalOverlayYAMLFiles(changed []string) []string {
+	changedSet := detectSourceFiles(changed)
+	var out []string
+	seen := map[string]bool{}
+	for _, ov := range detectOverlaysForChanges(changed) {
+		_ = filepath.WalkDir(ov.path, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil //nolint:nilerr // filepath.WalkDir convention: skip entry, keep walking
+			}
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext != ".yaml" && ext != ".yml" {
+				return nil
+			}
+			clean := filepath.Clean(path)
+			if changedSet[clean] || seen[clean] {
+				return nil
+			}
+			seen[clean] = true
+			out = append(out, path)
+			return nil
+		})
 	}
 	return out
 }
