@@ -1,0 +1,6 @@
+kind: ArgoCD
+apiVersion: argoproj.io/v1alpha1
+metadata:
+  name: cd
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,SkipDryRunOnMissingResource=true

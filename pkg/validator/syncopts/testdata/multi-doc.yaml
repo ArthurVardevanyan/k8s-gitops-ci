@@ -1,0 +1,9 @@
+kind: ArgoCD
+apiVersion: argoproj.io/v1alpha1
+metadata:
+  name: cd1
+---
+kind: Certificate
+apiVersion: cert-manager.io/v1
+metadata:
+  name: cert1

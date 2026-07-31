@@ -1,0 +1,4 @@
+kind: Test
+apiVersion: cli.kyverno.io/v1alpha1
+metadata:
+  name: kyverno-cli-fixture
