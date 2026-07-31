@@ -109,3 +109,15 @@ func TestReproduceCommand_NoScopingFlagsWhenUnset(t *testing.T) {
 		}
 	}
 }
+
+// TestReproduceCommand_OmitsTargetBranch guards against re-introducing
+// --target-branch into the reproduce command: in PR mode the base ref is
+// resolved from the PR itself, so printing the original run's resolved
+// BaseRef back at the user is redundant and was reported as confusing
+// noise in the reproduce snippet.
+func TestReproduceCommand_OmitsTargetBranch(t *testing.T) {
+	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "origin/main"})
+	if strings.Contains(got, "--target-branch") {
+		t.Errorf("ReproduceCommand() = %q, want it to omit --target-branch", got)
+	}
+}

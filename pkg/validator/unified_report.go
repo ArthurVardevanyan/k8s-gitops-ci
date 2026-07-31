@@ -133,8 +133,13 @@ func LegacyMarkers() []string {
 // particular scopes the whole changeset, so omitting it here previously
 // meant "reproduce locally" could pass locally while the original run
 // (scoped to specific directories) failed, or vice versa.
+//
+// --target-branch (BaseRef) is deliberately omitted: in PR mode the pipeline
+// resolves the base ref from the PR itself (see resolveBaseRef in
+// pkg/pipeline), so re-passing the original run's resolved BaseRef here would
+// just be redundant noise, not something needed to reproduce the failure.
 func ReproduceCommand(opts Options) string {
-	cmd := fmt.Sprintf("go run ./cmd/k8s-gitops-ci pipeline --url=%q --pr=%s --target-branch=%q", opts.RepoURL, opts.PR, opts.BaseRef)
+	cmd := fmt.Sprintf("go run ./cmd/k8s-gitops-ci pipeline --url=%q --pr=%s", opts.RepoURL, opts.PR)
 	if len(opts.IncludePrefixes) > 0 {
 		cmd += fmt.Sprintf(" --dirs=%q", strings.Join(opts.IncludePrefixes, ","))
 	}
