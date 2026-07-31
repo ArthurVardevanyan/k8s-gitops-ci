@@ -47,6 +47,38 @@ func TestCheck_AllowPatterns(t *testing.T) {
 	}
 }
 
+func TestCheck_DefaultIgnorePatterns_LargeCRDAllowed(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "customresourcedefinition-widgets.yaml")
+	_ = os.WriteFile(f, make([]byte, DefaultMaxSize+1), 0o644)
+	v := Check([]string{f}, 0, DefaultIgnorePatterns)
+	if len(v) != 0 {
+		t.Fatalf("expected a large CRD manifest to be ignored by default, got: %v", v)
+	}
+}
+
+func TestCheck_DefaultIgnorePatterns_LargeArchiveAllowed(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "schemas.tar.gz")
+	// Binary-looking content too, so this also proves the archive glob
+	// suppresses both the size *and* binary-detection violation paths.
+	_ = os.WriteFile(f, append(make([]byte, DefaultMaxSize+1), 0, 1, 2), 0o644)
+	v := Check([]string{f}, 0, DefaultIgnorePatterns)
+	if len(v) != 0 {
+		t.Fatalf("expected a large tar.gz archive to be ignored by default, got: %v", v)
+	}
+}
+
+func TestCheck_DefaultIgnorePatterns_UnrelatedLargeFileStillFlagged(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "not-a-crd.yaml")
+	_ = os.WriteFile(f, make([]byte, DefaultMaxSize+1), 0o644)
+	v := Check([]string{f}, 0, DefaultIgnorePatterns)
+	if len(v) != 1 {
+		t.Fatalf("expected an unrelated large file to still be flagged, got: %v", v)
+	}
+}
+
 func TestCheck_DeletedFile(t *testing.T) {
 	v := Check([]string{"/tmp/does-not-exist-lkj"}, 0, nil)
 	if len(v) != 0 {

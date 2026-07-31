@@ -273,7 +273,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	}
 
 	runStaticStep("large-file", func(sl *logger.ScopedLogger) lintStepResult {
-		if violations := largefile.Check(changed, largefile.DefaultMaxSize, nil); len(violations) > 0 {
+		if violations := largefile.Check(changed, largefile.DefaultMaxSize, largefile.DefaultIgnorePatterns); len(violations) > 0 {
 			var sb strings.Builder
 			for _, v := range violations {
 				sb.WriteString(v.String() + "\n")

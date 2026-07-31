@@ -19,8 +19,37 @@ import (
 )
 
 // ClusterIndexProvider is a seam allowing the engine to inject a ClusterIndex
-// before running overlay checks. Set once at pipeline startup.
+// before running overlay checks. Set once at pipeline startup - nil means
+// the cluster-identity check is disabled (see clusterIdentityAdapter.
+// CheckOverlay), which is the correct default for a generic run with no
+// org cluster-identity metadata configured.
 var ClusterIndexProvider func() clusterid.ClusterIndex
+
+// configureClusterIdentityFromProviders wires opts.Providers.ProjectIdentity()
+// (the provider.Providers.ClusterMetadata seam - see pkg/provider) into
+// ClusterIndexProvider for the duration of this run, bridging
+// cluster.ProjectIndex to clusterid.ClusterIndex. Called once from
+// RunAll. Leaves (or resets) ClusterIndexProvider to nil - disabling the
+// cluster-identity check entirely, rather than running it against an
+// empty index - whenever no ClusterMetadata provider is configured,
+// ProjectIdentity errors, or it reports itself as not enabled: a generic
+// run with no org cluster-identity plugin installed must never produce
+// cluster-identity findings (including its always-on infraID-mismatch and
+// invalid-JSON structural findings, which don't otherwise depend on the
+// index's contents at all).
+func configureClusterIdentityFromProviders(opts Options) {
+	projectIdx, knownClusters, ok, err := opts.Providers.ProjectIdentity()
+	if !ok || err != nil {
+		ClusterIndexProvider = nil
+		return
+	}
+	idx := clusterid.ClusterIndex{
+		IDToCluster:     projectIdx.IDToCluster,
+		NumberToCluster: projectIdx.NumberToCluster,
+		KnownClusters:   knownClusters,
+	}
+	ClusterIndexProvider = func() clusterid.ClusterIndex { return idx }
+}
 
 func init() {
 	check.Register(namespaceCheck{})
@@ -287,10 +316,18 @@ func (clusterIdentityAdapter) Section() string    { return "resource-compliance"
 func (clusterIdentityAdapter) Blocking() bool     { return true }
 func (clusterIdentityAdapter) Scope() check.Scope { return check.ScopeOverlay }
 func (clusterIdentityAdapter) CheckOverlay(overlayPath, cluster string) []check.Finding {
-	var idx clusterid.ClusterIndex
-	if ClusterIndexProvider != nil {
-		idx = ClusterIndexProvider()
+	// No provider configured -> disabled entirely, not "run against an
+	// empty index". clusterid.RawFindings' infraID-mismatch and
+	// invalid-JSON structural findings don't depend on the index's
+	// contents at all, so calling it with a zero-value ClusterIndex would
+	// still produce those findings for any repo that happens to reference
+	// an "infraID" key or contain malformed JSON under an overlay - noise
+	// for a generic run that never configured cluster-identity checking in
+	// the first place.
+	if ClusterIndexProvider == nil {
+		return nil
 	}
+	idx := ClusterIndexProvider()
 	raw := clusterid.RawFindings(overlayPath, cluster, idx)
 	out := make([]check.Finding, 0, len(raw))
 	for _, f := range raw {
