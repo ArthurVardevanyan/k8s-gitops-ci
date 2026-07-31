@@ -141,17 +141,19 @@ func Run(opts Options) error {
 	}
 
 	if vr != nil && vr.Logger != nil {
-		log.Info("%s", vr.Logger.Summary())
+		log.Raw(vr.Logger.Summary())
 	}
 	log.Info("pipeline completed in %s", time.Since(start).Round(time.Second))
 	if res.ReproduceCommand != "" {
-		log.Info("")
+		log.Raw("")
 		log.Info("Reproduce locally:")
 		log.Info("  %s", res.ReproduceCommand)
 	}
 
 	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil || validatorResultFailed(vr) {
-		log.Error("pipeline completed with failures")
+		// Not log.Error here: this exact message is returned as the error
+		// below, which main() already prints once via fmt.Fprintln(os.Stderr,
+		// err) - logging it too would print the identical line twice.
 		return fmt.Errorf("pipeline completed with failures")
 	}
 	log.Info("All checks passed!")
@@ -189,9 +191,9 @@ func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 		if !s.Error || strings.TrimSpace(s.Body) == "" {
 			continue
 		}
-		log.Info("")
+		log.Raw("")
 		log.Info("--- %s: detail ---", s.Name)
-		log.Info("%s", s.Body)
+		log.Raw(sanitizeSectionBodyForConsole(s.Body))
 	}
 }
 

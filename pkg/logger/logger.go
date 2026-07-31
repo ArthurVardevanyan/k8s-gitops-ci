@@ -16,9 +16,6 @@ type Logger struct {
 	logFile        *os.File
 	errors         []string
 	warnings       []string
-	builds         int
-	failures       int
-	passes         int
 	currentSection string
 	failedSections []string
 }
@@ -56,6 +53,18 @@ func (l *Logger) Info(format string, args ...any) {
 func (l *Logger) Debug(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	l.write("DEBUG", msg)
+}
+
+// Raw prints a pre-formatted, potentially multi-line block verbatim, with no
+// "[time] [LEVEL]" prefix on any line - the same no-prefix convention
+// Header/SubHeader already use for banner lines. Use this for content that's
+// already human-formatted as a standalone block (e.g. a Summary() report or
+// a section's rendered detail), rather than Info/Warn/Error/Debug, which are
+// for single structured log lines: passing a multi-line string to those
+// instead would only prefix the first line, since each call still writes
+// its message as one line-oriented log event.
+func (l *Logger) Raw(msg string) {
+	l.write("", msg)
 }
 
 // Warn logs a warning.
@@ -121,36 +130,6 @@ func (l *Logger) SubHeader(title string) {
 	l.write("", separator)
 }
 
-// RecordBuild increments the build counter.
-func (l *Logger) RecordBuild() {
-	l.mu.Lock()
-	l.builds++
-	l.mu.Unlock()
-}
-
-// RecordPass increments the pass counter.
-func (l *Logger) RecordPass() {
-	l.mu.Lock()
-	l.passes++
-	l.mu.Unlock()
-}
-
-// RecordFailure increments the failure counter.
-func (l *Logger) RecordFailure() {
-	l.mu.Lock()
-	l.failures++
-	l.trackFailedSection()
-	l.mu.Unlock()
-}
-
-// RecordFailureInSection increments the failure counter and attributes it to the given section.
-func (l *Logger) RecordFailureInSection(section string) {
-	l.mu.Lock()
-	l.failures++
-	l.trackNamedSection(section)
-	l.mu.Unlock()
-}
-
 // trackFailedSection records the current section as failed (must be called with mu held).
 func (l *Logger) trackFailedSection() {
 	l.trackNamedSection(l.currentSection)
@@ -179,7 +158,6 @@ func (l *Logger) Summary() string {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 	sb.WriteString("  RESULTS SUMMARY\n")
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
-	fmt.Fprintf(&sb, "  Builds: %d | Passes: %d | Failures: %d\n", l.builds, l.passes, l.failures)
 
 	if len(l.warnings) > 0 {
 		fmt.Fprintf(&sb, "  Warnings: %d\n", len(l.warnings))
@@ -201,7 +179,7 @@ func (l *Logger) Summary() string {
 func (l *Logger) HasFailures() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.failures > 0 || len(l.errors) > 0
+	return len(l.errors) > 0
 }
 
 // Errors returns all recorded errors.
@@ -233,27 +211,29 @@ func (l *Logger) Scope() *ScopedLogger {
 	}
 }
 
+// write formats and prints msg, prefixed with "[time] [level]" when level is
+// non-empty. msg may itself be multi-line (e.g. a pre-formatted block passed
+// via Raw, or - less commonly - a multi-line Info/Warn/Error message): every
+// resulting line gets its own copy of the prefix (or none, for level=="")
+// rather than only the first, so a multi-line message never degrades into
+// "first line tagged, rest bare" output.
 func (l *Logger) write(level, msg string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	showOnConsole := level != "DEBUG" || l.verbose
 	timestamp := time.Now().Format("15:04:05")
-	var line string
-	if level != "" {
-		line = fmt.Sprintf("[%s] [%s] %s", timestamp, level, msg)
-	} else {
-		line = msg
-	}
-
-	if level == "DEBUG" {
-		if l.verbose {
+	for _, ln := range strings.Split(msg, "\n") {
+		line := ln
+		if level != "" {
+			line = fmt.Sprintf("[%s] [%s] %s", timestamp, level, ln)
+		}
+		if showOnConsole {
 			fmt.Println(line)
 		}
-	} else {
-		fmt.Println(line)
-	}
-	if l.logFile != nil {
-		_, _ = fmt.Fprintln(l.logFile, line)
+		if l.logFile != nil {
+			_, _ = fmt.Fprintln(l.logFile, line)
+		}
 	}
 }
 
@@ -327,26 +307,6 @@ func (s *ScopedLogger) SubHeader(title string) {
 	s.emit("", separator)
 }
 
-// RecordBuild increments the build counter on the parent immediately.
-func (s *ScopedLogger) RecordBuild() {
-	s.parent.RecordBuild()
-}
-
-// RecordPass increments the pass counter on the parent immediately.
-func (s *ScopedLogger) RecordPass() {
-	s.parent.RecordPass()
-}
-
-// RecordFailure increments the failure counter on the parent immediately.
-func (s *ScopedLogger) RecordFailure() {
-	s.parent.RecordFailure()
-}
-
-// RecordFailureInSection increments the failure counter on the parent for the given section.
-func (s *ScopedLogger) RecordFailureInSection(section string) {
-	s.parent.RecordFailureInSection(section)
-}
-
 // Flush writes all buffered lines atomically to stdout.
 // In streaming mode this is a no-op (lines were already written).
 func (s *ScopedLogger) Flush() {
@@ -369,40 +329,44 @@ func (s *ScopedLogger) Flush() {
 	}
 }
 
-// emit formats and either buffers or streams a line.
+// emit formats and either buffers or streams msg, one line at a time. msg
+// may itself be multi-line (e.g. a multi-line Error/ErrorInSection message,
+// such as a lint tool's multi-finding summary) - see the equivalent note on
+// Logger.write for why every resulting line gets its own prefix instead of
+// only the first.
 func (s *ScopedLogger) emit(level, msg string) {
 	timestamp := time.Now().Format("15:04:05")
-	var line string
-	if level != "" {
-		line = fmt.Sprintf("[%s] [%s] %s", timestamp, level, msg)
-	} else {
-		line = msg
-	}
-
 	showOnConsole := level != "DEBUG" || s.stream
 
-	if s.stream {
-		// Streaming mode: write to console + logFile atomically
-		s.parent.mu.Lock()
-		if showOnConsole {
-			fmt.Println(line)
+	for _, ln := range strings.Split(msg, "\n") {
+		line := ln
+		if level != "" {
+			line = fmt.Sprintf("[%s] [%s] %s", timestamp, level, ln)
 		}
-		if s.parent.logFile != nil {
-			_, _ = fmt.Fprintln(s.parent.logFile, line)
-		}
-		s.parent.mu.Unlock()
-	} else {
-		// Buffered mode: write to logFile immediately, buffer console output
-		s.parent.mu.Lock()
-		if s.parent.logFile != nil {
-			_, _ = fmt.Fprintln(s.parent.logFile, line)
-		}
-		s.parent.mu.Unlock()
 
-		if showOnConsole {
-			s.mu.Lock()
-			s.lines = append(s.lines, line)
-			s.mu.Unlock()
+		if s.stream {
+			// Streaming mode: write to console + logFile atomically
+			s.parent.mu.Lock()
+			if showOnConsole {
+				fmt.Println(line)
+			}
+			if s.parent.logFile != nil {
+				_, _ = fmt.Fprintln(s.parent.logFile, line)
+			}
+			s.parent.mu.Unlock()
+		} else {
+			// Buffered mode: write to logFile immediately, buffer console output
+			s.parent.mu.Lock()
+			if s.parent.logFile != nil {
+				_, _ = fmt.Fprintln(s.parent.logFile, line)
+			}
+			s.parent.mu.Unlock()
+
+			if showOnConsole {
+				s.mu.Lock()
+				s.lines = append(s.lines, line)
+				s.mu.Unlock()
+			}
 		}
 	}
 }

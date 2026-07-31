@@ -28,7 +28,7 @@ func TestPrintFailedSectionDetail_PrintsBodyOfErroredSections(t *testing.T) {
 	vr := &validator.Result{
 		Sections: []validator.Section{
 			{Name: "Linting", Body: "linting all good", Error: false},
-			{Name: "Resource Compliance", Body: "| Check | File | Message |\n| --- | --- | --- |\n| psa | ns.yaml | missing label |", Error: true},
+			{Name: "Resource Compliance", Body: "<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;❌ PSA Labels (1 finding(s))</summary>\n\n| Check | File | Message |\n| --- | --- | --- |\n| psa | ns.yaml | missing label |\n\n</details>\n", Error: true},
 			{Name: "Kustomize Build", Body: "kustomize build apps/foo/overlays/bar: some error", Error: true},
 		},
 	}
@@ -43,9 +43,18 @@ func TestPrintFailedSectionDetail_PrintsBodyOfErroredSections(t *testing.T) {
 	if strings.Contains(got, "linting all good") {
 		t.Errorf("did not expect non-error section body to be printed: %s", got)
 	}
-	for _, want := range []string{"Resource Compliance", "missing label", "Kustomize Build", "kustomize build apps/foo/overlays/bar"} {
+	for _, want := range []string{"Resource Compliance", "missing label", "Kustomize Build", "kustomize build apps/foo/overlays/bar", "❌ PSA Labels (1 finding(s)):"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected log output to contain %q, got: %s", want, got)
+		}
+	}
+	// Guards the actual bug reported against this feature: raw GitHub-comment
+	// markdown (<details>/<summary> dropdown tags, &nbsp; indentation) must
+	// not leak into --verbose console/log output, which has no markdown
+	// renderer - see sanitizeSectionBodyForConsole.
+	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "&nbsp;"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("did not expect raw markdown artifact %q in console output: %s", unwanted, got)
 		}
 	}
 }
