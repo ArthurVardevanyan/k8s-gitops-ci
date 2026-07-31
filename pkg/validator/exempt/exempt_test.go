@@ -38,6 +38,50 @@ func TestAccepts(t *testing.T) {
 	}
 }
 
+func TestAccepts_EmptyValueNeverMatches(t *testing.T) {
+	// A resource with a non-nil but otherwise-unrelated annotations map,
+	// and a finding whose annotationValue() is empty (e.g. both
+	// Token/Value unset), must NOT be treated as exempted just because
+	// the annotation key is also absent (both sides "" == "").
+	ann := map[string]string{"unrelated": "annotation"}
+	if Accepts(ann, IDImageChecksum, "") {
+		t.Error("empty value must never be granted an exemption, even against a non-nil annotations map")
+	}
+}
+
+func TestAccepts_EmptyAnnotationsNeverMatches(t *testing.T) {
+	if Accepts(map[string]string{}, IDImageChecksum, "something") {
+		t.Error("empty (non-nil) annotations map must not grant an exemption")
+	}
+}
+
+func TestAccepts_LegitimateExemptionStillMatches(t *testing.T) {
+	ann := map[string]string{Key(IDImageChecksum): "img@sha256:abc"}
+	if !Accepts(ann, IDImageChecksum, "img@sha256:abc") {
+		t.Error("expected a legitimate non-empty exact-value match to still be accepted")
+	}
+}
+
+func TestFileMatches_DoesNotSubstringMatch(t *testing.T) {
+	cases := []struct {
+		want, file string
+		expect     bool
+	}{
+		{"app", "myapp-config.yaml", false},
+		{"app", "app-old/whatever.yaml", false},
+		{"app.yaml", "app.yaml", true},
+		{"app.yaml", "kubernetes/my-app/base/app.yaml", true},
+		{"app.yaml", "kubernetes/my-app/base/notapp.yaml", false},
+	}
+	for _, c := range cases {
+		sel := Selector{Check: IDImageChecksum, File: c.want}
+		s := Scalar{File: c.file}
+		if got := SelectorMatches(sel, s, IDImageChecksum); got != c.expect {
+			t.Errorf("SelectorMatches(File:%q, file:%q) = %v, want %v", c.want, c.file, got, c.expect)
+		}
+	}
+}
+
 func TestSelectorMatches(t *testing.T) {
 	sel := Selector{Check: IDImageChecksum, Value: "img@sha256:abc"}
 	s := Scalar{Value: "img@sha256:abc", File: "deploy.yaml"}
