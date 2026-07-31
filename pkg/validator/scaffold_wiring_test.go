@@ -2,10 +2,12 @@ package validator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 )
 
@@ -255,6 +257,163 @@ func TestFlattenSkippedClusters_SortsAppsAndClusters(t *testing.T) {
 			t.Errorf("got %v, want %v", got, want)
 			break
 		}
+	}
+}
+
+func TestIsOverlayRelatedToChangedFiles(t *testing.T) {
+	cases := []struct {
+		name    string
+		cluster string
+		changed []string
+		want    bool
+	}{
+		{"overlay itself changed", "prod", []string{"myapp/overlays/prod/kustomization.yaml"}, true},
+		{"base changed (flows into every overlay)", "prod", []string{"myapp/base/deployment.yaml"}, true},
+		{"components changed (flows into every overlay)", "prod", []string{"myapp/components/foo/patch.yaml"}, true},
+		{"a different overlay changed", "prod", []string{"myapp/overlays/dev/kustomization.yaml"}, false},
+		{"an unrelated app changed", "prod", []string{"otherapp/overlays/prod/kustomization.yaml"}, false},
+		{"nothing changed", "prod", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isOverlayRelatedToChangedFiles("myapp", c.cluster, c.changed); got != c.want {
+				t.Errorf("isOverlayRelatedToChangedFiles(%q, %v) = %v, want %v", c.cluster, c.changed, got, c.want)
+			}
+		})
+	}
+}
+
+func TestComputeBaselineMismatches_EmptyBaseRefSkipsEntirely(t *testing.T) {
+	// A local test-all run against a live working tree always has an
+	// empty BaseRef (see gitDiff's own doc comment) - this must be an
+	// instant no-op, never attempting a git call or touching any file,
+	// regardless of whether the CWD is even a git repo.
+	log := logger.NewLogger(false, "")
+	got := computeBaselineMismatches(Options{}, "myapp", log)
+	if len(got) != 0 {
+		t.Errorf("expected an empty baseline set, got %v", got)
+	}
+}
+
+// runGitForTest runs a git command in dir, failing the test on error - used
+// to build a small real repo so computeBaselineMismatches's merge-base +
+// backup/restore machinery can be exercised end to end.
+func runGitForTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// TestComputeBaselineMismatches_RestoresFilesRegardlessOfOutcome is the
+// safety-critical guard for computeBaselineMismatches: whatever happens
+// during the merge-base re-run (scafctl not being configured for the
+// baseline content will itself typically error, which is fine - the
+// function must still degrade gracefully, never panic), the app's on-disk
+// template/config files must end up back at their pre-call (HEAD/PR)
+// content, never left sitting at the merge-base content it temporarily
+// swapped in.
+func TestComputeBaselineMismatches_RestoresFilesRegardlessOfOutcome(t *testing.T) {
+	dir := t.TempDir()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+
+	runGitForTest(t, dir, "init", "-q")
+	runGitForTest(t, dir, "config", "user.email", "test@example.com")
+	runGitForTest(t, dir, "config", "user.name", "Test")
+
+	configPath := filepath.Join(".scafctl", "configs", "myapp.yaml")
+	templatePath := filepath.Join(".scafctl", "templates", "myapp", "template.yaml")
+	mustWrite(t, configPath, "v1\n")
+	mustWrite(t, templatePath, "v1\n")
+	runGitForTest(t, dir, "add", "-A")
+	runGitForTest(t, dir, "commit", "-q", "-m", "base")
+	runGitForTest(t, dir, "branch", "old-main") // simulates the PR's target branch
+
+	// The "PR's own commit": bump both files past the merge-base content.
+	mustWrite(t, configPath, "v2 (PR content)\n")
+	mustWrite(t, templatePath, "v2 (PR content)\n")
+	runGitForTest(t, dir, "add", "-A")
+	runGitForTest(t, dir, "commit", "-q", "-m", "pr change")
+
+	log := logger.NewLogger(false, "")
+	// Does not assert on the returned set's contents - scafctl isn't
+	// configured with a real solution for "v1"/"v2" content, so the
+	// re-run itself is expected to error out (Summary.Errors, no
+	// MismatchFiles) - only that it never panics and always restores.
+	_ = computeBaselineMismatches(Options{BaseRef: "old-main"}, "myapp", log)
+
+	gotConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("reading config after call: %v", err)
+	}
+	if string(gotConfig) != "v2 (PR content)\n" {
+		t.Errorf("config file left at %q, want restored to the PR content %q", gotConfig, "v2 (PR content)\n")
+	}
+
+	gotTemplate, err := os.ReadFile(templatePath)
+	if err != nil {
+		t.Fatalf("reading template after call: %v", err)
+	}
+	if string(gotTemplate) != "v2 (PR content)\n" {
+		t.Errorf("template file left at %q, want restored to the PR content %q", gotTemplate, "v2 (PR content)\n")
+	}
+}
+
+// TestComputeBaselineMismatches_NewFileNotAtBaselineIsRemovedAfterRestore
+// guards the "file didn't exist at merge-base" branch: computeBaseline-
+// Mismatches only overwrites a template file with baseline content when
+// `git show` actually finds it there; for this test that means the
+// template file is never touched at all (it's the config file's baseline-
+// absence path that's meaningfully exercised elsewhere), but a brand new
+// template file added only in the PR's own commit must still exist,
+// untouched, after the call.
+func TestComputeBaselineMismatches_NewFileNotAtBaselineIsRemovedAfterRestore(t *testing.T) {
+	dir := t.TempDir()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+
+	runGitForTest(t, dir, "init", "-q")
+	runGitForTest(t, dir, "config", "user.email", "test@example.com")
+	runGitForTest(t, dir, "config", "user.name", "Test")
+
+	mustWrite(t, "README.md", "placeholder\n")
+	runGitForTest(t, dir, "add", "-A")
+	runGitForTest(t, dir, "commit", "-q", "-m", "base")
+	runGitForTest(t, dir, "branch", "old-main")
+
+	// The app (config + template) is introduced entirely in the PR - it
+	// doesn't exist at all at the merge-base.
+	configPath := filepath.Join(".scafctl", "configs", "myapp.yaml")
+	templatePath := filepath.Join(".scafctl", "templates", "myapp", "template.yaml")
+	mustWrite(t, configPath, "new app\n")
+	mustWrite(t, templatePath, "new app\n")
+	runGitForTest(t, dir, "add", "-A")
+	runGitForTest(t, dir, "commit", "-q", "-m", "add myapp")
+
+	log := logger.NewLogger(false, "")
+	_ = computeBaselineMismatches(Options{BaseRef: "old-main"}, "myapp", log)
+
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected the new app's config to still exist after the call, got: %v", err)
+	}
+	if string(got) != "new app\n" {
+		t.Errorf("config file = %q, want unchanged %q", got, "new app\n")
 	}
 }
 

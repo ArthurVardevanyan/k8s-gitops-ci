@@ -345,9 +345,13 @@ fix`, and a `| Overlay | Target |` ghost-patch table
   present).
 - **Scaffold Validation** (`ComposeScaffoldValidationSection`) — real
   per-app scaffold-drift detection across three triggers (template,
-  config, and overlay changes — see [`CI.md`](CI.md#scaffold-validation)),
-  plus README scaffold-status table structural-consistency checking
-  (`pkg/scaffold.CheckReadmeStatus`).
+  config, and overlay changes — see [`CI.md`](CI.md#scaffold-validation)).
+  A mismatch the PR doesn't itself touch is checked against the
+  merge-base template/config (`computeBaselineMismatches`) and rendered
+  as a separate, non-blocking "Pre-Existing Scaffold Drift" bullet when it
+  drifts there too. (The README scaffold-status table's own structural
+  check lives in Static Checks as "scaffold table", not here — see
+  below.)
 - **Resource Compliance** (`ComposeResourceComplianceSection`) — findings
   grouped by `CheckID` into per-check nested `<details>` (❌ when a check
   has a finding in a directly-modified file — blocking — vs ⚠️ for a

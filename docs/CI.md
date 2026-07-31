@@ -147,15 +147,26 @@ than failed when it's disabled - either explicitly
 (a cluster not yet rolled out, or removed by this PR;
 `scaffold.Summary.SkippedClusters`, aggregated per app by
 `runScaffoldValidation` and flattened by `flattenSkippedClusters` into the
-Scaffold Validation section's "Missing Clusters" bullet). Any real content
-mismatch or scafctl execution failure is always treated as blocking - a
-simpler, more conservative policy than trying to distinguish "pre-existing
-drift this PR didn't cause" (which would need re-running scaffold against
-the merge-base template/config, a real but substantially riskier technique
-this implementation deliberately doesn't attempt). Missing clusters
-themselves are **not** blocking, unlike drift/exec failures - a skip is an
-expected, informational "here's what wasn't checked and why", never a
-finding (see `scaffold.Run`'s own doc comment).
+Scaffold Validation section's "Missing Clusters" bullet). A scafctl
+execution failure is always treated as blocking. A content mismatch is
+blocking when the PR itself touches the affected overlay (or a base/
+component it inherits from - `isOverlayRelatedToChangedFiles`); otherwise
+it's checked against the merge-base template/config
+(`computeBaselineMismatches`, gated on `Options.BaseRef` being set - i.e.
+an actual CI/PR run, never a local `test-all` run against a live working
+tree, which always has an empty `BaseRef`) and downgraded to a
+non-blocking "Pre-Existing Scaffold Drift" entry when it mismatches there
+too - this accounts for drift caused by something external to the PR
+(e.g. a shared data source changing independently) rather than by the
+PR's own edits. `computeBaselineMismatches` mutates the app's on-disk
+template/config files in place for the duration of the re-run (backed up
+and restored via `defer`, so a panic mid-run can never leave the working
+tree altered) - a real but substantially riskier technique than a flat
+"any drift blocks" policy, which is why it's reserved for exactly the
+case it exists to fix rather than applied unconditionally. Missing
+clusters themselves are **not** blocking, unlike drift/exec failures - a
+skip is an expected, informational "here's what wasn't checked and why",
+never a finding (see `scaffold.Run`'s own doc comment).
 
 Separately, every app whose overlays or `.scafctl` template/config
 changed is also checked for whether it has drift **coverage** at all:

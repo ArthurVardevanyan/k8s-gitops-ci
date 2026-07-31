@@ -504,7 +504,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// config-sort/startingCSV rather than folded into this section's drift
 	// summary.
 	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
-	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(scaffoldResult.DriftLines, "\n"), scaffoldResult.ExecErrors, flattenSkippedClusters(scaffoldResult.SkippedClusters)))
+	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(
+		strings.Join(scaffoldResult.DriftLines, "\n"),
+		scaffoldResult.ExecErrors,
+		flattenSkippedClusters(scaffoldResult.SkippedClusters),
+		strings.Join(scaffoldResult.PreExistingDriftLines, "\n"),
+	))
 
 	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
 
