@@ -326,3 +326,75 @@ func TestValidateFiles_StructuralIgnoresOVNRules(t *testing.T) {
 		t.Errorf("structural tier should ignore OVN semantics, got %v", errs)
 	}
 }
+
+// A rendered overlay file commonly contains resources other than NADs whose
+// spec.config is an object (for example an OLM Subscription). Those documents
+// must not break OVN-aware decoding — only the NAD document is validated.
+func TestValidateFiles_OVN_IgnoresNonNADObjectConfig(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "pp24.yaml")
+	content := `apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: kubernetes-nmstate-operator
+  namespace: openshift-nmstate
+spec:
+  channel: stable
+  config:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 4Gi
+      requests:
+        cpu: 100m
+        memory: 2Gi
+  name: kubernetes-nmstate-operator
+---
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: my-network
+  namespace: myns
+spec:
+  config: |-
+    {
+      "cniVersion": "0.3.1",
+      "name": "mynet",
+      "type": "ovn-k8s-cni-overlay",
+      "topology": "layer2",
+      "netAttachDefName": "myns/my-network",
+      "subnets": "10.100.200.0/24",
+      "role": "secondary"
+    }
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if errs := ValidateFiles([]string{path}, true); len(errs) != 0 {
+		t.Errorf("expected no errors when a non-NAD object spec.config is present, got %v", errs)
+	}
+}
+
+// A NAD whose spec.config is authored as an object (rather than a stringified
+// netconf) is malformed and must be reported.
+func TestValidateFiles_OVN_ObjectConfigOnNAD(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "nad.yaml")
+	content := `apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: my-network
+  namespace: myns
+spec:
+  config:
+    cniVersion: "0.3.1"
+    type: ovn-k8s-cni-overlay
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	errs := ValidateFiles([]string{path}, true)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error for object spec.config on a NAD, got %d: %v", len(errs), errs)
+	}
+}

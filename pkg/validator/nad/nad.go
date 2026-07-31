@@ -22,6 +22,7 @@ package nad
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -45,6 +46,16 @@ func (e ValidationError) String() string { return fmt.Sprintf("%s: %s", e.File, 
 
 // nadDoc is the minimal shape of a NetworkAttachmentDefinition needed for
 // validation. Decoding into this avoids depending on the typed NAD client.
+//
+// Spec.Config is captured as json.RawMessage rather than a string so that
+// decoding never fails on non-NAD documents that legitimately carry an object
+// under spec.config (for example an OLM Subscription's spec.config). The
+// OVN-aware validator decodes every document in a rendered overlay file
+// through nadDoc before checking Kind, so a plain string field here would
+// abort validation of the whole file - including the actual NAD - the moment
+// a sibling document's spec.config happened to be an object. The kind is
+// checked before the config is interpreted; only genuine NAD documents have
+// their config asserted to be a string (see configString).
 type nadDoc struct {
 	Kind     string `json:"kind"`
 	Metadata struct {
@@ -52,8 +63,22 @@ type nadDoc struct {
 		Namespace string `json:"namespace"`
 	} `json:"metadata"`
 	Spec struct {
-		Config string `json:"config"`
+		Config json.RawMessage `json:"config"`
 	} `json:"spec"`
+}
+
+// configString asserts that the NAD's spec.config is a JSON string and
+// returns its decoded value. A NetworkAttachmentDefinition's spec.config must
+// be a stringified CNI netconf; anything else is a malformed NAD.
+func configString(doc nadDoc) (string, error) {
+	if len(doc.Spec.Config) == 0 {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(doc.Spec.Config, &s); err != nil {
+		return "", fmt.Errorf("spec.config must be a string")
+	}
+	return s, nil
 }
 
 // ValidateFiles validates all NAD YAML files in the given list. When
@@ -171,7 +196,12 @@ func validateNetConf(path string, doc nadDoc) *ValidationError {
 		return &ValidationError{File: path, Message: msg}
 	}
 
-	netconf, err := ovnconfig.ParseNetConf([]byte(doc.Spec.Config))
+	cfg, err := configString(doc)
+	if err != nil {
+		return fail(fmt.Sprintf("invalid NetworkAttachmentDefinition %s/%s: %v", doc.Metadata.Namespace, doc.Metadata.Name, err))
+	}
+
+	netconf, err := ovnconfig.ParseNetConf([]byte(cfg))
 	if err != nil {
 		return fail(fmt.Sprintf("invalid NetworkAttachmentDefinition %s/%s: %v", doc.Metadata.Namespace, doc.Metadata.Name, err))
 	}
