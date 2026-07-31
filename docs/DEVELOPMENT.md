@@ -164,8 +164,8 @@ per step:
 - `Options.DisabledChecks []string` — turn off a step that defaults to
   **enabled** (most steps: `sync-options`, `golangci`, `avp`, ...).
 - `Options.EnabledChecks []string` — turn on a step that defaults to
-  **disabled**. Currently only `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md)
-  for why).
+  **disabled**: `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md) for why) and
+  `scaffold-readme` (see [`CI.md`](CI.md#scaffold-validation) for why).
 - `pkg/validator/phases.go`'s `defaultOffSteps` map is the single place
   that lists which IDs default off; `stepEnabled(id, disabled, enabled)`
   is the shared decision function every gateable step calls.

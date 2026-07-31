@@ -159,7 +159,10 @@ missing or stale rows? It does **not** recompute actual drift (that
 would mean scaffolding every app in the repo on every PR, not just the
 ones it touched) - that's `scaffold.UpdateReadmeStatus`'s job instead,
 a full-repo-scan regeneration meant to be run deliberately (the
-`update-scaffold-status` CLI command), not on every PR.
+`update-scaffold-status` CLI command), not on every PR. Unlike the
+three drift triggers above, this check is gated behind the
+**`scaffold-readme`** step ID, default **off** - see the standalone
+steps list below for why.
 
 ## Registered checks
 
@@ -182,13 +185,21 @@ automatically exemptable via its own check ID (see
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens, or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML                                                                                                                                |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID) |
 
-Three standalone (non-registry) steps participate in the same
+Four standalone (non-registry) steps participate in the same
 enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
 [Generic check-enablement mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)):
 
 - **`golangci`** — Go linting via `pkg/lint/golangci`, default **on**.
 - **`avp`** — per-app AVP strategy auto-detection (see
   [Build Strategies](#build-strategies) above), default **on**.
+- **`scaffold-readme`** — the README scaffold-status table structural
+  check (see [Scaffold Validation](#scaffold-validation) above), default
+  **off**. Like `kyverno` below, this generic core can't know whether a
+  given repo's table actually matches the one-row-per-app-per-overlay
+  shape the check expects, so it's opt-in
+  (`--enable-checks scaffold-readme`) until an org confirms
+  compatibility - the other three scaffold-drift triggers
+  (template/config/overlay changes) are unaffected and always run.
 - **`kyverno`** — policy validation via `pkg/lint/kyverno`, default
   **off** (an org must opt in and supply its own policies — see
   [SCHEMAS.md](SCHEMAS.md)). Once enabled (`--enable-checks kyverno`),

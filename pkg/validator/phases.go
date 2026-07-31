@@ -31,19 +31,31 @@ import (
 // participate in the same generic enable/disable ID mechanism as
 // check-registry checks. See stepEnabled and the Options doc comment.
 const (
-	stepGolangci = "golangci"
-	stepAVP      = "avp"
-	stepKyverno  = "kyverno"
+	stepGolangci       = "golangci"
+	stepAVP            = "avp"
+	stepKyverno        = "kyverno"
+	stepScaffoldReadme = "scaffold-readme"
 )
 
 // defaultOffSteps lists step/check IDs that are disabled unless explicitly
 // present in Options.EnabledChecks. Every other ID defaults to enabled and
-// is only turned off via Options.DisabledChecks. Kyverno defaults off
-// because, unlike every other check in this repo, it has no generic default
-// policy set an arbitrary org could reasonably run out of the box - an org
-// must opt in and supply its own policies (see pkg/lint/kyverno).
+// is only turned off via Options.DisabledChecks.
+//
+//   - kyverno defaults off because, unlike every other check in this repo,
+//     it has no generic default policy set an arbitrary org could
+//     reasonably run out of the box - an org must opt in and supply its
+//     own policies (see pkg/lint/kyverno).
+//   - scaffold-readme (scaffold.CheckReadmeStatus's README scaffold-status
+//     table structural check - see docs/CI.md#scaffold-validation)
+//     defaults off because, like kyverno, this generic core can't know
+//     whether a given repo's `<!-- scaffold-status -->` table actually
+//     matches the one-row-per-app-per-overlay shape this check expects -
+//     an org already maintaining that table in a different shape/grouping
+//     would otherwise see this newly-real check start blocking PRs with
+//     false positives. An org confirms compatibility once, then opts in.
 var defaultOffSteps = map[string]bool{
-	stepKyverno: true,
+	stepKyverno:        true,
+	stepScaffoldReadme: true,
 }
 
 // stepEnabled reports whether the named step/check should run, given the
@@ -450,9 +462,11 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
 	driftLines := scaffoldResult.DriftLines
-	if readmeCurrent, readmeDiff := scaffold.CheckReadmeStatus(); !readmeCurrent {
-		driftLines = append(driftLines, readmeDiff)
-		log.ErrorInSection("Scaffold", "%s", readmeDiff)
+	if stepEnabled(stepScaffoldReadme, disabled, enabled) {
+		if readmeCurrent, readmeDiff := scaffold.CheckReadmeStatus(); !readmeCurrent {
+			driftLines = append(driftLines, readmeDiff)
+			log.ErrorInSection("Scaffold", "%s", readmeDiff)
+		}
 	}
 	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(driftLines, "\n"), scaffoldResult.ExecErrors, nil))
 
