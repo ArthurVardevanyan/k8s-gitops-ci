@@ -2,10 +2,12 @@ package validator
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
 // titleCase uppercases the first letter of a string, safe for ASCII section names.
@@ -187,17 +189,98 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 	return composeParentFromChildren("Static Checks", children)
 }
 
-// ComposeResourceComplianceSection renders generic compliance tables.
-func ComposeResourceComplianceSection(findings []check.Finding) Section {
-	if len(findings) == 0 {
+// ComposeResourceComplianceSection renders resource-compliance findings
+// grouped by CheckID into per-check nested <details> sub-sections (rather
+// than one flat table for every finding regardless of check type), plus an
+// "Accepted Exceptions" audit block listing applied exemptions.
+//
+// blocking findings are in files this PR directly modifies (must be fixed
+// before merge, per finalizeCompliance); warning findings are pre-existing
+// (surfaced for visibility, non-blocking). A check's sub-section renders
+// with a ❌ icon (and rolls the parent section's Error up) when it has any
+// blocking finding, otherwise ⚠️. Check IDs are sorted for deterministic
+// output - this generic core has no fixed, org-defined check ordering
+// (unlike an org layer's own `complianceCheckOrder`, which is exactly the
+// kind of policy decision that doesn't belong here).
+func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempted []exempt.Applied) Section {
+	hasFindings := len(blocking) > 0 || len(warning) > 0
+	hasExemptions := len(exempted) > 0
+	if !hasFindings && !hasExemptions {
 		return Section{Name: "Resource Compliance", Body: "No compliance findings."}
 	}
-	var b strings.Builder
-	b.WriteString("| Check | File | Message |\n| --- | --- | --- |\n")
-	for _, f := range findings {
-		fmt.Fprintf(&b, "| %s | %s | %s |\n", f.CheckID, f.File, f.Message)
+
+	byCheck := map[string][]check.Finding{}
+	isBlocking := map[string]bool{}
+	for _, f := range blocking {
+		byCheck[f.CheckID] = append(byCheck[f.CheckID], f)
+		isBlocking[f.CheckID] = true
 	}
-	return Section{Name: "Resource Compliance", Body: b.String(), Error: true}
+	for _, f := range warning {
+		byCheck[f.CheckID] = append(byCheck[f.CheckID], f)
+	}
+	ids := make([]string, 0, len(byCheck))
+	for id := range byCheck {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var b strings.Builder
+	if hasFindings {
+		b.WriteString("If the affected resource is being modified in this PR, these issues **must** be corrected.\n")
+		b.WriteString("Otherwise, these are non-blocking warnings for pre-existing issues.\n\n")
+	}
+	for _, id := range ids {
+		findings := byCheck[id]
+		icon := "⚠️"
+		if isBlocking[id] {
+			icon = "❌"
+		}
+		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, displayName(id), len(findings))
+		b.WriteString("| File | Message |\n| --- | --- |\n")
+		for _, f := range findings {
+			fmt.Fprintf(&b, "| %s | %s |\n", f.File, f.Message)
+		}
+		b.WriteString("\n</details>\n\n")
+	}
+
+	if hasExemptions {
+		renderAcceptedExceptions(&b, exempted)
+	}
+
+	return Section{Name: "Resource Compliance", Body: b.String(), Error: len(blocking) > 0}
+}
+
+// renderAcceptedExceptions writes the "Accepted Exceptions" audit sub-block
+// from the applied exemptions (check.Result.Exempted / exempt.Applied),
+// distinguishing exemptions applied to a directly-modified resource
+// (e.Direct) from pre-existing ones. This data already existed
+// (exempt.Applied.Direct) but was never rendered anywhere before this.
+func renderAcceptedExceptions(b *strings.Builder, exemptions []exempt.Applied) {
+	var haveDirect bool
+	for _, e := range exemptions {
+		if e.Direct {
+			haveDirect = true
+			break
+		}
+	}
+	label := "Accepted Exceptions"
+	if !haveDirect {
+		label += " (pre-existing)"
+	}
+	fmt.Fprintf(b, "<details>\n<summary>%sℹ️ %s (%d)</summary>\n\n", summaryIndent(1), label, len(exemptions))
+	b.WriteString("| Resource | Value | Scope |\n| --- | --- | --- |\n")
+	for _, e := range exemptions {
+		resource := e.Name
+		if e.Kind != "" {
+			resource = fmt.Sprintf("%s `%s`", e.Kind, e.Name)
+		}
+		scope := "pre-existing"
+		if e.Direct {
+			scope = "directly modified"
+		}
+		fmt.Fprintf(b, "| %s | `%s` | %s |\n", resource, e.Value, scope)
+	}
+	b.WriteString("\n</details>\n\n")
 }
 
 // ComposeKustomizeBuildSection renders the Kustomize Build section: overlay

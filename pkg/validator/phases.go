@@ -373,7 +373,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(driftSummary, nil, nil))
 
-	res.Sections = append(res.Sections, ComposeResourceComplianceSection(combinedCheck.Findings))
+	res.Sections = append(res.Sections, ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted))
 	tc.Record("Build+Compliance", time.Since(buildStart), len(overlays) > 1)
 }
 
