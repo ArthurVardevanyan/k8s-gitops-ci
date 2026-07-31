@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"flag"
+	"testing"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
+)
 
 func TestStringSliceFlag_AccumulatesInOrder(t *testing.T) {
 	var apps []string
@@ -24,6 +29,151 @@ func TestStringSliceFlag_EmptyString(t *testing.T) {
 	f := newStringSliceFlag(&clusters)
 	if got := f.String(); got != "" {
 		t.Errorf("String() = %q, want empty", got)
+	}
+}
+
+// TestBindValidatorFlags_ParsesAndApplies guards test-all/scan-all's flag
+// parity with "pipeline": every scoping/check-enablement flag pipeline
+// exposes must parse here and land on the corresponding validator.Options
+// field via applyTo.
+func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	vf := bindValidatorFlags(fs)
+	args := []string{
+		"--url=https://example.com/org/repo",
+		"--pr=42",
+		"--target-branch=origin/main",
+		"--hook-source=pr",
+		"--dirs=kubernetes/,tekton/",
+		"--disable-checks=sync-options,golangci",
+		"--enable-checks=kyverno",
+		"--concurrency=4",
+		"--assume-openshift",
+		"--verbose",
+		"--app=foo",
+		"--app=bar",
+		"--cluster=prod",
+	}
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	var opts validator.Options
+	vf.applyTo(&opts)
+
+	switch {
+	case opts.RepoURL != "https://example.com/org/repo":
+		t.Errorf("RepoURL = %q", opts.RepoURL)
+	case opts.PR != "42":
+		t.Errorf("PR = %q", opts.PR)
+	case opts.BaseRef != "origin/main":
+		t.Errorf("BaseRef = %q", opts.BaseRef)
+	case opts.HookSource != "pr":
+		t.Errorf("HookSource = %q", opts.HookSource)
+	case len(opts.IncludePrefixes) != 2 || opts.IncludePrefixes[0] != "kubernetes/" || opts.IncludePrefixes[1] != "tekton/":
+		t.Errorf("IncludePrefixes = %v", opts.IncludePrefixes)
+	case len(opts.DisabledChecks) != 2 || opts.DisabledChecks[0] != "sync-options" || opts.DisabledChecks[1] != "golangci":
+		t.Errorf("DisabledChecks = %v", opts.DisabledChecks)
+	case len(opts.EnabledChecks) != 1 || opts.EnabledChecks[0] != "kyverno":
+		t.Errorf("EnabledChecks = %v", opts.EnabledChecks)
+	case opts.Concurrency != 4:
+		t.Errorf("Concurrency = %d", opts.Concurrency)
+	case !opts.AssumeOpenShift:
+		t.Errorf("AssumeOpenShift = %v, want true", opts.AssumeOpenShift)
+	case !opts.Verbose:
+		t.Errorf("Verbose = %v, want true", opts.Verbose)
+	case len(opts.Apps) != 2 || opts.Apps[0] != "foo" || opts.Apps[1] != "bar":
+		t.Errorf("Apps = %v", opts.Apps)
+	case len(opts.Clusters) != 1 || opts.Clusters[0] != "prod":
+		t.Errorf("Clusters = %v", opts.Clusters)
+	}
+}
+
+// TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue ensures no flag being
+// passed doesn't grow spurious non-nil-but-empty slices/strings that would
+// change behavior (e.g. an empty-but-non-nil IncludePrefixes would still be
+// fine since FilterByPrefixes treats empty as "no restriction", but this
+// guards the split helpers stay nil on empty input).
+func TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	vf := bindValidatorFlags(fs)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	var opts validator.Options
+	vf.applyTo(&opts)
+
+	if opts.RepoURL != "" || opts.PR != "" || opts.BaseRef != "" || opts.HookSource != "" {
+		t.Errorf("expected empty strings, got RepoURL=%q PR=%q BaseRef=%q HookSource=%q", opts.RepoURL, opts.PR, opts.BaseRef, opts.HookSource)
+	}
+	if opts.IncludePrefixes != nil || opts.DisabledChecks != nil || opts.EnabledChecks != nil {
+		t.Errorf("expected nil slices, got IncludePrefixes=%v DisabledChecks=%v EnabledChecks=%v", opts.IncludePrefixes, opts.DisabledChecks, opts.EnabledChecks)
+	}
+	if opts.Concurrency != 0 || opts.AssumeOpenShift || opts.Verbose {
+		t.Errorf("expected zero values, got Concurrency=%d AssumeOpenShift=%v Verbose=%v", opts.Concurrency, opts.AssumeOpenShift, opts.Verbose)
+	}
+	if len(opts.Apps) != 0 || len(opts.Clusters) != 0 {
+		t.Errorf("expected empty Apps/Clusters, got %v / %v", opts.Apps, opts.Clusters)
+	}
+}
+
+// TestParseTestAllOptions_PositionalDirsAndFlagDirsCoexist guards the
+// distinction between positional [dirs...] (opts.Dirs, a full-tree walk that
+// bypasses git diff) and the --dirs flag (opts.IncludePrefixes, which
+// instead filters a git-diff/PR changeset) - test-all must keep supporting
+// both simultaneously without one clobbering the other.
+func TestParseTestAllOptions_PositionalDirsAndFlagDirsCoexist(t *testing.T) {
+	opts, err := parseTestAllOptions([]string{"--dirs=kubernetes/,tekton/", "appA", "appB"})
+	if err != nil {
+		t.Fatalf("parseTestAllOptions: %v", err)
+	}
+	if len(opts.Dirs) != 2 || opts.Dirs[0] != "appA" || opts.Dirs[1] != "appB" {
+		t.Errorf("Dirs = %v, want [appA appB]", opts.Dirs)
+	}
+	if len(opts.IncludePrefixes) != 2 || opts.IncludePrefixes[0] != "kubernetes/" || opts.IncludePrefixes[1] != "tekton/" {
+		t.Errorf("IncludePrefixes = %v, want [kubernetes/ tekton/]", opts.IncludePrefixes)
+	}
+}
+
+// TestParseTestAllOptions_NoPositionalDirsLeavesDirsNil ensures test-all
+// without positional args doesn't grow a spurious non-nil-but-empty Dirs,
+// which would otherwise change resolveChangeset's branch (Dirs vs.
+// git-diff) per pkg/validator/validator.go.
+func TestParseTestAllOptions_NoPositionalDirsLeavesDirsNil(t *testing.T) {
+	opts, err := parseTestAllOptions([]string{"--verbose"})
+	if err != nil {
+		t.Fatalf("parseTestAllOptions: %v", err)
+	}
+	if len(opts.Dirs) != 0 {
+		t.Errorf("Dirs = %v, want empty", opts.Dirs)
+	}
+	if !opts.Verbose {
+		t.Errorf("Verbose = false, want true")
+	}
+}
+
+// TestParseScanAllOptions_SupportsPipelineScopingFlags guards scan-all's
+// flag parity with pipeline/test-all (the original gap this test file is
+// protecting against regressing).
+func TestParseScanAllOptions_SupportsPipelineScopingFlags(t *testing.T) {
+	opts, err := parseScanAllOptions([]string{
+		"--url=https://example.com/org/repo",
+		"--pr=7",
+		"--dirs=kubernetes/",
+		"--disable-checks=avp",
+	})
+	if err != nil {
+		t.Fatalf("parseScanAllOptions: %v", err)
+	}
+	if opts.RepoURL != "https://example.com/org/repo" || opts.PR != "7" {
+		t.Errorf("RepoURL/PR = %q/%q", opts.RepoURL, opts.PR)
+	}
+	if len(opts.IncludePrefixes) != 1 || opts.IncludePrefixes[0] != "kubernetes/" {
+		t.Errorf("IncludePrefixes = %v", opts.IncludePrefixes)
+	}
+	if len(opts.DisabledChecks) != 1 || opts.DisabledChecks[0] != "avp" {
+		t.Errorf("DisabledChecks = %v", opts.DisabledChecks)
 	}
 }
 
