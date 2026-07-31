@@ -464,7 +464,7 @@ func TestComposeSections_ReusesScaffoldDriftProtectionSection(t *testing.T) {
 // (opts.Providers.ReportTitle()/PipelineHeader()) - the same seam already
 // correctly used for ReportMarker() two lines above in the original code.
 func TestBuildReport_UsesProvidersForTitleAndHeader(t *testing.T) {
-	res := &Result{ReproduceCommand: "go run ./cmd/k8s-gitops-ci pipeline"}
+	res := &Result{ReproduceCommand: "k8s-gitops-ci pipeline"}
 	opts := Options{Providers: provider.Providers{Branding: fakeBranding{}}}
 
 	report := buildReport(res, opts)
@@ -540,7 +540,7 @@ func TestPostComment_QueriesForeignMarkersFromCommentPolicy(t *testing.T) {
 			CommentPolicy: fakeCommentPolicy{markers: []string{"<!-- some-foreign-bot -->"}},
 		},
 	}
-	res := &Result{ReproduceCommand: "go run ./cmd/k8s-gitops-ci pipeline"}
+	res := &Result{ReproduceCommand: "k8s-gitops-ci pipeline"}
 
 	if err := postComment(res, opts); err != nil {
 		t.Fatalf("postComment: %v", err)
