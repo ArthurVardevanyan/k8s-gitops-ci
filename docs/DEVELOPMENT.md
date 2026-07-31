@@ -136,6 +136,15 @@ is no runtime file-loading involved. Follow this same shape (core map +
 empty exported override map, override checked first) any time a new
 package needs org-extensible, purely-data lookup tables.
 
+The `namespace` check itself enforces both directions of this scope map:
+namespace-scoped resources (`false`) must declare `metadata.namespace`,
+and cluster-scoped resources (`true`) must **not** declare it — except
+for build-time-only objects (currently just Kustomize's own
+`Kustomization`/`Component` control objects, listed in
+`clusterScopeNamespaceExempt` in `pkg/validator/namespace/namespace.go`)
+that are never applied to a cluster and so aren't meaningfully "scoped"
+either way.
+
 ### Generic check-enablement mechanism
 
 Every gateable check/step — whether it's a `check.Register`-based

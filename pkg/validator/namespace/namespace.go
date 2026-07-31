@@ -39,6 +39,16 @@ func ValidateFile(path string) []ValidationError {
 	return ValidateBytes(data, path)
 }
 
+// clusterScopeNamespaceExempt lists API groups whose objects are never
+// applied to a cluster (e.g. Kustomize's own build-time control objects:
+// Kustomization/Component) and so are exempt from the "cluster-scoped
+// resource must not have metadata.namespace" check even though they're
+// classified cluster-scoped in resourceScope (to suppress the unrelated
+// "unknown resource" error).
+var clusterScopeNamespaceExempt = map[string]bool{
+	"kustomize.config.k8s.io": true,
+}
+
 // ValidateBytes validates YAML bytes for namespace-scope issues.
 func ValidateBytes(data []byte, source string) []ValidationError {
 	var errs []ValidationError
@@ -72,13 +82,23 @@ func ValidateBytes(data []byte, source string) []ValidationError {
 			errs = append(errs, ValidationError{File: source, Kind: kind, Name: name, Message: unknownResourceMsg(scopeKey)})
 			continue
 		}
-		if scope {
-			continue // cluster-scoped
-		}
+		hasNamespace := false
 		if ns := findKey(mapping, "metadata"); ns != nil && ns.Kind == yaml.MappingNode {
-			if quickString(findKey(ns, "namespace")) != "" {
-				continue
+			hasNamespace = quickString(findKey(ns, "namespace")) != ""
+		}
+		if scope {
+			// Cluster-scoped: metadata.namespace must be absent, except for
+			// build-time-only objects (e.g. Kustomize's own control objects)
+			// that are never applied to a cluster and so aren't really
+			// "scoped" at all.
+			if hasNamespace && !clusterScopeNamespaceExempt[group] {
+				name := quickName(mapping)
+				errs = append(errs, ValidationError{File: source, Kind: kind, Name: name, Message: "cluster-scoped resource must not have metadata.namespace"})
 			}
+			continue
+		}
+		if hasNamespace {
+			continue
 		}
 		name := quickName(mapping)
 		errs = append(errs, ValidationError{File: source, Kind: kind, Name: name, Message: "namespace-scoped resource missing metadata.namespace"})

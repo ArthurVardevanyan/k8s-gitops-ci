@@ -58,6 +58,39 @@ resources:
 	}
 }
 
+func TestValidateBytes_ClusterScopedResourceWithNamespace(t *testing.T) {
+	data := []byte(`kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cr
+  namespace: should-not-be-here
+`)
+	errs := ValidateBytes(data, "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error: %v", errs)
+	}
+	want := "test.yaml: ClusterRole/cr: cluster-scoped resource must not have metadata.namespace"
+	if errs[0].String() != want {
+		t.Errorf("got %q want %q", errs[0].String(), want)
+	}
+}
+
+func TestValidateBytes_KustomizationWithNamespaceExempt(t *testing.T) {
+	for _, kind := range []string{"Kustomization", "Component"} {
+		data := []byte(`apiVersion: kustomize.config.k8s.io/v1beta1
+kind: ` + kind + `
+metadata:
+  namespace: some-ns
+resources:
+  - base
+`)
+		errs := ValidateBytes(data, "kustomization.yaml")
+		if len(errs) != 0 {
+			t.Errorf("%s: expected no errors even with metadata.namespace set: %v", kind, errs)
+		}
+	}
+}
+
 func TestValidateBytes_UnknownResource(t *testing.T) {
 	data := []byte(`kind: Widget
 apiVersion: custom.example.com/v1
