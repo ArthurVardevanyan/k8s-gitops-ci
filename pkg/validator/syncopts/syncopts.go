@@ -49,6 +49,12 @@ var coreAPIGroups = map[string]bool{
 	"flowcontrol.apiserver.k8s.io": true,
 	"node.k8s.io":                  true,
 	"migration.k8s.io":             true,
+	"policy.networking.k8s.io":     true, // upstream AdminNetworkPolicy
+	"populator.storage.k8s.io":     true, // upstream volume-populator API group
+	"snapshot.storage.k8s.io":      true, // upstream CSI snapshot API group
+	"internal.apiserver.k8s.io":    true, // built-in apiserver-internal group
+	"resource.k8s.io":              true, // upstream DRA API group
+	"storagemigration.k8s.io":      true, // built-in storage-migration API group
 
 	// Kustomize build-time control objects (Kustomization/Component).
 	// Never applied to the cluster by ArgoCD; the annotation concept
@@ -57,6 +63,14 @@ var coreAPIGroups = map[string]bool{
 
 	// Widely-installed, distro-agnostic platform group.
 	"metrics.k8s.io": true,
+
+	// Kyverno CLI-only local test fixture (Test kind) - never applied to
+	// a cluster, analogous to installerOnlyKinds, not distro-specific.
+	"cli.kyverno.io": true,
+
+	// Upstream Cluster API groups, not OpenShift-exclusive.
+	"infrastructure.cluster.x-k8s.io": true,
+	"ipam.cluster.x-k8s.io":           true,
 }
 
 // openshiftAPIGroups lists API groups that ship by default on OpenShift/OKD
@@ -82,7 +96,7 @@ var openshiftAPIGroups = map[string]bool{
 	"tuned.openshift.io":                  true,
 	"machine.openshift.io":                true,
 	"machineconfiguration.openshift.io":   true,
-	"ingressoperator.openshift.io":        true,
+	"ingress.operator.openshift.io":       true,
 	"samples.operator.openshift.io":       true,
 	"hive.openshift.io":                   true,
 	"agent-install.openshift.io":          true,
@@ -106,6 +120,30 @@ var openshiftAPIGroups = map[string]bool{
 	"operatorframework.io":          true,
 	"olm.operatorframework.io":      true,
 	"packages.operators.coreos.com": true,
+
+	// Ships with OLM's default catalog on OpenShift/OKD.
+	"operatorhub.io": true,
+
+	// CNI, grouped with the existing whereabouts/k8s.cni.cncf.io entries
+	// above for consistency.
+	"k8s.ovn.org": true,
+
+	// OpenShift-namespaced groups.
+	"network.openshift.io":           true,
+	"network.operator.openshift.io":  true,
+	"cloud.network.openshift.io":     true,
+	"build.openshift.io":             true,
+	"apps.openshift.io":              true,
+	"template.openshift.io":          true,
+	"authorization.openshift.io":     true,
+	"user.openshift.io":              true,
+	"oauth.openshift.io":             true,
+	"security.internal.openshift.io": true,
+	"monitoring.openshift.io":        true,
+	"cloudcredential.openshift.io":   true,
+	"performance.openshift.io":       true,
+	"apiserver.openshift.io":         true,
+	"autoscaling.openshift.io":       true,
 }
 
 // nonExemptCRDGroups lists known CRD-providing groups that are NOT exempt —

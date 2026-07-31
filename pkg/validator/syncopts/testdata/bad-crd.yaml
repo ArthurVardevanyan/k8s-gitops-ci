@@ -1,0 +1,4 @@
+kind: ArgoCD
+apiVersion: argoproj.io/v1alpha1
+metadata:
+  name: my-argocd-instance
