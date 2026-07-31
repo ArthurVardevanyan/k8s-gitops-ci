@@ -63,6 +63,29 @@ k8s-gitops-ci version
 
 Run `k8s-gitops-ci <command> --help` for per-command flags.
 
+### Key `pipeline` flags
+
+- `--url` / `--pr` — `--url` is the **bare repository URL**
+  (`https://github.com/org/repo`), not a pull-request URL; the PR number
+  goes in the separate `--pr` flag. Passing a full PR URL
+  (`.../pull/123`, `.../pulls/123`, or GitLab's `.../merge_requests/123`)
+  into `--url` fails fast with an actionable error instead of a cryptic
+  `git clone` failure.
+- `--comment` — post a PR comment summarizing the run. **Default: off.**
+  Requires repo/PR context (`--url` + `--pr`, or the equivalent
+  Tekton-injected env vars) to actually be available; if that context is
+  missing, comment posting is skipped with a logged reason even when
+  `--comment` is passed. Any Task/script invoking
+  `k8s-gitops-ci pipeline` that wants PR comments (as this repo's own
+  reference/downstream Tekton Task does) must pass `--comment`
+  explicitly — there is no separate `--no-comment` override; omitting
+  `--comment` is sufficient to opt out.
+- `--verbose` — streams every check's start/pass/fail as it runs (via an
+  internal `logger.Logger`), plus a final `Summary: info=N, warn=N,
+error=N` line and per-phase timing, instead of only the aggregated
+  pass/fail result at the end. Also available on `test-all`,
+  `build-yaml`, and `scan-all`.
+
 ## Development
 
 ```sh
