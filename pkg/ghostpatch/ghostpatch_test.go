@@ -1,6 +1,8 @@
 package ghostpatch
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -193,5 +195,110 @@ func TestClassifyOverlay_NewFileNonBlocking(t *testing.T) {
 	res, err := ClassifyOverlay(ov, "", []string{filepath.Join(ov, "kustomization.yaml")})
 	if err != nil || len(res) != 1 || res[0].Blocking {
 		t.Errorf("new file should be warning: %v err %v", res, err)
+	}
+}
+
+// makeGitRepoOverlay creates a temp git repo (chdir'd into via t.Chdir, so
+// git commands - which resolve paths relative to the process's cwd, see
+// gitShow - and the returned relOverlayDir both refer to the same tree)
+// with relOverlayDir/kustomization.yaml committed to "main" with
+// mainContent, then rewritten on disk (without committing) to
+// workingContent - simulating an uncommitted PR change to an existing
+// (not newly-added) file's patches section, so PatchesSectionChanged/
+// ClassifyOverlay can be exercised against a real diff instead of always
+// taking the "no git history" fallback path makeOverlay's plain (non-git,
+// cwd-independent) temp dirs hit.
+func makeGitRepoOverlay(t *testing.T, relOverlayDir, mainContent, workingContent string) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init", "-b", "main")
+	if relOverlayDir != "." {
+		if err := os.MkdirAll(relOverlayDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kustPath := filepath.Join(relOverlayDir, "kustomization.yaml")
+	if err := os.WriteFile(kustPath, []byte(mainContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", ".")
+	runGit("commit", "-m", "initial")
+	if err := os.WriteFile(kustPath, []byte(workingContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPatchesSectionChanged_DetectsRealDiff(t *testing.T) {
+	makeGitRepoOverlay(t, ".",
+		"patches:\n- target:\n    kind: Deployment\n    name: missing\n  patch: |-\n    []\n",
+		"patches:\n- target:\n    kind: Deployment\n    name: missing-renamed\n  patch: |-\n    []\n",
+	)
+	changed, err := PatchesSectionChanged("kustomization.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !changed {
+		t.Error("expected a modified patches section to be reported as changed")
+	}
+}
+
+func TestClassifyOverlay_ExistingFileWithChangedPatchesIsBlocking(t *testing.T) {
+	patches := "patches:\n- target:\n    kind: Deployment\n    name: missing\n  patch: |-\n    []\n"
+	makeGitRepoOverlay(t, ".", "patches: []\n", patches)
+	// Not in addedFiles - this kustomization.yaml already existed on main,
+	// only its patches section was modified in the working tree.
+	res, err := ClassifyOverlay(".", "", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res) != 1 || !res[0].Blocking {
+		t.Errorf("expected a ghost patch on a modified existing file to be blocking: %+v", res)
+	}
+}
+
+func TestClassifyOverlay_ExistingFileUnchangedPatchesIsWarning(t *testing.T) {
+	// Same patches content on main and in the working tree - the ghost
+	// (if the target doesn't exist in renderedYAML) predates this PR, so
+	// it's a warning, not something this PR introduced.
+	patches := "patches:\n- target:\n    kind: Deployment\n    name: missing\n  patch: |-\n    []\n"
+	makeGitRepoOverlay(t, ".", patches, patches)
+	res, err := ClassifyOverlay(".", "", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res) != 1 || res[0].Blocking {
+		t.Errorf("expected a pre-existing, unchanged ghost patch to be a warning: %+v", res)
+	}
+}
+
+func TestClassifyApp_NoOverlaysDir(t *testing.T) {
+	results, err := ClassifyApp(t.TempDir(), nil)
+	if err != nil || len(results) != 0 {
+		t.Errorf("expected no results for an app with no overlays/: %v err %v", results, err)
+	}
+}
+
+func TestClassifyApp_ClassifiesGhostsAcrossOverlays(t *testing.T) {
+	patches := "patches:\n- target:\n    kind: Deployment\n    name: missing\n  patch: |-\n    []\n"
+	makeGitRepoOverlay(t, filepath.Join("overlays", "prod"), "patches: []\n", patches)
+
+	results, err := ClassifyApp(".", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || len(results[0].Ghosts) != 1 || !results[0].Ghosts[0].Blocking {
+		t.Fatalf("expected 1 blocking ghost from the prod overlay: %+v", results)
 	}
 }

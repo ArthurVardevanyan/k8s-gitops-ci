@@ -148,6 +148,46 @@ func CheckApp(appPath string) ([]AppOverlayResult, error) {
 	return results, nil
 }
 
+// ClassifyApp checks all overlays under an app for ghost patches,
+// classifying each as blocking or warning via ClassifyOverlay - the
+// plural, app-level counterpart to ClassifyOverlay, mirroring how CheckApp
+// relates to CheckOverlay. Kept as a separate function from CheckApp
+// (rather than reimplementing CheckApp in terms of this one) so CheckApp's
+// existing callers/behavior - Ghosts always reported with Blocking: false,
+// no git-diff cost - are left completely unaffected.
+func ClassifyApp(appPath string, addedFiles []string) ([]AppOverlayResult, error) {
+	dir := filepath.Join(appPath, "overlays")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	results := make([]AppOverlayResult, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		ov := filepath.Join(dir, e.Name())
+		if _, err := os.Stat(filepath.Join(ov, "kustomization.yaml")); err != nil {
+			continue
+		}
+		rendered, err := kustomizeBuild(ov)
+		if err != nil {
+			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
+			continue
+		}
+		gr, err := ClassifyOverlay(ov, rendered, addedFiles)
+		if err != nil {
+			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
+			continue
+		}
+		results = append(results, AppOverlayResult{Overlay: ov, Ghosts: gr})
+	}
+	return results, nil
+}
+
 // ClassifyOverlay classifies ghosts as blocking or warning.
 func ClassifyOverlay(overlayPath, renderedYAML string, addedFiles []string) ([]GhostResult, error) {
 	ghosts, err := CheckOverlay(overlayPath, renderedYAML)

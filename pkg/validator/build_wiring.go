@@ -132,27 +132,38 @@ func buildHookTable(apps []string, cfgs map[string]*hook.Config, results map[str
 	return header + "\n" + strings.Join(rows, "\n") + "\n"
 }
 
-// buildGhostTable renders a "| Overlay | Target |" markdown table of ghost
-// patches (kustomize patches targeting a resource absent from the rendered
-// base) detected across the given apps via pkg/ghostpatch.CheckApp. Returns
-// "" when no ghost patches are found, so the caller can render a plain
-// "none detected" line instead of an empty table.
-func buildGhostTable(apps []string) string {
+// buildGhostTable renders a "| Overlay | Target | |" markdown table of
+// ghost patches (kustomize patches targeting a resource absent from the
+// rendered base) detected across the given apps via
+// pkg/ghostpatch.ClassifyApp, and separately returns the blocking subset
+// (a ghost patch on a kustomization.yaml that isn't itself newly-added in
+// this PR and whose patches section did change) so the caller can fold it
+// into the overall pass/fail decision - a ghost patch predating this PR,
+// or introduced by a brand-new overlay, is surfaced for visibility only.
+// Returns table == "" when no ghost patches are found at all, so the
+// caller can render a plain "none detected" line instead of an empty
+// table.
+func buildGhostTable(apps, addedFiles []string) (table string, blockingCount int) {
 	var rows []string
 	for _, app := range apps {
-		results, err := ghostpatch.CheckApp(app)
+		results, err := ghostpatch.ClassifyApp(app, addedFiles)
 		if err != nil {
 			continue
 		}
 		for _, r := range results {
 			for _, g := range r.Ghosts {
-				rows = append(rows, fmt.Sprintf("| `%s` | %s |", r.Overlay, g.Target.String()))
+				marker := ""
+				if g.Blocking {
+					marker = " 🚫"
+					blockingCount++
+				}
+				rows = append(rows, fmt.Sprintf("| `%s` | %s |%s", r.Overlay, g.Target.String(), marker))
 			}
 		}
 	}
 	if len(rows) == 0 {
-		return ""
+		return "", 0
 	}
 	header := "| Overlay | Target |\n| --- | --- |"
-	return header + "\n" + strings.Join(rows, "\n") + "\n"
+	return header + "\n" + strings.Join(rows, "\n") + "\n", blockingCount
 }
