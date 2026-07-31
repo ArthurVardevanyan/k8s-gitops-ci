@@ -116,7 +116,11 @@ func NormalizeYAML(data []byte) ([]byte, error) {
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	for i, d := range docs {
-		if i > 0 || (i == 0 && leadingSeparator) {
+		// yaml.Encoder automatically writes a "---" separator itself
+		// starting from the second Encode call on the same encoder, so
+		// we only need to write one explicitly before the first
+		// document, and only when the source had a leading marker.
+		if i == 0 && leadingSeparator {
 			buf.WriteString("---\n")
 		}
 		if err := enc.Encode(&d); err != nil {
