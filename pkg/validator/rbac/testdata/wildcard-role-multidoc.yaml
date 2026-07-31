@@ -1,0 +1,14 @@
+kind: Role
+metadata:
+  name: role-one
+  namespace: ns1
+rules:
+  - verbs: ["*"]
+    resources: ["pods"]
+---
+kind: ClusterRole
+metadata:
+  name: role-two
+rules:
+  - verbs: ["get"]
+    resources: ["*"]

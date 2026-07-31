@@ -238,3 +238,112 @@ func TestDeduplicate_SameBadVerbsRegardlessOfOrderStillMerged(t *testing.T) {
 		t.Errorf("expected Count 2, got %d", out[0].Count)
 	}
 }
+
+// --- previously-untested wildcard / non-RBAC / empty-comment cases -------
+
+func TestValidateWildcards_NoWildcards(t *testing.T) {
+	data := `kind: ClusterRole
+metadata:
+  name: fine
+rules:
+- verbs: ["get", "list"]
+  resources: ["pods"]
+  apiGroups: [""]
+`
+	errs := ValidateWildcardsReader(strings.NewReader(data), "cr.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no wildcard findings, got: %v", errs)
+	}
+}
+
+func TestValidateWildcards_NonRBAC(t *testing.T) {
+	data := `kind: ConfigMap
+metadata:
+  name: cm
+data:
+  key: value
+`
+	errs := ValidateWildcardsReader(strings.NewReader(data), "cm.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no wildcard findings for a non-RBAC kind, got: %v", errs)
+	}
+}
+
+func TestFormatWildcardComment_Empty(t *testing.T) {
+	if s := FormatWildcardComment(nil); s != "" {
+		t.Errorf("expected empty string for no findings, got: %q", s)
+	}
+}
+
+// --- testdata-fixture-driven tests ----------------------------------------
+
+func TestValidateFile_WildcardAPIGroups(t *testing.T) {
+	errs := ValidateWildcards("testdata/wildcard-apigroups.yaml")
+	if len(errs) != 1 || errs[0].Field != "apiGroups" {
+		t.Fatalf("expected 1 apiGroups wildcard finding, got: %v", errs)
+	}
+}
+
+func TestValidateFile_MultiDoc(t *testing.T) {
+	errs := ValidateFile("testdata/multi-doc.yaml")
+	if len(errs) != 2 {
+		t.Fatalf("expected 1 finding from each of the 2 docs in the multi-doc stream, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateFile_NotClusterRole(t *testing.T) {
+	errs := ValidateFile("testdata/not-clusterrole.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no findings for a RoleBinding, got: %v", errs)
+	}
+}
+
+func TestValidateWildcards_RoleMultiDoc(t *testing.T) {
+	errs := ValidateWildcards("testdata/wildcard-role-multidoc.yaml")
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 wildcard findings (one per doc: Role verbs, ClusterRole resources), got %d: %v", len(errs), errs)
+	}
+	var sawRole, sawClusterRole bool
+	for _, e := range errs {
+		if e.Kind == "Role" && e.Field == "verbs" {
+			sawRole = true
+		}
+		if e.Kind == "ClusterRole" && e.Field == "resources" {
+			sawClusterRole = true
+		}
+	}
+	if !sawRole || !sawClusterRole {
+		t.Errorf("expected findings from both the Role and ClusterRole docs, got: %v", errs)
+	}
+}
+
+func TestValidateFile_GoodClusterRole(t *testing.T) {
+	errs := ValidateFile("testdata/good-clusterrole.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no findings for an aggregate ClusterRole with all-readonly verbs, got: %v", errs)
+	}
+}
+
+func TestValidateFile_ClusterReaderAggLabel(t *testing.T) {
+	errs := ValidateFile("testdata/cluster-reader.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %v", len(errs), errs)
+	}
+	if errs[0].AggLabel != "rbac.authorization.k8s.io/aggregate-to-cluster-reader" {
+		t.Errorf("expected the cluster-reader AggLabel specifically, got: %q", errs[0].AggLabel)
+	}
+}
+
+func TestValidateFile_MissingFile(t *testing.T) {
+	errs := ValidateFile("testdata/does-not-exist.yaml")
+	if errs != nil {
+		t.Errorf("expected nil for a nonexistent file, got: %v", errs)
+	}
+}
+
+func TestValidateWildcards_MissingFile(t *testing.T) {
+	errs := ValidateWildcards("testdata/does-not-exist.yaml")
+	if errs != nil {
+		t.Errorf("expected nil for a nonexistent file, got: %v", errs)
+	}
+}
