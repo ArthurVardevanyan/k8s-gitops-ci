@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 )
 
 // CloneOptions configures a repository clone.
@@ -26,6 +27,10 @@ type CloneOptions struct {
 // PR ref or an arbitrary SHA), this clones with --no-checkout, explicitly
 // fetches the requested revision, and checks out FETCH_HEAD.
 func Clone(opts CloneOptions) (string, error) {
+	if err := checkNotPRURL(opts.URL); err != nil {
+		return "", err
+	}
+
 	dir, err := os.MkdirTemp("", "k8s-gitops-ci-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp dir: %w", err)
@@ -55,6 +60,29 @@ func Clone(opts CloneOptions) (string, error) {
 		return "", fmt.Errorf("git checkout %s: %w", opts.Revision, err)
 	}
 	return dir, nil
+}
+
+// prURLPattern matches a pull/merge-request-style path segment followed by
+// its numeric ID, e.g. ".../pull/582", ".../pulls/582" (some GitHub
+// Enterprise variants use the plural form), or ".../merge_requests/582"
+// (GitLab).
+var prURLPattern = regexp.MustCompile(`/(?:pulls?|merge_requests)/(\d+)`)
+
+// checkNotPRURL fails fast with an actionable error when url looks like a
+// pull/merge-request URL (e.g. copy-pasted straight from a browser) rather
+// than a bare repository URL. Passing a PR URL as the clone URL produces a
+// raw, confusing "git clone: exit status 128" ("repository not found")
+// failure with no indication of the actual mistake - the PR number belongs
+// in a separate --pr flag, not the repository URL.
+func checkNotPRURL(url string) error {
+	m := prURLPattern.FindStringSubmatch(url)
+	if m == nil {
+		return nil
+	}
+	return fmt.Errorf(
+		"--url must be the repository URL only (e.g. https://github.com/org/repo), not a pull-request URL — got %q; pass the PR number separately via --pr %s",
+		url, m[1],
+	)
 }
 
 // runGit runs a git subcommand with its working directory set to dir (an

@@ -174,6 +174,44 @@ func TestClone_UnresolvableRevision_Errors(t *testing.T) {
 	}
 }
 
+func TestClone_PRURL_GitHub_RejectedBeforeClone(t *testing.T) {
+	before := countCloneTempDirs(t)
+	_, err := Clone(CloneOptions{URL: "https://github.com/ArthurVardevanyan/HomeLab/pull/582"})
+	if err == nil {
+		t.Fatal("expected an error for a PR URL passed as --url")
+	}
+	if !strings.Contains(err.Error(), "--pr 582") {
+		t.Errorf("expected error to suggest --pr 582, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "exit status 128") {
+		t.Errorf("expected the friendly pre-check error, not a raw git-clone failure: %v", err)
+	}
+	after := countCloneTempDirs(t)
+	if after > before {
+		t.Errorf("expected no temp dir created when rejecting before clone (before=%d, after=%d)", before, after)
+	}
+}
+
+func TestClone_PRURL_GitHubEnterprisePluralForm_Rejected(t *testing.T) {
+	_, err := Clone(CloneOptions{URL: "https://github.example.com/org/repo/pulls/42"})
+	if err == nil {
+		t.Fatal("expected an error for a /pulls/ URL passed as --url")
+	}
+	if !strings.Contains(err.Error(), "--pr 42") {
+		t.Errorf("expected error to suggest --pr 42, got: %v", err)
+	}
+}
+
+func TestClone_PRURL_GitLabMergeRequest_Rejected(t *testing.T) {
+	_, err := Clone(CloneOptions{URL: "https://gitlab.com/org/repo/-/merge_requests/7"})
+	if err == nil {
+		t.Fatal("expected an error for a /merge_requests/ URL passed as --url")
+	}
+	if !strings.Contains(err.Error(), "--pr 7") {
+		t.Errorf("expected error to suggest --pr 7, got: %v", err)
+	}
+}
+
 func TestClone_InvalidURL_CleansUpTempDir(t *testing.T) {
 	before := countCloneTempDirs(t)
 	_, err := Clone(CloneOptions{URL: filepath.Join(t.TempDir(), "does-not-exist")})
