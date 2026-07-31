@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
 )
 
 func TestIsValidPR(t *testing.T) {
@@ -133,6 +134,46 @@ func TestComposeSections(t *testing.T) {
 	}
 	if !sections[0].Error {
 		t.Errorf("expected PR checks error")
+	}
+}
+
+// TestComposeSections_ReusesAlreadyRenderedLintingSection guards against a
+// regression of the double-composition bug: composeSections used to
+// re-derive "Linting"/"Static Checks" section bodies from the *already-
+// rendered* validator.ValidatorResult.Sections body strings and re-compose
+// them a second time via ComposeLintingSection/ComposeStaticChecksSection,
+// producing double-nested markdown. It must now just reuse
+// res.ValidatorResult.Sections by name unchanged.
+func TestComposeSections_ReusesAlreadyRenderedLintingSection(t *testing.T) {
+	const rendered = "<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;✅ Markdownlint</summary>\n\nPassed.\n\n</details>\n\n"
+	res := &Result{
+		ValidatorResult: &validator.Result{
+			Sections: []validator.Section{
+				{Name: "Linting", Body: rendered},
+				{Name: "Static Checks", Body: "static body"},
+				{Name: "Kustomize Build", Body: "should be ignored here"},
+			},
+		},
+	}
+	sections := composeSections(res, Options{})
+
+	var lintSection *validator.Section
+	for i := range sections {
+		if sections[i].Name == "Linting" {
+			lintSection = &sections[i]
+		}
+	}
+	if lintSection == nil {
+		t.Fatal("expected a Linting section in composeSections output")
+	}
+	if lintSection.Body != rendered {
+		t.Errorf("expected the Linting section body to be reused verbatim (not re-composed/double-nested), got:\n%s", lintSection.Body)
+	}
+	// The double-composition bug wrapped the already-rendered body in a
+	// second layer of <details>; guard against that by counting exactly one
+	// "<details>" open tag in the reused section.
+	if n := strings.Count(lintSection.Body, "<details>"); n != 1 {
+		t.Errorf("expected exactly 1 <details> tag (no double-nesting), got %d in:\n%s", n, lintSection.Body)
 	}
 }
 

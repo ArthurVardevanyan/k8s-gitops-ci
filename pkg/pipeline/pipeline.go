@@ -333,21 +333,21 @@ func composeSections(res *Result, opts Options) []validator.Section {
 	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr))
 
-	// 2–3. Linting + Static Checks pulled from ValidatorResult sections if present.
-	lintReports := map[string]string{}
-	staticReports := map[string]string{}
+	// 2–3. Linting + Static Checks: phases.go already builds these as
+	// fully-realized, nested-dropdown Sections (via ComposeLintingSection/
+	// ComposeStaticChecksSection) during runLintAndStaticChecks - reuse them
+	// by name instead of re-deriving from their already-rendered Body string
+	// and re-composing a second time, which used to double-nest the markdown.
 	if res.ValidatorResult != nil {
 		for _, s := range res.ValidatorResult.Sections {
-			switch s.Name {
-			case "Linting":
-				lintReports["summary"] = s.Body
-			case "Static Checks":
-				staticReports["summary"] = s.Body
+			if s.Name == "Linting" || s.Name == "Static Checks" {
+				sections = append(sections, s)
 			}
 		}
+	} else {
+		sections = append(sections, validator.Section{Name: "Linting", Body: "No results."})
+		sections = append(sections, validator.Section{Name: "Static Checks", Body: "No results."})
 	}
-	sections = append(sections, validator.ComposeLintingSection(lintReports))
-	sections = append(sections, validator.ComposeStaticChecksSection(staticReports))
 
 	// 4. Kustomize Build
 	sections = append(sections, validator.ComposeKustomizeBuildSection(0, nil, nil, nil))
