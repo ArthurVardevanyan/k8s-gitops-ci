@@ -72,7 +72,7 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 
 // ExemptedImage records an annotation-exempted image.
 type ExemptedImage struct {
-	File, Image string
+	File, Kind, Name, Image string
 }
 
 func (e ExemptedImage) String() string {
@@ -110,9 +110,6 @@ func ParseImageRef(raw string) *Ref {
 			ref.Tag = ref.Repo[lastColon+1:]
 			ref.Repo = ref.Repo[:lastColon]
 		}
-	}
-	if ref.Tag == "" && ref.Digest == "" {
-		ref.Tag = "latest"
 	}
 	return ref
 }
@@ -176,7 +173,7 @@ func ValidateBytesWithExemptions(data []byte, source string) ([]ValidationError,
 				continue
 			}
 			if exempt.Accepts(ann, exempt.IDImageChecksum, img) {
-				exempted = append(exempted, ExemptedImage{File: source, Image: img})
+				exempted = append(exempted, ExemptedImage{File: source, Kind: kind, Name: name, Image: img})
 				continue
 			}
 			if ref.Digest == "" {
@@ -336,15 +333,32 @@ func extractImages(node *yaml.Node, parentKey string) []string {
 			imgs = append(imgs, node.Value)
 		}
 	case yaml.MappingNode:
-		// operator split-version pairing
+		// operator split-version pairing: an `image:` key and a sibling
+		// `version: sha256:...` key *within this same mapping* combine
+		// into one pinned image reference. The version sibling must be
+		// looked up within the same mapping as the image key it pins,
+		// not "whichever image was found most recently during the
+		// recursive walk" - otherwise a digest can misattach to an
+		// unrelated image found earlier elsewhere in the document.
+		var imageVal, versionDigest string
 		for i := 0; i < len(node.Content); i += 2 {
 			key := node.Content[i].Value
 			child := node.Content[i+1]
-			if key == "version" && child.Kind == yaml.ScalarNode && strings.HasPrefix(child.Value, "sha256:") && len(imgs) > 0 {
-				last := imgs[len(imgs)-1]
-				if !strings.Contains(last, "@") {
-					imgs[len(imgs)-1] = last + "@" + child.Value
-				}
+			switch {
+			case key == "image" && child.Kind == yaml.ScalarNode:
+				imageVal = child.Value
+			case key == "version" && child.Kind == yaml.ScalarNode && strings.HasPrefix(child.Value, "sha256:"):
+				versionDigest = child.Value
+			}
+		}
+		if imageVal != "" && versionDigest != "" && !strings.Contains(imageVal, "@") {
+			imgs = append(imgs, imageVal+"@"+versionDigest)
+		}
+		for i := 0; i < len(node.Content); i += 2 {
+			key := node.Content[i].Value
+			child := node.Content[i+1]
+			if key == "image" && versionDigest != "" {
+				continue // already emitted combined above
 			}
 			imgs = append(imgs, extractImages(child, key)...)
 		}

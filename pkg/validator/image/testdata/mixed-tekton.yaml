@@ -1,0 +1,9 @@
+kind: Task
+metadata:
+  name: build
+spec:
+  steps:
+    - name: pinned
+      image: registry.io/tools@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    - name: unpinned
+      image: registry.io/tools:latest
