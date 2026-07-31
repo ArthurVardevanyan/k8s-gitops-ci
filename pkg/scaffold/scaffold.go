@@ -24,12 +24,33 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 )
 
-// Generic core defaults kept verbatim.
-const (
+// Binary and ConfigSource are generic core defaults, deliberately mutable
+// (not const) so an org layer can retarget this package at its own
+// scaffolding CLI/config-source name (e.g. a vendored `cldctl` wrapping
+// `scafctl` with an org-specific `--config-source`) via a Configure()-style
+// package-var override, without needing a fork of this package.
+var (
 	Binary       = "scafctl"
 	ConfigSource = "repo-config"
-	HookKeyword  = "run_scafctl_scaffold"
 )
+
+// HookKeyword names the test.sh hook function this package's build wiring
+// looks for (see pkg/hook) - not an org-configurable seam, so it stays const.
+const HookKeyword = "run_scafctl_scaffold"
+
+// ExcludedClusters names overlay/cluster names that are always skipped by
+// scaffold-drift validation, independent of IsOverlayDisabled/
+// IsChangeGroupDisabled - e.g. clusters an org knows are permanently
+// exempt from scaffold generation (a decommissioned or special-purpose
+// cluster) rather than merely opted out via per-app config. Empty by
+// default (the generic core skips nothing); an org layer may populate it
+// from a Configure() seam.
+var ExcludedClusters = map[string]bool{}
+
+// IsExcludedCluster reports whether cluster is in ExcludedClusters.
+func IsExcludedCluster(cluster string) bool {
+	return ExcludedClusters[cluster]
+}
 
 // runTimeout bounds a single scafctl invocation (the whole app's overlays,
 // generated in one shot into a temp dir - see Run) so a hung or slow
@@ -77,7 +98,7 @@ var runScafctl = execScafctl
 // --output <outputDir>`, generating every overlay's scaffolded content
 // under outputDir/<overlay>/... in one shot.
 func execScafctl(ctx context.Context, configPath, outputDir string) error {
-	cmd := exec.CommandContext(ctx, Binary, "scaffold", "--config", ConfigSource+"="+configPath, "--output", outputDir) //nolint:gosec // Binary/ConfigSource are package constants, not user input
+	cmd := exec.CommandContext(ctx, Binary, "scaffold", "--config", ConfigSource+"="+configPath, "--output", outputDir) //nolint:gosec // Binary/ConfigSource are operator-controlled package-level overrides, not user input
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -202,8 +223,9 @@ func overlayExists(app, cluster string) bool {
 // (up to runtime.NumCPU()*2 at once) since the comparison itself (a
 // recursive directory diff) is independent per overlay. An overlay is
 // skipped - counted in Summary.Skipped/SkippedClusters, never Failed -
-// when it's disabled (IsOverlayDisabled/IsChangeGroupDisabled) or has no
-// on-disk directory (overlayExists); everything else is either a content
+// when it's disabled (IsOverlayDisabled/IsChangeGroupDisabled/
+// IsExcludedCluster) or has no on-disk directory (overlayExists); everything
+// else is either a content
 // mismatch (Summary.MismatchFiles) or an execution failure
 // (Summary.Errors, e.g. a missing scafctl binary or a run that itself
 // failed/timed out).
@@ -221,7 +243,7 @@ func Run(opts RunOptions) *Summary {
 	var toRun []string
 	for _, cluster := range opts.Overlays {
 		switch {
-		case IsOverlayDisabled(opts.App, cluster), IsChangeGroupDisabled(cluster, opts.ChangeGroups):
+		case IsOverlayDisabled(opts.App, cluster), IsChangeGroupDisabled(cluster, opts.ChangeGroups), IsExcludedCluster(cluster):
 			summary.Skipped++
 			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
 		case !overlayExists(opts.App, cluster):
