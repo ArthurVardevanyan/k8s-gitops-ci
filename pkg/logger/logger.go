@@ -1,104 +1,408 @@
+// Package logger provides structured logging, counters, and error tracking for pipeline execution.
 package logger
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
+	"time"
 )
 
-// Logger provides thread-safe structured console logging with counters.
+// Logger provides structured test output.
 type Logger struct {
-	mu      sync.Mutex
-	w       io.Writer
-	verbose bool
-	prefix  string
-	errors  atomic.Int32
-	warns   atomic.Int32
-	infos   atomic.Int32
+	mu             sync.Mutex
+	verbose        bool
+	logFile        *os.File
+	errors         []string
+	warnings       []string
+	builds         int
+	failures       int
+	passes         int
+	currentSection string
+	failedSections []string
 }
 
-// NewLogger constructs a Logger. The empty prefix suppresses section headers.
-func NewLogger(verbose bool, prefix string) *Logger {
-	return &Logger{w: os.Stderr, verbose: verbose, prefix: prefix}
+// NewLogger creates a new test logger.
+func NewLogger(verbose bool, logPath string) *Logger {
+	l := &Logger{verbose: verbose}
+	if logPath != "" {
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err == nil {
+			l.logFile = f
+		}
+	}
+	return l
 }
 
-// SetWriter overrides the default stderr writer.
-func (l *Logger) SetWriter(w io.Writer) {
+// Close closes the log file if open.
+func (l *Logger) Close() {
+	if l.logFile != nil {
+		_ = l.logFile.Close()
+	}
+}
+
+// Info logs an informational message (always printed).
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (l *Logger) Info(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	l.write("INFO", msg)
+}
+
+// Debug logs a verbose message (only printed with --verbose).
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (l *Logger) Debug(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	l.write("DEBUG", msg)
+}
+
+// Warn logs a warning.
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (l *Logger) Warn(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
 	l.mu.Lock()
-	l.w = w
+	l.warnings = append(l.warnings, msg)
 	l.mu.Unlock()
+	l.write("WARN", msg)
+}
+
+// Error logs an error.
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (l *Logger) Error(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	l.mu.Lock()
+	l.errors = append(l.errors, msg)
+	l.trackFailedSection()
+	l.mu.Unlock()
+	l.write("ERROR", msg)
+}
+
+// ErrorInSection logs an error and attributes it to the given section name.
+// Use this instead of Error() in concurrent goroutines where the shared
+// currentSection may have been overwritten by another goroutine.
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (l *Logger) ErrorInSection(section, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	l.mu.Lock()
+	l.errors = append(l.errors, msg)
+	l.trackNamedSection(section)
+	l.mu.Unlock()
+	l.write("ERROR", msg)
+}
+
+// SetSection updates the current section name without printing a header.
+func (l *Logger) SetSection(title string) {
+	l.mu.Lock()
+	l.currentSection = title
+	l.mu.Unlock()
+}
+
+// Header prints a section header.
+func (l *Logger) Header(title string) {
+	l.mu.Lock()
+	l.currentSection = title
+	l.mu.Unlock()
+	separator := strings.Repeat("=", 60)
+	l.write("", separator)
+	l.write("", "  "+title)
+	l.write("", separator)
+}
+
+// SubHeader prints a subsection header.
+func (l *Logger) SubHeader(title string) {
+	separator := strings.Repeat("-", 40)
+	l.write("", separator)
+	l.write("", "  "+title)
+	l.write("", separator)
+}
+
+// RecordBuild increments the build counter.
+func (l *Logger) RecordBuild() {
+	l.mu.Lock()
+	l.builds++
+	l.mu.Unlock()
+}
+
+// RecordPass increments the pass counter.
+func (l *Logger) RecordPass() {
+	l.mu.Lock()
+	l.passes++
+	l.mu.Unlock()
+}
+
+// RecordFailure increments the failure counter.
+func (l *Logger) RecordFailure() {
+	l.mu.Lock()
+	l.failures++
+	l.trackFailedSection()
+	l.mu.Unlock()
+}
+
+// RecordFailureInSection increments the failure counter and attributes it to the given section.
+func (l *Logger) RecordFailureInSection(section string) {
+	l.mu.Lock()
+	l.failures++
+	l.trackNamedSection(section)
+	l.mu.Unlock()
+}
+
+// trackFailedSection records the current section as failed (must be called with mu held).
+func (l *Logger) trackFailedSection() {
+	l.trackNamedSection(l.currentSection)
+}
+
+// trackNamedSection records the given section name as failed (must be called with mu held).
+func (l *Logger) trackNamedSection(section string) {
+	if section == "" {
+		return
+	}
+	for _, s := range l.failedSections {
+		if s == section {
+			return
+		}
+	}
+	l.failedSections = append(l.failedSections, section)
+}
+
+// Summary returns a formatted summary string.
+func (l *Logger) Summary() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString(strings.Repeat("=", 60) + "\n")
+	sb.WriteString("  RESULTS SUMMARY\n")
+	sb.WriteString(strings.Repeat("=", 60) + "\n")
+	fmt.Fprintf(&sb, "  Builds: %d | Passes: %d | Failures: %d\n", l.builds, l.passes, l.failures)
+
+	if len(l.warnings) > 0 {
+		fmt.Fprintf(&sb, "  Warnings: %d\n", len(l.warnings))
+	}
+	if len(l.errors) > 0 {
+		fmt.Fprintf(&sb, "  Errors: %d (see details above)\n", len(l.errors))
+	}
+	if len(l.failedSections) > 0 {
+		sb.WriteString("  Failed sections:\n")
+		for _, s := range l.failedSections {
+			fmt.Fprintf(&sb, "    - %s\n", s)
+		}
+	}
+	sb.WriteString(strings.Repeat("=", 60) + "\n")
+	return sb.String()
+}
+
+// HasFailures returns true if any failures were recorded.
+func (l *Logger) HasFailures() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.failures > 0 || len(l.errors) > 0
+}
+
+// Errors returns all recorded errors.
+func (l *Logger) Errors() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string{}, l.errors...)
+}
+
+// FailedSections returns the list of sections that had errors or failures.
+func (l *Logger) FailedSections() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string{}, l.failedSections...)
+}
+
+// Verbose returns whether the logger is in verbose mode.
+func (l *Logger) Verbose() bool {
+	return l.verbose
+}
+
+// Scope creates a new ScopedLogger that buffers display output for atomic flushing.
+// In verbose mode, output streams immediately (for debugging hangs).
+// Counters and error tracking always delegate to the parent immediately.
+func (l *Logger) Scope() *ScopedLogger {
+	return &ScopedLogger{
+		parent: l,
+		stream: l.verbose,
+	}
 }
 
 func (l *Logger) write(level, msg string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	fmt.Fprintln(l.w, level+" "+l.prefix+msg)
+
+	timestamp := time.Now().Format("15:04:05")
+	var line string
+	if level != "" {
+		line = fmt.Sprintf("[%s] [%s] %s", timestamp, level, msg)
+	} else {
+		line = msg
+	}
+
+	if level == "DEBUG" {
+		if l.verbose {
+			fmt.Println(line)
+		}
+	} else {
+		fmt.Println(line)
+	}
+	if l.logFile != nil {
+		_, _ = fmt.Fprintln(l.logFile, line)
+	}
 }
 
-// Header logs a top-level header.
-func (l *Logger) Header(msg string) { l.write("=", msg) }
+// ScopedLogger buffers display output for atomic flushing while delegating
+// counters and error tracking to the parent Logger immediately.
+// In verbose/debug mode (stream=true), output is written immediately for
+// real-time debugging of hangs.
+type ScopedLogger struct {
+	parent *Logger
+	mu     sync.Mutex
+	lines  []string
+	stream bool // true in verbose mode → writes immediately
+}
 
 // Info logs an informational message.
-func (l *Logger) Info(msg string) {
-	l.infos.Add(1)
-	l.write("•", msg)
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (s *ScopedLogger) Info(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	s.emit("INFO", msg)
 }
 
-// Warn logs a warning.
-func (l *Logger) Warn(msg string) {
-	l.warns.Add(1)
-	l.write("⚠", msg)
+// Debug logs a verbose message.
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (s *ScopedLogger) Debug(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	s.emit("DEBUG", msg)
 }
 
-// Error logs an error message and increments the error counter.
-func (l *Logger) Error(msg string) {
-	l.errors.Add(1)
-	l.write("✖", msg)
+// Warn logs a warning (also tracked in parent immediately).
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (s *ScopedLogger) Warn(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	s.parent.mu.Lock()
+	s.parent.warnings = append(s.parent.warnings, msg)
+	s.parent.mu.Unlock()
+	s.emit("WARN", msg)
 }
 
-// Errorf formats and logs an error.
-func (l *Logger) Errorf(format string, args ...any) { l.Error(fmt.Sprintf(format, args...)) }
+// Error logs an error (also tracked in parent immediately).
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (s *ScopedLogger) Error(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	s.parent.mu.Lock()
+	s.parent.errors = append(s.parent.errors, msg)
+	s.parent.trackFailedSection()
+	s.parent.mu.Unlock()
+	s.emit("ERROR", msg)
+}
 
-// Debug logs a debug message when verbose.
-func (l *Logger) Debug(msg string) {
-	if l.verbose {
-		l.write("…", msg)
+// ErrorInSection logs an error attributed to the given section (tracked in parent immediately).
+//
+//nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.
+func (s *ScopedLogger) ErrorInSection(section, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	s.parent.mu.Lock()
+	s.parent.errors = append(s.parent.errors, msg)
+	s.parent.trackNamedSection(section)
+	s.parent.mu.Unlock()
+	s.emit("ERROR", msg)
+}
+
+// SubHeader formats a subsection header.
+func (s *ScopedLogger) SubHeader(title string) {
+	separator := strings.Repeat("-", 40)
+	s.emit("", separator)
+	s.emit("", "  "+title)
+	s.emit("", separator)
+}
+
+// RecordBuild increments the build counter on the parent immediately.
+func (s *ScopedLogger) RecordBuild() {
+	s.parent.RecordBuild()
+}
+
+// RecordPass increments the pass counter on the parent immediately.
+func (s *ScopedLogger) RecordPass() {
+	s.parent.RecordPass()
+}
+
+// RecordFailure increments the failure counter on the parent immediately.
+func (s *ScopedLogger) RecordFailure() {
+	s.parent.RecordFailure()
+}
+
+// RecordFailureInSection increments the failure counter on the parent for the given section.
+func (s *ScopedLogger) RecordFailureInSection(section string) {
+	s.parent.RecordFailureInSection(section)
+}
+
+// Flush writes all buffered lines atomically to stdout.
+// In streaming mode this is a no-op (lines were already written).
+func (s *ScopedLogger) Flush() {
+	if s.stream {
+		return
+	}
+	s.mu.Lock()
+	lines := s.lines
+	s.lines = nil
+	s.mu.Unlock()
+
+	if len(lines) == 0 {
+		return
+	}
+	// Write all buffered lines under the parent's lock for atomic output
+	s.parent.mu.Lock()
+	defer s.parent.mu.Unlock()
+	for _, line := range lines {
+		fmt.Println(line)
 	}
 }
 
-// Debugf formats and logs a debug message when verbose.
-func (l *Logger) Debugf(format string, args ...any) { l.Debug(fmt.Sprintf(format, args...)) }
-
-// ErrorInSection logs an error attributed to a named section.
-func (l *Logger) ErrorInSection(section, format string, args ...any) {
-	l.Errorf("[%s] %s", section, fmt.Sprintf(format, args...))
-}
-
-// ErrorCount returns the number of Error calls.
-func (l *Logger) ErrorCount() int { return int(l.errors.Load()) }
-
-// WarnCount returns the number of Warn calls.
-func (l *Logger) WarnCount() int { return int(l.warns.Load()) }
-
-// InfoCount returns the number of Info calls.
-func (l *Logger) InfoCount() int { return int(l.infos.Load()) }
-
-// Summary renders pass/warn/error counts.
-func (l *Logger) Summary() string {
-	parts := []string{
-		fmt.Sprintf("info=%d", l.InfoCount()),
-		fmt.Sprintf("warn=%d", l.WarnCount()),
-		fmt.Sprintf("error=%d", l.ErrorCount()),
+// emit formats and either buffers or streams a line.
+func (s *ScopedLogger) emit(level, msg string) {
+	timestamp := time.Now().Format("15:04:05")
+	var line string
+	if level != "" {
+		line = fmt.Sprintf("[%s] [%s] %s", timestamp, level, msg)
+	} else {
+		line = msg
 	}
-	return "Summary: " + strings.Join(parts, ", ")
-}
 
-// ScopedLogger returns a child logger that prefixes messages with the given scope.
-func (l *Logger) ScopedLogger(scope string) *Logger {
-	child := NewLogger(l.verbose, l.prefix+scope+": ")
-	child.w = l.w
-	return child
+	showOnConsole := level != "DEBUG" || s.stream
+
+	if s.stream {
+		// Streaming mode: write to console + logFile atomically
+		s.parent.mu.Lock()
+		if showOnConsole {
+			fmt.Println(line)
+		}
+		if s.parent.logFile != nil {
+			_, _ = fmt.Fprintln(s.parent.logFile, line)
+		}
+		s.parent.mu.Unlock()
+	} else {
+		// Buffered mode: write to logFile immediately, buffer console output
+		s.parent.mu.Lock()
+		if s.parent.logFile != nil {
+			_, _ = fmt.Fprintln(s.parent.logFile, line)
+		}
+		s.parent.mu.Unlock()
+
+		if showOnConsole {
+			s.mu.Lock()
+			s.lines = append(s.lines, line)
+			s.mu.Unlock()
+		}
+	}
 }

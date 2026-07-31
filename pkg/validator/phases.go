@@ -186,12 +186,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	// Doc engine over all changed YAML files.
 	yamlFiles := filterYAML(changed)
-	log.Info(fmt.Sprintf("running doc checks over %d YAML file(s)...", len(yamlFiles)))
+	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
 	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
 
 	// Overlay engine - overlays detected from changed files.
 	overlays := detectOverlays(changed)
-	log.Info(fmt.Sprintf("running overlay checks over %d overlay(s)...", len(overlays)))
+	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	var overlayResult check.Result
 	if len(overlays) > 0 {
 		for _, ov := range overlays {

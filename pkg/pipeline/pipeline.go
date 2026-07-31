@@ -68,19 +68,19 @@ func Run(opts Options) error {
 	tc := validator.NewTimingCollector()
 
 	log.Header("GitOps CI Pipeline")
-	log.Info(fmt.Sprintf("URL: %s", opts.URL))
-	log.Info(fmt.Sprintf("PR: %s", opts.PR))
-	log.Info(fmt.Sprintf("Revision: %s", resolveRevision(opts.Revision, opts.PR)))
+	log.Info("URL: %s", opts.URL)
+	log.Info("PR: %s", opts.PR)
+	log.Info("Revision: %s", resolveRevision(opts.Revision, opts.PR))
 
 	setupStart := time.Now()
 	cleanup, err := setupWorkdir(opts)
 	defer cleanup()
 	tc.Record("Setup", time.Since(setupStart))
 	if err != nil {
-		log.Errorf("setup failed: %v", err)
+		log.Error("setup failed: %v", err)
 		return fmt.Errorf("pipeline setup: %w", err)
 	}
-	log.Info(fmt.Sprintf("setup complete (%s)", time.Since(setupStart).Round(time.Millisecond)))
+	log.Info("setup complete (%s)", time.Since(setupStart).Round(time.Millisecond))
 
 	res := &Result{}
 	if shouldRunPRChecks(opts) {
@@ -89,20 +89,20 @@ func Run(opts Options) error {
 		client := github.NewClient(opts.URL, opts.PR)
 		res.TitleErr = github.ValidatePRTitle(client)
 		if res.TitleErr != nil {
-			log.Errorf("PR title: %v", res.TitleErr)
+			log.Error("PR title: %v", res.TitleErr)
 		} else {
 			log.Info("PR title: passed")
 		}
 		res.UnsignedErr = runUnsignedCheck(client)
 		if res.UnsignedErr != nil {
-			log.Errorf("unsigned commits: %v", res.UnsignedErr)
+			log.Error("unsigned commits: %v", res.UnsignedErr)
 		} else {
 			log.Info("unsigned commits check: passed")
 		}
 		if shouldRunChecklistCheck(opts) {
 			res.ChecklistErr = github.ValidatePRChecklist(client)
 			if res.ChecklistErr != nil {
-				log.Warn(fmt.Sprintf("PR checklist: %v", res.ChecklistErr))
+				log.Warn("PR checklist: %v", res.ChecklistErr)
 			} else {
 				log.Info("PR checklist: passed")
 			}
@@ -120,21 +120,21 @@ func Run(opts Options) error {
 	res.ReproduceCommand = validator.ReproduceCommand(vopts)
 
 	if reason, skip := commentSkipReason(opts); skip {
-		log.Info("comment posting skipped: " + reason)
+		log.Info("comment posting skipped: %s", reason)
 	} else if err := postComment(res, opts); err != nil {
-		log.Warn(fmt.Sprintf("posting PR comment failed: %v", err))
+		log.Warn("posting PR comment failed: %v", err)
 	} else {
 		log.Info("PR comment posted")
 	}
 
 	if vr != nil && vr.Logger != nil {
-		log.Info(vr.Logger.Summary())
+		log.Info("%s", vr.Logger.Summary())
 	}
-	log.Info(fmt.Sprintf("pipeline completed in %s", time.Since(start).Round(time.Second)))
+	log.Info("pipeline completed in %s", time.Since(start).Round(time.Second))
 	if res.ReproduceCommand != "" {
 		log.Info("")
 		log.Info("Reproduce locally:")
-		log.Info("  " + res.ReproduceCommand)
+		log.Info("  %s", res.ReproduceCommand)
 	}
 
 	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil {

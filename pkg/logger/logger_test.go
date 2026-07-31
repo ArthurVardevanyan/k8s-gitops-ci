@@ -1,51 +1,440 @@
 package logger
 
 import (
-	"bytes"
 	"strings"
+	"sync"
 	"testing"
 )
 
-func TestNewLogger(t *testing.T) {
+func TestLogger_Info(t *testing.T) {
+	l := NewLogger(true, "")
+	l.Info("test message %d", 42)
+	// No panic = pass
+}
+
+func TestLogger_Error(t *testing.T) {
 	l := NewLogger(false, "")
-	if l == nil {
-		t.Fatal("NewLogger returned nil")
+	l.Error("something failed: %s", "reason")
+
+	errors := l.Errors()
+	if len(errors) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(errors))
 	}
-	if l.ErrorCount() != 0 {
-		t.Error("expected zero errors")
+	if !strings.Contains(errors[0], "something failed") {
+		t.Errorf("error message mismatch: %s", errors[0])
 	}
 }
 
-func TestCounter(t *testing.T) {
+func TestLogger_HasFailures(t *testing.T) {
 	l := NewLogger(false, "")
-	l.Info("a")
-	l.Warn("b")
-	l.Error("c")
-	l.Error("d")
-	if l.InfoCount() != 1 || l.WarnCount() != 1 || l.ErrorCount() != 2 {
-		t.Errorf("counts: info=%d warn=%d error=%d", l.InfoCount(), l.WarnCount(), l.ErrorCount())
+	if l.HasFailures() {
+		t.Error("expected no failures initially")
+	}
+
+	l.Error("fail")
+	if !l.HasFailures() {
+		t.Error("expected failures after Error()")
 	}
 }
 
-func TestWrites(t *testing.T) {
-	var buf bytes.Buffer
-	l := NewLogger(true, "test: ")
-	l.SetWriter(&buf)
-	l.Info("hello")
-	l.Debug("world")
-	out := buf.String()
-	if !strings.Contains(out, "hello") || !strings.Contains(out, "world") {
-		t.Errorf("output missing message: %s", out)
+func TestLogger_RecordBuildPass(t *testing.T) {
+	l := NewLogger(false, "")
+	l.RecordBuild()
+	l.RecordBuild()
+	l.RecordPass()
+
+	summary := l.Summary()
+	if !strings.Contains(summary, "Builds: 2") {
+		t.Errorf("expected Builds: 2 in summary, got: %s", summary)
+	}
+	if !strings.Contains(summary, "Passes: 1") {
+		t.Errorf("expected Passes: 1 in summary, got: %s", summary)
 	}
 }
 
-func TestSummary(t *testing.T) {
+func TestLogger_RecordFailure(t *testing.T) {
 	l := NewLogger(false, "")
-	l.Info("a")
-	l.Warn("b")
-	l.Error("c")
-	s := l.Summary()
-	if !strings.Contains(s, "info=1") || !strings.Contains(s, "warn=1") || !strings.Contains(s, "error=1") {
-		t.Errorf("summary unexpected: %s", s)
+	l.RecordFailure()
+
+	if !l.HasFailures() {
+		t.Error("expected HasFailures() after RecordFailure()")
+	}
+	summary := l.Summary()
+	if !strings.Contains(summary, "Failures: 1") {
+		t.Errorf("expected Failures: 1 in summary, got: %s", summary)
+	}
+}
+
+func TestLogger_Summary(t *testing.T) {
+	l := NewLogger(false, "")
+	l.RecordBuild()
+	l.RecordPass()
+	l.Error("test error")
+
+	summary := l.Summary()
+	if !strings.Contains(summary, "RESULTS SUMMARY") {
+		t.Error("expected RESULTS SUMMARY header")
+	}
+	if !strings.Contains(summary, "Errors: 1") {
+		t.Error("expected error count in summary")
+	}
+}
+
+func TestLogger_ErrorInSectionSurfacesInSummary(t *testing.T) {
+	// Guards the changeset-failure path in the validator: a changeset resolution
+	// error is reported via ErrorInSection so it both increments the error count
+	// (visible in Summary) and is attributed to a named section, rather than
+	// being silently stashed and printed as a clean 0/0/0 run.
+	l := NewLogger(false, "")
+	l.ErrorInSection("Changeset", "changeset: %v", "boom")
+
+	if len(l.Errors()) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(l.Errors()))
+	}
+	summary := l.Summary()
+	if !strings.Contains(summary, "Errors: 1") {
+		t.Errorf("expected Errors: 1 in summary, got: %s", summary)
+	}
+	if !strings.Contains(summary, "Changeset") {
+		t.Errorf("expected Changeset section in summary, got: %s", summary)
+	}
+}
+
+func TestLogger_SummaryFailedSections(t *testing.T) {
+	l := NewLogger(false, "")
+	l.Header("YAML Syntax")
+	l.RecordBuild()
+	l.RecordPass()
+	l.Header("Shellcheck")
+	l.RecordBuild()
+	l.RecordFailure()
+	l.Error("shellcheck: something bad")
+	l.Header("Kubeconform")
+	l.RecordBuild()
+	l.Error("kubeconform: invalid schema")
+
+	summary := l.Summary()
+	if !strings.Contains(summary, "Failed sections:") {
+		t.Errorf("expected 'Failed sections:' in summary, got: %s", summary)
+	}
+	if !strings.Contains(summary, "- Shellcheck") {
+		t.Errorf("expected '- Shellcheck' in summary, got: %s", summary)
+	}
+	if !strings.Contains(summary, "- Kubeconform") {
+		t.Errorf("expected '- Kubeconform' in summary, got: %s", summary)
+	}
+	if strings.Contains(summary, "- YAML Syntax") {
+		t.Errorf("did not expect '- YAML Syntax' in summary (it passed), got: %s", summary)
+	}
+
+	// Verify FailedSections accessor
+	sections := l.FailedSections()
+	if len(sections) != 2 {
+		t.Fatalf("expected 2 failed sections, got %d: %v", len(sections), sections)
+	}
+	if sections[0] != "Shellcheck" || sections[1] != "Kubeconform" {
+		t.Errorf("unexpected failed sections: %v", sections)
+	}
+}
+
+func TestLogger_SetSection(t *testing.T) {
+	l := NewLogger(false, "")
+	l.Header("Build")
+	l.RecordBuild()
+	l.RecordPass()
+
+	// SetSection changes the active section without printing a header
+	l.SetSection("Sync Options Check")
+	l.Error("missing annotation")
+
+	summary := l.Summary()
+	if !strings.Contains(summary, "- Sync Options Check") {
+		t.Errorf("expected '- Sync Options Check' in failed sections, got: %s", summary)
+	}
+	if strings.Contains(summary, "- Build") {
+		t.Errorf("did not expect '- Build' in failed sections (it passed), got: %s", summary)
+	}
+}
+
+func TestLogger_LogFile(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.log"
+	l := NewLogger(true, tmpFile)
+	l.Info("logged message")
+	l.Close()
+
+	// Verify log file was written
+	// (just checking it doesn't panic)
+}
+
+func TestLogger_ErrorInSection(t *testing.T) {
+	l := NewLogger(false, "")
+	// Simulate concurrent steps: set currentSection to something different
+	l.Header("Step A")
+	// But log the error attributed to a different section
+	l.ErrorInSection("Step B", "error in B: %s", "details")
+
+	sections := l.FailedSections()
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 failed section, got %d: %v", len(sections), sections)
+	}
+	if sections[0] != "Step B" {
+		t.Errorf("expected 'Step B' in failed sections, got: %v", sections)
+	}
+
+	errors := l.Errors()
+	if len(errors) != 1 || !strings.Contains(errors[0], "error in B") {
+		t.Errorf("unexpected errors: %v", errors)
+	}
+}
+
+func TestLogger_RecordFailureInSection(t *testing.T) {
+	l := NewLogger(false, "")
+	l.Header("CRB Check")
+	l.RecordFailureInSection("Image Pinning")
+
+	sections := l.FailedSections()
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 failed section, got %d: %v", len(sections), sections)
+	}
+	if sections[0] != "Image Pinning" {
+		t.Errorf("expected 'Image Pinning', got: %v", sections)
+	}
+}
+
+func TestLogger_ErrorInSection_ConcurrentSafety(t *testing.T) {
+	l := NewLogger(false, "")
+	// Simulate the race scenario: multiple goroutines attribute errors to their own sections
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			l.ErrorInSection("Section A", "error %d", i)
+		}
+		close(done)
+	}()
+	for i := 0; i < 100; i++ {
+		l.ErrorInSection("Section B", "error %d", i)
+	}
+	<-done
+
+	sections := l.FailedSections()
+	hasA, hasB := false, false
+	for _, s := range sections {
+		if s == "Section A" {
+			hasA = true
+		}
+		if s == "Section B" {
+			hasB = true
+		}
+	}
+	if !hasA || !hasB {
+		t.Errorf("expected both Section A and Section B in failed sections, got: %v", sections)
+	}
+}
+
+func TestLogger_Verbose(t *testing.T) {
+	l := NewLogger(true, "")
+	if !l.Verbose() {
+		t.Error("expected Verbose() == true for verbose logger")
+	}
+	l2 := NewLogger(false, "")
+	if l2.Verbose() {
+		t.Error("expected Verbose() == false for non-verbose logger")
+	}
+}
+
+func TestScopedLogger_BufferedMode(t *testing.T) {
+	l := NewLogger(false, "") // non-verbose → buffered
+	s := l.Scope()
+
+	s.Info("first message")
+	s.Info("second message")
+
+	// Before Flush, lines are buffered
+	s.mu.Lock()
+	count := len(s.lines)
+	s.mu.Unlock()
+	if count != 2 {
+		t.Fatalf("expected 2 buffered lines, got %d", count)
+	}
+
+	// Flush should drain
+	s.Flush()
+	s.mu.Lock()
+	count = len(s.lines)
+	s.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected 0 buffered lines after Flush, got %d", count)
+	}
+}
+
+func TestScopedLogger_StreamingMode(t *testing.T) {
+	l := NewLogger(true, "") // verbose → streaming
+	s := l.Scope()
+
+	s.Info("streaming message")
+	s.Debug("debug message")
+
+	// In streaming mode, nothing is buffered
+	s.mu.Lock()
+	count := len(s.lines)
+	s.mu.Unlock()
+	if count != 0 {
+		t.Fatalf("expected 0 buffered lines in streaming mode, got %d", count)
+	}
+
+	// Flush is a no-op in streaming mode
+	s.Flush()
+}
+
+func TestScopedLogger_DebugNotBuffered(t *testing.T) {
+	l := NewLogger(false, "") // non-verbose → buffered
+	s := l.Scope()
+
+	s.Debug("should not appear in buffer")
+	s.Info("should appear in buffer")
+
+	s.mu.Lock()
+	count := len(s.lines)
+	s.mu.Unlock()
+	// Only Info should be buffered; Debug is suppressed in non-verbose
+	if count != 1 {
+		t.Fatalf("expected 1 buffered line (DEBUG suppressed), got %d", count)
+	}
+}
+
+func TestScopedLogger_CountersDelegateImmediately(t *testing.T) {
+	l := NewLogger(false, "")
+	s := l.Scope()
+
+	s.RecordBuild()
+	s.RecordBuild()
+	s.RecordPass()
+	s.RecordFailure()
+
+	// Counters should be on parent immediately (before Flush)
+	summary := l.Summary()
+	if !strings.Contains(summary, "Builds: 2") {
+		t.Errorf("expected Builds: 2 in summary, got: %s", summary)
+	}
+	if !strings.Contains(summary, "Passes: 1") {
+		t.Errorf("expected Passes: 1 in summary, got: %s", summary)
+	}
+	if !strings.Contains(summary, "Failures: 1") {
+		t.Errorf("expected Failures: 1 in summary, got: %s", summary)
+	}
+}
+
+func TestScopedLogger_ErrorTracksInParent(t *testing.T) {
+	l := NewLogger(false, "")
+	l.SetSection("Build YAML")
+	s := l.Scope()
+
+	s.Error("build failed: %s", "timeout")
+
+	// Error should be tracked in parent immediately
+	errors := l.Errors()
+	if len(errors) != 1 {
+		t.Fatalf("expected 1 error in parent, got %d", len(errors))
+	}
+	if !strings.Contains(errors[0], "build failed") {
+		t.Errorf("error message mismatch: %s", errors[0])
+	}
+	if !l.HasFailures() {
+		t.Error("expected HasFailures() after scoped Error()")
+	}
+}
+
+func TestScopedLogger_ErrorInSectionTracksInParent(t *testing.T) {
+	l := NewLogger(false, "")
+	s := l.Scope()
+
+	s.ErrorInSection("Build YAML", "overlay failed: %s", "network")
+
+	sections := l.FailedSections()
+	if len(sections) != 1 || sections[0] != "Build YAML" {
+		t.Errorf("expected 'Build YAML' in failed sections, got: %v", sections)
+	}
+}
+
+func TestScopedLogger_WarnTracksInParent(t *testing.T) {
+	l := NewLogger(false, "")
+	s := l.Scope()
+
+	s.Warn("something suspicious: %s", "drift")
+
+	// Check parent summary mentions warnings
+	summary := l.Summary()
+	if !strings.Contains(summary, "Warnings: 1") {
+		t.Errorf("expected Warnings: 1 in summary, got: %s", summary)
+	}
+}
+
+func TestScopedLogger_ConcurrentFlush(t *testing.T) {
+	l := NewLogger(false, "")
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			s := l.Scope()
+			for j := 0; j < 50; j++ {
+				s.Info("goroutine %d message %d", id, j)
+			}
+			s.RecordBuild()
+			s.RecordPass()
+			s.Flush()
+		}(i)
+	}
+	wg.Wait()
+
+	summary := l.Summary()
+	if !strings.Contains(summary, "Builds: 10") {
+		t.Errorf("expected Builds: 10, got: %s", summary)
+	}
+	if !strings.Contains(summary, "Passes: 10") {
+		t.Errorf("expected Passes: 10, got: %s", summary)
+	}
+}
+
+func TestScopedLogger_RecordFailureInSection(t *testing.T) {
+	l := NewLogger(false, "")
+	s := l.Scope()
+
+	s.RecordFailureInSection("Scaffold")
+
+	sections := l.FailedSections()
+	if len(sections) != 1 || sections[0] != "Scaffold" {
+		t.Errorf("expected 'Scaffold' in failed sections, got: %v", sections)
+	}
+}
+
+func TestScopedLogger_SubHeader(t *testing.T) {
+	l := NewLogger(false, "")
+	s := l.Scope()
+
+	s.SubHeader("Building: my-app")
+
+	s.mu.Lock()
+	count := len(s.lines)
+	s.mu.Unlock()
+	// SubHeader produces 3 lines: separator, title, separator
+	if count != 3 {
+		t.Fatalf("expected 3 buffered lines from SubHeader, got %d", count)
+	}
+}
+
+func TestScopedLogger_FlushIdempotent(t *testing.T) {
+	l := NewLogger(false, "")
+	s := l.Scope()
+
+	s.Info("one line")
+	s.Flush()
+	s.Flush() // second flush should be no-op
+
+	s.mu.Lock()
+	count := len(s.lines)
+	s.mu.Unlock()
+	if count != 0 {
+		t.Errorf("expected 0 lines after double Flush, got %d", count)
 	}
 }
