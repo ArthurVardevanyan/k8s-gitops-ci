@@ -11,6 +11,19 @@ import (
 // DefaultMaxSize is the default maximum file size (1 MiB).
 const DefaultMaxSize int64 = 1 * 1024 * 1024
 
+// DefaultIgnorePatterns lists filename glob patterns (matched by Check via
+// isAllowed - basename or full-path suffix/glob) exempted from the
+// large-file/binary check by default: generic, org-agnostic file types
+// that legitimately balloon past DefaultMaxSize - compressed archives, web
+// fonts, images/icons, and CustomResourceDefinition manifests (whose
+// embedded OpenAPI schemas routinely run into several hundred KiB or more,
+// with nothing wrong with the file). An org appends/replaces entries here
+// rather than forking Check to get its own allowlist.
+var DefaultIgnorePatterns = []string{
+	"*.tar.gz", "*.woff", "*.woff2", "*.ttf", "*.eot", "*.png", "*.ico",
+	"customresourcedefinition*.yaml",
+}
+
 // Violation records a binary or oversized file finding.
 type Violation struct {
 	File   string

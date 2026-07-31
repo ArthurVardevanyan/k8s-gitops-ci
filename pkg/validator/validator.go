@@ -20,6 +20,7 @@ func RunAll(opts Options) (*Result, error) {
 	res := &Result{Logger: log, Timing: tc}
 
 	syncopts.AssumeOpenShift = opts.AssumeOpenShift
+	configureClusterIdentityFromProviders(opts)
 
 	changed, err := resolveChangeset(opts)
 	if err != nil {

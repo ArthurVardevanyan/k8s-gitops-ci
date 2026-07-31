@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/cluster"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
@@ -91,6 +93,78 @@ func TestPlaceholderCheck_SkipsCustomResourceDefinitions(t *testing.T) {
 		t.Error("expected non-CRD documents not to be skipped")
 	}
 }
+
+// TestClusterIdentityAdapter_DisabledWithoutProvider is a regression test:
+// CheckOverlay used to call clusterid.RawFindings with a zero-value
+// ClusterIndex whenever ClusterIndexProvider was nil, and RawFindings'
+// infraID-mismatch/invalid-JSON structural findings don't depend on the
+// index's contents at all - so a generic run with no cluster-identity
+// provider configured could still produce findings on an overlay
+// referencing a mismatched infraID or containing malformed JSON. The check
+// must instead be fully disabled (return nil, not "findings against an
+// empty index") in that case.
+func TestClusterIdentityAdapter_DisabledWithoutProvider(t *testing.T) {
+	orig := ClusterIndexProvider
+	ClusterIndexProvider = nil
+	t.Cleanup(func() { ClusterIndexProvider = orig })
+
+	dir := t.TempDir()
+	// infraID that clearly doesn't match the overlay folder name, and an
+	// invalid JSON file - both of which RawFindings would flag
+	// unconditionally if it were still invoked against a zero-value index.
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("infraID: totally-different-cluster-abc123\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := (clusterIdentityAdapter{}).CheckOverlay(dir, "my-cluster")
+	if len(findings) != 0 {
+		t.Errorf("expected no findings when no ClusterIndexProvider is configured, got %+v", findings)
+	}
+}
+
+func TestConfigureClusterIdentityFromProviders_DisablesWhenNotConfigured(t *testing.T) {
+	orig := ClusterIndexProvider
+	ClusterIndexProvider = func() clusterid.ClusterIndex {
+		return clusterid.ClusterIndex{IDToCluster: map[string]string{"leftover": "state"}}
+	}
+	t.Cleanup(func() { ClusterIndexProvider = orig })
+
+	configureClusterIdentityFromProviders(Options{})
+	if ClusterIndexProvider != nil {
+		t.Error("expected ClusterIndexProvider to be reset to nil for an unconfigured provider.Providers")
+	}
+}
+
+func TestConfigureClusterIdentityFromProviders_WiresRealProvider(t *testing.T) {
+	orig := ClusterIndexProvider
+	t.Cleanup(func() { ClusterIndexProvider = orig })
+
+	opts := Options{Providers: provider.Providers{ClusterMetadata: testClusterMetadata{}}}
+	configureClusterIdentityFromProviders(opts)
+	if ClusterIndexProvider == nil {
+		t.Fatal("expected ClusterIndexProvider to be wired from a configured ClusterMetadata provider")
+	}
+	idx := ClusterIndexProvider()
+	if idx.IDToCluster["proj-a"] != "cluster-a" {
+		t.Errorf("expected the bridged index to carry the provider's IDToCluster entries, got %+v", idx)
+	}
+	if !idx.KnownClusters["cluster-a"] {
+		t.Errorf("expected the bridged index to carry the provider's known-clusters set, got %+v", idx)
+	}
+}
+
+type testClusterMetadata struct{}
+
+func (testClusterMetadata) ProjectIdentity() (idx cluster.ProjectIndex, knownClusters map[string]bool, ok bool, err error) {
+	return cluster.ProjectIndex{IDToCluster: map[string]string{"proj-a": "cluster-a"}},
+		map[string]bool{"cluster-a": true}, true, nil
+}
+
+func (testClusterMetadata) ChangeGroups() (map[string]int, bool) { return nil, false }
 
 func TestPsaCheck_CarriesMissingLabelsInExtra(t *testing.T) {
 	data := []byte("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: foo\n")

@@ -229,6 +229,16 @@ automatically exemptable via its own check ID (see
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens, or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML                                                                                                                                |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID) |
 
+`cluster-identity` is disabled entirely (produces no findings at all,
+including its infraID-mismatch/invalid-JSON structural findings, which
+don't otherwise depend on any configured metadata) unless an org supplies
+a `provider.Providers.ClusterMetadata` implementation whose
+`ProjectIdentity()` reports itself enabled - `RunAll` bridges it into
+`validator.ClusterIndexProvider` once per run
+(`configureClusterIdentityFromProviders`, `pkg/validator/register_checks.go`).
+A generic run with no such provider wired never sees a cluster-identity
+finding.
+
 A handful of documents/directories are excluded from the doc-check pass
 above entirely (not merely exempted — they never generate a finding to
 begin with):
@@ -371,7 +381,11 @@ the full pipeline, for validating a directory or explicit file list
 ## Static Checks phase (all steps run concurrently)
 
 - **large-file** — flags files over a size threshold
-  (`pkg/largefile.DefaultMaxSize`).
+  (`pkg/largefile.DefaultMaxSize`), or that look binary. A generic
+  ignore-glob allowlist (`pkg/largefile.DefaultIgnorePatterns` — compressed
+  archives, web fonts, images/icons, and `customresourcedefinition*.yaml`,
+  whose embedded OpenAPI schemas legitimately run large) is applied by
+  default; override the var to add/replace entries.
 - **YAML-syntax** — parse-level YAML validity (`pkg/lint/yamlsyntax`),
   independent of and cheaper than schema validation.
 - **config-sort** — repo config files are alphabetically sorted
