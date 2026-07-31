@@ -52,16 +52,16 @@ pass.
 > `pipeline`/`build-yaml` CLI flags down to `validator.Options`, but as of
 > this writing **nothing in `pkg/validator` reads either field** to scope
 > the changeset or the overlay set — `resolveChangeset` only ever looks
-> at `Dirs`/`RepoURL`/`PR`/`BaseRef`/`IncludeDeletions`. The one function
-> that does consume an `Apps` list, `pkg/scaffold.Run` (`RunOptions.Apps`,
-> a distinct struct from `validator.Options`), is itself never called
-> from `pkg/validator/phases.go` or anywhere else in the real pipeline
-> (only the no-argument `scaffold.CheckReadmeStatus()` is). Practically:
-> `k8s-gitops-ci build-yaml --app foo --cluster bar` today behaves
-> identically to `k8s-gitops-ci scan-all` (an uncommitted-working-tree-
-> diff scan across the whole repo) — the `--app`/`--cluster` values are
-> silently accepted and then have no effect. Verify against the current
-> code before relying on app/cluster scoping actually narrowing a run.
+> at `Dirs`/`RepoURL`/`PR`/`BaseRef`/`IncludeDeletions`. (`pkg/scaffold.Run`
+> takes its own, unrelated per-app `RunOptions.App` - see
+> [Scaffold Validation](#scaffold-validation) below - and is unaffected by
+> this limitation; it's driven entirely by the resolved changeset, not
+> `Options.Apps`/`Clusters`.) Practically: `k8s-gitops-ci build-yaml --app
+foo --cluster bar` today behaves identically to `k8s-gitops-ci scan-all`
+> (an uncommitted-working-tree-diff scan across the whole repo) — the
+> `--app`/`--cluster` values are silently accepted and then have no
+> effect. Verify against the current code before relying on app/cluster
+> scoping actually narrowing a run.
 
 ## Build Strategies
 
@@ -112,6 +112,58 @@ anything - it only _detects_ unresolved AVP tokens in
 already-rendered/committed YAML, independent of the build-time
 resolution described above.
 
+## Scaffold Validation
+
+Apps that opt into `scafctl`-based scaffolding (a `.scafctl/configs/<app>.yaml`
+config exists - unrelated apps are skipped entirely, not treated as an
+error) are re-validated against their scaffold template/config whenever a
+change could affect their generated content
+(`pkg/validator/scaffold_wiring.go`'s `runScaffoldValidation`, called from
+the Build + Compliance phase). Three independent triggers, each skipping
+any app an earlier one already tested, cover every way a change can
+require this:
+
+1. **Template changes** (`configdiff.DetectTemplateChanges`) - a shared
+   template changed, so every overlay of every app using it is
+   re-checked (a full test).
+2. **Config changes** (`configdiff.DetectAffectedApps`) - either specific
+   clusters (an override changed) or a full test (a change that fans out
+   cluster-independently, e.g. a changeGroup reassignment - see
+   `provider.Providers.ChangeGroups`).
+3. **An app's own overlay files changed**, not already covered above -
+   only the overlays the PR actually touched, using the same trigger
+   classification `overlay.GetOverlaysToTest` uses for the build phase
+   itself.
+
+For each app, `pkg/scaffold.Run` regenerates its overlays via scafctl once
+(bounded by a 2-minute timeout) and diffs the result against every
+overlay actually being checked, **bounded-parallel** (up to
+`runtime.NumCPU()*2` overlays at once - the per-app fan-out above is
+similarly bounded-parallel across apps). An overlay is skipped rather
+than failed when it's disabled - either explicitly
+(`scaffoldDisabled: [...]` in the app's own scafctl config - see
+`scaffold.IsOverlayDisabled`) or via change-group 0
+(`scaffold.IsChangeGroupDisabled`) - or has no on-disk directory at all
+(a cluster not yet rolled out, or removed by this PR;
+`scaffold.SkippedClusters`). Any real content mismatch or scafctl
+execution failure is always treated as blocking - a simpler, more
+conservative policy than trying to distinguish "pre-existing drift this
+PR didn't cause" (which would need re-running scaffold against the
+merge-base template/config, a real but substantially riskier technique
+this implementation deliberately doesn't attempt).
+
+Separately, `scaffold.CheckReadmeStatus` is a cheap, structural,
+per-PR check of the README's `<!-- scaffold-status -->` table: does it
+list exactly the (app, overlay) pairs that exist on disk today, with no
+missing or stale rows? It does **not** recompute actual drift (that
+would mean scaffolding every app in the repo on every PR, not just the
+ones it touched) - that's `scaffold.UpdateReadmeStatus`'s job instead,
+a full-repo-scan regeneration meant to be run deliberately (the
+`update-scaffold-status` CLI command), not on every PR. Unlike the
+three drift triggers above, this check is gated behind the
+**`scaffold-readme`** step ID, default **off** - see the standalone
+steps list below for why.
+
 ## Registered checks
 
 Every check below is registered via `check.Register` in
@@ -133,13 +185,21 @@ automatically exemptable via its own check ID (see
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens, or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML                                                                                                                                |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID) |
 
-Three standalone (non-registry) steps participate in the same
+Four standalone (non-registry) steps participate in the same
 enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
 [Generic check-enablement mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)):
 
 - **`golangci`** — Go linting via `pkg/lint/golangci`, default **on**.
 - **`avp`** — per-app AVP strategy auto-detection (see
   [Build Strategies](#build-strategies) above), default **on**.
+- **`scaffold-readme`** — the README scaffold-status table structural
+  check (see [Scaffold Validation](#scaffold-validation) above), default
+  **off**. Like `kyverno` below, this generic core can't know whether a
+  given repo's table actually matches the one-row-per-app-per-overlay
+  shape the check expects, so it's opt-in
+  (`--enable-checks scaffold-readme`) until an org confirms
+  compatibility - the other three scaffold-drift triggers
+  (template/config/overlay changes) are unaffected and always run.
 - **`kyverno`** — policy validation via `pkg/lint/kyverno`, default
   **off** (an org must opt in and supply its own policies — see
   [SCHEMAS.md](SCHEMAS.md)). Once enabled (`--enable-checks kyverno`),

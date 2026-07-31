@@ -164,8 +164,8 @@ per step:
 - `Options.DisabledChecks []string` — turn off a step that defaults to
   **enabled** (most steps: `sync-options`, `golangci`, `avp`, ...).
 - `Options.EnabledChecks []string` — turn on a step that defaults to
-  **disabled**. Currently only `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md)
-  for why).
+  **disabled**: `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md) for why) and
+  `scaffold-readme` (see [`CI.md`](CI.md#scaffold-validation) for why).
 - `pkg/validator/phases.go`'s `defaultOffSteps` map is the single place
   that lists which IDs default off; `stepEnabled(id, disabled, enabled)`
   is the shared decision function every gateable step calls.
@@ -333,15 +333,18 @@ count:
   instead of silently producing zero. Build errors are then grouped by root
   cause (`groupBuildErrors`/`formatBuildErrors`, so
   N overlays sharing one underlying cause don't repeat it N times), a
-  `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` hooks-defined matrix
-  (presence only — see [`HOOKS.md`](HOOKS.md) for what actually
-  executes vs. what's currently just detected), files needing
-  `kustomize edit fix`, and a `| Overlay | Target |`
-  ghost-patch table (`pkg/ghostpatch.CheckApp`, which renders overlays via
-  the krusty SDK directly — no runtime dependency on a `kustomize` binary
-  being present).
+  `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` hooks table (✅ ran
+  / ❌ failed / — not defined — hooks are actually executed, not just
+  detected; see [`HOOKS.md`](HOOKS.md)), files needing `kustomize edit
+fix`, and a `| Overlay | Target |` ghost-patch table
+  (`pkg/ghostpatch.CheckApp`, which renders overlays via the krusty SDK
+  directly — no runtime dependency on a `kustomize` binary being
+  present).
 - **Scaffold Validation** (`ComposeScaffoldValidationSection`) — real
-  README-drift detection (`pkg/scaffold.CheckReadmeStatus`).
+  per-app scaffold-drift detection across three triggers (template,
+  config, and overlay changes — see [`CI.md`](CI.md#scaffold-validation)),
+  plus README scaffold-status table structural-consistency checking
+  (`pkg/scaffold.CheckReadmeStatus`).
 - **Resource Compliance** (`ComposeResourceComplianceSection`) — findings
   grouped by `CheckID` into per-check nested `<details>` (❌ when a check
   has a finding in a directly-modified file — blocking — vs ⚠️ for a

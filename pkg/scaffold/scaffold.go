@@ -1,13 +1,24 @@
+// Package scaffold wraps the scafctl CLI (a config-scaffolding tool the
+// wider GitOps repo convention uses to generate overlay boilerplate from a
+// per-app template + config) to detect scaffold drift: overlays whose
+// committed content no longer matches what scafctl would generate from the
+// current template/config.
 package scaffold
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
@@ -20,141 +31,320 @@ const (
 	HookKeyword  = "run_scafctl_scaffold"
 )
 
-// ExcludedClusters lists clusters skipped from scaffold drift checks.
-var ExcludedClusters = map[string]bool{}
+// runTimeout bounds a single scafctl invocation (the whole app's overlays,
+// generated in one shot into a temp dir - see Run) so a hung or slow
+// scaffold-tool invocation can't stall the pipeline indefinitely.
+const runTimeout = 2 * time.Minute
 
-// RunOptions configures scaffold execution.
+// RunOptions configures one app's scaffold-drift run.
 type RunOptions struct {
-	Apps         []string
+	App     string
+	Trigger string // caller-supplied label (e.g. "overlay", "fan-out", "config-changeGroup") for logging/reporting; not interpreted here.
+	// Overlays lists the cluster/overlay names (matching <App>/overlays/<name>)
+	// to check for drift. An overlay disabled via IsOverlayDisabled or
+	// IsChangeGroupDisabled, or with no corresponding on-disk directory (a
+	// cluster not yet rolled out, or removed by this PR), is skipped rather
+	// than treated as a failure - see Summary.Skipped/SkippedClusters.
+	Overlays []string
+	// ChangedFiles is this run's full changeset, consulted only for
+	// diagnostic purposes today (kept for callers that want to correlate
+	// drift with what the PR actually touched).
 	ChangedFiles []string
-	OutputDir    string
+	// ChangeGroups is the org's cluster-name -> change-group mapping (see
+	// provider.Providers.ChangeGroups) - a cluster mapped to group 0 is
+	// treated as opted out of scaffold validation (IsChangeGroupDisabled).
+	// nil/empty disables this filter entirely (the generic default).
+	ChangeGroups map[string]int
 }
 
-// Result holds drift for one app.
-type Result struct {
-	App        string
-	Mismatches []string
-	Err        error
-}
-
-// Summary aggregates scaffold results.
+// Summary aggregates one app's Run outcome across every overlay checked.
 type Summary struct {
-	Results []Result
+	App                            string
+	Total, Passed, Skipped, Failed int
+	MismatchFiles                  []string // overlay-relative paths that differ from freshly-scaffolded content
+	Errors                         []string // execution failures (scafctl missing/failed, timeout, ...), distinct from content drift
+	SkippedClusters                []string // overlays skipped: disabled (config/change-group) or no on-disk directory yet
 }
 
-// Run executes scaffold validation for selected apps.
-func Run(opts RunOptions) *Summary {
-	summary := &Summary{}
-	for _, app := range opts.Apps {
-		if !HasScaffoldEnabled(app) {
-			continue
+// runScafctl is the actual scafctl invocation, factored into a package var
+// so tests can substitute a fake without needing the real binary installed
+// (matching the "org-injectable override" pattern used elsewhere in this
+// repo, e.g. overlay.SecretAuthHint) - scafctl is an external, org-provided
+// tool this package has no control over the availability of.
+var runScafctl = execScafctl
+
+// execScafctl runs `scafctl scaffold --config repo-config=<configPath>
+// --output <outputDir>`, generating every overlay's scaffolded content
+// under outputDir/<overlay>/... in one shot.
+func execScafctl(ctx context.Context, configPath, outputDir string) error {
+	cmd := exec.CommandContext(ctx, Binary, "scaffold", "--config", ConfigSource+"="+configPath, "--output", outputDir) //nolint:gosec // Binary/ConfigSource are package constants, not user input
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			return err
 		}
-		res := RunForApp(app, opts.ChangedFiles)
-		summary.Results = append(summary.Results, res)
+		return fmt.Errorf("%w: %s", err, msg)
 	}
-	return summary
+	return nil
 }
 
-// HasScaffoldEnabled reports whether an app contains the scaffold hook keyword.
+// HasScaffoldEnabled reports whether app's test.sh opts into scaffold-drift
+// validation (SCAFFOLD= - see docs/HOOKS.md; defaults to enabled when
+// test.sh is absent or doesn't mention it). This is independent of whether
+// app actually has a scafctl config at all - see HasScaffoldConfig, the
+// gate callers should also check before calling Run.
 func HasScaffoldEnabled(app string) bool {
-	path := filepath.Join(app, "test.sh")
-	cfg, err := hook.ParseTestScript(path)
+	cfg, err := hook.ParseTestScript(filepath.Join(app, "test.sh"))
 	if err != nil {
 		return false
 	}
 	return cfg.Scaffold
 }
 
-// RunForApp regenerates and compares overlays for one app.
-func RunForApp(app string, changedFiles []string) Result {
-	configPath := filepath.Join(convention.ScaffoldDir, "configs", app+".yaml")
-	if _, err := os.Stat(configPath); err != nil {
-		return Result{App: app, Err: fmt.Errorf("config not found: %w", err)}
+// HasScaffoldConfig reports whether app has opted into scafctl-based
+// scaffolding at all (a .scafctl/configs/<app>.{yaml,yml} file exists).
+// Callers should check this before calling Run - an app with no scaffold
+// config was never scaffolded in the first place, so Run erroring on a
+// missing config for it would be a false positive, not real drift.
+func HasScaffoldConfig(app string) bool {
+	return configFilePath(app) != ""
+}
+
+// scaffoldConfigFields is the subset of an app's scafctl config
+// (.scafctl/configs/<app>.yaml) this package reads directly, alongside
+// whatever scafctl's own schema defines - a config file is both scafctl's
+// real input and, via this additional top-level key, this CI tool's own
+// opt-out convention. Unknown keys are ignored by scafctl (config tools
+// universally tolerate this), so adding scaffoldDisabled here doesn't
+// require any scafctl-side change.
+type scaffoldConfigFields struct {
+	// ScaffoldDisabled lists overlay/cluster names to skip scaffold-drift
+	// validation for, even though their overlay directory exists - e.g. a
+	// cluster mid-migration whose overlay is intentionally hand-maintained
+	// for now. See IsOverlayDisabled.
+	ScaffoldDisabled []string `yaml:"scaffoldDisabled"`
+}
+
+// configFilePath returns the on-disk path to app's scafctl config, or ""
+// if none of the recognized extensions exist.
+func configFilePath(app string) string {
+	for _, ext := range []string{".yaml", ".yml"} {
+		p := filepath.Join(convention.ScaffoldDir, "configs", app+ext)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
 	}
-	templateDir := filepath.Join(convention.ScaffoldDir, "templates", app)
-	if _, err := os.Stat(templateDir); err != nil {
-		return Result{App: app, Err: fmt.Errorf("template dir not found: %w", err)}
+	return ""
+}
+
+// readScaffoldConfigFields parses app's scafctl config for the fields this
+// package reads. A missing config, or one with no scaffoldDisabled key,
+// returns a zero-value (nothing disabled) rather than an error - config-
+// driven disabling is opt-in.
+func readScaffoldConfigFields(app string) scaffoldConfigFields {
+	path := configFilePath(app)
+	if path == "" {
+		return scaffoldConfigFields{}
 	}
+	data, err := os.ReadFile(path) //nolint:gosec // path is derived from convention.ScaffoldDir, a repo-relative constant, not user input
+	if err != nil {
+		return scaffoldConfigFields{}
+	}
+	var fields scaffoldConfigFields
+	if err := yaml.Unmarshal(data, &fields); err != nil {
+		return scaffoldConfigFields{}
+	}
+	return fields
+}
+
+// IsOverlayDisabled reports whether app's scafctl config opts cluster out
+// of scaffold-drift validation via a top-level scaffoldDisabled list (see
+// scaffoldConfigFields). A missing config or key means nothing is disabled.
+func IsOverlayDisabled(app, cluster string) bool {
+	for _, c := range readScaffoldConfigFields(app).ScaffoldDisabled {
+		if c == cluster {
+			return true
+		}
+	}
+	return false
+}
+
+// IsChangeGroupDisabled reports whether cluster is mapped to change-group 0
+// in changeGroups - this repo's convention (shared with pkg/configdiff) for
+// "this cluster opted out of change-group-triggered scaffold fan-out".
+// A cluster absent from changeGroups (or a nil/empty map, the default with
+// no ClusterMetadata provider wired) is never considered disabled by this
+// check alone.
+func IsChangeGroupDisabled(cluster string, changeGroups map[string]int) bool {
+	group, ok := changeGroups[cluster]
+	return ok && group == 0
+}
+
+// overlayDir returns app's on-disk overlay directory for cluster.
+func overlayDir(app, cluster string) string {
+	return filepath.Join(app, "overlays", cluster)
+}
+
+// overlayExists reports whether app has an on-disk overlay directory for
+// cluster - false for a cluster not yet rolled out (referenced by config
+// but not yet merged) or removed by this PR (deleted by the diff being
+// validated); either way there's nothing to compare scaffolded content
+// against, so Run skips it rather than failing.
+func overlayExists(app, cluster string) bool {
+	info, err := os.Stat(overlayDir(app, cluster))
+	return err == nil && info.IsDir()
+}
+
+// Run generates opts.App's overlays via scafctl (once, into a temp
+// directory - the existing, real invocation contract) and compares each of
+// opts.Overlays against the freshly-generated content, bounded-parallel
+// (up to runtime.NumCPU()*2 at once) since the comparison itself (a
+// recursive directory diff) is independent per overlay. An overlay is
+// skipped - counted in Summary.Skipped/SkippedClusters, never Failed -
+// when it's disabled (IsOverlayDisabled/IsChangeGroupDisabled) or has no
+// on-disk directory (overlayExists); everything else is either a content
+// mismatch (Summary.MismatchFiles) or an execution failure
+// (Summary.Errors, e.g. a missing scafctl binary or a run that itself
+// failed/timed out).
+func Run(opts RunOptions) *Summary {
+	summary := &Summary{App: opts.App}
+
+	configPath := configFilePath(opts.App)
+	if configPath == "" {
+		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold config not found for %s", opts.App))
+		summary.Failed = len(opts.Overlays)
+		summary.Total = len(opts.Overlays)
+		return summary
+	}
+
+	var toRun []string
+	for _, cluster := range opts.Overlays {
+		switch {
+		case IsOverlayDisabled(opts.App, cluster), IsChangeGroupDisabled(cluster, opts.ChangeGroups):
+			summary.Skipped++
+			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
+		case !overlayExists(opts.App, cluster):
+			summary.Skipped++
+			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
+		default:
+			toRun = append(toRun, cluster)
+		}
+	}
+	summary.Total = len(opts.Overlays)
+	if len(toRun) == 0 {
+		return summary
+	}
+
 	tmp, err := os.MkdirTemp("", "scaffold-*")
 	if err != nil {
-		return Result{App: app, Err: err}
+		summary.Errors = append(summary.Errors, err.Error())
+		summary.Failed += len(toRun)
+		return summary
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 
-	cmd := exec.Command(Binary, "scaffold", "--config", ConfigSource+"="+configPath, "--output", tmp)
-	if err := cmd.Run(); err != nil {
-		// tolerate missing binary gracefully
-		return Result{App: app, Err: fmt.Errorf("scaffold command failed: %w", err)}
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	if err := runScafctl(ctx, configPath, tmp); err != nil {
+		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", err))
+		summary.Failed += len(toRun)
+		return summary
 	}
 
-	changedOverlays := narrowToChangedOverlays(app, changedFiles)
-	if len(changedOverlays) == 0 {
-		changedOverlays = findOverlays(app)
+	workers := runtime.NumCPU() * 2
+	if workers > len(toRun) {
+		workers = len(toRun)
 	}
+	jobs := make(chan string, len(toRun))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for cluster := range jobs {
+				diff, diffErr := diffDirs(filepath.Join(tmp, cluster), overlayDir(opts.App, cluster))
+				mu.Lock()
+				switch {
+				case diffErr != nil:
+					summary.Failed++
+					summary.Errors = append(summary.Errors, fmt.Sprintf("%s: %s", cluster, diffErr))
+				case diff != "":
+					summary.Failed++
+					summary.MismatchFiles = append(summary.MismatchFiles, cluster)
+				default:
+					summary.Passed++
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, cluster := range toRun {
+		jobs <- cluster
+	}
+	close(jobs)
+	wg.Wait()
 
-	var mismatches []string
-	for _, ov := range changedOverlays {
-		if ExcludedClusters[ov] {
-			continue
-		}
-		generated := filepath.Join(tmp, ov)
-		committed := filepath.Join(app, "overlays", ov)
-		if diff, err := diffDirs(generated, committed); err == nil && diff != "" {
-			mismatches = append(mismatches, ov)
-		}
-	}
-	return Result{App: app, Mismatches: mismatches}
+	return summary
 }
 
-// UpdateReadmeStatus updates the scaffold status table in README.md.
-func UpdateReadmeStatus() error {
-	path := "README.md"
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return nil
+func diffDirs(generated, committed string) (string, error) {
+	if _, err := os.Stat(generated); err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(committed); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("diff", "-rq", generated, committed) //nolint:gosec // both paths are derived from this package's own temp dir + convention-based overlay layout, not user input
+	out, _ := cmd.Output()
+	return stripANSI(string(out)), nil
+}
+
+var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
+
+func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
+
+// ExtractCreatedFiles parses scafctl output for "created <path>" lines - for
+// callers whose scafctl build supports a dry-run/text-report mode instead
+// of (or in addition to) Run's directory-diff approach.
+func ExtractCreatedFiles(output string) []string {
+	var out []string
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "created ") {
+			out = append(out, strings.TrimSpace(strings.TrimPrefix(line, "created")))
 		}
-		return err
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	table := GenerateScaffoldTable([]Result{{App: "example", Mismatches: nil}})
-	updated := replaceMarkerSection(string(data), "<!-- scaffold-status -->", "<!-- /scaffold-status -->", table)
-	return os.WriteFile(path, []byte(updated), 0o644)
+	return out
 }
 
-// CheckReadmeStatus returns whether the README status table is current.
-func CheckReadmeStatus() (current bool, diff string) {
-	data, err := os.ReadFile("README.md")
-	if err != nil {
-		return true, "" // no README is not an error
-	}
-	content := string(data)
-	if !strings.Contains(content, "<!-- scaffold-status -->") {
-		return true, ""
-	}
-	return false, "README scaffold status table differs (placeholder diff)"
-}
-
-// GenerateScaffoldTable renders a markdown status table.
-func GenerateScaffoldTable(results []Result) string {
-	var b strings.Builder
-	b.WriteString("<!-- scaffold-status -->\n")
-	b.WriteString("| App | Status |\n")
-	b.WriteString("| --- | --- |\n")
-	for _, r := range results {
-		status := "ok"
-		if len(r.Mismatches) > 0 {
-			status = "drift: " + strings.Join(r.Mismatches, ", ")
+// ExtractOverlayDir returns the overlay/cluster name from a scaffold-
+// generated file path (".../overlays/<cluster>/...").
+func ExtractOverlayDir(file string) string {
+	parts := strings.Split(filepath.ToSlash(file), "/")
+	for i, p := range parts {
+		if p == "overlays" && i+1 < len(parts) {
+			return parts[i+1]
 		}
-		fmt.Fprintf(&b, "| %s | %s |\n", r.App, status)
 	}
-	b.WriteString("<!-- /scaffold-status -->\n")
-	return b.String()
+	return ""
 }
 
-func narrowToChangedOverlays(app string, files []string) []string {
+// IsInChangedFiles reports whether overlayDir appears in changedFiles.
+func IsInChangedFiles(overlayDir string, changedFiles []string) bool {
+	for _, f := range changedFiles {
+		if strings.Contains(f, "/overlays/"+overlayDir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// ChangedOverlayNames extracts the set of overlay/cluster names touched
+// under app/overlays/ in files, deduplicated and in first-seen order.
+func ChangedOverlayNames(app string, files []string) []string {
 	prefix := app + "/overlays/"
 	seen := make(map[string]bool)
 	var out []string
@@ -174,7 +364,8 @@ func narrowToChangedOverlays(app string, files []string) []string {
 	return out
 }
 
-func findOverlays(app string) []string {
+// FindOverlays lists every overlay/cluster name under app/overlays/.
+func FindOverlays(app string) []string {
 	dir := filepath.Join(app, "overlays")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -187,66 +378,4 @@ func findOverlays(app string) []string {
 		}
 	}
 	return out
-}
-
-func diffDirs(a, b string) (string, error) {
-	if _, err := os.Stat(a); err != nil {
-		return "", err
-	}
-	if _, err := os.Stat(b); err != nil {
-		return "", err
-	}
-	cmd := exec.Command("diff", "-rq", a, b)
-	out, _ := cmd.Output()
-	return stripANSI(string(out)), nil
-}
-
-func replaceMarkerSection(content, start, end, replacement string) string {
-	idxStart := strings.Index(content, start)
-	if idxStart == -1 {
-		return content + "\n" + replacement
-	}
-	idxEnd := strings.Index(content[idxStart:], end)
-	if idxEnd == -1 {
-		return content[:idxStart] + replacement + content[idxStart+len(start):]
-	}
-	return content[:idxStart] + replacement + content[idxStart+idxEnd+len(end):]
-}
-
-var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
-
-func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
-
-// ExtractCreatedFiles parses scaffold output for created file paths.
-func ExtractCreatedFiles(output string) []string {
-	var out []string
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "created ") {
-			out = append(out, strings.TrimSpace(strings.TrimPrefix(line, "created")))
-		}
-	}
-	return out
-}
-
-// ExtractOverlayDir returns the overlay directory from a created file path.
-func ExtractOverlayDir(file string) string {
-	parts := strings.Split(filepath.ToSlash(file), "/")
-	for i, p := range parts {
-		if p == "overlays" && i+1 < len(parts) {
-			return parts[i+1]
-		}
-	}
-	return ""
-}
-
-// IsInChangedFiles checks whether an overlay directory is in changed files.
-func IsInChangedFiles(overlayDir string, changedFiles []string) bool {
-	for _, f := range changedFiles {
-		if strings.Contains(f, "/overlays/"+overlayDir+"/") {
-			return true
-		}
-	}
-	return false
 }
