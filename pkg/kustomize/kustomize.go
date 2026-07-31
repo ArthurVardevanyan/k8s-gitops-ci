@@ -94,6 +94,11 @@ func NormalizeYAML(data []byte) ([]byte, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		return data, nil
 	}
+	// yaml.Node doesn't retain whether the source had a leading "---"
+	// document-start marker (it's semantically a no-op for a single
+	// document), so we must detect it from the raw input ourselves in
+	// order to preserve it and keep normalization non-destructive.
+	leadingSeparator := hasLeadingDocumentMarker(data)
 	var docs []yaml.Node
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
 	for {
@@ -111,7 +116,11 @@ func NormalizeYAML(data []byte) ([]byte, error) {
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	for i, d := range docs {
-		if i > 0 {
+		// yaml.Encoder automatically writes a "---" separator itself
+		// starting from the second Encode call on the same encoder, so
+		// we only need to write one explicitly before the first
+		// document, and only when the source had a leading marker.
+		if i == 0 && leadingSeparator {
 			buf.WriteString("---\n")
 		}
 		if err := enc.Encode(&d); err != nil {
@@ -120,6 +129,24 @@ func NormalizeYAML(data []byte) ([]byte, error) {
 	}
 	_ = enc.Close()
 	return []byte(strings.TrimSuffix(buf.String(), "\n") + "\n"), nil
+}
+
+// hasLeadingDocumentMarker reports whether the first non-blank line of data
+// is a bare YAML document-start marker ("---"), e.g. a kustomization.yaml
+// that begins:
+//
+//	---
+//	apiVersion: kustomize.config.k8s.io/v1beta1
+//	kind: Kustomization
+func hasLeadingDocumentMarker(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		return trimmed == "---"
+	}
+	return false
 }
 
 func sortNodeRecursively(n *yaml.Node) {
