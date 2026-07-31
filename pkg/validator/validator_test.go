@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveChangeset_DirsWithIncludePrefixes(t *testing.T) {
@@ -91,6 +92,66 @@ func TestRunAll_RecordsBuildPhaseTimingWhenNotLintOnly(t *testing.T) {
 	summary := res.Timing.Summary(0)
 	if !strings.Contains(summary, "Build+Compliance") {
 		t.Errorf("expected timing summary to record the Build+Compliance phase, got:\n%s", summary)
+	}
+}
+
+// TestRunAll_LintingAndStaticChecksRunInParallel guards the Phase 2
+// parallelization of runLintAndStaticChecks: the 5 linters and 4 static
+// checks now fan out across goroutines instead of running one at a time,
+// so both phases must be recorded as parallel ("parallel" mode, not "seq")
+// and each individual linter/check must show up as an indented sub-step
+// under its parent phase in the timing table.
+func TestRunAll_LintingAndStaticChecksRunInParallel(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, LintOnly: true})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	summary := res.Timing.Summary(time.Second)
+
+	for _, sub := range []string{"markdownlint", "prettier", "shellcheck", "kubeconform"} {
+		if !strings.Contains(summary, sub) {
+			t.Errorf("expected timing summary to record the %q sub-step, got:\n%s", sub, summary)
+		}
+	}
+	for _, sub := range []string{"large-file", "YAML-syntax", "config-sort", "startingCSV"} {
+		if !strings.Contains(summary, sub) {
+			t.Errorf("expected timing summary to record the %q sub-step, got:\n%s", sub, summary)
+		}
+	}
+	if !strings.Contains(summary, "parallel") {
+		t.Errorf("expected the Linting/Static Checks phases to be recorded as parallel, got:\n%s", summary)
+	}
+	if !strings.Contains(summary, "Concurrency") {
+		t.Errorf("expected SetConcurrency to be wired so the summary shows a Concurrency line, got:\n%s", summary)
+	}
+}
+
+// TestRunAll_BuildPhaseFansOutOverlaysInParallel guards the Phase 2
+// parallelization of runBuildAndPostBuild's per-overlay loop: each detected
+// overlay is now checked concurrently via a bounded worker pool instead of
+// one at a time, and each overlay's check duration is recorded as its own
+// sub-step under "Build+Compliance" in the timing table.
+func TestRunAll_BuildPhaseFansOutOverlaysInParallel(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "app1", "overlays", "clusterA", "kustomization.yaml"), "resources: []\n")
+	mustWrite(t, filepath.Join(d, "app2", "overlays", "clusterB", "kustomization.yaml"), "resources: []\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	summary := res.Timing.Summary(time.Second)
+
+	overlayA := filepath.Join("app1", "overlays", "clusterA")
+	overlayB := filepath.Join("app2", "overlays", "clusterB")
+	if !strings.Contains(summary, overlayA) {
+		t.Errorf("expected timing summary to record a sub-step for %q, got:\n%s", overlayA, summary)
+	}
+	if !strings.Contains(summary, overlayB) {
+		t.Errorf("expected timing summary to record a sub-step for %q, got:\n%s", overlayB, summary)
 	}
 }
 

@@ -2,6 +2,7 @@ package validator
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
@@ -15,6 +16,7 @@ func RunAll(opts Options) (*Result, error) {
 	if tc == nil {
 		tc = NewTimingCollector()
 	}
+	tc.SetConcurrency(runtime.NumCPU(), Workers(opts))
 	res := &Result{Logger: log, Timing: tc}
 
 	syncopts.AssumeOpenShift = opts.AssumeOpenShift

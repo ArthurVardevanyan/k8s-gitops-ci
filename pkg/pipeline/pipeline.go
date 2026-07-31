@@ -75,7 +75,7 @@ func Run(opts Options) error {
 	setupStart := time.Now()
 	cleanup, err := setupWorkdir(opts)
 	defer cleanup()
-	tc.Record("Setup", time.Since(setupStart))
+	tc.Record("Setup", time.Since(setupStart), false)
 	if err != nil {
 		log.Error("setup failed: %v", err)
 		return fmt.Errorf("pipeline setup: %w", err)
@@ -107,7 +107,7 @@ func Run(opts Options) error {
 				log.Info("PR checklist: passed")
 			}
 		}
-		tc.Record("PR Validation", time.Since(prStart))
+		tc.Record("PR Validation", time.Since(prStart), false)
 	}
 	res.PRValid = shouldRunPRChecks(opts) || opts.LintOnly
 
