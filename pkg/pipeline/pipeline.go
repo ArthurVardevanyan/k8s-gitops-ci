@@ -6,9 +6,11 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
 )
@@ -20,14 +22,19 @@ import (
 // validator.Options for the full explanation. DisabledChecks/EnabledChecks
 // are passed straight through to validator.Options unchanged.
 type Options struct {
-	URL             string
-	PR              string
-	Revision        string
-	TargetBranch    string
-	HookSource      string
-	TriggerComment  string
-	LintOnly        bool
-	NoComment       bool
+	URL            string
+	PR             string
+	Revision       string
+	TargetBranch   string
+	HookSource     string
+	TriggerComment string
+	LintOnly       bool
+	// PostComment controls whether a PR-comment summary is posted after the
+	// run. Off by default; the CLI's --comment flag opts in. Comment
+	// posting is also independently gated by github.Client.IsAvailable()
+	// (repo/PR context present), so a local/no-PR run skips commenting
+	// regardless of this flag.
+	PostComment     bool
 	Verbose         bool
 	AssumeOpenShift bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check
 	DisabledChecks  []string // IDs to disable entirely (e.g. "sync-options", "golangci", "avp"); only affects steps that default to enabled
@@ -56,35 +63,85 @@ type Result struct {
 // duration of the run before restoring the original working directory and
 // removing the clone.
 func Run(opts Options) error {
+	start := time.Now()
+	log := logger.NewLogger(opts.Verbose, "")
+	tc := validator.NewTimingCollector()
+
+	log.Header("GitOps CI Pipeline")
+	log.Info(fmt.Sprintf("URL: %s", opts.URL))
+	log.Info(fmt.Sprintf("PR: %s", opts.PR))
+	log.Info(fmt.Sprintf("Revision: %s", resolveRevision(opts.Revision, opts.PR)))
+
+	setupStart := time.Now()
 	cleanup, err := setupWorkdir(opts)
 	defer cleanup()
+	tc.Record("Setup", time.Since(setupStart))
 	if err != nil {
+		log.Errorf("setup failed: %v", err)
 		return fmt.Errorf("pipeline setup: %w", err)
 	}
+	log.Info(fmt.Sprintf("setup complete (%s)", time.Since(setupStart).Round(time.Millisecond)))
 
 	res := &Result{}
 	if shouldRunPRChecks(opts) {
+		prStart := time.Now()
+		log.Header("PR Validation")
 		client := github.NewClient(opts.URL, opts.PR)
 		res.TitleErr = github.ValidatePRTitle(client)
+		if res.TitleErr != nil {
+			log.Errorf("PR title: %v", res.TitleErr)
+		} else {
+			log.Info("PR title: passed")
+		}
 		res.UnsignedErr = runUnsignedCheck(client)
+		if res.UnsignedErr != nil {
+			log.Errorf("unsigned commits: %v", res.UnsignedErr)
+		} else {
+			log.Info("unsigned commits check: passed")
+		}
 		if shouldRunChecklistCheck(opts) {
 			res.ChecklistErr = github.ValidatePRChecklist(client)
+			if res.ChecklistErr != nil {
+				log.Warn(fmt.Sprintf("PR checklist: %v", res.ChecklistErr))
+			} else {
+				log.Info("PR checklist: passed")
+			}
 		}
+		tc.Record("PR Validation", time.Since(prStart))
 	}
 	res.PRValid = shouldRunPRChecks(opts) || opts.LintOnly
 
 	vopts := toValidatorOptions(opts)
+	vopts.Timing = tc
 	vr, verr := validator.RunAll(vopts)
 	res.ValidatorResult = vr
 	res.ValidationErr = verr
 
 	res.ReproduceCommand = validator.ReproduceCommand(vopts)
-	if !opts.NoComment {
-		_ = postComment(res, opts)
+
+	if reason, skip := commentSkipReason(opts); skip {
+		log.Info("comment posting skipped: " + reason)
+	} else if err := postComment(res, opts); err != nil {
+		log.Warn(fmt.Sprintf("posting PR comment failed: %v", err))
+	} else {
+		log.Info("PR comment posted")
 	}
+
+	if vr != nil && vr.Logger != nil {
+		log.Info(vr.Logger.Summary())
+	}
+	log.Info(fmt.Sprintf("pipeline completed in %s", time.Since(start).Round(time.Second)))
+	if res.ReproduceCommand != "" {
+		log.Info("")
+		log.Info("Reproduce locally:")
+		log.Info("  " + res.ReproduceCommand)
+	}
+
 	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil {
+		log.Error("pipeline completed with failures")
 		return fmt.Errorf("pipeline completed with failures")
 	}
+	log.Info("All checks passed!")
 	return nil
 }
 
@@ -183,7 +240,7 @@ func toValidatorOptions(opts Options) validator.Options {
 		BaseRef:         resolveBaseRef(opts.TargetBranch),
 		Revision:        resolveRevision(opts.Revision, opts.PR),
 		LintOnly:        opts.LintOnly,
-		NoComment:       opts.NoComment,
+		Verbose:         opts.Verbose,
 		AssumeOpenShift: opts.AssumeOpenShift,
 		DisabledChecks:  opts.DisabledChecks,
 		EnabledChecks:   opts.EnabledChecks,
@@ -217,6 +274,21 @@ func runUnsignedCheck(c *github.Client) error {
 		return fmt.Errorf("%d unsigned commits detected", len(commits))
 	}
 	return nil
+}
+
+// commentSkipReason reports whether posting a PR comment should be skipped,
+// and if so, why. Comment posting requires both an explicit opt-in
+// (opts.PostComment, set from the CLI's --comment flag - off by default)
+// and repo/PR context being available (github.Client.IsAvailable()); a
+// local/no-PR run skips commenting regardless of the flag.
+func commentSkipReason(opts Options) (reason string, skip bool) {
+	if !opts.PostComment {
+		return "--comment not passed", true
+	}
+	if !github.NewClient(opts.URL, opts.PR).IsAvailable() {
+		return "no repo/PR context available", true
+	}
+	return "", false
 }
 
 func postComment(res *Result, opts Options) error {

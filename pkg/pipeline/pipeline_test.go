@@ -94,6 +94,33 @@ func TestShouldRunChecklistCheck_InvalidPR(t *testing.T) {
 	}
 }
 
+func TestCommentSkipReason_PostCommentOff(t *testing.T) {
+	reason, skip := commentSkipReason(Options{PostComment: false, URL: "https://github.com/org/repo", PR: "1"})
+	if !skip {
+		t.Fatal("expected skip=true when PostComment is off")
+	}
+	if reason == "" {
+		t.Error("expected a non-empty skip reason")
+	}
+}
+
+func TestCommentSkipReason_NoRepoPRContext(t *testing.T) {
+	reason, skip := commentSkipReason(Options{PostComment: true, URL: "", PR: ""})
+	if !skip {
+		t.Fatal("expected skip=true when no repo/PR context is available")
+	}
+	if reason == "" {
+		t.Error("expected a non-empty skip reason")
+	}
+}
+
+func TestCommentSkipReason_PostsWhenOptedInWithContext(t *testing.T) {
+	_, skip := commentSkipReason(Options{PostComment: true, URL: "https://github.com/org/repo", PR: "1"})
+	if skip {
+		t.Fatal("expected skip=false when PostComment is on and repo/PR context is available")
+	}
+}
+
 func TestComposeSections(t *testing.T) {
 	res := &Result{TitleErr: errors.New("bad title")}
 	sections := composeSections(res, Options{})

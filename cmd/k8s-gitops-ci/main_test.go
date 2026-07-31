@@ -2,27 +2,6 @@ package main
 
 import "testing"
 
-func TestResolveNoComment_DefaultOff(t *testing.T) {
-	if !resolveNoComment(false, false) {
-		t.Error("expected comments off by default (neither flag passed)")
-	}
-}
-
-func TestResolveNoComment_CommentOptsIn(t *testing.T) {
-	if resolveNoComment(true, false) {
-		t.Error("expected --comment to opt in to posting")
-	}
-}
-
-func TestResolveNoComment_NoCommentAlwaysWins(t *testing.T) {
-	if !resolveNoComment(true, true) {
-		t.Error("expected --no-comment to override --comment")
-	}
-	if !resolveNoComment(false, true) {
-		t.Error("expected --no-comment to force comments off on its own")
-	}
-}
-
 func TestStringSliceFlag_AccumulatesInOrder(t *testing.T) {
 	var apps []string
 	f := newStringSliceFlag(&apps)

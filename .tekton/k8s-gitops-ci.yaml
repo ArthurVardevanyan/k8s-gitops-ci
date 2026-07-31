@@ -10,7 +10,6 @@ metadata:
     pipelinesascode.tekton.dev/max-concurrency: "1"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
-    pipelinesascode.tekton.dev/task: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/tasks/git-clone/0.9.1/git-clone.yaml"
     pipelinesascode.tekton.dev/task-1: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/base/clair-action/clair-action-task.yaml"
 spec:
   params:
@@ -34,39 +33,19 @@ spec:
       - name: event
         type: string
     workspaces:
-      - name: data
       - name: git_auth_secret
       - name: go-cache
         optional: true
     tasks:
-      - name: git-clone
-        taskRef:
-          name: git-clone
-          kind: Task
-        params:
-          - name: url
-            value: $(params.git-url)
-          - name: revision
-            value: $(params.git-commit)
-          - name: depth
-            value: "0"
-        workspaces:
-          - name: output
-            workspace: data
-          - name: basic-auth
-            workspace: git_auth_secret
-
       - name: build
-        runAfter:
-          - git-clone
         workspaces:
-          - name: output
-            workspace: data
           - name: basic-auth
             workspace: git_auth_secret
           - name: go-cache
             workspace: go-cache
         params:
+          - name: git-url
+            value: $(params.git-url)
           - name: revision
             value: $(params.git-commit)
           - name: pull-request-number
@@ -75,6 +54,8 @@ spec:
             value: $(params.event)
         taskSpec:
           params:
+            - name: git-url
+              type: string
             - name: revision
               type: string
             - name: pull-request-number
@@ -84,7 +65,6 @@ spec:
               type: string
           results: []
           workspaces:
-            - name: output
             - name: basic-auth
             - name: go-cache
               optional: true
@@ -155,7 +135,7 @@ spec:
               limits:
                 cpu: "6"
                 memory: 5Gi
-                ephemeral-storage: 2Gi
+                ephemeral-storage: 3Gi
             securityContext:
               privileged: false
               readOnlyRootFilesystem: true
@@ -170,6 +150,8 @@ spec:
             - name: build
               image: registry.arthurvardevanyan.com/homelab/toolbox:not_latest
               env:
+                - name: PARAM_GIT_URL
+                  value: $(params.git-url)
                 - name: PARAM_REVISION
                   value: $(params.revision)
                 - name: PARAM_PR_NUMBER
@@ -185,6 +167,7 @@ spec:
                 set -o pipefail
 
                 # Declare Tekton-injected env vars for shellcheck
+                : "${PARAM_GIT_URL:=""}"
                 : "${PARAM_REVISION:=""}"
                 : "${PARAM_PR_NUMBER:=""}"
                 : "${PARAM_EVENT:=""}"
@@ -218,14 +201,30 @@ spec:
 
                 go env GOPATH GOMODCACHE GOCACHE GOLANGCI_LINT_CACHE GOTMPDIR
 
-                cd "$(workspaces.output.path)"
-                git config --global --add safe.directory "$(workspaces.output.path)"
-                git fetch --tags --force
+                # ── Clone ──────────────────────────────────────────────────────
+                # Single-step clone+build: no separate git-clone Task/PVC
+                # workspace is needed since everything runs in this one pod.
+                # Authenticate first (gh auth setup-git installs a git
+                # credential helper) so the subsequent fetch can use it, then
+                # fetch the exact revision directly (works for any ref/SHA
+                # reachable on the remote, not just default-branch tips) and
+                # pull tags separately for git-cliff's changelog/version bump.
+                REPO_DIR="/home/default/src"
+                mkdir -p "${REPO_DIR}"
+                cd "${REPO_DIR}"
+                git init -q
+                git config --global --add safe.directory "${REPO_DIR}"
 
                 gh auth login --hostname "github.com" \
                   --with-token <"${AUTH_PATH}/git-provider-token"
+                gh auth setup-git --hostname "github.com"
                 GITHUB_TOKEN=$(cat "${AUTH_PATH}/git-provider-token")
                 export GITHUB_TOKEN
+
+                git remote add origin "${PARAM_GIT_URL}"
+                git fetch origin "${PARAM_REVISION}"
+                git checkout FETCH_HEAD
+                git fetch --tags --force origin
 
                 task ci
 
@@ -280,19 +279,6 @@ spec:
       securityContext:
         fsGroupChangePolicy: OnRootMismatch
   workspaces:
-    - name: data
-      volumeClaimTemplate:
-        apiVersion: v1
-        kind: PersistentVolumeClaim
-        metadata:
-          name: data
-        spec:
-          accessModes:
-            - ReadWriteOnce
-          resources:
-            requests:
-              storage: "1Gi"
-          storageClassName: rook-ceph-block-ci
     - name: git_auth_secret
       secret:
         secretName: "{{ git_auth_secret }}"

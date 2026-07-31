@@ -88,8 +88,7 @@ func runPipeline(args []string) error {
 	opts.Providers = provider.Providers{}
 
 	var dirs, disableChecks, enableChecks string
-	var comment bool
-	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL")
+	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL (e.g. https://github.com/org/repo — NOT a PR URL; pass the PR number via --pr)")
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
 	fs.StringVar(&opts.TargetBranch, "target-branch", opts.TargetBranch, "target branch")
@@ -97,8 +96,7 @@ func runPipeline(args []string) error {
 	fs.StringVar(&opts.TriggerComment, "trigger-comment", opts.TriggerComment, "trigger comment text")
 	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to restrict the changeset to (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.BoolVar(&opts.LintOnly, "lint-only", false, "lint only, skip build checks")
-	fs.BoolVar(&comment, "comment", false, "post PR comment (default: off)")
-	fs.BoolVar(&opts.NoComment, "no-comment", false, "do not post PR comment (hard override; takes precedence over --comment)")
+	fs.BoolVar(&opts.PostComment, "comment", false, "post PR comment (default: off)")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-only API groups (OLM, Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API, Metal3) as exempt from the sync-options check; only enable if ALL target clusters are OpenShift/OKD")
 	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
@@ -112,17 +110,7 @@ func runPipeline(args []string) error {
 	opts.IncludePrefixes = splitCommaList(dirs)
 	opts.DisabledChecks = splitCommaList(disableChecks)
 	opts.EnabledChecks = splitCommaList(enableChecks)
-	opts.NoComment = resolveNoComment(comment, opts.NoComment)
 	return pipeline.Run(opts)
-}
-
-// resolveNoComment computes the effective NoComment value from the
-// --comment/--no-comment flags. Comments are off by default; --comment
-// opts in. --no-comment is a hard override that always wins, so it stays a
-// supported way to force comments off even if --comment is also
-// (redundantly) passed.
-func resolveNoComment(comment, noComment bool) bool {
-	return !comment || noComment
 }
 
 // splitCommaList splits a comma-separated flag value, trimming whitespace and
