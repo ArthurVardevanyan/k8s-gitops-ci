@@ -131,10 +131,14 @@ Examples: `pkg/lint/kyverno`'s `ExcludedRules`/`IncludeComponents`,
 disable the built-in exemption that lets Tekton Pipelines-as-code-managed
 `PipelineRun` manifests there skip the `sync-options`/`namespace` checks,
 since PAC's own controller manages their lifecycle rather than Argo CD),
-and `pkg/scaffold`'s `Binary`/`ConfigSource` (retarget the scaffolding
+`pkg/scaffold`'s `Binary`/`ConfigSource` (retarget the scaffolding
 CLI/config-source name) and `ExcludedClusters` (permanently skip named
 overlays from scaffold-drift validation, independent of the per-app
-`IsOverlayDisabled`/`IsChangeGroupDisabled` config-driven opt-outs). The
+`IsOverlayDisabled`/`IsChangeGroupDisabled` config-driven opt-outs), and
+`pkg/validator`'s `ExtraNonAppDirs` (extra top-level repository
+directories - e.g. a vendored example or internal-tooling directory
+whose layout coincidentally matches an app's `base`/`overlays` shape -
+that `detectAppRoots` must never treat as an app root). The
 contract is always **"empty/nil is a true no-op"** — never assume a
 default value that changes behavior when unset.
 
