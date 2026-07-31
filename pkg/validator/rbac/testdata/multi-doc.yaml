@@ -1,0 +1,21 @@
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: reader-one
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - verbs: ["get", "create"]
+    resources: ["pods"]
+    apiGroups: [""]
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: reader-two
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - verbs: ["get", "delete"]
+    resources: ["secrets"]
+    apiGroups: [""]
