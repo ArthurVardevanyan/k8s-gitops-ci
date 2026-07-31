@@ -1,8 +1,10 @@
 package validator
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/configdiff"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
@@ -18,12 +21,21 @@ import (
 // scaffoldValidationResult aggregates every app's scaffold.Run outcome for
 // this run's "Scaffold Validation" report section.
 type scaffoldValidationResult struct {
-	// DriftLines/ExecErrors are pre-formatted, one entry per drifted
-	// overlay / execution failure - ComposeScaffoldValidationSection
+	// DriftLines/ExecErrors are pre-formatted, one entry per blocking
+	// drifted overlay / execution failure - ComposeScaffoldValidationSection
 	// expects a single driftSummary string, so runScaffoldValidation joins
 	// DriftLines with newlines for that call.
 	DriftLines []string
-	ExecErrors []string
+	// PreExistingDriftLines are drifted overlays that also drift against
+	// the merge-base template/config (see computeBaselineMismatches) and
+	// whose overlay/app this PR didn't touch - non-blocking, surfaced for
+	// visibility only. This is the direct/indirect split finalizeCompliance
+	// already draws for doc/overlay check findings, applied to scaffold
+	// drift: an overlay this PR is already modifying must still fix any
+	// drift found there (see isOverlayRelatedToChangedFiles), even if that
+	// same drift also exists at the merge-base.
+	PreExistingDriftLines []string
+	ExecErrors            []string
 	// SkippedClusters records, per app, every overlay scaffold.Run skipped
 	// rather than validated (scaffold.Summary.SkippedClusters - disabled
 	// via config/change-group, or no on-disk directory yet: a cluster not
@@ -51,11 +63,20 @@ type scaffoldValidationResult struct {
 //     (scaffold.ChangedOverlayNames), via the same trigger classification
 //     overlay.GetOverlaysToTest already uses for the build phase.
 //
-// A drifted overlay or scaffold-tool execution failure is always treated
-// as blocking (a simpler, more conservative policy than trying to
-// distinguish "pre-existing drift the PR didn't cause" - which would need
-// re-running scaffold against the merge-base template/config, a real but
-// substantially riskier technique this pass deliberately doesn't attempt).
+// A drifted overlay whose app/overlay this PR's own changes touch, or a
+// scaffold-tool execution failure, is always treated as blocking. A
+// drifted overlay this PR does NOT touch is checked against the
+// merge-base template/config (computeBaselineMismatches - opts.BaseRef
+// must be set, i.e. an actual CI/PR run, never a local test-all run
+// against a live working tree, which always has an empty BaseRef - see
+// gitDiff's own doc comment) and downgraded to a non-blocking,
+// PreExistingDriftLines entry when it drifts there too: this is
+// deliberately a real but substantially riskier technique than a flat
+// "any drift blocks" policy (it mutates the app's on-disk template/config
+// files in place for the duration of the re-run - see
+// computeBaselineMismatches), reserved for exactly the case it exists to
+// fix (drift caused by something external to this PR, e.g. cluster-
+// metadata API data changing independently) rather than applied broadly.
 func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Logger) scaffoldValidationResult {
 	changeGroups, _ := opts.Providers.ChangeGroups()
 	workers := Workers(opts)
@@ -64,12 +85,36 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 	var mu sync.Mutex
 
 	record := func(app string, summary *scaffold.Summary) {
+		// computeBaselineMismatches (a full scaffold re-run against the
+		// merge-base template/config) is expensive and mutates on-disk
+		// files, so it's only ever invoked when actually needed: at least
+		// one mismatch this PR's own changes don't already explain, and
+		// only once per app (memoized here, outside the shared-result
+		// mutex below so it doesn't serialize other apps' bookkeeping).
+		var baseline map[string]bool
+		for _, ov := range summary.MismatchFiles {
+			if !isOverlayRelatedToChangedFiles(app, ov, changed) {
+				baseline = computeBaselineMismatches(opts, app, log)
+				break
+			}
+		}
+
 		mu.Lock()
 		defer mu.Unlock()
 		tested[app] = true
 		for _, ov := range summary.MismatchFiles {
-			result.DriftLines = append(result.DriftLines, fmt.Sprintf("%s: overlay `%s` drifted from its scaffold template/config", app, ov))
-			log.ErrorInSection("Scaffold", "drift: %s/%s", app, ov)
+			line := fmt.Sprintf("%s: overlay `%s` drifted from its scaffold template/config", app, ov)
+			switch {
+			case isOverlayRelatedToChangedFiles(app, ov, changed):
+				result.DriftLines = append(result.DriftLines, line)
+				log.ErrorInSection("Scaffold", "drift: %s/%s", app, ov)
+			case baseline[ov]:
+				result.PreExistingDriftLines = append(result.PreExistingDriftLines, line+" (pre-existing, not introduced by this PR)")
+				log.Warn("scaffold: pre-existing drift (non-blocking): %s/%s", app, ov)
+			default:
+				result.DriftLines = append(result.DriftLines, line)
+				log.ErrorInSection("Scaffold", "drift: %s/%s", app, ov)
+			}
 		}
 		for _, e := range summary.Errors {
 			result.ExecErrors = append(result.ExecErrors, fmt.Sprintf("%s: %s", app, e))
@@ -210,6 +255,128 @@ func flattenSkippedClusters(skipped map[string][]string) []string {
 		}
 	}
 	return out
+}
+
+// isOverlayRelatedToChangedFiles reports whether app's cluster overlay -
+// or the app's base/components, which flow into every overlay via
+// kustomize - was itself touched by this PR's own changed files. A
+// mismatch scaffold.Run finds is only ever eligible for the non-blocking
+// pre-existing-drift downgrade (see runScaffoldValidation) when this
+// returns false: if the PR is already modifying files in the affected
+// overlay (or a base/component the overlay inherits from), it must also
+// fix any drift found there, baseline or not.
+func isOverlayRelatedToChangedFiles(app, cluster string, changedFiles []string) bool {
+	overlayPrefix := filepath.ToSlash(filepath.Join(app, "overlays", cluster)) + "/"
+	basePrefix := filepath.ToSlash(filepath.Join(app, "base")) + "/"
+	componentsPrefix := filepath.ToSlash(filepath.Join(app, "components")) + "/"
+	for _, cf := range changedFiles {
+		cf = filepath.ToSlash(cf)
+		if strings.HasPrefix(cf, overlayPrefix) || strings.HasPrefix(cf, basePrefix) || strings.HasPrefix(cf, componentsPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// computeBaselineMismatches re-runs scaffold for app against the
+// merge-base version of its template/config, to determine which of this
+// run's mismatched overlays already drifted before this PR - e.g. drift
+// caused by an external data source (cluster metadata, a shared secret
+// value, ...) changing independently of anything the PR itself touched,
+// rather than by the PR's own template/config edits. Returns the set of
+// mismatched overlay names that also mismatch at the baseline.
+//
+// Best-effort and conservative: opts.BaseRef being empty (a local test-all
+// run against a live working tree - see gitDiff's own doc comment) skips
+// baseline diffing entirely, and any git failure (no repo, no merge-base,
+// a git-show failure) returns an empty set - "couldn't compute a
+// baseline" degrades to "treat every mismatch as new/blocking", the same
+// policy this repo used before baseline diffing existed at all. It never
+// fails the run.
+//
+// This mutates app's on-disk template/config files in place for the
+// duration of the re-run (scaffold.Run takes no "compare against a
+// different template" option) - every backed-up file is restored via a
+// single deferred call immediately after backing it up, so an unexpected
+// error/panic mid-run can never leave the working tree permanently
+// altered. Safe to call concurrently for different apps (each app's
+// template/config lives under its own, non-overlapping .scafctl paths);
+// a given app is only ever scaffold-tested once per runScaffoldValidation
+// call (see its own isTested gating), so this is never called twice
+// concurrently for the same app.
+func computeBaselineMismatches(opts Options, app string, log *logger.Logger) map[string]bool {
+	baseline := map[string]bool{}
+	if opts.BaseRef == "" {
+		return baseline
+	}
+
+	ctx := context.Background()
+	mergeBase, err := git.MergeBase(ctx, opts.BaseRef)
+	if err != nil || mergeBase == "" {
+		log.Debug("scaffold baseline: could not determine merge-base against %q: %v", opts.BaseRef, err)
+		return baseline
+	}
+
+	configFile := filepath.Join(convention.ScaffoldDir, "configs", app+".yaml")
+	templateDir := filepath.Join(convention.ScaffoldDir, "templates", app)
+
+	type fileBackup struct {
+		path    string
+		content []byte
+		existed bool
+	}
+	var backups []fileBackup
+	backupFile := func(path string) {
+		content, rerr := os.ReadFile(path) //nolint:gosec // path is derived from convention.ScaffoldDir, a repo-relative constant, not user input
+		backups = append(backups, fileBackup{path: path, content: content, existed: rerr == nil})
+	}
+
+	backupFile(configFile)
+	_ = filepath.WalkDir(templateDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil || d.IsDir() {
+			return nil //nolint:nilerr // filepath.WalkDir convention: skip entry, keep walking
+		}
+		backupFile(path)
+		return nil
+	})
+
+	// Restored via defer, not just at the end of the happy path, so a
+	// panic (or a future early-return added here later) can never leave
+	// the merge-base content sitting in the working tree.
+	defer func() {
+		for _, b := range backups {
+			if b.existed {
+				_ = os.WriteFile(b.path, b.content, 0o600)
+			} else {
+				_ = os.Remove(b.path)
+			}
+		}
+	}()
+
+	if baseContent, showErr := git.ShowRefPath(ctx, mergeBase, configFile); showErr == nil {
+		_ = os.WriteFile(configFile, baseContent, 0o600)
+	}
+	if treeOut, lsErr := exec.CommandContext(ctx, "git", "ls-tree", "-r", "--name-only", mergeBase, templateDir+"/").Output(); lsErr == nil {
+		for _, f := range strings.Split(strings.TrimSpace(string(treeOut)), "\n") {
+			if f == "" {
+				continue
+			}
+			if content, showErr := git.ShowRefPath(ctx, mergeBase, f); showErr == nil {
+				_ = os.WriteFile(f, content, 0o600) //nolint:gosec // f comes from `git ls-tree` under templateDir, a repo-relative constant, not user input
+			}
+		}
+	}
+
+	log.Debug("scaffold baseline: re-running scaffold for %s against %s", app, mergeBase)
+	summary := scaffold.Run(scaffold.RunOptions{
+		App:      app,
+		Trigger:  "baseline",
+		Overlays: scaffold.FindOverlays(app),
+	})
+	for _, ov := range summary.MismatchFiles {
+		baseline[ov] = true
+	}
+	return baseline
 }
 
 // findUnprotectedApps identifies apps with modified overlays/scaffold

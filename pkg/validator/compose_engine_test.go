@@ -118,16 +118,35 @@ func TestComposeDriftProtectionSection_ListsUnprotectedApps(t *testing.T) {
 }
 
 func TestComposeScaffoldValidationSection_NoErrors(t *testing.T) {
-	s := ComposeScaffoldValidationSection("", nil, nil)
+	s := ComposeScaffoldValidationSection("", nil, nil, "")
 	if s.Error {
 		t.Error("expected no error")
 	}
 }
 
 func TestComposeScaffoldValidationSection_WithDrift(t *testing.T) {
-	s := ComposeScaffoldValidationSection("some drift", []string{"exec failed"}, []string{"cluster-a"})
+	s := ComposeScaffoldValidationSection("some drift", []string{"exec failed"}, []string{"cluster-a"}, "")
 	if !s.Error {
 		t.Error("expected error section")
+	}
+}
+
+// TestComposeScaffoldValidationSection_PreExistingDriftAloneIsNonBlocking
+// guards that pre-existing drift (drift that also exists against the
+// merge-base template/config, and whose overlay this PR doesn't touch -
+// see computeBaselineMismatches in scaffold_wiring.go) never marks the
+// section as blocking on its own, matching the same non-blocking policy
+// missing clusters already gets.
+func TestComposeScaffoldValidationSection_PreExistingDriftAloneIsNonBlocking(t *testing.T) {
+	s := ComposeScaffoldValidationSection("", nil, nil, "myapp: overlay `staging` drifted from its scaffold template/config (pre-existing, not introduced by this PR)")
+	if s.Error {
+		t.Errorf("expected pre-existing drift alone to be non-blocking, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "Pre-Existing Scaffold Drift") {
+		t.Errorf("expected a Pre-Existing Scaffold Drift bullet, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "myapp: overlay `staging`") {
+		t.Errorf("expected the pre-existing drift detail, got:\n%s", s.Body)
 	}
 }
 
@@ -138,7 +157,7 @@ func TestComposeScaffoldValidationSection_WithDrift(t *testing.T) {
 // Run's own doc comment ("skipped ... never Failed") - so it must never,
 // on its own (no drift, no exec errors), mark the section as blocking.
 func TestComposeScaffoldValidationSection_MissingClustersAloneIsNonBlocking(t *testing.T) {
-	s := ComposeScaffoldValidationSection("", nil, []string{"myapp/staging"})
+	s := ComposeScaffoldValidationSection("", nil, []string{"myapp/staging"}, "")
 	if s.Error {
 		t.Errorf("expected missing clusters alone to be non-blocking, got:\n%s", s.Body)
 	}

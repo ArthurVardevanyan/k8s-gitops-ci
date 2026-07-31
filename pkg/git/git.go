@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // CloneOptions configures a repository clone.
@@ -123,5 +123,12 @@ func MergeBase(ctx context.Context, ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Clean(string(out)), nil
+	// git's own stdout, not a filesystem path - filepath.Clean doesn't trim
+	// whitespace (it only normalizes path separators/dots), so it silently
+	// left the trailing newline `git merge-base` always outputs attached to
+	// the returned SHA. That's harmless for a bare string comparison but
+	// breaks the moment the SHA is fed into another git command as a
+	// revision argument (e.g. `git show <sha>\n:<path>`, which git rejects
+	// as an invalid revision) - exactly this package's own ShowRefPath.
+	return strings.TrimSpace(string(out)), nil
 }

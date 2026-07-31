@@ -41,9 +41,33 @@ func TestShowRefPathNoRepo(t *testing.T) {
 }
 
 func TestMergeBase(t *testing.T) {
-	_, err := MergeBase(context.Background(), "origin/main")
-	if err == nil {
+	sha, err := MergeBase(context.Background(), "origin/main")
+	if err != nil {
 		t.Skip("not in a git repo or no origin/main")
+	}
+	// git merge-base always terminates its stdout with a trailing newline;
+	// the returned SHA must have it (and any other whitespace) trimmed, or
+	// passing it straight into another git revision argument (e.g.
+	// ShowRefPath) breaks with an "invalid revision" error.
+	if sha != strings.TrimSpace(sha) {
+		t.Errorf("MergeBase result has untrimmed whitespace: %q", sha)
+	}
+	if sha == "" {
+		t.Error("expected a non-empty merge-base SHA")
+	}
+}
+
+// TestMergeBase_ResultUsableAsRevisionArgument guards the actual bug found
+// while wiring MergeBase into scaffold baseline diffing: a SHA with a
+// trailing newline is a valid string but an invalid git revision argument -
+// ShowRefPath(ctx, sha, "go.mod") must succeed with MergeBase's result.
+func TestMergeBase_ResultUsableAsRevisionArgument(t *testing.T) {
+	sha, err := MergeBase(context.Background(), "origin/main")
+	if err != nil {
+		t.Skip("not in a git repo or no origin/main")
+	}
+	if _, err := ShowRefPath(context.Background(), sha, "go.mod"); err != nil {
+		t.Errorf("expected ShowRefPath to accept MergeBase's result as a valid revision, got: %v", err)
 	}
 }
 

@@ -449,7 +449,7 @@ func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTabl
 }
 
 // ComposeScaffoldValidationSection renders scaffold validation results.
-func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingClusters []string) Section {
+func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingClusters []string, preExistingDriftSummary string) Section {
 	var b strings.Builder
 	hasError := false
 
@@ -460,6 +460,16 @@ func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingCl
 		hasError = true
 		b.WriteString("- ❌ **Scaffold Drift**\n\n")
 		b.WriteString(RenderSubDropdown("Drift Details", driftSummary))
+		b.WriteString("\n")
+	}
+
+	// Pre-existing drift - overlays that also drift against the merge-base
+	// template/config (see computeBaselineMismatches in scaffold_wiring.go)
+	// and that this PR doesn't itself touch. Non-blocking: surfaced for
+	// visibility, not something this PR is responsible for fixing.
+	if preExistingDriftSummary != "" {
+		b.WriteString("- ⚠️ **Pre-Existing Scaffold Drift** (not introduced by this PR)\n\n")
+		b.WriteString(RenderSubDropdown("Drift Details", preExistingDriftSummary))
 		b.WriteString("\n")
 	}
 
