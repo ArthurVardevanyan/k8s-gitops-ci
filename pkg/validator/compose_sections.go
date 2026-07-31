@@ -487,6 +487,29 @@ func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingCl
 	return Section{Name: "Scaffold Validation", Body: b.String(), Error: hasError}
 }
 
+// ComposeDriftProtectionSection renders a warning for every app that has a
+// scaffold template (drift detection is available for it) but hasn't opted
+// into scaffold drift protection via test.sh (see
+// scaffold.HasScaffoldEnabled/docs/HOOKS.md's SCAFFOLD directive) - see
+// findUnprotectedApps in scaffold_wiring.go. Unlike Scaffold Validation
+// (which reports drift for apps that ARE protected), this is the "you have
+// no coverage here at all" gap, non-blocking (it's a coverage warning, not
+// a drift finding).
+func ComposeDriftProtectionSection(unprotectedApps []string) Section {
+	if len(unprotectedApps) == 0 {
+		return Section{Name: "Scaffold Drift Protection", Body: "All modified overlays with a scaffold template have drift protection enabled."}
+	}
+
+	var b strings.Builder
+	b.WriteString("The following app(s) have a scaffold template but drift protection is not enabled ")
+	b.WriteString("(`export SCAFFOLD=false` is set in `test.sh`), so scaffold drift is not being checked for them:\n\n")
+	for _, app := range unprotectedApps {
+		fmt.Fprintf(&b, "- `%s`\n", app)
+	}
+
+	return Section{Name: "Scaffold Drift Protection", Body: b.String()}
+}
+
 // ComposeKyvernoSection renders the Kyverno subsection.
 func ComposeKyvernoSection(body string) Section {
 	if body == "" {

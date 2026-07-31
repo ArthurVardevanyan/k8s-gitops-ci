@@ -2,9 +2,14 @@ package validator
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/configdiff"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
@@ -167,4 +172,67 @@ func runScaffoldApps(jobs []scaffoldJob, changed []string, changeGroups map[stri
 	}
 	close(ch)
 	wg.Wait()
+}
+
+// findUnprotectedApps identifies apps with modified overlays/scaffold
+// templates/scaffold configs that have a scaffold template (i.e. scaffold
+// drift detection is available for them at all) but haven't opted into it
+// via test.sh - see scaffold.HasScaffoldEnabled/docs/HOOKS.md's SCAFFOLD
+// directive. These apps' overlays are never actually re-validated against
+// their template by runScaffoldValidation above (HasScaffoldEnabled gates
+// every one of its three trigger phases), so a drifted overlay there would
+// go completely unnoticed; this surfaces that gap as its own warning
+// instead of silently saying nothing.
+func findUnprotectedApps(changed []string) []string {
+	affected := map[string]bool{}
+	for _, f := range changed {
+		f = filepath.ToSlash(f)
+		parts := strings.SplitN(f, "/", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		app := parts[0]
+		// Matches both the standard <app>/overlays/<name> layout and the
+		// nested <app>/<group>/overlays/<name> layout, so overlay changes
+		// are attributed to the top-level app regardless of layout - a
+		// nested app without its own scaffold template is filtered out
+		// below by the templateDir stat, so attribution staying broad here
+		// doesn't cause false positives.
+		if strings.Contains(f, "/overlays/") {
+			affected[app] = true
+		}
+		if rest, ok := strings.CutPrefix(f, convention.ScaffoldTemplatesPrefix()); ok {
+			if a := strings.SplitN(rest, "/", 2)[0]; a != "" {
+				affected[a] = true
+			}
+		}
+		if strings.HasPrefix(f, convention.ScaffoldConfigsPrefix()) {
+			base := filepath.Base(f)
+			a := strings.TrimSuffix(strings.TrimSuffix(base, ".yaml"), ".yml")
+			if a != "" {
+				affected[a] = true
+			}
+		}
+	}
+
+	apps := make([]string, 0, len(affected))
+	for app := range affected {
+		apps = append(apps, app)
+	}
+	sort.Strings(apps)
+
+	var unprotected []string
+	for _, app := range apps {
+		templateDir := filepath.Join(convention.ScaffoldDir, "templates", app)
+		if _, err := os.Stat(templateDir); err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(app, "test.sh")); err != nil {
+			continue
+		}
+		if !scaffold.HasScaffoldEnabled(app) {
+			unprotected = append(unprotected, app)
+		}
+	}
+	return unprotected
 }

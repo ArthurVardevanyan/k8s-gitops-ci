@@ -152,6 +152,89 @@ func TestRunAll_ScaffoldReadmeCheckEnabledViaEnabledChecks(t *testing.T) {
 	}
 }
 
+// chdirTemp chdirs into a fresh temp dir, restoring the original working
+// directory on cleanup - findUnprotectedApps (like scaffold.
+// HasScaffoldEnabled/HasScaffoldConfig) resolves app/.scafctl paths
+// relative to the process CWD, matching a real pipeline run's repo-root
+// CWD.
+func chdirTemp(t *testing.T) {
+	t.Helper()
+	d := t.TempDir()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(d); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+}
+
+// TestFindUnprotectedApps_NoTemplateIsNeverUnprotected guards that an app
+// with overlay changes but no scaffold template at all (scaffold-drift
+// detection isn't even available for it) is never flagged - there being
+// nothing to protect against isn't the same as protection being disabled.
+func TestFindUnprotectedApps_NoTemplateIsNeverUnprotected(t *testing.T) {
+	chdirTemp(t)
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
+	mustWrite(t, filepath.Join("myapp", "test.sh"), "SCAFFOLD=false\n")
+
+	got := findUnprotectedApps([]string{filepath.Join("myapp", "overlays", "prod", "kustomization.yaml")})
+	if len(got) != 0 {
+		t.Errorf("expected no unprotected apps without a scaffold template, got %v", got)
+	}
+}
+
+// TestFindUnprotectedApps_DisabledWithTemplate is the positive case: an app
+// with a scaffold template AND overlay changes AND SCAFFOLD=false is
+// flagged as unprotected.
+func TestFindUnprotectedApps_DisabledWithTemplate(t *testing.T) {
+	chdirTemp(t)
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
+	mustWrite(t, filepath.Join("myapp", "test.sh"), "SCAFFOLD=false\n")
+	mustWrite(t, filepath.Join(".scafctl", "templates", "myapp", "template.yaml"), "kind: Deployment\n")
+
+	got := findUnprotectedApps([]string{filepath.Join("myapp", "overlays", "prod", "kustomization.yaml")})
+	if len(got) != 1 || got[0] != "myapp" {
+		t.Errorf("expected [myapp] to be unprotected, got %v", got)
+	}
+}
+
+// TestFindUnprotectedApps_EnabledIsNeverFlagged guards the negative case:
+// an app with a template but scaffold drift protection actually enabled
+// (the default - no SCAFFOLD=false) is never flagged.
+func TestFindUnprotectedApps_EnabledIsNeverFlagged(t *testing.T) {
+	chdirTemp(t)
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
+	mustWrite(t, filepath.Join("myapp", "test.sh"), "echo hi\n")
+	mustWrite(t, filepath.Join(".scafctl", "templates", "myapp", "template.yaml"), "kind: Deployment\n")
+
+	got := findUnprotectedApps([]string{filepath.Join("myapp", "overlays", "prod", "kustomization.yaml")})
+	if len(got) != 0 {
+		t.Errorf("expected no unprotected apps when scaffold protection is enabled, got %v", got)
+	}
+}
+
+// TestFindUnprotectedApps_TemplateOrConfigChangeAlsoAttributes guards that
+// a change under .scafctl/templates/<app>/ or .scafctl/configs/<app>.yaml
+// (not just <app>/overlays/...) also attributes to that app, matching
+// runScaffoldValidation's own template/config change triggers.
+func TestFindUnprotectedApps_TemplateOrConfigChangeAlsoAttributes(t *testing.T) {
+	chdirTemp(t)
+	mustWrite(t, filepath.Join("myapp", "test.sh"), "SCAFFOLD=false\n")
+	mustWrite(t, filepath.Join(".scafctl", "templates", "myapp", "template.yaml"), "kind: Deployment\n")
+
+	got := findUnprotectedApps([]string{filepath.Join(".scafctl", "templates", "myapp", "template.yaml")})
+	if len(got) != 1 || got[0] != "myapp" {
+		t.Errorf("expected a template-only change to still attribute to myapp, got %v", got)
+	}
+
+	got = findUnprotectedApps([]string{filepath.Join(".scafctl", "configs", "myapp.yaml")})
+	if len(got) != 1 || got[0] != "myapp" {
+		t.Errorf("expected a config-only change to still attribute to myapp, got %v", got)
+	}
+}
+
 func TestRunScaffoldApps_EmptyJobsIsNoOp(t *testing.T) {
 	called := false
 	runScaffoldApps(nil, nil, nil, 4, func(string, *scaffold.Summary) { called = true })

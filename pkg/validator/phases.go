@@ -481,6 +481,8 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(driftLines, "\n"), scaffoldResult.ExecErrors, nil))
 
+	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
+
 	res.Sections = append(res.Sections, ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted))
 	tc.Record("Build+Compliance", time.Since(buildStart), len(overlays) > 1)
 }
