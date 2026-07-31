@@ -157,18 +157,23 @@ func (s *stringSliceFlag) Set(v string) error {
 func runBuildYAML(args []string) error {
 	fs := flag.NewFlagSet("build-yaml", flag.ExitOnError)
 	var app, cluster string
+	var verbose bool
 	fs.StringVar(&app, "app", "", "app name")
 	fs.StringVar(&cluster, "cluster", "", "cluster name")
+	fs.BoolVar(&verbose, "verbose", false, "verbose output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	opts := validator.Options{Apps: []string{app}, Clusters: []string{cluster}}
+	opts := validator.Options{Apps: []string{app}, Clusters: []string{cluster}, Verbose: verbose}
 	res, err := validator.RunAll(opts)
 	if err != nil {
 		return err
 	}
 	for _, s := range res.Sections {
 		fmt.Printf("=== %s ===\n%s\n", s.Name, s.Body)
+	}
+	if res.Logger != nil {
+		fmt.Println(res.Logger.Summary())
 	}
 	return nil
 }
@@ -177,11 +182,14 @@ func runBuildYAML(args []string) error {
 
 func runTestAll(args []string) error {
 	fs := flag.NewFlagSet("test-all", flag.ExitOnError)
+	var verbose bool
+	fs.BoolVar(&verbose, "verbose", false, "verbose output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	opts := validator.Options{
-		Dirs: fs.Args(),
+		Dirs:    fs.Args(),
+		Verbose: verbose,
 	}
 	res, err := validator.RunAll(opts)
 	if err != nil {
@@ -189,6 +197,9 @@ func runTestAll(args []string) error {
 	}
 	for _, s := range res.Sections {
 		fmt.Printf("=== %s ===\n%s\n", s.Name, s.Body)
+	}
+	if res.Logger != nil {
+		fmt.Println(res.Logger.Summary())
 	}
 	if res.Blocking {
 		return fmt.Errorf("test-all: validation failed")
@@ -198,10 +209,12 @@ func runTestAll(args []string) error {
 
 func runScanAll(args []string) error {
 	fs := flag.NewFlagSet("scan-all", flag.ExitOnError)
+	var verbose bool
+	fs.BoolVar(&verbose, "verbose", false, "verbose output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	opts := validator.Options{}
+	opts := validator.Options{Verbose: verbose}
 	res, err := validator.RunAll(opts)
 	if err != nil {
 		return err
@@ -210,6 +223,9 @@ func runScanAll(args []string) error {
 		if s.Error {
 			fmt.Printf("[FAIL] %s\n%s\n", s.Name, s.Body)
 		}
+	}
+	if res.Logger != nil {
+		fmt.Println(res.Logger.Summary())
 	}
 	return nil
 }
