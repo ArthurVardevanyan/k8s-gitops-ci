@@ -122,6 +122,83 @@ func TestComposeResourceComplianceSection_GroupsByCheckID(t *testing.T) {
 	}
 }
 
+// TestComposeResourceComplianceSection_UsesRegisteredTableSpec guards that a
+// registered check id (register_tables.go) renders its own richer columns
+// and descriptive Preamble via RenderColumnedTable, instead of the generic
+// flat File/Message table.
+func TestComposeResourceComplianceSection_UsesRegisteredTableSpec(t *testing.T) {
+	findings := []check.Finding{
+		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "a.yaml", Message: "missing namespace"},
+	}
+	s := ComposeResourceComplianceSection(findings, nil, nil)
+	if !strings.Contains(s.Body, "my-pod") {
+		t.Errorf("expected the Name column to render, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "Resources that are missing a `namespace` field") {
+		t.Errorf("expected the namespace TableSpec's descriptive Preamble to render, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "Namespace Scope") {
+		t.Errorf("expected the namespace TableSpec's descriptive Title, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeResourceComplianceSection_UnregisteredCheckFallsBack guards
+// that a check id with no TableSpec entry (e.g. brand new, not yet given
+// one) still renders something useful via the generic File/Message
+// fallback, rather than being silently dropped.
+func TestComposeResourceComplianceSection_UnregisteredCheckFallsBack(t *testing.T) {
+	findings := []check.Finding{{CheckID: "brand-new-check", File: "a.yaml", Message: "some issue"}}
+	s := ComposeResourceComplianceSection(findings, nil, nil)
+	if !strings.Contains(s.Body, "| File | Message |") {
+		t.Errorf("expected the generic fallback table, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "a.yaml") || !strings.Contains(s.Body, "some issue") {
+		t.Errorf("expected the finding to still render, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeResourceComplianceSection_DedupsFanOutAcrossFiles guards the
+// core Phase 2 richness fix: the same underlying finding fanned out across
+// multiple overlays (identical Kind/Name/Message, different File - see
+// engine.go's per-unique-document fan-out) renders as ONE table row listing
+// every affected file, not one row per file, while the header count above
+// the table still reports every raw (pre-dedup) finding.
+func TestComposeResourceComplianceSection_DedupsFanOutAcrossFiles(t *testing.T) {
+	findings := []check.Finding{
+		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "overlays/dev/a.yaml", Message: "missing namespace"},
+		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "overlays/prod/a.yaml", Message: "missing namespace"},
+	}
+	s := ComposeResourceComplianceSection(findings, nil, nil)
+	if !strings.Contains(s.Body, "(2 finding(s))") {
+		t.Errorf("expected the raw (pre-dedup) count of 2 in the header, got:\n%s", s.Body)
+	}
+	if got := strings.Count(s.Body, "my-pod"); got != 1 {
+		t.Errorf("expected exactly 1 deduped row for the same resource/issue, got %d occurrences in:\n%s", got, s.Body)
+	}
+	if !strings.Contains(s.Body, "`overlays/dev/a.yaml`, `overlays/prod/a.yaml`") {
+		t.Errorf("expected both files listed, backtick-quoted, in the deduped row, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeResourceComplianceSection_DoesNotOverDedup guards that findings
+// for the same resource but genuinely distinct issues (different Message)
+// are NOT collapsed together - only true fan-out duplicates are deduped.
+func TestComposeResourceComplianceSection_DoesNotOverDedup(t *testing.T) {
+	findings := []check.Finding{
+		{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned a"},
+		{CheckID: "image-checksum", File: "b.yaml", Message: "unpinned b"},
+	}
+	s := ComposeResourceComplianceSection(findings, nil, nil)
+	// Distinct Messages (part of the dedup key) must keep these as two
+	// separate rows rather than merging into one comma-joined-File row.
+	if !strings.Contains(s.Body, "`a.yaml`") || !strings.Contains(s.Body, "`b.yaml`") {
+		t.Errorf("expected both files to render, got:\n%s", s.Body)
+	}
+	if strings.Contains(s.Body, "`a.yaml`, `b.yaml`") {
+		t.Errorf("expected two separate rows, not one deduped/merged row, got:\n%s", s.Body)
+	}
+}
+
 func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T) {
 	exempted := []exempt.Applied{
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: true},

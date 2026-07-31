@@ -334,3 +334,14 @@ status icons). In short: one PR comment, five top-level sections
 Compliance), each a collapsible `<details>` block; Resource Compliance
 additionally groups findings by check ID with an "Accepted Exceptions"
 audit sub-block.
+
+Each check-ID group under Resource Compliance renders using that check's
+registered `check.TableSpec` (`pkg/validator/register_tables.go`) when
+one exists: its own descriptive title/preamble and columns (e.g.
+`image-checksum` shows Kind/Name/Image/File, not just a flat File/
+Message dump), with findings that are the same underlying issue fanned
+out across multiple overlays/build locations collapsed into one row
+listing every affected file (`dedupFindingsForTable` in
+`compose_sections.go`) instead of repeating an otherwise-identical row
+per location. A check id with no registered `TableSpec` still falls back
+to the original generic two-column File/Message table.
