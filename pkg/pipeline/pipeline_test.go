@@ -3,6 +3,7 @@ package pipeline
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -670,6 +671,45 @@ func TestSetupWorkdir_ClonesChdirsAndRestores(t *testing.T) {
 	}
 	if _, err := os.Stat(clonedWD); !os.IsNotExist(err) {
 		t.Errorf("expected cloned dir %q removed after cleanup", clonedWD)
+	}
+}
+
+// TestRun_UsesProviderPipelineHeaderForLogHeader guards that Run's
+// run-start log header comes from opts.Providers.PipelineHeader() rather
+// than a hardcoded string, so an org's Branding provider takes effect on
+// the console banner as well as the PR-comment report (buildReport,
+// already covered by TestBuildReport_UsesProvidersForTitleAndHeader).
+// pkg/logger writes directly to os.Stdout with no injectable io.Writer, so
+// this captures it via a redirected os.Stdout pipe; the given URL is a
+// nonexistent local path so setupWorkdir fails fast right after the
+// header/URL/PR/Revision lines are logged, with no network access needed.
+func TestRun_UsesProviderPipelineHeaderForLogHeader(t *testing.T) {
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := Run(Options{
+		URL:       filepath.Join(t.TempDir(), "does-not-exist"),
+		Providers: provider.Providers{Branding: fakeBranding{}},
+	})
+
+	_ = w.Close()
+	os.Stdout = origStdout
+	if runErr == nil {
+		t.Fatal("expected an error for a nonexistent repo URL")
+	}
+	out, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("reading captured stdout: %v", readErr)
+	}
+	if !strings.Contains(string(out), "CUSTOM HEADER") {
+		t.Errorf("expected the run-start log header to use the Branding provider's PipelineHeader(), got:\n%s", out)
+	}
+	if strings.Contains(string(out), "GitOps CI Pipeline") {
+		t.Errorf("expected the generic default header to NOT appear when a Branding provider is wired, got:\n%s", out)
 	}
 }
 

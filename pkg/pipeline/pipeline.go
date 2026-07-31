@@ -67,7 +67,12 @@ func Run(opts Options) error {
 	log := logger.NewLogger(opts.Verbose, "")
 	tc := validator.NewTimingCollector()
 
-	log.Header("GitOps CI Pipeline")
+	// opts.Providers.PipelineHeader() falls back to the generic default
+	// ("GitOps CI Pipeline") when no Branding provider is wired, so an org
+	// layer's custom header appears both here (the run's opening log line)
+	// and in the unified PR-comment report (buildReport) instead of only
+	// the latter.
+	log.Header(opts.Providers.PipelineHeader())
 	log.Info("URL: %s", opts.URL)
 	log.Info("PR: %s", opts.PR)
 	log.Info("Revision: %s", resolveRevision(opts.Revision, opts.PR))
