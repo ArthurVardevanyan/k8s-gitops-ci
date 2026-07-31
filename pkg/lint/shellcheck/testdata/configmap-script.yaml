@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scripts
+data:
+  entrypoint.sh: |
+    #!/usr/bin/env bash
+    echo "starting"
+  readme.txt: "not a script, must be ignored"

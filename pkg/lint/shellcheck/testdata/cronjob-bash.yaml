@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: nightly
+              command:
+                - bash
+                - -c
+                - |
+                  #!/usr/bin/env bash
+                  for f in $(ls); do
+                    echo $f
+                  done

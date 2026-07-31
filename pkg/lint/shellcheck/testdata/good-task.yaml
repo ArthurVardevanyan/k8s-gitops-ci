@@ -1,0 +1,11 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: build
+spec:
+  steps:
+    - name: build
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        echo "building"

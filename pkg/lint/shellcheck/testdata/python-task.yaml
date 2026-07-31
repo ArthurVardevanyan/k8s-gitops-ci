@@ -1,0 +1,11 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: py-build
+spec:
+  steps:
+    - name: build
+      image: python:3.12
+      script: |
+        #!/usr/bin/env python3
+        print("building")
