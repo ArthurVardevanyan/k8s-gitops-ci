@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
 func TestComposePRChecksSection(t *testing.T) {
@@ -80,9 +81,76 @@ func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
 }
 
 func TestComposeResourceComplianceSection(t *testing.T) {
-	s := ComposeResourceComplianceSection([]check.Finding{{CheckID: "x", Message: "m"}})
+	s := ComposeResourceComplianceSection([]check.Finding{{CheckID: "x", Message: "m"}}, nil, nil)
 	if !s.Error {
 		t.Errorf("expected error section")
+	}
+}
+
+func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
+	s := ComposeResourceComplianceSection(nil, nil, nil)
+	if s.Error {
+		t.Errorf("expected no error section")
+	}
+	if !strings.Contains(s.Body, "No compliance findings.") {
+		t.Errorf("expected the no-findings message, got:\n%s", s.Body)
+	}
+}
+
+func TestComposeResourceComplianceSection_WarningOnlyIsNonBlocking(t *testing.T) {
+	s := ComposeResourceComplianceSection(nil, []check.Finding{{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned"}}, nil)
+	if s.Error {
+		t.Errorf("expected no error section for pre-existing (indirect) findings only")
+	}
+	if !strings.Contains(s.Body, "⚠️") {
+		t.Errorf("expected the warning icon for a non-blocking check, got:\n%s", s.Body)
+	}
+}
+
+func TestComposeResourceComplianceSection_GroupsByCheckID(t *testing.T) {
+	findings := []check.Finding{
+		{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned a"},
+		{CheckID: "image-checksum", File: "b.yaml", Message: "unpinned b"},
+		{CheckID: "rbac-wildcard", File: "c.yaml", Message: "wildcard verb"},
+	}
+	s := ComposeResourceComplianceSection(findings, nil, nil)
+	if strings.Count(s.Body, "<details>") != 2 {
+		t.Errorf("expected exactly 2 per-check dropdowns (one per distinct CheckID), got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "(2 finding(s))") {
+		t.Errorf("expected the image-checksum group to report 2 findings, got:\n%s", s.Body)
+	}
+}
+
+func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T) {
+	exempted := []exempt.Applied{
+		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: true},
+	}
+	s := ComposeResourceComplianceSection(nil, nil, exempted)
+	if s.Error {
+		t.Errorf("expected no error section when only exemptions are present (no findings)")
+	}
+	if !strings.Contains(s.Body, "Accepted Exceptions") {
+		t.Errorf("expected an Accepted Exceptions block, got:\n%s", s.Body)
+	}
+	if strings.Contains(s.Body, "(pre-existing)") {
+		t.Errorf("a directly-applied exemption should not be labeled pre-existing, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "directly modified") {
+		t.Errorf("expected the exemption's scope column to say 'directly modified', got:\n%s", s.Body)
+	}
+}
+
+func TestComposeResourceComplianceSection_AcceptedExceptionsPreExistingLabel(t *testing.T) {
+	exempted := []exempt.Applied{
+		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: false},
+	}
+	s := ComposeResourceComplianceSection(nil, nil, exempted)
+	if !strings.Contains(s.Body, "Accepted Exceptions (pre-existing)") {
+		t.Errorf("expected the pre-existing qualifier when no exemption is direct, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "pre-existing") {
+		t.Errorf("expected the exemption's scope column to say 'pre-existing', got:\n%s", s.Body)
 	}
 }
 
