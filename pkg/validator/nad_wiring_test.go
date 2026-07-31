@@ -8,25 +8,39 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 )
 
-func TestRunNADValidation_NoOutputsPassesTrivially(t *testing.T) {
+func TestRunNADValidation_NoOutputsOmitsSection(t *testing.T) {
 	log := logger.NewLogger(false, "")
-	s := runNADValidation(nil, false, log)
-	if s.Name != "NetworkAttachmentDefinition Validation" {
-		t.Errorf("Name = %q, want %q", s.Name, "NetworkAttachmentDefinition Validation")
-	}
-	if s.Error {
-		t.Error("expected no error with no rendered overlays to validate")
+	_, present := runNADValidation(nil, false, log)
+	if present {
+		t.Error("expected no section (present=false) with no rendered overlays to validate")
 	}
 }
 
-func TestRunNADValidation_NoNADResourcesPasses(t *testing.T) {
+func TestRunNADValidation_NoNADResourcesOmitsSection(t *testing.T) {
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: foo\n")},
 	}
-	s := runNADValidation(outputs, false, log)
+	_, present := runNADValidation(outputs, false, log)
+	if present {
+		t.Error("expected no section (present=false) for a batch with no NAD resources")
+	}
+}
+
+func TestRunNADValidation_ValidNADShowsPassingSection(t *testing.T) {
+	log := logger.NewLogger(false, "")
+	outputs := []renderedOverlay{
+		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: good\nspec:\n  config: '{\"cniVersion\":\"0.3.1\"}'\n")},
+	}
+	s, present := runNADValidation(outputs, false, log)
+	if !present {
+		t.Fatal("expected a section (present=true) when a NAD is in the chain, even when it passes")
+	}
+	if s.Name != "NetworkAttachmentDefinition Validation" {
+		t.Errorf("Name = %q, want %q", s.Name, "NetworkAttachmentDefinition Validation")
+	}
 	if s.Error {
-		t.Errorf("expected no error for a batch with no NAD resources, got: %+v", s)
+		t.Errorf("expected a passing (non-error) section for a valid NAD, got: %+v", s)
 	}
 }
 
@@ -35,7 +49,10 @@ func TestRunNADValidation_StructuralFindingRemapsToOverlay(t *testing.T) {
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: bad\nspec:\n  config: ''\n")},
 	}
-	s := runNADValidation(outputs, false, log)
+	s, present := runNADValidation(outputs, false, log)
+	if !present {
+		t.Fatal("expected a section (present=true) when a NAD is in the chain")
+	}
 	if !s.Error {
 		t.Fatalf("expected an error section for an empty spec.config, got: %+v", s)
 	}
@@ -58,18 +75,43 @@ spec:
 `
 	outputs := []renderedOverlay{{overlay: "myapp/overlays/prod", data: []byte(cfg)}}
 
-	if s := runNADValidation(outputs, false, log); s.Error {
-		t.Errorf("expected structural tier to ignore OVN semantics, got: %+v", s)
+	if s, present := runNADValidation(outputs, false, log); !present || s.Error {
+		t.Errorf("expected structural tier to surface a passing section, got present=%v s=%+v", present, s)
 	}
-	if s := runNADValidation(outputs, true, log); !s.Error {
-		t.Errorf("expected OVN-aware tier to catch the persistent-IPs-on-layer3 violation, got: %+v", s)
+	if s, present := runNADValidation(outputs, true, log); !present || !s.Error {
+		t.Errorf("expected OVN-aware tier to catch the persistent-IPs-on-layer3 violation, got present=%v s=%+v", present, s)
 	}
 }
 
-func TestRunAll_NADSectionAlwaysPresent(t *testing.T) {
+// TestRunAll_NADSectionOmittedWhenNoNAD guards the omit-when-absent behavior:
+// an overlay chain with no NetworkAttachmentDefinition resource produces no
+// NAD section at all (rather than an empty "0 NADs, all good" stub). NAD
+// validation is still always-on - it just has nothing to report here.
+func TestRunAll_NADSectionOmittedWhenNoNAD(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), "resources: []\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	for _, s := range res.Sections {
+		if s.Name == "NetworkAttachmentDefinition Validation" {
+			t.Error("expected no NetworkAttachmentDefinition Validation section when no NAD is in the chain")
+		}
+	}
+}
+
+// TestRunAll_NADSectionPresentWhenNADInChain is the companion to the
+// omit-when-absent test: once a NAD resource is actually rendered by an
+// overlay, the section shows up (here as a passing section, since the NAD is
+// structurally valid) - "shown when present, good or bad".
+func TestRunAll_NADSectionPresentWhenNADInChain(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "nad.yaml"), "apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: good\nspec:\n  config: '{\"cniVersion\":\"0.3.1\"}'\n")
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), "resources:\n  - nad.yaml\n")
 
 	res, err := RunAll(Options{Dirs: []string{d}})
 	if err != nil {
@@ -79,9 +121,12 @@ func TestRunAll_NADSectionAlwaysPresent(t *testing.T) {
 	for _, s := range res.Sections {
 		if s.Name == "NetworkAttachmentDefinition Validation" {
 			found = true
+			if s.Error {
+				t.Errorf("expected a passing NAD section for a valid NAD, got: %+v", s)
+			}
 		}
 	}
 	if !found {
-		t.Error("expected a NetworkAttachmentDefinition Validation section unconditionally (NAD's structural tier is always on)")
+		t.Error("expected a NetworkAttachmentDefinition Validation section when a NAD is in the chain")
 	}
 }

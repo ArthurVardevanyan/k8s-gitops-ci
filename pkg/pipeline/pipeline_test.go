@@ -382,7 +382,7 @@ func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.
 	for _, s := range sections {
 		byName[s.Name] = s
 	}
-	for _, name := range []string{"Kustomize Build", "Scaffold Validation", "Resource Compliance", "NetworkAttachmentDefinition Validation"} {
+	for _, name := range []string{"Kustomize Build", "Scaffold Validation", "Resource Compliance"} {
 		s, ok := byName[name]
 		if !ok {
 			t.Errorf("expected a %q section to be present even in --lint-only mode", name)
@@ -392,18 +392,25 @@ func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.
 			t.Errorf("expected %q to fall back to %q, got %q", name, "No results.", s.Body)
 		}
 	}
+	// NAD is now omit-when-absent (like Kyverno Policies): with no NAD
+	// section produced upstream, composeSections must not synthesize a
+	// "No results." stub for it.
+	if _, ok := byName["NetworkAttachmentDefinition Validation"]; ok {
+		t.Error("expected no NetworkAttachmentDefinition Validation section when none was produced upstream")
+	}
 }
 
-// TestComposeSections_ReusesNADSection guards against the "unconditionally
-// produced but never surfaced" bug: phases.go's runBuildAndPostBuild always
-// appends a "NetworkAttachmentDefinition Validation" section to
-// validator.Result.Sections (see nad_wiring.go's runNADValidation), but
-// composeSections used to only relay a hardcoded name whitelist that never
-// included it - so the actual PR comment silently never showed NAD findings
-// even though validator.RunAll (and thus the build-yaml/test-all CLI
-// commands, which print every res.Sections entry directly) always produced
-// them. It must now reuse it by name like Kustomize Build/Scaffold
-// Validation/Resource Compliance do.
+// TestComposeSections_ReusesNADSection guards against the "produced but
+// never surfaced" bug: phases.go's runBuildAndPostBuild appends a
+// "NetworkAttachmentDefinition Validation" section to
+// validator.Result.Sections whenever a NAD is present in the rendered chain
+// (see nad_wiring.go's runNADValidation), but composeSections used to only
+// relay a hardcoded name whitelist that never included it - so the actual PR
+// comment silently never showed NAD findings even though validator.RunAll
+// (and thus the build-yaml/test-all CLI commands, which print every
+// res.Sections entry directly) produced them. When present it must be
+// relayed verbatim, like Kustomize Build/Scaffold Validation/Resource
+// Compliance.
 func TestComposeSections_ReusesNADSection(t *testing.T) {
 	res := &Result{
 		ValidatorResult: &validator.Result{

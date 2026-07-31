@@ -470,7 +470,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// additionally applied when Options.AssumeOpenShift is set, since an
 	// OpenShift/OKD cluster's default CNI is OVN-Kubernetes - the same
 	// assumption AssumeOpenShift already makes for the sync-options check.
-	res.Sections = append(res.Sections, runNADValidation(renderedOverlays, opts.AssumeOpenShift, log))
+	// The section is only emitted when a NAD is actually present in the
+	// rendered chain (like the opt-in Kyverno section above); a changeset
+	// with no NAD gets no section rather than an empty "all good" stub.
+	if nadSection, present := runNADValidation(renderedOverlays, opts.AssumeOpenShift, log); present {
+		res.Sections = append(res.Sections, nadSection)
+	}
 
 	// Merge and classify.
 	allFindings := make([]check.Finding, 0, len(docResult.Findings)+len(overlayResult.Findings))
