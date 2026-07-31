@@ -91,15 +91,16 @@ func RenderSubDropdown(title, body string) string {
 // report maps and CheckOutcome.Name use) to their display label in the PR
 // comment.
 var checkDisplayName = map[string]string{
-	"large-file":   "Large File",
-	"YAML-syntax":  "YAML Syntax",
-	"config-sort":  "Config Sort Order",
-	"startingCSV":  "Starting CSV",
-	"golangci":     "golangci-lint",
-	"kubeconform":  "Kubeconform",
-	"markdownlint": "Markdownlint",
-	"prettier":     "Prettier",
-	"shellcheck":   "Shellcheck",
+	"large-file":     "Large File",
+	"YAML-syntax":    "YAML Syntax",
+	"config-sort":    "Config Sort Order",
+	"startingCSV":    "Starting CSV",
+	"golangci":       "golangci-lint",
+	"kubeconform":    "Kubeconform",
+	"markdownlint":   "Markdownlint",
+	"prettier":       "Prettier",
+	"shellcheck":     "Shellcheck",
+	"scaffold table": "Scaffold Table",
 }
 
 // displayName returns the proper display name for a raw check name,
@@ -184,7 +185,7 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 	for _, o := range outcomes {
 		byName[o.Name] = o
 	}
-	order := []string{"large-file", "YAML-syntax", "config-sort", "startingCSV"}
+	order := []string{"large-file", "YAML-syntax", "config-sort", "startingCSV", "scaffold table"}
 	children := make([]ReportSection, 0, len(order))
 	for _, name := range order {
 		children = append(children, composeCheckChild(name, byName, reports))

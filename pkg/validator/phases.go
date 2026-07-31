@@ -46,13 +46,14 @@ const (
 //     reasonably run out of the box - an org must opt in and supply its
 //     own policies (see pkg/lint/kyverno).
 //   - scaffold-readme (scaffold.CheckReadmeStatus's README scaffold-status
-//     table structural check - see docs/CI.md#scaffold-validation)
-//     defaults off because, like kyverno, this generic core can't know
-//     whether a given repo's `<!-- scaffold-status -->` table actually
-//     matches the one-row-per-app-per-overlay shape this check expects -
-//     an org already maintaining that table in a different shape/grouping
-//     would otherwise see this newly-real check start blocking PRs with
-//     false positives. An org confirms compatibility once, then opts in.
+//     table structural check, rendered as the "scaffold table" Static
+//     Checks sub-check - see docs/CI.md#scaffold-validation) defaults off
+//     because, like kyverno, this generic core can't know whether a given
+//     repo's `<!-- scaffold-status -->` table actually matches the
+//     one-row-per-app-per-overlay shape this check expects - an org
+//     already maintaining that table in a different shape/grouping would
+//     otherwise see this newly-real check start blocking PRs with false
+//     positives. An org confirms compatibility once, then opts in.
 var defaultOffSteps = map[string]bool{
 	stepKyverno:        true,
 	stepScaffoldReadme: true,
@@ -315,6 +316,31 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		return lintStepResult{status: StatusPassed}
 	})
 
+	// scaffold table - a cheap, structural, per-PR check of the README's
+	// <!-- scaffold-status --> table: does it list exactly the (app,
+	// overlay) pairs that exist on disk today, with no missing/stale rows?
+	// Named "scaffold table" (matching hintByCheck's key in comments.go) so
+	// a failure automatically gets the "k8s-gitops-ci update-scaffold-
+	// status" fix-command hint composeCheckChild already generates for any
+	// named check with a registered hint. Gated behind stepScaffoldReadme
+	// (default off - see defaultOffSteps' doc comment above): this generic
+	// core can't know whether a given repo's table actually matches the
+	// one-row-per-app-per-overlay shape this check expects.
+	if stepEnabled(stepScaffoldReadme, disabled, enabled) {
+		runStaticStep("scaffold table", func(sl *logger.ScopedLogger) lintStepResult {
+			if readmeCurrent, readmeDiff := scaffold.CheckReadmeStatus(); !readmeCurrent {
+				sl.ErrorInSection("Scaffold", "%s", readmeDiff)
+				return lintStepResult{report: readmeDiff, status: StatusError}
+			}
+			sl.Info("scaffold table check: passed")
+			return lintStepResult{status: StatusPassed}
+		})
+	} else {
+		staticMu.Lock()
+		staticOutcomes = append(staticOutcomes, CheckOutcome{Name: "scaffold table", Status: StatusPassed, Skipped: true, Note: "Disabled."})
+		staticMu.Unlock()
+	}
+
 	staticWg.Wait()
 
 	res.Sections = append(res.Sections, ComposeStaticChecksSection(staticOutcomes, staticReports))
@@ -471,15 +497,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	ghostTable := buildGhostTable(apps)
 	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
 
+	// The README scaffold-status table's own structural staleness check
+	// ("scaffold table") runs as a Static Checks sub-check instead (see
+	// runLintAndStaticChecks above) - it's a per-PR structural check, not a
+	// per-app drift re-run, so it belongs with large-file/YAML-syntax/
+	// config-sort/startingCSV rather than folded into this section's drift
+	// summary.
 	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
-	driftLines := scaffoldResult.DriftLines
-	if stepEnabled(stepScaffoldReadme, disabled, enabled) {
-		if readmeCurrent, readmeDiff := scaffold.CheckReadmeStatus(); !readmeCurrent {
-			driftLines = append(driftLines, readmeDiff)
-			log.ErrorInSection("Scaffold", "%s", readmeDiff)
-		}
-	}
-	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(driftLines, "\n"), scaffoldResult.ExecErrors, flattenSkippedClusters(scaffoldResult.SkippedClusters)))
+	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(scaffoldResult.DriftLines, "\n"), scaffoldResult.ExecErrors, flattenSkippedClusters(scaffoldResult.SkippedClusters)))
 
 	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
 

@@ -111,8 +111,8 @@ func TestRunAll_ScaffoldReadmeCheckDisabledByDefault(t *testing.T) {
 		t.Error("expected the scaffold-readme check to be skipped by default")
 	}
 	for _, s := range res.Sections {
-		if s.Name == "Scaffold Validation" && s.Error {
-			t.Errorf("expected a clean Scaffold Validation section by default, got:\n%s", s.Body)
+		if s.Name == "Static Checks" && s.Error {
+			t.Errorf("expected a clean Static Checks section by default, got:\n%s", s.Body)
 		}
 	}
 }
@@ -143,12 +143,12 @@ func TestRunAll_ScaffoldReadmeCheckEnabledViaEnabledChecks(t *testing.T) {
 	}
 	found := false
 	for _, s := range res.Sections {
-		if s.Name == "Scaffold Validation" && s.Error {
+		if s.Name == "Static Checks" && s.Error && strings.Contains(s.Body, "Scaffold Table") {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected the Scaffold Validation section to report an error once enabled")
+		t.Error("expected the Static Checks section to report a Scaffold Table error once enabled")
 	}
 }
 

@@ -112,6 +112,42 @@ func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
 	}
 }
 
+// TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint guards
+// that the "scaffold table" static check - wired in phases.go to
+// scaffold.CheckReadmeStatus, named to match hintByCheck's "scaffold table"
+// key - automatically gets its update-scaffold-status fix-command hint the
+// same way every other named static check does, with no bespoke rendering
+// needed.
+func TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint(t *testing.T) {
+	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusError}}
+	s := ComposeStaticChecksSection(outcomes, map[string]string{"scaffold table": "stale entries no longer on disk: myapp/removed"})
+	if !s.Error {
+		t.Errorf("expected error section")
+	}
+	if !strings.Contains(s.Body, "Scaffold Table") {
+		t.Errorf("expected the Scaffold Table display name, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "k8s-gitops-ci update-scaffold-status") {
+		t.Errorf("expected the scaffold table fix hint in the section body, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault guards that
+// the "scaffold table" check, when phases.go's default-off gating leaves it
+// unenabled, renders as "Disabled." (matching golangci's same convention)
+// rather than the generic "Not run." a check phases.go never even attempted
+// to record an outcome for would get.
+func TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault(t *testing.T) {
+	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusPassed, Skipped: true, Note: "Disabled."}}
+	s := ComposeStaticChecksSection(outcomes, map[string]string{})
+	if s.Error {
+		t.Errorf("expected no error section")
+	}
+	if !strings.Contains(s.Body, "Disabled.") {
+		t.Errorf("expected the Disabled. note, got:\n%s", s.Body)
+	}
+}
+
 func TestComposeResourceComplianceSection(t *testing.T) {
 	s := ComposeResourceComplianceSection([]check.Finding{{CheckID: "x", Message: "m"}}, nil, nil)
 	if !s.Error {
