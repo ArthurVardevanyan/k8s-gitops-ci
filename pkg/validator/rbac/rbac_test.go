@@ -201,3 +201,40 @@ rules:
 		}
 	}
 }
+
+func TestDeduplicate_DifferentBadVerbsNotMerged(t *testing.T) {
+	// Same Kind/Resource/RuleIndex/AggLabel, but different offending verb
+	// sets, must produce two separate DeduplicatedError entries - not one
+	// merged entry with an inflated count and only the first-seen
+	// BadVerbs.
+	errs := []ValidationError{
+		{Kind: "ClusterRole", Resource: "reader", RuleIndex: 0, AggLabel: "view", BadVerbs: []string{"create"}},
+		{Kind: "ClusterRole", Resource: "reader", RuleIndex: 0, AggLabel: "view", BadVerbs: []string{"delete"}},
+	}
+	out := Deduplicate(errs)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 distinct deduplicated entries for different BadVerbs, got %d: %+v", len(out), out)
+	}
+	for _, d := range out {
+		if d.Count != 1 {
+			t.Errorf("expected each distinct-BadVerbs entry to have Count 1, got %d for %+v", d.Count, d)
+		}
+	}
+}
+
+func TestDeduplicate_SameBadVerbsRegardlessOfOrderStillMerged(t *testing.T) {
+	// The same set of offending verbs, differently ordered, must still
+	// collapse into a single entry with an incremented Count - the fix
+	// sorts BadVerbs before building the key specifically so this holds.
+	errs := []ValidationError{
+		{Kind: "ClusterRole", Resource: "reader", RuleIndex: 0, AggLabel: "view", BadVerbs: []string{"create", "delete"}},
+		{Kind: "ClusterRole", Resource: "reader", RuleIndex: 0, AggLabel: "view", BadVerbs: []string{"delete", "create"}},
+	}
+	out := Deduplicate(errs)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 merged entry for the same BadVerbs set in different order, got %d: %+v", len(out), out)
+	}
+	if out[0].Count != 2 {
+		t.Errorf("expected Count 2, got %d", out[0].Count)
+	}
+}

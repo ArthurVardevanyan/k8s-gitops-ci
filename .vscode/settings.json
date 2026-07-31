@@ -26,5 +26,5 @@
   },
   "yaml.format.printWidth": 200,
   "yaml.format.proseWrap": "preserve",
-  "cSpell.words": ["pipelinesascode"]
+  "cSpell.words": ["goarch", "pipelinesascode"]
 }

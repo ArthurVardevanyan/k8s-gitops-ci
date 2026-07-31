@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -202,7 +203,9 @@ func Deduplicate(errs []ValidationError) []DeduplicatedError {
 	seen := make(map[string]*DeduplicatedError)
 	order := make([]string, 0, len(errs))
 	for _, e := range errs {
-		key := fmt.Sprintf("%s/%s/%d/%s", e.Kind, e.Resource, e.RuleIndex, e.AggLabel)
+		sortedVerbs := append([]string(nil), e.BadVerbs...)
+		sort.Strings(sortedVerbs)
+		key := fmt.Sprintf("%s/%s/%d/%s/%s", e.Kind, e.Resource, e.RuleIndex, e.AggLabel, strings.Join(sortedVerbs, ","))
 		if d, ok := seen[key]; ok {
 			d.Count++
 			continue
