@@ -1,0 +1,12 @@
+kind: SomeOperator
+metadata:
+  name: app
+spec:
+  image: registry.io/myapp
+  extra:
+    template:
+      spec:
+        containers:
+          - name: sidecar
+            image: registry.io/sidecar:latest
+  version: sha256:abcdef1234567890
