@@ -60,17 +60,21 @@ func TestLegacyMarkers(t *testing.T) {
 	}
 }
 
-// TestReproduceCommand_UsesRealBinaryPath guards against the reproduce
-// command regressing to the literal, non-functional "./cmd/<binary>"
-// placeholder - the actual module's binary lives at ./cmd/k8s-gitops-ci
-// (see go.mod's module path and cmd/k8s-gitops-ci/main.go).
+// TestReproduceCommand_UsesRealBinaryPath guards the reproduce command's
+// invocation form: it must call the distributed CLI binary directly
+// (k8s-gitops-ci, per go.mod's module path and cmd/k8s-gitops-ci/main.go)
+// rather than the source-checkout-only "go run ./cmd/..." form or the
+// literal, non-functional "<binary>" placeholder.
 func TestReproduceCommand_UsesRealBinaryPath(t *testing.T) {
 	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "main"})
 	if strings.Contains(got, "<binary>") {
 		t.Errorf("ReproduceCommand still contains the unresolved <binary> placeholder: %q", got)
 	}
-	if !strings.Contains(got, "go run ./cmd/k8s-gitops-ci pipeline") {
-		t.Errorf("ReproduceCommand = %q, want it to invoke ./cmd/k8s-gitops-ci", got)
+	if strings.Contains(got, "go run") {
+		t.Errorf("ReproduceCommand = %q, want it to invoke the k8s-gitops-ci binary directly, not via go run", got)
+	}
+	if !strings.HasPrefix(got, "k8s-gitops-ci pipeline") {
+		t.Errorf("ReproduceCommand = %q, want it to invoke the k8s-gitops-ci binary", got)
 	}
 }
 
