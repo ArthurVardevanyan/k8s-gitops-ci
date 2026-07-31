@@ -17,11 +17,17 @@ import (
 // disabled until their ID is explicitly listed in EnabledChecks. See
 // stepEnabled in phases.go.
 type Options struct {
-	RepoURL          string
-	PR               string
-	BaseRef          string
-	Revision         string
-	TriggerComment   string
+	RepoURL        string
+	PR             string
+	BaseRef        string
+	Revision       string
+	TriggerComment string
+	// HookSource is the raw hook-source signal (e.g. "main"/"pr"/"local",
+	// wired straight through from pipeline.Options.HookSource / the CLI's
+	// --hook-source flag) that hook.ResolveSource normalizes - fail-closed
+	// to the base/target branch's test.sh - before every app's hooks and
+	// EXEMPTIONS are resolved. See resolveHookSource in hook_wiring.go.
+	HookSource       string
 	LintOnly         bool
 	Verbose          bool
 	IncludeDeletions bool

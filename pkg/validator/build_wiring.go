@@ -88,41 +88,42 @@ func buildOverlayError(overlayPath string) string {
 }
 
 // hookCell renders a single hooks-matrix table cell: "—" when the hook
-// isn't defined, "✅ defined" when it is. (This repo doesn't execute hooks
-// as part of validation - see the doc comment on buildHookTable - so this
-// can't distinguish "ran" from "defined" the way the reference
-// implementation's richer hookCell(defined, failed) does.)
-func hookCell(defined bool) string {
-	if defined {
-		return "✅ defined"
+// isn't defined for the app, "✅ ran" when it ran and passed, "❌ failed"
+// when it ran and at least one invocation failed (see mergeHookOutcome -
+// a partial failure across an app's several overlays still reports ❌).
+func hookCell(outcome hookOutcome) string {
+	switch outcome {
+	case hookFailed:
+		return "❌ failed"
+	case hookRan:
+		return "✅ ran"
+	default:
+		return "—"
 	}
-	return "—"
 }
 
 // buildHookTable renders a "| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |"
-// markdown table from each app's test.sh (via hook.FindTestScript/
-// ParseTestScript), showing which hooks are defined. Returns "" when no app
-// defines any hook, so the caller can render a plain "no hooks defined"
-// line instead of an empty table.
-//
-// This only reports whether a hook is *defined*, not whether it *ran and
-// passed* - actually executing arbitrary per-app hook scripts during
-// validation is a larger, riskier change (real side effects, needs a
-// sandboxed working tree) intentionally left out of this pass; pkg/hook.Runner
-// already exists for that and can be wired in a follow-up once that's
-// scoped.
-func buildHookTable(apps []string) string {
+// markdown table showing, per app, whether each hook is defined and - since
+// hooks are actually executed as part of the build (see
+// buildOverlayWithHooks/runAppPostValidateHooks in hook_wiring.go) - whether
+// it ran successfully. results holds the outcomes accumulated during that
+// run (keyed by app, see runBuildAndPostBuild); an app missing from results
+// (or with no hooks defined at all in cfgs) falls back to "—" for every
+// column. Returns "" when no app defines any hook, so the caller can render
+// a plain "no hooks defined" line instead of an empty table.
+func buildHookTable(apps []string, cfgs map[string]*hook.Config, results map[string]*appHookResult) string {
 	rows := make([]string, 0, len(apps))
 	for _, app := range apps {
-		cfg, err := hook.ParseTestScript(hook.FindTestScript(app))
-		if err != nil || cfg == nil {
+		cfg := cfgs[app]
+		if cfg == nil || (!cfg.HasPreBuild && !cfg.HasPostBuild && !cfg.HasPostValidate) {
 			continue
 		}
-		if !cfg.HasPreBuild && !cfg.HasPostBuild && !cfg.HasPostValidate {
-			continue
+		r := results[app]
+		if r == nil {
+			r = &appHookResult{}
 		}
 		rows = append(rows, fmt.Sprintf("| `%s` | %s | %s | %s |",
-			app, hookCell(cfg.HasPreBuild), hookCell(cfg.HasPostBuild), hookCell(cfg.HasPostValidate)))
+			app, hookCell(r.PreBuild), hookCell(r.PostBuild), hookCell(r.PostValidate)))
 	}
 	if len(rows) == 0 {
 		return ""

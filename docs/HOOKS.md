@@ -4,24 +4,26 @@ Every app can carry an optional `test.sh` at its root
 (`hook.FindTestScript(app)` → `<app>/test.sh`) that declares a small set
 of directives. This document describes `pkg/hook`'s actual, current
 behavior — including which directives are fully wired end-to-end and
-which are parsed but not yet connected to anything (see the
-**Current Limitations** section below before assuming a directive does
-what its name suggests).
+which are still parsed but not yet connected to anything (see
+**Current Limitations** below).
 
 ## The `test.sh` contract
 
-`test.sh` isn't executed as a script by this tool (it's a convention
-shared with other tooling in the GitOps repo) — `pkg/hook.ParseTestScript`
-line-scans it for a fixed set of recognized directives. Unrecognized
-content is ignored; a missing `test.sh` parses to `hook.DefaultConfig()`
-(`Scaffold: true`, everything else empty/false).
+`test.sh` is a convention shared with other tooling in the GitOps repo,
+so this tool never runs it top-to-bottom as a script — `pkg/hook.ParseTestScript`
+line-scans it for a fixed set of recognized directives, and
+`pkg/hook.RunPreBuildHook`/`RunPostBuildHook`/`RunPostValidateHook`
+(see **Hook execution** below) only ever `source` it to invoke one named
+function per hook. Unrecognized content is ignored; a missing `test.sh`
+parses to `hook.DefaultConfig()` (`Scaffold: true`, everything else
+empty/false).
 
-| Directive                                                      | Syntax                                                            | Effect                                                                                                                                                                              |
-| -------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SCAFFOLD=`                                                    | `SCAFFOLD=false` (or `true`/`yes`/`1`)                            | Opts an app out of scaffold-drift validation. Defaults to `true` (enabled) when absent.                                                                                             |
-| `AVP_EXCLUDE=`                                                 | `AVP_EXCLUDE="cluster1 cluster2"`                                 | Space-separated list of overlay names to exclude from AVP secret resolution — see the **Current Limitations** note below; this is parsed but not read by anything downstream today. |
-| `EXEMPTIONS=(...)` or `EXEMPTIONS="..."`                       | see below                                                         | Per-app exemption selectors — see the **Current Limitations** note below; parsed and validated, but not fed into the actual exemption-evaluation engine today.                      |
-| `PRE_BUILD_HOOK=` / `POST_BUILD_HOOK=` / `POST_VALIDATE_HOOK=` | any line containing the key (e.g. `PRE_BUILD_HOOK=run_my_script`) | Presence-only marker — see **Current Limitations**.                                                                                                                                 |
+| Directive                                                      | Syntax                                                                  | Effect                                                                                                                                                                                    |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SCAFFOLD=`                                                    | `SCAFFOLD=false` (or `true`/`yes`/`1`)                                  | Opts an app out of scaffold-drift validation. Defaults to `true` (enabled) when absent.                                                                                                   |
+| `AVP_EXCLUDE=`                                                 | `AVP_EXCLUDE="cluster1 cluster2"`                                       | Space-separated list of overlay names to exclude from AVP secret resolution — see the **Current Limitations** note below; this is parsed but not read by anything downstream today.       |
+| `EXEMPTIONS=(...)` or `EXEMPTIONS="..."`                       | see below                                                               | Per-app exemption selectors, merged into every check run during the Build + Compliance phase (see **`EXEMPTIONS=(...)` wiring** below).                                                   |
+| `PRE_BUILD_HOOK=` / `POST_BUILD_HOOK=` / `POST_VALIDATE_HOOK=` | `PRE_BUILD_HOOK=<cmd>` (optionally `export`-prefixed, like `SCAFFOLD=`) | Names a shell function (defined elsewhere in the same `test.sh`) or external command to invoke around the build — see **Hook execution** below. `<cmd>` empty/absent means "not defined". |
 
 ### `EXEMPTIONS=(...)` selector syntax
 
@@ -42,19 +44,72 @@ EXEMPTIONS="check=image-checksum,file=foo.yaml"
 Each entry is a comma-separated set of `key=value` pairs. Recognized
 selector keys, matching `pkg/validator/exempt.Selector`'s fields exactly:
 `check` (required — the check ID this entry exempts), `file`, `kind`,
-`name`, `namespace`, `match`, `value`, `path`, and `dir`. `check=` is
-mandatory; a malformed entry (no `=`, an unknown key, an empty value, or
-a missing `check=`) is collected into `Config.ExemptErrors` rather than
-silently dropped or applied — `pkg/hook` fails loud on a syntax error,
-even though (per the limitation below) a syntactically-valid entry
-doesn't currently do anything either.
+`name`, `namespace`, `match`, `value`, `path`. (`dir` is also a valid
+`exempt.Selector` field — see [EXCEPTIONS.md](EXCEPTIONS.md) — but isn't
+a recognized `EXEMPTIONS=(...)` key today.) `check=` is mandatory; a
+malformed entry (no `=`, an unknown key, an empty value, or a missing
+`check=`) is collected into `Config.ExemptErrors` rather than silently
+dropped or applied.
 
-`dir` selects by root-anchored path prefix (e.g. `dir=.tekton` matches
-`.tekton/foo.yaml` but not `apps/foo/.tekton/x.yaml` nested elsewhere) —
-this is this repo's own addition to the selector shape; see
-[EXCEPTIONS.md](EXCEPTIONS.md) for the full selector reference (used by
-the one exemption selector mechanism that _is_ wired today, the built-in
-`.tekton/` PipelineRun exemption).
+### `EXEMPTIONS=(...)` wiring
+
+Every app whose test.sh is resolved during the Build + Compliance phase
+(see `resolveAppHookConfigs` in `pkg/validator/hook_wiring.go`) has its
+parsed `ExemptSelectors` bridged into `pkg/validator/exempt.Selector` and
+merged with the built-in selectors (e.g. the `.tekton/` PipelineRun
+default — see `tekton_exemptions.go`) before either the doc-check or
+overlay-check engines run. A real `EXEMPTIONS=(...)` entry therefore
+suppresses matching findings for **any exemptable check** (currently
+`image-checksum`, `cluster-name`, `project-ref` — see
+`pkg/validator/exempt.Exemptable`) across the whole run, the same as the
+annotation-based exemption mode
+(`gitops-ci.k8s.io/exempt-<check-id>` — see [EXCEPTIONS.md](EXCEPTIONS.md)).
+
+Selectors are merged flatly across every app in the run, not scoped to
+only that app's own files - matching how the built-in selectors already
+behave. A malformed `EXEMPTIONS` token parses to **zero** selectors for
+that entry (fail-closed: it exempts nothing) and is additionally
+surfaced as a blocking failure (`log.ErrorInSection("Hooks", ...)`, folded
+into the "Kustomize Build" report section) so the author notices and
+fixes the syntax error instead of unknowingly under-exempting.
+
+## Hook execution
+
+`PRE_BUILD_HOOK=`/`POST_BUILD_HOOK=`/`POST_VALIDATE_HOOK=` name a shell
+function (or external command) that `pkg/hook`'s `RunPreBuildHook`/
+`RunPostBuildHook`/`RunPostValidateHook` (`pkg/hook/exec.go`) actually
+invoke, via `bash -c 'source <test.sh>; "$CMD" <args>'`, during the
+Build+Compliance phase (`buildOverlayWithHooks`/`runAppPostValidateHooks`
+in `pkg/validator/hook_wiring.go`):
+
+- **`PRE_BUILD_HOOK`** runs once per overlay, before that overlay is
+  built, with `$1`=the overlay's absolute path and `$2`=where its
+  rendered YAML will be written. A failing `PRE_BUILD_HOOK` skips the
+  build for that overlay entirely.
+- **`POST_BUILD_HOOK`** runs once per successfully-built overlay, with
+  `$1`=the rendered YAML's absolute path, `$2`=the overlay's basename
+  (e.g. `prod`), `$3`=the overlay's absolute directory path.
+- **`POST_VALIDATE_HOOK`** runs once per app, after every one of its
+  overlays has been built, with `$1`=the app's build directory
+  (containing every overlay's rendered YAML) and `$2`=the app name.
+
+Every invocation runs with a per-app environment (`APP`, `ROOT_PATH`,
+`APP_TMP_DIR`, `ERROR_LOG`, `PIPELINE=yes`) and a timeout (60s for
+`PRE_BUILD_HOOK`/`POST_BUILD_HOOK`, 120s for `POST_VALIDATE_HOOK`). A
+hook fails the build either by exiting non-zero, or by writing to
+`"${ERROR_LOG}"` (even on exit 0) — the latter lets a hook report
+multiple problems from one invocation. A hook failure is reported as a
+blocking build error (`kustomize build <path>: pre-build hook: ...` /
+`post-build hook: ...` / `post-validate hook: ...`, grouped into the
+"Kustomize Build" report section the same way a `kustomize build`
+failure is) and every attempted hook's outcome (✅ ran / ❌ failed / —
+not defined) is rendered in that section's `| App | PRE_BUILD |
+POST_BUILD | POST_VALIDATE |` table.
+
+Rendered YAML is only actually written to disk for an app when it has a
+`POST_BUILD_HOOK` or `POST_VALIDATE_HOOK` defined (see `needsBuildDir` in
+`pkg/validator/hook_wiring.go`) - the common no-hooks-defined case never
+touches the filesystem for this.
 
 ## `hook.Source` / `ResolveSource`
 
@@ -65,7 +120,8 @@ case:
 
 - No signal at all → `SourceMain`.
 - `SourceLocal` → always honored as-is (a local/CLI run explicitly
-  requesting the working tree's own `test.sh`).
+  requesting the working tree's own `test.sh`, e.g. via
+  `--hook-source local`).
 - `SourcePR` → only honored when the triggering comment was **exactly**
   `/hook-test` **and** a PR number is set; anything else (including a PR
   signal without that exact comment) falls back to `SourceMain`. This
@@ -75,55 +131,17 @@ case:
   scoping, or disabling scaffold checks) and have its own, unreviewed
   version take effect.
 
-This is fully implemented and unit-tested (`hook_test.go`), but as of
-this writing **nothing in `pkg/pipeline`/`pkg/validator` calls
-`ResolveSource`** — see Current Limitations.
+The CLI's `--hook-source`/`--trigger-comment` flags
+(`pipeline.Options.HookSource`/`TriggerComment`) flow through to
+`validator.Options`, which calls `ResolveSource` once per run
+(`resolveHookSource` in `pkg/validator/hook_wiring.go`) before resolving
+any app's `test.sh` - every app in the same run shares one resolved
+`hook.Source`.
 
 ## Current Limitations
 
-Read this section before assuming a `test.sh` directive changes pipeline
-behavior. Every item below was confirmed by reading every call site of
-the relevant type/function, not assumed:
-
-- **Hook scripts are detected, not executed.** `Runner.RunHooks` (via
-  `HasPreBuild`/`HasPostBuild`/`HasPostValidate`) is used **only** to
-  render the `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` presence
-  table in the Kustomize Build report section
-  (`pkg/validator/build_wiring.go`'s `buildHookTable`) — it reports
-  whether a hook is _defined_, never whether it _ran and passed_.
-  `Runner.preBuild`'s underlying `runScript` is a documented placeholder:
-  it checks the script file exists and returns `nil` unconditionally
-  ("Placeholder: actual exec omitted to avoid runtime dep in tests" — see
-  the comment in `pkg/hook/hook.go`). Do not describe
-  `PRE_BUILD_HOOK`/`POST_BUILD_HOOK`/`POST_VALIDATE_HOOK` as executing
-  anything.
-- **`EXEMPTIONS=(...)` is parsed and validated, but never evaluated.**
-  `hook.Config.ExemptSelectors` is populated correctly (and syntax errors
-  are collected into `ExemptErrors`), but grep for every construction
-  site of `exempt.Selector{}` used for real evaluation shows exactly one:
-  the hardcoded built-in Tekton-PaC exemption in
-  `pkg/validator/tekton_exemptions.go`'s `builtinExemptSelectors()` (whose
-  own doc comment says its result is "to be merged ahead of any
-  hook-provided EXEMPTIONS selectors" — an acknowledged, not-yet-done
-  wiring point). `pkg/validator/phases.go`'s
-  `selectors := builtinExemptSelectors()` call is the **only** place
-  `selectors` is ever assigned before reaching `exempt.Evaluate` — no
-  per-app `test.sh`'s parsed `ExemptSelectors` is ever merged in. **A
-  real `EXEMPTIONS=(...)` entry in a `test.sh` today has zero effect on
-  validation.** Only the annotation-based exemption mode
-  (`gitops-ci.k8s.io/exempt-<check-id>` on the resource itself — see
-  [EXCEPTIONS.md](EXCEPTIONS.md)) and the one built-in selector actually
-  work.
 - **`AVP_EXCLUDE=` is parsed, but never read outside `pkg/hook`.**
   `hook.Config.AVPExclude` is populated correctly, but grep across
   `pkg/validator`/`pkg/overlay`/`cmd/k8s-gitops-ci` shows nothing reads
   it — consistent with `pkg/overlay`'s AVP build strategy itself being
   unwired today (see [CI.md](CI.md)'s Build Strategies section).
-- **`hook.ResolveSource` is implemented and tested, but not called.**
-  Nothing in `pkg/pipeline` or `pkg/validator` currently resolves which
-  `test.sh` source to trust via this function — there is no live
-  `/hook-test`-comment-driven behavior yet.
-
-None of the above is a bug to fix in this doc's own PR — they're
-accurately-documented gaps so a reader doesn't assume a directive works
-just because it parses cleanly and has no visible error.

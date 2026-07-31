@@ -289,6 +289,8 @@ func toValidatorOptions(opts Options) validator.Options {
 		PR:              opts.PR,
 		BaseRef:         resolveBaseRef(opts.TargetBranch),
 		Revision:        resolveRevision(opts.Revision, opts.PR),
+		TriggerComment:  opts.TriggerComment,
+		HookSource:      opts.HookSource,
 		LintOnly:        opts.LintOnly,
 		Verbose:         opts.Verbose,
 		AssumeOpenShift: opts.AssumeOpenShift,

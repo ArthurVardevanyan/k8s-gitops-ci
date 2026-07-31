@@ -315,11 +315,26 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	log.Header("Build + Compliance")
 	w := Workers(opts)
 
+	// Overlays/apps are resolved up front (rather than after the doc/
+	// overlay check loops, as before) because both this run's exemption
+	// selectors and its hook execution need the app list first: each app's
+	// test.sh is resolved exactly once here, its EXEMPTIONS=(...) merged
+	// into selectors below, and the same *hook.Config reused for every one
+	// of that app's overlay builds plus its single POST_VALIDATE_HOOK call.
+	overlays := detectOverlaysForChanges(changed)
+	apps := uniqueApps(overlays)
+
+	hookSource := resolveHookSource(opts)
+	hookCfgs := resolveAppHookConfigs(apps, hookSource)
+	defer cleanupAppHookConfigs(hookCfgs)
+
 	// Built-in selectors (e.g. the Tekton Pipelines-as-code .tekton/
-	// default, see tekton_exemptions.go) plus any hook-provided EXEMPTIONS
-	// (currently none wired from Options - org layer injects via Options
-	// in the future).
-	selectors := builtinExemptSelectors()
+	// default, see tekton_exemptions.go) plus every app's hook-provided
+	// EXEMPTIONS=(...) selectors (see docs/HOOKS.md). A malformed
+	// EXEMPTIONS entry exempts nothing (fail-closed) and is surfaced as a
+	// blocking build error below rather than silently dropped.
+	hookSelectors, hookExemptErrs := hookExemptSelectorsAndErrors(hookCfgs)
+	selectors := append(builtinExemptSelectors(), hookSelectors...)
 
 	disabled := toIDSet(opts.DisabledChecks)
 
@@ -333,10 +348,13 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// across a bounded worker pool instead of one-at-a-time; this mirrors the
 	// job-queue pattern runDocChecks/runOverlayChecks already use internally
 	// for per-file/per-overlay checks, one level up.
-	overlays := detectOverlaysForChanges(changed)
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	var overlayResult check.Result
-	var buildErrs []string
+	buildErrs := make([]string, 0, len(overlays))
+	hookResults := make(map[string]*appHookResult, len(apps))
+	for _, app := range apps {
+		hookResults[app] = &appHookResult{}
+	}
 	if len(overlays) > 0 {
 		overlayWorkers := w
 		if overlayWorkers > len(overlays) {
@@ -355,13 +373,19 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 				for ov := range jobs {
 					ovStart := time.Now()
 					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
-					buildErr := buildOverlayError(ov.path)
+					app := appFromOverlayPath(ov.path)
+					buildErr, pre, post := buildOverlayWithHooks(ov, hookCfgs[app])
 					tc.RecordStep("Build+Compliance", ov.path, time.Since(ovStart))
 					overlayMu.Lock()
 					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
 					overlayResult.Exempted = append(overlayResult.Exempted, r.Exempted...)
 					if buildErr != "" {
 						buildErrs = append(buildErrs, buildErr)
+						log.ErrorInSection("Hooks", "%s", buildErr)
+					}
+					if hr := hookResults[app]; hr != nil {
+						hr.PreBuild = mergeHookOutcome(hr.PreBuild, pre)
+						hr.PostBuild = mergeHookOutcome(hr.PostBuild, post)
 					}
 					overlayMu.Unlock()
 				}
@@ -372,6 +396,15 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		}
 		close(jobs)
 		overlayWg.Wait()
+	}
+
+	for _, err := range runAppPostValidateHooks(apps, hookCfgs, hookResults) {
+		buildErrs = append(buildErrs, err)
+		log.ErrorInSection("Hooks", "%s", err)
+	}
+	for _, err := range hookExemptErrs {
+		buildErrs = append(buildErrs, err)
+		log.ErrorInSection("Hooks", "%s", err)
 	}
 
 	// Merge and classify.
@@ -394,9 +427,8 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		log.Info("resource compliance: passed")
 	}
 
-	apps := uniqueApps(overlays)
 	fixNeeded, _ := kustomize.CheckFix(changed)
-	hookTable := buildHookTable(apps)
+	hookTable := buildHookTable(apps, hookCfgs, hookResults)
 	ghostTable := buildGhostTable(apps)
 	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
 

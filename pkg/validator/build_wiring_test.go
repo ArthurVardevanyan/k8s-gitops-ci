@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 )
 
 func TestAppFromOverlayPath(t *testing.T) {
@@ -141,14 +143,16 @@ func TestBuildOverlayError_ValidOverlay(t *testing.T) {
 }
 
 func TestBuildHookTable_NoApps(t *testing.T) {
-	if got := buildHookTable(nil); got != "" {
+	if got := buildHookTable(nil, nil, nil); got != "" {
 		t.Errorf("expected empty table for no apps, got %q", got)
 	}
 }
 
 func TestBuildHookTable_AppWithNoTestScript(t *testing.T) {
 	d := t.TempDir()
-	if got := buildHookTable([]string{filepath.Join(d, "app-without-test-sh")}); got != "" {
+	app := filepath.Join(d, "app-without-test-sh")
+	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
+	if got := buildHookTable([]string{app}, cfgs, nil); got != "" {
 		t.Errorf("expected empty table when no app defines any hook, got %q", got)
 	}
 }
@@ -158,15 +162,20 @@ func TestBuildHookTable_AppWithHooksDefined(t *testing.T) {
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "test.sh"), "#!/bin/sh\nPRE_BUILD_HOOK=./pre.sh\nPOST_VALIDATE_HOOK=./post-validate.sh\n")
 
-	got := buildHookTable([]string{app})
+	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
+	results := map[string]*appHookResult{app: {PreBuild: hookRan, PostValidate: hookFailed}}
+	got := buildHookTable([]string{app}, cfgs, results)
 	if got == "" {
 		t.Fatal("expected a non-empty hook table")
 	}
 	if !strings.Contains(got, "PRE_BUILD") || !strings.Contains(got, "POST_BUILD") || !strings.Contains(got, "POST_VALIDATE") {
 		t.Errorf("expected all three hook columns in the header, got:\n%s", got)
 	}
-	if !strings.Contains(got, "✅ defined") {
-		t.Errorf("expected at least one '✅ defined' cell, got:\n%s", got)
+	if !strings.Contains(got, "✅ ran") {
+		t.Errorf("expected the PRE_BUILD cell to show '✅ ran', got:\n%s", got)
+	}
+	if !strings.Contains(got, "❌ failed") {
+		t.Errorf("expected the POST_VALIDATE cell to show '❌ failed', got:\n%s", got)
 	}
 	if !strings.Contains(got, "—") {
 		t.Errorf("expected a '—' cell for the hook that wasn't defined (POST_BUILD), got:\n%s", got)
