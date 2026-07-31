@@ -277,9 +277,15 @@ above, it is **not** part of the `check.Register` framework: it's always
 on (not gateable via `DisabledChecks`/`EnabledChecks`) and its findings
 are **not** exemptable via `EXEMPTIONS=(...)` or the
 `gitops-ci.k8s.io/exempt-<check-id>` annotation (see
-[EXCEPTIONS.md](EXCEPTIONS.md)). It renders as its own always-present
+[EXCEPTIONS.md](EXCEPTIONS.md)). It renders as its own
 "NetworkAttachmentDefinition Validation" report section, blocking on any
-finding.
+finding. The section is **omit-when-absent** (like the opt-in Kyverno
+section): it's rendered only when at least one
+`NetworkAttachmentDefinition` is actually present in the rendered-overlay
+chain, showing the result whether it passed or failed — a changeset that
+touches no NAD gets no section rather than an empty "0 NADs, all good"
+stub. The validator itself still always runs; only the (empty) section is
+suppressed.
 
 It has two tiers:
 
@@ -388,8 +394,9 @@ section for the full rendering model (sections, sub-check dropdowns,
 status icons). In short: one PR comment, each top-level section a
 collapsible `<details>` block - PR Checks, Linting, Static Checks,
 Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
-Resource Compliance, NetworkAttachmentDefinition Validation, CI Notes,
-plus Kyverno Policies when the opt-in `kyverno` step is enabled (see
+Resource Compliance, and CI Notes, plus NetworkAttachmentDefinition
+Validation when a NAD is present in the rendered-overlay chain and Kyverno
+Policies when the opt-in `kyverno` step is enabled (see
 [Registered checks](#registered-checks) below). Resource Compliance
 additionally groups findings by check ID with an "Accepted Exceptions"
 audit sub-block.

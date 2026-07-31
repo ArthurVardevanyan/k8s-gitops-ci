@@ -16,21 +16,31 @@ import (
 // doc comment). This mirrors runKyvernoValidation's temp-file + remap
 // pattern (kyverno_wiring.go) so a finding's File points at the overlay a
 // reviewer can act on instead of an ephemeral temp path.
-func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logger.Logger) Section {
+//
+// The returned bool reports whether any NAD resource was actually present in
+// the rendered-overlay chain. When it's false the caller omits the section
+// entirely rather than rendering a "0 NADs, all good" stub: NAD validation is
+// still always-on (never gated), but an empty section is pure noise on the
+// (common) PRs that touch no NetworkAttachmentDefinition at all.
+func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logger.Logger) (Section, bool) {
 	if len(outputs) == 0 {
-		return ComposeNADSection(nil, assumeOpenshift)
+		return Section{}, false
 	}
 
 	dir, err := os.MkdirTemp("", "nad-resources-*")
 	if err != nil {
 		log.Warn("nad: creating temp dir: %v", err)
-		return ComposeNADSection(nil, assumeOpenshift)
+		return Section{}, false
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
+	present := false
 	files := make([]string, 0, len(outputs))
 	remap := make(map[string]string, len(outputs))
 	for i, o := range outputs {
+		if nad.ContainsNAD(o.data) {
+			present = true
+		}
 		f := filepath.Join(dir, fmt.Sprintf("resource-%d.yaml", i))
 		if err := os.WriteFile(f, o.data, 0o600); err != nil {
 			log.Warn("nad: writing %s: %v", f, err)
@@ -38,6 +48,10 @@ func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logg
 		}
 		files = append(files, f)
 		remap[f] = o.overlay
+	}
+
+	if !present {
+		return Section{}, false
 	}
 
 	errs := nad.ValidateFiles(files, assumeOpenshift)
@@ -50,5 +64,5 @@ func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logg
 	if len(errs) > 0 {
 		log.ErrorInSection("NAD", "%d NetworkAttachmentDefinition validation error(s)", len(errs))
 	}
-	return ComposeNADSection(errs, assumeOpenshift)
+	return ComposeNADSection(errs, assumeOpenshift), true
 }

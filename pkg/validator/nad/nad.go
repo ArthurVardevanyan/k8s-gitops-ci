@@ -109,6 +109,17 @@ func IsNADFile(path string) bool {
 	if err != nil {
 		return false
 	}
+	return ContainsNAD(data)
+}
+
+// ContainsNAD reports whether the given YAML bytes declare at least one
+// `kind: NetworkAttachmentDefinition` document. It's the in-memory
+// counterpart to IsNADFile, letting callers that already hold a (possibly
+// multi-document) rendered-overlay buffer detect whether a NAD is present
+// without re-reading it from disk - used to decide whether the NAD report
+// section should be rendered at all (an overlay chain with no NAD gets no
+// section rather than a "0 NADs, all good" stub).
+func ContainsNAD(data []byte) bool {
 	return nadKindRE.Match(data)
 }
 

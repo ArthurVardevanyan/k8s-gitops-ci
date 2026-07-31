@@ -102,7 +102,8 @@ of the flow above:
   `podspec`, `placeholder`, `clusterid`).
 - **NetworkAttachmentDefinition validation:** `pkg/validator/nad` — a
   separate, always-on, non-exemptable validator over rendered overlay
-  output (not part of the `check.Register` framework above; see
+  output (not part of the `check.Register` framework above; its report
+  section is rendered only when a NAD is present in the chain; see
   [CI.md](CI.md#networkattachmentdefinition-nad-validation)).
 - **Reporting:** `pkg/validator/unified_report.go`,
   `compose_sections.go`, `pkg/logger`.

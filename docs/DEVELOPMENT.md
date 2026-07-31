@@ -51,7 +51,8 @@ pkg/
                      rbac, crb, syncopts, image, namedport, podspec,
                      placeholder, clusterid); nad is a separate,
                      always-on, non-exemptable validator over rendered
-                     overlay output (not check.Register-driven — see
+                     overlay output (not check.Register-driven; its report
+                     section is emitted only when a NAD is present — see
                      docs/CI.md#networkattachmentdefinition-nad-validation)
   lint/              CLI-tool wrappers, one package per tool (golangci,
                      kubeconform, kyverno, markdownlint, prettier,

@@ -420,29 +420,32 @@ func composeSections(res *Result, opts Options) []validator.Section {
 	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr))
 
-	// 2–8. Linting, Static Checks, Kustomize Build, Scaffold Validation,
-	// Scaffold Drift Protection, Resource Compliance, NetworkAttachment-
-	// Definition Validation, and Kyverno Policies are all fully composed by
-	// phases.go during validator.RunAll - reuse them by name rather than
-	// recomposing. All but Kyverno Policies are unconditional (--lint-only
-	// mode, which skips the build phase entirely, is the only reason one'd
-	// be missing - hence the same "No results." fallback as the rest of
-	// this list rather than Kyverno Policies' omit-when-absent treatment
-	// below). Kyverno Policies is only ever produced when the "kyverno"
-	// step is enabled (default off - see docs/CI.md#registered-checks);
-	// validatorSectionOrFallback's "No results." stub for a name phases.go
-	// never produced would be misleading here (it'd read as "checked, found
-	// nothing" rather than "not run"), so it's appended only when present.
+	// 2–7. Linting, Static Checks, Kustomize Build, Scaffold Validation,
+	// Scaffold Drift Protection, and Resource Compliance are all fully
+	// composed by phases.go during validator.RunAll - reuse them by name
+	// rather than recomposing. These are unconditional (--lint-only mode,
+	// which skips the build phase entirely, is the only reason one'd be
+	// missing - hence the "No results." fallback).
 	names := []string{
 		"Linting", "Static Checks", "Kustomize Build", "Scaffold Validation",
 		"Scaffold Drift Protection", "Resource Compliance",
-		"NetworkAttachmentDefinition Validation",
 	}
 	for _, name := range names {
 		sections = append(sections, validatorSectionOrFallback(res.ValidatorResult, name))
 	}
-	if s, ok := validatorSection(res.ValidatorResult, "Kyverno Policies"); ok {
-		sections = append(sections, s)
+
+	// 8–9. NetworkAttachmentDefinition Validation and Kyverno Policies are
+	// both omit-when-absent: phases.go only produces the NAD section when a
+	// NAD is actually present in the rendered chain, and the Kyverno section
+	// only when the opt-in "kyverno" step is enabled (default off - see
+	// docs/CI.md#registered-checks). validatorSectionOrFallback's "No
+	// results." stub for a name phases.go never produced would be misleading
+	// here (it'd read as "checked, found nothing" rather than "no NAD in this
+	// change"/"not run"), so each is appended only when actually present.
+	for _, name := range []string{"NetworkAttachmentDefinition Validation", "Kyverno Policies"} {
+		if s, ok := validatorSection(res.ValidatorResult, name); ok {
+			sections = append(sections, s)
+		}
 	}
 
 	// 9. CI Notes
