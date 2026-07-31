@@ -1,14 +1,13 @@
 # Exceptions
 
 `pkg/validator/exempt` is the unified exemption framework every
-registered check's findings pass through. There are two modes; which one
-you can actually use today depends on the mode — see the callout in
-[Which one do I use?](#which-one-do-i-use) before reaching for
-`EXEMPTIONS=(...)`.
+registered check's findings pass through. There are two modes, both wired
+into evaluation today — see [Which one do I use?](#which-one-do-i-use)
+for the tradeoffs between them.
 
 ## The two modes
 
-### 1. Annotation exemption (works today)
+### 1. Annotation exemption
 
 A resource grants its own exemption via a `gitops-ci.k8s.io/exempt-<check-id>`
 annotation whose value must **exactly** match the finding's value (or its
@@ -28,30 +27,29 @@ enforces normally. `exempt.Accepts` fails closed: an empty annotation
 value, or no annotations at all, never matches, even against an
 empty-valued finding.
 
-### 2. `EXEMPTIONS=(...)` selector (parsed, but not evaluated — see below)
+### 2. `EXEMPTIONS=(...)` selector
 
 A `test.sh`'s `EXEMPTIONS=(...)` block (see [HOOKS.md](HOOKS.md) for the
 full directive syntax) declares selector-based exemptions scoped by
-`check`/`file`/`kind`/`name`/`namespace`/`match`/`value`/`path`/`dir`
-rather than a self-granted annotation. This is useful when you can't (or
-don't want to) annotate the resource itself — e.g. exempting every
-resource under a directory, or a resource you don't control the
-manifest of.
+`check`/`file`/`kind`/`name`/`namespace`/`match`/`value`/`path` rather
+than a self-granted annotation. This is useful when you can't (or don't
+want to) annotate the resource itself — e.g. exempting every resource
+under a directory, or a resource you don't control the manifest of.
 
-> **This mode is not currently wired into evaluation.** > `pkg/validator/exempt.Selector`/`SelectorMatches`/`Evaluate` fully
-> implement selector matching, and `pkg/hook.ParseTestScript` fully
-> parses and validates `EXEMPTIONS=(...)` syntax from `test.sh` — but
-> nothing connects the two. `pkg/validator/phases.go` builds its
-> `selectors` list from `builtinExemptSelectors()` alone (the one
-> built-in Tekton-PaC exemption below); no per-app `test.sh`'s parsed
-> `ExemptSelectors` is ever merged in. A syntactically-valid
-> `EXEMPTIONS=(...)` entry today parses cleanly, produces no error, and
-> **has zero effect on which findings get exempted.** See
-> [HOOKS.md](HOOKS.md#current-limitations) for the full list of
-> confirmed-unwired hook directives. Use annotation exemptions for
-> anything that needs to work today.
+Every app's `test.sh` is resolved once per run (subject to
+`hook.ResolveSource`'s fail-closed rules — see [HOOKS.md](HOOKS.md)), its parsed
+`ExemptSelectors` bridged from `hook.ExemptSelector` into
+`pkg/validator/exempt.Selector`, and merged with the built-in selectors
+below before either check engine runs
+(`hookExemptSelectorsAndErrors`/`resolveAppHookConfigs` in
+`pkg/validator/hook_wiring.go`). Selectors are merged flatly across every
+app in the run (not scoped to just that app's own files), matching how
+the built-in selectors already behave. A malformed `EXEMPTIONS` token
+parses to zero selectors (fail-closed — it exempts nothing) **and** is
+surfaced as a blocking build error, so a syntax error is never silently
+ignored.
 
-### The one selector that _is_ wired: the built-in Tekton-PaC exemption
+### The built-in Tekton-PaC exemption
 
 `pkg/validator/tekton_exemptions.go`'s `builtinExemptSelectors()` is
 merged into every run's `selectors` list unconditionally (not from any
@@ -71,15 +69,16 @@ default and have those `PipelineRun`s checked like any other resource.
 
 ## Which one do I use?
 
-Given the current wiring: **use an annotation exemption.** It's the only
-mode that actually takes effect today. The decision tree the reference
-convention would otherwise suggest (self-granted resource-level exemption
-vs. centrally-declared, file/kind/dir-scoped exemption) still describes
-the _intended_ design — `EXEMPTIONS=(...)` exists specifically for cases
-an annotation can't cover (a resource you don't control, or scoping by
-directory rather than one resource at a time) — but until the wiring gap
-above closes, that path has no effect, so don't build a workflow around
-it yet.
+Both modes take effect today; pick based on scope:
+
+- **Annotation exemption** — a self-granted, single-resource exemption.
+  Prefer this when you control the manifest: it's visible right next to
+  the field it exempts, and doesn't require touching `test.sh`.
+- **`EXEMPTIONS=(...)`** — a centrally-declared exemption scoped by
+  `file`/`kind`/`name`/`namespace`/`match`/`value`/`path` (or left
+  wide-open on just `check=`). Use this for a resource you don't control
+  the manifest of, or to exempt every match under a directory/pattern
+  without annotating each resource individually.
 
 ## Exemptable check IDs
 

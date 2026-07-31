@@ -48,6 +48,16 @@ type Config struct {
 	HasPreBuild     bool
 	HasPostBuild    bool
 	HasPostValidate bool
+	// PreBuildCmd/PostBuildCmd/PostValidateCmd hold the value assigned to
+	// PRE_BUILD_HOOK=/POST_BUILD_HOOK=/POST_VALIDATE_HOOK= (e.g. the
+	// function or command name to invoke - "run_my_script" in
+	// PRE_BUILD_HOOK=run_my_script). RunPreBuildHook/RunPostBuildHook/
+	// RunPostValidateHook (exec.go) source ScriptPath and invoke this
+	// value as a command, so it may name either a shell function defined
+	// elsewhere in the same test.sh or an external executable on PATH.
+	PreBuildCmd     string
+	PostBuildCmd    string
+	PostValidateCmd string
 	ScriptPath      string
 }
 
@@ -114,20 +124,41 @@ func (c *Config) parse(text string) {
 			rest := strings.TrimPrefix(line, "EXEMPTIONS=")
 			c.parseExemptionSingle(rest)
 		}
-		// hook scripts
-		if strings.Contains(line, "PRE_BUILD_HOOK=") {
-			c.HasPreBuild = true
+		// hook scripts: PRE_BUILD_HOOK=<cmd> / POST_BUILD_HOOK=<cmd> /
+		// POST_VALIDATE_HOOK=<cmd> (optionally "export "-prefixed, like
+		// SCAFFOLD=/AVP_EXCLUDE=). <cmd> names a shell function (defined
+		// elsewhere in the same test.sh) or external command that
+		// RunPreBuildHook/RunPostBuildHook/RunPostValidateHook (exec.go)
+		// invoke after sourcing the script.
+		if v, ok := hookDirectiveValue(line, "PRE_BUILD_HOOK="); ok {
+			c.PreBuildCmd = v
+			c.HasPreBuild = v != ""
 		}
-		if strings.Contains(line, "POST_BUILD_HOOK=") {
-			c.HasPostBuild = true
+		if v, ok := hookDirectiveValue(line, "POST_BUILD_HOOK="); ok {
+			c.PostBuildCmd = v
+			c.HasPostBuild = v != ""
 		}
-		if strings.Contains(line, "POST_VALIDATE_HOOK=") {
-			c.HasPostValidate = true
+		if v, ok := hookDirectiveValue(line, "POST_VALIDATE_HOOK="); ok {
+			c.PostValidateCmd = v
+			c.HasPostValidate = v != ""
 		}
 		_ = i
 	}
 	_ = avpLines
 	sort.Strings(c.AVPExclude)
+}
+
+// hookDirectiveValue matches a "<key><rest>" or "export <key><rest>" line
+// and returns the unquoted, trimmed value after key (e.g. key
+// "PRE_BUILD_HOOK=" against "export PRE_BUILD_HOOK=run_my_script" returns
+// ("run_my_script", true)). ok is false when line doesn't start with key
+// (after stripping an optional "export " prefix).
+func hookDirectiveValue(line, key string) (value string, ok bool) {
+	rest := strings.TrimPrefix(line, "export ")
+	if !strings.HasPrefix(rest, key) {
+		return "", false
+	}
+	return unquote(strings.TrimSpace(strings.TrimPrefix(rest, key))), true
 }
 
 func (c *Config) parseExemption(line string) {
@@ -231,45 +262,6 @@ func HasScaffoldEnabled(path string) bool {
 		return false
 	}
 	return cfg.Scaffold
-}
-
-// Runner executes hook scripts if present.
-type Runner struct {
-	Root string
-}
-
-// NewHookRunner creates a runner rooted at root.
-func NewHookRunner(root string) *Runner { return &Runner{Root: root} }
-
-func (r *Runner) preBuild(overlayPath string) error {
-	script := filepath.Join(r.Root, "pre-build.sh")
-	return runScript(script, overlayPath)
-}
-
-// RunHooks runs any declared scripts for the given overlay.
-func (r *Runner) RunHooks(overlayPath string, cfg *Config) error {
-	if cfg == nil {
-		return nil
-	}
-	if cfg.HasPreBuild {
-		if err := r.preBuild(overlayPath); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func runScript(script, arg string) error {
-	if _, err := os.Stat(script); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	// Placeholder: actual exec omitted to avoid runtime dep in tests
-	_ = script
-	_ = arg
-	return nil
 }
 
 // FindTestScript returns the canonical test.sh path for an app.

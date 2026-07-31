@@ -138,6 +138,22 @@ func TestToValidatorOptions_IncludePrefixes(t *testing.T) {
 	}
 }
 
+// TestToValidatorOptions_HookSourceAndTriggerComment guards a real wiring
+// bug: pipeline.Options.TriggerComment/HookSource (populated from the CLI's
+// --trigger-comment/--hook-source flags) previously weren't copied into
+// validator.Options at all, so hook.ResolveSource - which validator's
+// build phase now calls - could never see the actual PaC trigger signal.
+func TestToValidatorOptions_HookSourceAndTriggerComment(t *testing.T) {
+	opts := Options{TriggerComment: "/hook-test", HookSource: "pr"}
+	vopts := toValidatorOptions(opts)
+	if vopts.TriggerComment != "/hook-test" {
+		t.Errorf("TriggerComment = %q, want %q", vopts.TriggerComment, "/hook-test")
+	}
+	if vopts.HookSource != "pr" {
+		t.Errorf("HookSource = %q, want %q", vopts.HookSource, "pr")
+	}
+}
+
 func TestShouldRunPRChecks_ValidPR(t *testing.T) {
 	if !shouldRunPRChecks(Options{PR: "123"}) {
 		t.Errorf("expected true for a valid PR")
