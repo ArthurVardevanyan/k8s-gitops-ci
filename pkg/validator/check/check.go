@@ -73,6 +73,17 @@ type DocCheck interface {
 	CheckDoc(data []byte, source string) []Finding
 }
 
+// DocSkipper is implemented by a DocCheck that wants to opt certain
+// documents out of validation based on their kind - e.g. a placeholder
+// check skipping CustomResourceDefinition documents, whose embedded
+// OpenAPI schemas can legitimately contain placeholder-shaped tokens (such
+// as example values) that aren't real unresolved secrets. Checked once per
+// unique document by the doc-check dispatcher before CheckDoc is called;
+// a DocCheck that doesn't implement this interface is never skipped.
+type DocSkipper interface {
+	SkipDoc(kind string) bool
+}
+
 // OverlayCheck validates overlays.
 type OverlayCheck interface {
 	Check

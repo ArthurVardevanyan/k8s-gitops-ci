@@ -3,6 +3,7 @@ package validator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
@@ -66,5 +67,42 @@ func TestClusterIdentityAdapter_ProjectRefFindingIsExemptableEndToEnd(t *testing
 	}
 	if !found {
 		t.Errorf("expected an audit-trail entry for the exempted project-ref finding, got %+v", res.Exempted)
+	}
+}
+
+// TestPlaceholderCheck_ScansAVPPlaceholders is a regression test: the
+// placeholder check used to pass placeholder.Options{} (CheckAVP defaults
+// false), so argocd-vault-plugin-scheme placeholders were never actually
+// scanned despite the check's own table description advertising it.
+func TestPlaceholderCheck_ScansAVPPlaceholders(t *testing.T) {
+	data := []byte("apiVersion: v1\nkind: Secret\nmetadata:\n  name: x\nstringData:\n  password: <path:secret/data/foo#password>\n")
+	findings := (placeholderCheck{}).CheckDoc(data, "secret.yaml")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 AVP placeholder finding, got %d: %+v", len(findings), findings)
+	}
+}
+
+func TestPlaceholderCheck_SkipsCustomResourceDefinitions(t *testing.T) {
+	pc := placeholderCheck{}
+	if !pc.SkipDoc("CustomResourceDefinition") {
+		t.Error("expected CustomResourceDefinition documents to be skipped")
+	}
+	if pc.SkipDoc("Secret") {
+		t.Error("expected non-CRD documents not to be skipped")
+	}
+}
+
+func TestPsaCheck_CarriesMissingLabelsInExtra(t *testing.T) {
+	data := []byte("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: foo\n")
+	findings := (psaCheck{}).CheckDoc(data, "ns.yaml")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 psa finding, got %d: %+v", len(findings), findings)
+	}
+	extra := findings[0].Get(psaMissingLabelsExtraKey)
+	if extra == "" {
+		t.Fatal("expected missing_labels to be populated in Extra")
+	}
+	if !strings.Contains(extra, "pod-security.kubernetes.io/enforce") {
+		t.Errorf("expected the enforce label in Extra, got: %s", extra)
 	}
 }
