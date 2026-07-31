@@ -24,6 +24,14 @@ type scaffoldValidationResult struct {
 	// DriftLines with newlines for that call.
 	DriftLines []string
 	ExecErrors []string
+	// SkippedClusters records, per app, every overlay scaffold.Run skipped
+	// rather than validated (scaffold.Summary.SkippedClusters - disabled
+	// via config/change-group, or no on-disk directory yet: a cluster not
+	// yet rolled out, or removed by this PR). Never a failure on its own
+	// (see scaffold.Run's own doc comment); flattenSkippedClusters turns
+	// this into ComposeScaffoldValidationSection's informational
+	// missingClusters list.
+	SkippedClusters map[string][]string
 }
 
 // runScaffoldValidation drives pkg/scaffold.Run across every app this run
@@ -66,6 +74,12 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 		for _, e := range summary.Errors {
 			result.ExecErrors = append(result.ExecErrors, fmt.Sprintf("%s: %s", app, e))
 			log.ErrorInSection("Scaffold", "%s: %s", app, e)
+		}
+		if len(summary.SkippedClusters) > 0 {
+			if result.SkippedClusters == nil {
+				result.SkippedClusters = map[string][]string{}
+			}
+			result.SkippedClusters[app] = append(result.SkippedClusters[app], summary.SkippedClusters...)
 		}
 	}
 	isTested := func(app string) bool {
@@ -172,6 +186,30 @@ func runScaffoldApps(jobs []scaffoldJob, changed []string, changeGroups map[stri
 	}
 	close(ch)
 	wg.Wait()
+}
+
+// flattenSkippedClusters turns a scaffoldValidationResult.SkippedClusters
+// map into ComposeScaffoldValidationSection's flat, deterministically
+// ordered "app/cluster" missingClusters list.
+func flattenSkippedClusters(skipped map[string][]string) []string {
+	if len(skipped) == 0 {
+		return nil
+	}
+	apps := make([]string, 0, len(skipped))
+	for app := range skipped {
+		apps = append(apps, app)
+	}
+	sort.Strings(apps)
+
+	var out []string
+	for _, app := range apps {
+		clusters := append([]string(nil), skipped[app]...)
+		sort.Strings(clusters)
+		for _, c := range clusters {
+			out = append(out, fmt.Sprintf("%s/%s", app, c))
+		}
+	}
+	return out
 }
 
 // findUnprotectedApps identifies apps with modified overlays/scaffold

@@ -130,3 +130,19 @@ func TestComposeScaffoldValidationSection_WithDrift(t *testing.T) {
 		t.Error("expected error section")
 	}
 }
+
+// TestComposeScaffoldValidationSection_MissingClustersAloneIsNonBlocking
+// guards a real bug found while wiring real data through this parameter:
+// missingClusters records overlays scaffold.Run skipped rather than
+// validated (not yet rolled out, or removed by this PR) - see scaffold.
+// Run's own doc comment ("skipped ... never Failed") - so it must never,
+// on its own (no drift, no exec errors), mark the section as blocking.
+func TestComposeScaffoldValidationSection_MissingClustersAloneIsNonBlocking(t *testing.T) {
+	s := ComposeScaffoldValidationSection("", nil, []string{"myapp/staging"})
+	if s.Error {
+		t.Errorf("expected missing clusters alone to be non-blocking, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "`myapp/staging`") {
+		t.Errorf("expected the missing cluster to be listed, got:\n%s", s.Body)
+	}
+}

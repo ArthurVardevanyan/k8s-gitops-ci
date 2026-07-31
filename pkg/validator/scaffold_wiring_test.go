@@ -235,6 +235,29 @@ func TestFindUnprotectedApps_TemplateOrConfigChangeAlsoAttributes(t *testing.T) 
 	}
 }
 
+func TestFlattenSkippedClusters_Empty(t *testing.T) {
+	if got := flattenSkippedClusters(nil); got != nil {
+		t.Errorf("expected nil for an empty/nil map, got %v", got)
+	}
+}
+
+func TestFlattenSkippedClusters_SortsAppsAndClusters(t *testing.T) {
+	got := flattenSkippedClusters(map[string][]string{
+		"zapp": {"staging", "dev"},
+		"aapp": {"prod"},
+	})
+	want := []string{"aapp/prod", "zapp/dev", "zapp/staging"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got %v, want %v", got, want)
+			break
+		}
+	}
+}
+
 func TestRunScaffoldApps_EmptyJobsIsNoOp(t *testing.T) {
 	called := false
 	runScaffoldApps(nil, nil, nil, 4, func(string, *scaffold.Summary) { called = true })

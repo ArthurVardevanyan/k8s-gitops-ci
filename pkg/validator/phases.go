@@ -479,7 +479,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 			log.ErrorInSection("Scaffold", "%s", readmeDiff)
 		}
 	}
-	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(driftLines, "\n"), scaffoldResult.ExecErrors, nil))
+	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(strings.Join(driftLines, "\n"), scaffoldResult.ExecErrors, flattenSkippedClusters(scaffoldResult.SkippedClusters)))
 
 	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
 
