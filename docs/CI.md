@@ -178,7 +178,12 @@ a full-repo-scan regeneration meant to be run deliberately (the
 `update-scaffold-status` CLI command), not on every PR. Unlike the
 three drift triggers above, this check is gated behind the
 **`scaffold-readme`** step ID, default **off** - see the standalone
-steps list below for why.
+steps list below for why. It runs as its own **"scaffold table"**
+sub-check in the **Static Checks** section (not folded into Scaffold
+Validation's drift summary), so a failure automatically gets an
+actionable `k8s-gitops-ci update-scaffold-status` fix-command hint the
+same way `config-sort`/`prettier`/`markdownlint` do (`hintByCheck` in
+`comments.go`).
 
 ## Registered checks
 
@@ -308,6 +313,10 @@ the full pipeline, for validating a directory or explicit file list
   (`pkg/config.CheckSortOrder`).
 - **startingCSV** — an OLM `ClusterServiceVersion`'s folder name matches
   its `startingCSV` reference (`pkg/csv`).
+- **scaffold table** — the README's `<!-- scaffold-status -->` table
+  structural check (`scaffold.CheckReadmeStatus`; see
+  [Scaffold Validation](#scaffold-validation) above). Gated behind the
+  **`scaffold-readme`** step ID, default **off**.
 
 ## Direct vs. external findings
 
