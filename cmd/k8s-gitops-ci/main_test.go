@@ -226,16 +226,20 @@ func TestSplitCommaList(t *testing.T) {
 	}
 }
 
-// markdownSection returns a validator.Section whose Body contains the
+// markdownSection returns a validator.ReportSection whose Body contains the
 // GitHub-PR-comment markdown artifacts (<details>/<summary>, &nbsp;, **bold**)
 // built by pkg/validator/compose_sections.go, mirroring real output.
-func markdownSection(name string, isError bool) validator.Section {
-	return validator.Section{
+func markdownSection(name string, isError bool) validator.ReportSection {
+	status := validator.StatusPassed
+	if isError {
+		status = validator.StatusError
+	}
+	return validator.ReportSection{
 		Name: name,
 		Body: "Some intro **bold** text.\n\n" +
 			"<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;❌ Finding (1 finding(s))</summary>\n\n" +
 			"| Kind | Name |\n| --- | --- |\n| Deployment | example |\n\n</details>\n",
-		Error: isError,
+		Status: status,
 	}
 }
 
@@ -245,7 +249,7 @@ func markdownSection(name string, isError bool) validator.Section {
 // - straight into the terminal instead of console-sanitized plain text,
 // interleaved unreadably with the plain "[INFO]/[ERROR]" logger lines.
 func TestPrintAllSectionsConsole_StripsGitHubMarkdown(t *testing.T) {
-	sections := []validator.Section{markdownSection("ResourceCompliance", true)}
+	sections := []validator.ReportSection{markdownSection("ResourceCompliance", true)}
 
 	out := captureStdout(t, func() { printAllSectionsConsole(nil, sections) })
 
@@ -268,7 +272,7 @@ func TestPrintAllSectionsConsole_StripsGitHubMarkdown(t *testing.T) {
 // printAllSectionsConsole's doc comment. Passing sections must render as a
 // single terse summary line, not their full (duplicate) Body.
 func TestPrintAllSectionsConsole_PassingSectionIsOneLine(t *testing.T) {
-	sections := []validator.Section{markdownSection("Linting", false)}
+	sections := []validator.ReportSection{markdownSection("Linting", false)}
 
 	out := captureStdout(t, func() { printAllSectionsConsole(nil, sections) })
 
@@ -284,7 +288,7 @@ func TestPrintAllSectionsConsole_PassingSectionIsOneLine(t *testing.T) {
 // omitted entirely (not even a one-line summary - scan-all only reports
 // failures).
 func TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *testing.T) {
-	sections := []validator.Section{
+	sections := []validator.ReportSection{
 		markdownSection("Passing", false),
 		markdownSection("Failing", true),
 	}

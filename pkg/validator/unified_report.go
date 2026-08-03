@@ -12,7 +12,7 @@ type Report struct {
 	Title     string
 	Header    string
 	Body      string
-	Sections  []Section
+	Sections  []ReportSection
 	Timestamp time.Time
 }
 
@@ -64,11 +64,16 @@ type CheckOutcome struct {
 	Note    string        // Short note shown when expanded (e.g. "No markdown files changed.")
 }
 
-// ReportSection represents a single collapsible sub-section that can be
-// nested under a top-level Section via renderSubDropdown. Unlike the
-// top-level Section type (Name/Body/bool Error), it carries a full
-// SectionStatus plus a short Summary shown when the section passed and
-// there's no need for a full Body.
+// ReportSection represents a single collapsible report section - both a
+// top-level "Expand: <Name>" section (Report.Sections) and a nested
+// sub-dropdown beneath one (via renderSubDropdown). It carries a full
+// SectionStatus (rather than a bare pass/fail bool) plus a short Summary
+// shown when the section passed and there's no need for a full Body, so a
+// section can render "0 blocking findings, 2 accepted exceptions" instead
+// of collapsing everything into the same binary pass/fail icon - and so a
+// parent section's icon can correctly inherit the worst status among its
+// children (composeParentFromChildren) instead of only ever showing ✅/❌
+// and silently hiding an internal ⚠️/ℹ️.
 type ReportSection struct {
 	Name    string        // Display name (e.g. "Markdownlint")
 	Status  SectionStatus // Pass/Warning/Error
@@ -91,11 +96,11 @@ func (r *Report) Render() string {
 		fmt.Fprintf(&b, "_Last Updated: %s_\n\n", r.Timestamp.UTC().Format(time.RFC3339))
 	}
 	for _, s := range r.Sections {
-		status := StatusPassed
-		if s.Error {
-			status = StatusError
+		body := s.Body
+		if body == "" {
+			body = s.Summary
 		}
-		fmt.Fprintf(&b, "<details>\n<summary>%s Expand: %s</summary>\n\n%s\n\n</details>\n\n", status.Icon(), s.Name, s.Body)
+		fmt.Fprintf(&b, "<details>\n<summary>%s Expand: %s</summary>\n\n%s\n\n</details>\n\n", s.Status.Icon(), s.Name, body)
 	}
 	if r.Body != "" {
 		b.WriteString(r.Body + "\n")

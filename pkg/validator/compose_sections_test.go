@@ -11,7 +11,7 @@ import (
 
 func TestComposePRChecksSection(t *testing.T) {
 	s := ComposePRChecksSection(errors.New("title"), nil, nil, "")
-	if !s.Error {
+	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
 }
@@ -40,7 +40,7 @@ func TestComposePRChecksSection_EachCheckIsItsOwnSubDropdown(t *testing.T) {
 
 func TestComposePRChecksSection_AllPassed(t *testing.T) {
 	s := ComposePRChecksSection(nil, nil, nil, "")
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected no error when all three checks pass")
 	}
 	if strings.Count(s.Body, "Passed.") != 3 {
@@ -55,7 +55,7 @@ func TestComposePRChecksSection_AllPassed(t *testing.T) {
 // convention must never fail the pipeline the way titleErr does.
 func TestComposePRChecksSection_TitleSuggestionIsNonBlocking(t *testing.T) {
 	s := ComposePRChecksSection(nil, nil, nil, "consider referencing a ticket, e.g. JIRA-123")
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected a title suggestion to never be blocking")
 	}
 	if !strings.Contains(s.Body, "PR Title") || !strings.Contains(s.Body, "consider referencing a ticket") {
@@ -70,7 +70,7 @@ func TestComposePRChecksSection_TitleSuggestionIsNonBlocking(t *testing.T) {
 // stale/mistakenly-passed suggestion string alongside a hard failure either.
 func TestComposePRChecksSection_TitleErrSuppressesSuggestion(t *testing.T) {
 	s := ComposePRChecksSection(errors.New("bad title"), nil, nil, "consider referencing a ticket")
-	if !s.Error {
+	if s.Status != StatusError {
 		t.Errorf("expected the section to report an error")
 	}
 	if strings.Contains(s.Body, "consider referencing a ticket") {
@@ -81,7 +81,7 @@ func TestComposePRChecksSection_TitleErrSuppressesSuggestion(t *testing.T) {
 func TestComposeLintingSection(t *testing.T) {
 	outcomes := []CheckOutcome{{Name: "golangci", Status: StatusError}}
 	s := ComposeLintingSection(outcomes, map[string]string{"golangci": "issues"})
-	if !s.Error {
+	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
 	if !strings.Contains(s.Body, "issues") {
@@ -98,7 +98,7 @@ func TestComposeLintingSection_AllPassedStillShowsFullBreakdown(t *testing.T) {
 		{Name: "kubeconform", Status: StatusPassed},
 	}
 	s := ComposeLintingSection(outcomes, map[string]string{})
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
 	for _, name := range []string{"Markdownlint", "Prettier", "Shellcheck", "golangci-lint", "Kubeconform"} {
@@ -116,7 +116,7 @@ func TestComposeLintingSection_MissingOutcomeRendersAsNotRun(t *testing.T) {
 	// must still render, as a non-failing "Not run." child, rather than
 	// silently vanishing from the report.
 	s := ComposeLintingSection(nil, map[string]string{})
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
 	if !strings.Contains(s.Body, "Not run.") {
@@ -126,7 +126,7 @@ func TestComposeLintingSection_MissingOutcomeRendersAsNotRun(t *testing.T) {
 
 func TestComposeStaticChecksSection(t *testing.T) {
 	s := ComposeStaticChecksSection(nil, map[string]string{})
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
 }
@@ -134,7 +134,7 @@ func TestComposeStaticChecksSection(t *testing.T) {
 func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
 	outcomes := []CheckOutcome{{Name: "config-sort", Status: StatusError}}
 	s := ComposeStaticChecksSection(outcomes, map[string]string{"config-sort": "some.yaml is unsorted"})
-	if !s.Error {
+	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
 	if !strings.Contains(s.Body, "k8s-gitops-ci sort-configs") {
@@ -151,7 +151,7 @@ func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
 func TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint(t *testing.T) {
 	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusError}}
 	s := ComposeStaticChecksSection(outcomes, map[string]string{"scaffold table": "stale entries no longer on disk: myapp/removed"})
-	if !s.Error {
+	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
 	if !strings.Contains(s.Body, "Scaffold Table") {
@@ -170,7 +170,7 @@ func TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint(t *testi
 func TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault(t *testing.T) {
 	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusPassed, Skipped: true, Note: "Disabled."}}
 	s := ComposeStaticChecksSection(outcomes, map[string]string{})
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
 	if !strings.Contains(s.Body, "Disabled.") {
@@ -180,14 +180,14 @@ func TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault(t *testing.T)
 
 func TestComposeResourceComplianceSection(t *testing.T) {
 	s := ComposeResourceComplianceSection([]check.Finding{{CheckID: "x", Message: "m"}}, nil, nil)
-	if !s.Error {
+	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
 }
 
 func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
 	s := ComposeResourceComplianceSection(nil, nil, nil)
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
 	if !strings.Contains(s.Body, "No compliance findings.") {
@@ -197,8 +197,8 @@ func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
 
 func TestComposeResourceComplianceSection_WarningOnlyIsNonBlocking(t *testing.T) {
 	s := ComposeResourceComplianceSection(nil, []check.Finding{{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned"}}, nil)
-	if s.Error {
-		t.Errorf("expected no error section for pre-existing (indirect) findings only")
+	if s.Status != StatusWarning {
+		t.Errorf("expected StatusWarning (non-blocking) for pre-existing (indirect) findings only, got %v", s.Status)
 	}
 	if !strings.Contains(s.Body, "⚠️") {
 		t.Errorf("expected the warning icon for a non-blocking check, got:\n%s", s.Body)
@@ -302,8 +302,8 @@ func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: true},
 	}
 	s := ComposeResourceComplianceSection(nil, nil, exempted)
-	if s.Error {
-		t.Errorf("expected no error section when only exemptions are present (no findings)")
+	if s.Status != StatusInfo {
+		t.Errorf("expected StatusInfo (an audit trail, not a warning/error) when only exemptions are present (no findings), got %v", s.Status)
 	}
 	if !strings.Contains(s.Body, "Accepted Exceptions") {
 		t.Errorf("expected an Accepted Exceptions block, got:\n%s", s.Body)
@@ -331,7 +331,7 @@ func TestComposeResourceComplianceSection_AcceptedExceptionsPreExistingLabel(t *
 
 func TestComposeKyvernoSection(t *testing.T) {
 	s := ComposeKyvernoSection("")
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
 }

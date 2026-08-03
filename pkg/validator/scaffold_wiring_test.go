@@ -29,13 +29,13 @@ func TestRunAll_ScaffoldSkippedWithoutConfig(t *testing.T) {
 	if res.Logger != nil && res.Logger.HasFailures() {
 		t.Error("expected no failures for an app with no scaffold config at all")
 	}
-	var scaffoldSection Section
+	var scaffoldSection ReportSection
 	for _, s := range res.Sections {
 		if s.Name == "Scaffold Validation" {
 			scaffoldSection = s
 		}
 	}
-	if scaffoldSection.Error {
+	if scaffoldSection.Status == StatusError {
 		t.Errorf("expected the Scaffold Validation section to be clean, got:\n%s", scaffoldSection.Body)
 	}
 }
@@ -70,13 +70,13 @@ func TestRunAll_ScaffoldExecutionFailureBlocks(t *testing.T) {
 	if res.Logger == nil || !res.Logger.HasFailures() {
 		t.Error("expected a scaffold execution failure to be surfaced as a logger failure")
 	}
-	var scaffoldSection Section
+	var scaffoldSection ReportSection
 	for _, s := range res.Sections {
 		if s.Name == "Scaffold Validation" {
 			scaffoldSection = s
 		}
 	}
-	if !scaffoldSection.Error {
+	if scaffoldSection.Status != StatusError {
 		t.Errorf("expected the Scaffold Validation section to report the failure, got:\n%s", scaffoldSection.Body)
 	}
 	if !strings.Contains(scaffoldSection.Body, "Scaffold Exec") {
@@ -113,7 +113,7 @@ func TestRunAll_ScaffoldReadmeCheckDisabledByDefault(t *testing.T) {
 		t.Error("expected the scaffold-readme check to be skipped by default")
 	}
 	for _, s := range res.Sections {
-		if s.Name == "Static Checks" && s.Error {
+		if s.Name == "Static Checks" && s.Status == StatusError {
 			t.Errorf("expected a clean Static Checks section by default, got:\n%s", s.Body)
 		}
 	}
@@ -145,7 +145,7 @@ func TestRunAll_ScaffoldReadmeCheckEnabledViaEnabledChecks(t *testing.T) {
 	}
 	found := false
 	for _, s := range res.Sections {
-		if s.Name == "Static Checks" && s.Error && strings.Contains(s.Body, "Scaffold Table") {
+		if s.Name == "Static Checks" && s.Status == StatusError && strings.Contains(s.Body, "Scaffold Table") {
 			found = true
 		}
 	}

@@ -166,25 +166,34 @@ func TestRunAll_BuildPhaseFansOutOverlaysInParallel(t *testing.T) {
 }
 
 func TestResult_HasErrorSection(t *testing.T) {
-	r := &Result{Sections: []Section{{Name: "a", Error: false}, {Name: "b", Error: true}}}
+	r := &Result{Sections: []ReportSection{{Name: "a", Status: StatusPassed}, {Name: "b", Status: StatusError}}}
 	if !r.HasErrorSection() {
-		t.Error("expected HasErrorSection to report true when a section has Error=true")
+		t.Error("expected HasErrorSection to report true when a section has StatusError")
 	}
-	r2 := &Result{Sections: []Section{{Name: "a", Error: false}}}
+	r2 := &Result{Sections: []ReportSection{{Name: "a", Status: StatusPassed}}}
 	if r2.HasErrorSection() {
-		t.Error("expected HasErrorSection to report false when no section has Error=true")
+		t.Error("expected HasErrorSection to report false when no section has StatusError")
+	}
+	// StatusWarning/StatusInfo are "worth a look" but not a hard failure -
+	// HasErrorSection must not conflate them with StatusError.
+	r3 := &Result{Sections: []ReportSection{{Name: "a", Status: StatusWarning}, {Name: "b", Status: StatusInfo}}}
+	if r3.HasErrorSection() {
+		t.Error("expected HasErrorSection to report false for StatusWarning/StatusInfo-only sections")
 	}
 }
 
 // TestResult_FailedSectionCount guards the count Logger.Summary's "Sections:
 // N passed, M failed" line depends on (see logger_test.go's
-// TestLogger_SummarySectionCounts) - it must count Sections with Error=true
-// exactly, independent of len(r.Sections) itself.
+// TestLogger_SummarySectionCounts) - it must count Sections with
+// StatusError exactly, independent of len(r.Sections) itself, and must not
+// count StatusWarning/StatusInfo sections as failed.
 func TestResult_FailedSectionCount(t *testing.T) {
-	r := &Result{Sections: []Section{
-		{Name: "a", Error: false},
-		{Name: "b", Error: true},
-		{Name: "c", Error: true},
+	r := &Result{Sections: []ReportSection{
+		{Name: "a", Status: StatusPassed},
+		{Name: "b", Status: StatusError},
+		{Name: "c", Status: StatusError},
+		{Name: "d", Status: StatusWarning},
+		{Name: "e", Status: StatusInfo},
 	}}
 	if got := r.FailedSectionCount(); got != 2 {
 		t.Errorf("FailedSectionCount() = %d, want 2", got)

@@ -83,13 +83,13 @@ func TestRunAll_AVPStrategyAutoDetectedAndExcludeRespected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	var kb Section
+	var kb ReportSection
 	for _, s := range res.Sections {
 		if s.Name == "Kustomize Build" {
 			kb = s
 		}
 	}
-	if kb.Error {
+	if kb.Status == StatusError {
 		t.Errorf("expected the AVP-excluded overlay to build cleanly without the argocd-vault-plugin binary, got:\n%s", kb.Body)
 	}
 }
@@ -118,13 +118,13 @@ func TestRunAll_AVPIndicatorWithoutExcludeInvokesAVP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	var kb Section
+	var kb ReportSection
 	for _, s := range res.Sections {
 		if s.Name == "Kustomize Build" {
 			kb = s
 		}
 	}
-	if !kb.Error {
+	if kb.Status != StatusError {
 		t.Error("expected AVP substitution to actually be attempted (and fail, unconfigured) for an AVP-indicator app with no exclude/disable")
 	}
 }
@@ -144,13 +144,13 @@ func TestRunAll_AVPDisabledViaDisabledChecks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	var kb Section
+	var kb ReportSection
 	for _, s := range res.Sections {
 		if s.Name == "Kustomize Build" {
 			kb = s
 		}
 	}
-	if kb.Error {
+	if kb.Status == StatusError {
 		t.Errorf("expected the build to succeed without invoking argocd-vault-plugin once avp is disabled, got:\n%s", kb.Body)
 	}
 }

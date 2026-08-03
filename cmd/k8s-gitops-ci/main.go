@@ -211,9 +211,9 @@ func printRunFooter(res *validator.Result, start time.Time) {
 // this is the build-yaml/test-all rendering. Split out from its callers so
 // the console-vs-PR-markdown handling is unit-testable without invoking
 // validator.RunAll (which shells out to git).
-func printAllSectionsConsole(log *logger.Logger, sections []validator.Section) {
+func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
 	for _, s := range sections {
-		if s.Error {
+		if s.Status == validator.StatusError {
 			printFailedSectionConsole(log, s)
 			continue
 		}
@@ -226,9 +226,9 @@ func printAllSectionsConsole(log *logger.Logger, sections []validator.Section) {
 // test-all/build-yaml) omits passing sections entirely rather than even a
 // one-line summary. See printAllSectionsConsole for why this is split out
 // from its caller.
-func printFailedSectionsConsole(log *logger.Logger, sections []validator.Section) {
+func printFailedSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
 	for _, s := range sections {
-		if s.Error {
+		if s.Status == validator.StatusError {
 			printFailedSectionConsole(log, s)
 		}
 	}
@@ -251,7 +251,7 @@ func printPassedSectionConsole(log *logger.Logger, name string) {
 // a log.SubHeader(s.Name) box, so every console entry point (test-all,
 // scan-all, build-yaml, and pipeline --verbose's printFailedSectionDetail)
 // shares one consistent header style instead of each inventing its own.
-func printFailedSectionConsole(log *logger.Logger, s validator.Section) {
+func printFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
 	body := pipeline.SanitizeSectionBodyForConsole(s.Body)
 	if log != nil {
 		log.Raw("")

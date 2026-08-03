@@ -26,9 +26,9 @@ flowchart TD
   sequential phase (single check, no goroutine fan-out needed) before
   Linting - matching a downstream fork's equivalent phase breakdown (see
   the timing-table example in [DEVELOPMENT.md](DEVELOPMENT.md)). Both still
-  feed the same `Section`/PR-comment rendering as every other Static Checks
-  sub-check (`ComposeStaticChecksSection`'s fixed 5-check order) - only the
-  live console/timing-table grouping differs.
+  feed the same `ReportSection`/PR-comment rendering as every other Static
+  Checks sub-check (`ComposeStaticChecksSection`'s fixed 5-check order) -
+  only the live console/timing-table grouping differs.
 - **Linting** and **Static Checks** (the remaining config-sort/startingCSV/
   scaffold-table checks) each fan every one of their steps out across
   goroutines (bounded by `Workers(opts)` — see [Concurrency](#concurrency)
@@ -176,6 +176,19 @@ A failure to resolve `main`/`origin/main` (no git history available, e.g.
 a shallow clone) degrades to "unchanged" (never blocking) rather than
 failing the check outright.
 
+The Kustomize Build section's own "Ghost Patches" sub-dropdown (one of four
+always-shown children - Overlay Build, Hooks, Kustomize Fix, Ghost Patches
+
+- composed via `composeGhostPatchesChild`/`composeParentFromChildren` in
+  `pkg/validator/compose_sections.go`) mirrors this split: ❌ only when at
+  least one detected ghost is blocking; a table with warning-only ghosts
+  alone shows ⚠️ instead - the same ❌-blocking/⚠️-warning-only convention
+  "Pre-Existing Scaffold Drift" and Resource Compliance use. Crucially, the
+  parent "Kustomize Build" section's own icon inherits the _worst_ status
+  among its four children (`composeParentFromChildren`), so a warning-only
+  ghost patch rolls the whole section up to ⚠️ - never a misleading ✅ that
+  would hide it, and never an overstated ❌.
+
 ## Scaffold Validation
 
 Apps that opt into `scafctl`-based scaffolding (a `.scafctl/configs/<app>.yaml`
@@ -211,7 +224,7 @@ than failed when it's disabled - either explicitly
 (a cluster not yet rolled out, or removed by this PR;
 `scaffold.Summary.SkippedClusters`, aggregated per app by
 `runScaffoldValidation` and flattened by `flattenSkippedClusters` into the
-Scaffold Validation section's "Missing Clusters" bullet). A scafctl
+Scaffold Validation section's "Cluster Coverage" sub-dropdown). A scafctl
 execution failure is always treated as blocking. A content mismatch is
 blocking when the PR itself touches the affected overlay (or a base/
 component it inherits from - `isOverlayRelatedToChangedFiles`); otherwise
@@ -219,9 +232,9 @@ it's checked against the merge-base template/config
 (`computeBaselineMismatches`, gated on `Options.BaseRef` being set - i.e.
 an actual CI/PR run, never a local `test-all` run against a live working
 tree, which always has an empty `BaseRef`) and downgraded to a
-non-blocking "Pre-Existing Scaffold Drift" entry when it mismatches there
-too - this accounts for drift caused by something external to the PR
-(e.g. a shared data source changing independently) rather than by the
+non-blocking "Pre-Existing Scaffold Drift" entry (⚠️) when it mismatches
+there too - this accounts for drift caused by something external to the
+PR (e.g. a shared data source changing independently) rather than by the
 PR's own edits. `computeBaselineMismatches` mutates the app's on-disk
 template/config files in place for the duration of the re-run (backed up
 and restored via `defer`, so a panic mid-run can never leave the working
@@ -230,7 +243,21 @@ tree altered) - a real but substantially riskier technique than a flat
 case it exists to fix rather than applied unconditionally. Missing
 clusters themselves are **not** blocking, unlike drift/exec failures - a
 skip is an expected, informational "here's what wasn't checked and why",
-never a finding (see `scaffold.Run`'s own doc comment).
+never a finding (see `scaffold.Run`'s own doc comment), so "Cluster
+Coverage" renders as ℹ️ rather than ⚠️/❌ when clusters are skipped - a
+deliberately quieter tier than an actual (non-blocking) warning like
+"Pre-Existing Scaffold Drift", so a reader can tell "just FYI" apart from
+"worth a second look."
+
+Like Kustomize Build, the Scaffold Validation section itself is composed
+from four always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec,
+Pre-Existing Scaffold Drift, Cluster Coverage -
+`ComposeScaffoldValidationSection`/`composeParentFromChildren` in
+`pkg/validator/compose_sections.go`), and its own icon inherits the worst
+status among them (StatusError > StatusWarning > StatusInfo >
+StatusPassed) - so, for example, pre-existing drift alone rolls the whole
+section up to ⚠️, and missing clusters alone rolls it up to only ℹ️, never
+a misleading plain ✅ that would hide either.
 
 Separately, every app whose overlays or `.scafctl` template/config
 changed is also checked for whether it has drift **coverage** at all:
@@ -240,8 +267,9 @@ for it) but has opted out via `SCAFFOLD=false` in its `test.sh` (see
 [HOOKS.md](HOOKS.md)) - these apps are silently skipped by every trigger
 above (`scaffold.HasScaffoldEnabled` gates all three), so a real drift
 there would otherwise go completely unreported. This renders as its own
-"Scaffold Drift Protection" report section, always present,
-non-blocking (a coverage gap warning, not a drift finding).
+"Scaffold Drift Protection" report section, always present, non-blocking
+(⚠️ StatusWarning - a coverage gap warning, not a drift finding - never
+❌ StatusError, per `ComposeDriftProtectionSection`).
 
 Separately, `scaffold.CheckReadmeStatus` is a cheap, structural,
 per-PR check of the README's `<!-- scaffold-status -->` table: does it

@@ -237,8 +237,11 @@ another goroutine) track errors and failed sections, feeding a final
 `validator.Result.FailedSectionCount()`) render a leading "Sections: N
 passed, M failed" line; pkg/logger can't import pkg/validator itself
 (validator already imports logger), so callers pass plain ints rather than
-a `Section` slice, and passing `0, 0` (e.g. callers with no
-`validator.Result`) omits the line entirely:
+a `ReportSection` slice, and passing `0, 0` (e.g. callers with no
+`validator.Result`) omits the line entirely. `FailedSectionCount`/
+`HasErrorSection` only count `StatusError` sections - a `StatusWarning`/
+`StatusInfo` section is worth a look in the PR comment but isn't a hard
+failure, so it's never counted as one here either:
 
 ```text
 ============================================================
@@ -312,18 +315,21 @@ out to `kustomize build`, not worth paying for on every run - see
 
 ### `--verbose` console detail without `--comment` (`pkg/pipeline/pipeline.go`)
 
-Every phase composes a detail-bearing `Section` (the actual file/message
-list behind a step's summary "N violation(s)" log line) onto
+Every phase composes a detail-bearing `ReportSection` (the actual
+file/message list behind a step's summary "N violation(s)" log line) onto
 `ValidatorResult.Sections`, but that has historically only ever been
 rendered into the PR comment body via `composeSections`/`postComment` —
 which is skipped whenever `--comment` isn't passed (e.g. a local/CLI-only
 run). `pipeline.Run` calls `printFailedSectionDetail` under `--verbose`
-(independent of whether a comment is posted) to print every errored
-section's full `Body` to the console too, so `--verbose` alone is enough
-to see e.g. exactly which file/check produced a Resource Compliance
-finding, not just the count.
+(independent of whether a comment is posted) to print every
+`StatusError` section's full `Body` to the console too (`StatusWarning`/
+`StatusInfo` sections are worth a look in the PR comment but aren't
+printed here — this mirrors `FailedSectionCount`/`HasErrorSection`'s same
+StatusError-only distinction), so `--verbose` alone is enough to see e.g.
+exactly which file/check produced a Resource Compliance finding, not just
+the count.
 
-`Section.Body` is always GitHub-flavored markdown built for the PR
+`ReportSection.Body` is always GitHub-flavored markdown built for the PR
 comment's `<details>`/`<summary>` dropdown renderer (literal HTML tags,
 `&nbsp;` indentation, `**bold**`), which would show up as raw markup on a
 plain terminal. `printFailedSectionDetail` runs each errored section's
@@ -349,10 +355,25 @@ whenever either is true, in addition to the PR-validation error fields
 ### Unified PR-comment report (`pkg/validator/unified_report.go`, `compose_sections.go`)
 
 The PR comment is a single markdown `Report` (one `<!-- marker -->`-tagged
-comment, upserted via `pkg/github`) built from a flat `[]Section`
-(`Name`, `Body`, `Error bool`) — the top-level collapsible `<details>`
-blocks a reader sees first. Each top-level `Section` is composed by a
-`Compose*Section` function in `compose_sections.go` (`ComposeLintingSection`,
+comment, upserted via `pkg/github`) built from a flat `[]ReportSection` —
+the top-level collapsible `<details>` blocks a reader sees first.
+`ReportSection{Name, Status, Summary, Body}` is the **one** section type
+end to end, used for both top-level "Expand: `<Name>`" sections
+(`Report.Sections`/`Result.Sections`) and every nested sub-check dropdown
+underneath one - there used to be a separate, bool-only `Section{Name,
+Body, Error}` type for the top level, which meant a section could only
+ever render ✅ or ❌ and had no way to represent "worth a look, but not
+blocking" (see the "Regression: worst-case status must roll up to the
+parent" note below for exactly what that caused). `Status` is a
+`SectionStatus`: `StatusPassed` / `StatusInfo` / `StatusWarning` /
+`StatusError`, ordered least-to-most-severe and each with its own icon —
+`✅`/`ℹ️`/`⚠️`/`❌` — via `SectionStatus.Icon()`; `Report.Render()` uses a
+section's own `Status.Icon()` directly for its `<summary>` line, falling
+back to `Summary` when `Body` is empty (the "passed, nothing more to
+say" case).
+
+Each top-level `ReportSection` is composed by a `Compose*Section` function
+in `compose_sections.go` (`ComposeLintingSection`,
 `ComposeStaticChecksSection`, `ComposeKustomizeBuildSection`,
 `ComposeScaffoldValidationSection`, `ComposeResourceComplianceSection`,
 ...), and `pipeline.go`'s `composeSections` assembles the final ordered
@@ -361,26 +382,54 @@ list — reusing sections `phases.go` already built onto
 re-deriving/re-composing them a second time with different (often
 stub) inputs.
 
-Within a top-level `Section`, individual sub-checks nest as their own
-collapsible `<details>` via the richer `ReportSection{Name, Status,
-Summary, Body}` type (`Status` is a `SectionStatus`: `StatusPassed` /
-`StatusInfo` / `StatusWarning` / `StatusError`, each with its own icon —
-`✅`/`ℹ️`/`⚠️`/`❌` — via `SectionStatus.Icon()`). `renderSubDropdown`
-renders one `ReportSection` at an arbitrary nesting depth (`summaryIndent`
-adds `&nbsp;`-padding per level, since GitHub doesn't indent `<details>`
-bodies); `composeParentFromChildren` renders a list of children and rolls
-their statuses up into the parent `Section.Error`. `CheckOutcome{Name,
-Status, Skipped, Note}` records whether an individual lint/static check
-ran, was skipped, or passed, so **every** linter/static-check always
-renders its own sub-dropdown (via `composeCheckChild`) — even when
-everything passed — instead of silently vanishing once there's nothing to
-report.
+`renderSubDropdown` renders one `ReportSection` as a nested `<details>` at
+an arbitrary depth (`summaryIndent` adds `&nbsp;`-padding per level, since
+GitHub doesn't indent `<details>` bodies); `composeParentFromChildren`
+renders a list of children this way and rolls **the most severe status
+among them** up into the parent's own `Status` (`if c.Status > status {
+status = c.Status }` — safe because the four statuses are declared in
+increasing-severity `iota` order), so a parent section's icon always
+reflects the worst thing inside it: one `StatusWarning` child among
+otherwise-`StatusPassed` siblings rolls the parent up to ⚠️, never a
+misleadingly-plain ✅ (which would hide it) or an overstated ❌.
+`CheckOutcome{Name, Status, Skipped, Note}` records whether an individual
+lint/static check ran, was skipped, or passed, so **every**
+linter/static-check always renders its own sub-dropdown (via
+`composeCheckChild`) — even when everything passed — instead of silently
+vanishing once there's nothing to report.
+
+> **Regression: worst-case status must roll up to the parent.** Before
+> the `Section`/`ReportSection` unification, `ComposeKustomizeBuildSection`
+> and `ComposeScaffoldValidationSection` built their sub-checks as raw
+> markdown bullets/dropdowns instead of `ReportSection` children, so (a) a
+> non-blocking-only Ghost Patches/Pre-Existing-Scaffold-Drift finding could
+> render with no icon at all on its own dropdown line (a bare
+> `RenderSubDropdown(title, body)` call, which by design carries no
+> status icon — that's still the right helper for a one-off nested detail
+> block that isn't itself a `ReportSection`, e.g. a fix-hint sub-block, but
+> the wrong one for a sub-check that needs its own pass/fail signal), and
+> (b) even once every sub-check got its own icon, the _parent_ section
+> still only had a bare `Error bool` and so could only ever show ✅ or ❌ —
+> a warning-only child still rolled the parent all the way up to ❌ (before
+> the icon fix) or hid it entirely behind a plain ✅ (after, since the
+> child's own ⚠️ never affected `hasError`). Both `ComposeKustomizeBuildSection`
+> and `ComposeScaffoldValidationSection` are now built the same way
+> `ComposeLintingSection`/`ComposeStaticChecksSection`/`ComposePRChecksSection`
+> already were: a list of `ReportSection` children (`composeOverlayBuildChild`,
+> `composeHooksChild`, `composeKustomizeFixChild`, `composeGhostPatchesChild`;
+> `composeScaffoldDriftChild`, `composeScaffoldExecChild`,
+> `composePreExistingDriftChild`, `composeClusterCoverageChild`) fed through
+> `composeParentFromChildren`, so every sub-check gets a single icon-bearing
+> `<details>` line and the parent's icon is structurally guaranteed to
+> reflect the worst one, rather than relying on every call site remembering
+> to keep a separate bullet and an `Error`/`Warning` bool in sync by hand.
 
 Three sections carry real, richer per-check data instead of a placeholder
 count:
 
-- **Kustomize Build** (`ComposeKustomizeBuildSection`) — the overlay set
-  itself is resolved by `detectOverlaysForChanges`
+- **Kustomize Build** (`ComposeKustomizeBuildSection`) — always renders
+  four children: Overlay Build, Hooks, Kustomize Fix, Ghost Patches. The
+  overlay set itself is resolved by `detectOverlaysForChanges`
   (`pkg/validator/build_wiring.go`), which is app-aware rather than a bare
   "any path segment literally named `overlays/`" match: it finds each
   changed app root (`detectAppRoots`), asks `overlay.GetOverlaysToTest`
@@ -393,23 +442,33 @@ count:
   segment anywhere in its path, still resolves to the right overlay(s)
   instead of silently producing zero. Build errors are then grouped by root
   cause (`groupBuildErrors`/`formatBuildErrors`, so
-  N overlays sharing one underlying cause don't repeat it N times), a
-  `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` hooks table (✅ ran
-  / ❌ failed / — not defined — hooks are actually executed, not just
-  detected; see [`HOOKS.md`](HOOKS.md)), files needing `kustomize edit
-fix`, and a `| Overlay | Target |` ghost-patch table
-  (`pkg/ghostpatch.CheckApp`, which renders overlays via the krusty SDK
-  directly — no runtime dependency on a `kustomize` binary being
-  present).
-- **Scaffold Validation** (`ComposeScaffoldValidationSection`) — real
-  per-app scaffold-drift detection across three triggers (template,
-  config, and overlay changes — see [`CI.md`](CI.md#scaffold-validation)).
-  A mismatch the PR doesn't itself touch is checked against the
-  merge-base template/config (`computeBaselineMismatches`) and rendered
-  as a separate, non-blocking "Pre-Existing Scaffold Drift" bullet when it
-  drifts there too. (The README scaffold-status table's own structural
-  check lives in Static Checks as "scaffold table", not here — see
-  below.)
+  N overlays sharing one underlying cause don't repeat it N times) into the
+  Overlay Build child's `StatusError` body; Hooks renders a
+  `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` table (✅ ran /
+  ❌ failed / — not defined — hooks are actually executed, not just
+  detected; see [`HOOKS.md`](HOOKS.md)) with `StatusError` when any hook
+  actually failed (`anyHookFailed`); Kustomize Fix lists files needing
+  `kustomize edit fix`; and Ghost Patches renders a
+  `| Overlay | Target |` table (`pkg/ghostpatch.CheckApp`, which renders
+  overlays via the krusty SDK directly — no runtime dependency on a
+  `kustomize` binary being present) with `StatusError` only when at least
+  one detected ghost is blocking, `StatusWarning` otherwise (see
+  [`CI.md`](CI.md#ghost-patch-detection)).
+- **Scaffold Validation** (`ComposeScaffoldValidationSection`) — always
+  renders four children: Scaffold Drift, Scaffold Exec (both
+  `StatusError` on failure), Pre-Existing Scaffold Drift, and Cluster
+  Coverage. Real per-app scaffold-drift detection across three triggers
+  (template, config, and overlay changes — see
+  [`CI.md`](CI.md#scaffold-validation)). A mismatch the PR doesn't itself
+  touch is checked against the merge-base template/config
+  (`computeBaselineMismatches`) and rendered as a separate,
+  `StatusWarning` "Pre-Existing Scaffold Drift" child when it drifts
+  there too; skipped/not-yet-rolled-out clusters render as a
+  `StatusInfo` "Cluster Coverage" child (deliberately quieter than
+  `StatusWarning` — per `scaffold.Run`'s own doc comment, a skip is
+  informational, never a finding). (The README scaffold-status table's
+  own structural check lives in Static Checks as "scaffold table", not
+  here — see below.)
 - **Resource Compliance** (`ComposeResourceComplianceSection`) — findings
   grouped by `CheckID` into per-check nested `<details>` (❌ when a check
   has a finding in a directly-modified file — blocking — vs ⚠️ for a
@@ -419,20 +478,24 @@ fix`, and a `| Overlay | Target |` ghost-patch table
   (`renderAcceptedExceptions`, table `| Resource | Value | Scope |`) built
   from applied exemptions (`check.Result.Exempted` /
   `[]exempt.Applied`), labeled `(pre-existing)` when none of the
-  exemptions were applied to a directly-modified resource. Each check-ID
-  group's table itself (`writeComplianceTable`) uses that check's
-  registered `check.TableSpec` (`register_tables.go`'s `checkTableSpecs`)
-  when one exists — its own descriptive title/preamble and columns via
-  `RenderColumnedTable`, e.g. `image-checksum` renders Kind/Name/Image/File
-  columns rather than a flat two-column dump — falling back to a generic
-  `| File | Message |` table for any check id without one. Before
-  rendering, `dedupFindingsForTable` collapses findings that are the same
-  underlying resource/issue fanned out across multiple overlays/build
-  locations (identical Kind/Name/Message etc., differing only in `File` -
-  see `engine.go`'s per-unique-document fan-out) into a single row whose
-  File cell lists every distinct location, so the same issue doesn't repeat
-  once per overlay it happens to appear in; the header's `(N finding(s))`
-  count still reflects every raw, pre-dedup finding.
+  exemptions were applied to a directly-modified resource. The section's
+  own top-level `Status` is `StatusError` when any blocking finding
+  exists, `StatusWarning` for warning-only findings, and `StatusInfo` when
+  only exemptions are present (no findings at all) — an audit trail worth
+  a glance, but not an active warning. Each check-ID group's table itself
+  (`writeComplianceTable`) uses that check's registered `check.TableSpec`
+  (`register_tables.go`'s `checkTableSpecs`) when one exists — its own
+  descriptive title/preamble and columns via `RenderColumnedTable`, e.g.
+  `image-checksum` renders Kind/Name/Image/File columns rather than a flat
+  two-column dump — falling back to a generic `| File | Message |` table
+  for any check id without one. Before rendering, `dedupFindingsForTable`
+  collapses findings that are the same underlying resource/issue fanned
+  out across multiple overlays/build locations (identical
+  Kind/Name/Message etc., differing only in `File` - see `engine.go`'s
+  per-unique-document fan-out) into a single row whose File cell lists
+  every distinct location, so the same issue doesn't repeat once per
+  overlay it happens to appear in; the header's `(N finding(s))` count
+  still reflects every raw, pre-dedup finding.
 
 ## Building
 
