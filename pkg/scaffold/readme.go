@@ -147,7 +147,7 @@ func GenerateScaffoldTable(rows []StatusRow) string {
 // CheckReadmeStatus is the cheap, per-PR structural check: it verifies the
 // committed README's scaffold-status table lists exactly the (app,
 // overlay) pairs that actually exist on disk today - not whether they're
-// currently drifted (that's what the Build + Compliance phase's own
+// currently drifted (that's what the Build YAML phase's own
 // scaffold.Run calls already report separately; recomputing it here too
 // would mean scanning and scaffolding every app in the repo on every PR,
 // not just the ones it touched). A missing README, or one with no

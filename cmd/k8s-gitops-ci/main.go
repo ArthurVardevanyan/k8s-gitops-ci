@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/config"
@@ -168,16 +169,36 @@ func runBuildYAML(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	start := time.Now()
+	fmt.Println(version.String())
 	opts := validator.Options{Apps: []string{app}, Clusters: []string{cluster}, Verbose: verbose}
 	res, err := validator.RunAll(opts)
 	if err != nil {
 		return err
 	}
 	printAllSectionsConsole(res.Logger, res.Sections)
-	if res.Logger != nil {
-		fmt.Println(res.Logger.Summary())
-	}
+	printRunFooter(res, start)
 	return nil
+}
+
+// printRunFooter prints the run's TimingCollector.Summary() table (the
+// "Step/Duration/Mode" timing breakdown - see pkg/validator/timing.go,
+// fully implemented but previously never invoked outside tests) followed by
+// Logger.Summary(), for test-all/build-yaml/scan-all - the same footer
+// pipeline.Run already prints (there via vr.Logger directly), giving all
+// four entry points parity instead of only "pipeline" showing timing/
+// summary detail. start is the time.Time captured before RunAll was
+// called, used as the timing table's wall-clock total.
+func printRunFooter(res *validator.Result, start time.Time) {
+	if res == nil || res.Logger == nil {
+		return
+	}
+	if res.Timing != nil {
+		if summary := res.Timing.Summary(time.Since(start)); summary != "" {
+			res.Logger.Raw(summary)
+		}
+	}
+	fmt.Println(res.Logger.Summary(len(res.Sections), res.FailedSectionCount()))
 }
 
 // printAllSectionsConsole prints every section's result to the console: a
@@ -322,14 +343,14 @@ func runTestAll(args []string) error {
 	if err != nil {
 		return err
 	}
+	start := time.Now()
+	fmt.Println(version.String())
 	res, err := validator.RunAll(opts)
 	if err != nil {
 		return err
 	}
 	printAllSectionsConsole(res.Logger, res.Sections)
-	if res.Logger != nil {
-		fmt.Println(res.Logger.Summary())
-	}
+	printRunFooter(res, start)
 	if res.Blocking {
 		return fmt.Errorf("test-all: validation failed")
 	}
@@ -355,14 +376,14 @@ func runScanAll(args []string) error {
 	if err != nil {
 		return err
 	}
+	start := time.Now()
+	fmt.Println(version.String())
 	res, err := validator.RunAll(opts)
 	if err != nil {
 		return err
 	}
 	printFailedSectionsConsole(res.Logger, res.Sections)
-	if res.Logger != nil {
-		fmt.Println(res.Logger.Summary())
-	}
+	printRunFooter(res, start)
 	return nil
 }
 

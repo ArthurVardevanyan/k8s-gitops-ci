@@ -20,7 +20,7 @@ import (
 // overlays/, or components/ structure and are therefore never detected as
 // kustomize apps — still benefit from this: their EXEMPTIONS=(...) apply to
 // standalone lint steps such as kubeconform (check=kubeconform) that run
-// before the Build+Compliance phase's normal app-hook resolution.
+// before the Build YAML phase's normal app-hook resolution.
 //
 // The returned map is keyed by the directory whose test.sh was actually
 // used (which may be an ancestor of, not equal to, some changed files'
@@ -40,7 +40,7 @@ func resolveNonAppHookConfigs(changed []string, source hook.Source) map[string]*
 		seenStartDir[dir] = true
 		// Skip directories that already fall under a kustomize app root —
 		// their test.sh is handled by resolveAppHookConfigs during the
-		// Build+Compliance phase, which has the full overlay context. An
+		// Build YAML phase, which has the full overlay context. An
 		// ancestor of a non-app-root file's directory can never itself be
 		// "under" an app root (nesting only decreases while walking
 		// upward), so this check need only run once, on the starting

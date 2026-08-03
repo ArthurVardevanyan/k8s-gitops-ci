@@ -7,31 +7,46 @@ package map; this is the detailed, step-by-step reference.
 
 ## Pipeline flow
 
-`pkg/validator/phases.go`'s `RunAll` runs two or three phases, in order:
+`pkg/validator/phases.go`'s `RunAll` runs four or six phases, in order:
 
 ```mermaid
 flowchart TD
-    A[Resolve Changeset] --> B["Linting (parallel)"]
+    A[Resolve Changeset] --> LF["Large File Check (seq)"]
+    LF --> YS["YAML Syntax (seq)"]
+    YS --> B["Linting (parallel)"]
     B --> C["Static Checks (parallel)"]
     C --> D{LintOnly?}
     D -- yes --> H[Report]
-    D -- no --> E["Build Overlays + Resource Compliance"]
-    E --> H[Report]
+    D -- no --> BY["Build YAML"]
+    BY --> PBV["Post-Build Validation"]
+    PBV --> H[Report]
 ```
 
-- **Linting** and **Static Checks** each fan every one of their steps out
-  across goroutines (bounded by `Workers(opts)` — see
-  [Concurrency](#concurrency) below) rather than running sequentially;
-  every step still gets recorded (pass/fail/skip) in the report even when
-  it found nothing wrong, so a linter never silently disappears from the
-  output.
-- **Build Overlays + Resource Compliance** only runs unless
-  `--lint-only` is passed. It resolves the affected overlay set
+- **Large File Check** and **YAML Syntax** each run as their own standalone,
+  sequential phase (single check, no goroutine fan-out needed) before
+  Linting - matching a downstream fork's equivalent phase breakdown (see
+  the timing-table example in [DEVELOPMENT.md](DEVELOPMENT.md)). Both still
+  feed the same `Section`/PR-comment rendering as every other Static Checks
+  sub-check (`ComposeStaticChecksSection`'s fixed 5-check order) - only the
+  live console/timing-table grouping differs.
+- **Linting** and **Static Checks** (the remaining config-sort/startingCSV/
+  scaffold-table checks) each fan every one of their steps out across
+  goroutines (bounded by `Workers(opts)` — see [Concurrency](#concurrency)
+  below) rather than running sequentially; every step still gets recorded
+  (pass/fail/skip) in the report even when it found nothing wrong, so a
+  linter never silently disappears from the output.
+- **Build YAML** and **Post-Build Validation** together only run unless
+  `--lint-only` is passed. Build YAML resolves the affected overlay set
   (`detectOverlaysForChanges` — see [ARCHITECTURE.md](ARCHITECTURE.md)),
-  runs the doc-scoped and overlay-scoped checks (see
-  [Registered Checks](#registered-checks) below) concurrently across a
-  bounded worker pool, and classifies every finding as blocking
-  (direct) or warning-only (external) — see
+  runs Scaffold Validation, and builds every overlay (via a bounded
+  per-overlay worker pool, plus a per-app "Building: `<name>`" console
+  summary banner printed once all of that app's overlays finish building).
+  Post-Build Validation then runs the doc-scoped and overlay-scoped checks
+  (see [Registered Checks](#registered-checks) below - the overlay-scoped
+  pass itself actually executes inside Build YAML's worker-pool loop,
+  alongside the build, since neither depends on the other's result within
+  one overlay's iteration), Kyverno, and NAD validation, and classifies
+  every finding as blocking (direct) or warning-only (external) — see
   [Direct vs. external findings](#direct-vs-external-findings).
 
 ## Modes
@@ -87,7 +102,7 @@ unaffected either way.)
 
 ## Build Strategies
 
-`pkg/validator/phases.go`'s Build + Compliance phase picks a
+`pkg/validator/phases.go`'s Build YAML phase picks a
 `pkg/overlay.Strategy` per app (`overlay.DetectStrategy`, wired via
 `resolveAppBuildStrategies` in `pkg/validator/avp_wiring.go`) before
 rendering any of that app's overlays:
@@ -168,7 +183,7 @@ config exists - unrelated apps are skipped entirely, not treated as an
 error) are re-validated against their scaffold template/config whenever a
 change could affect their generated content
 (`pkg/validator/scaffold_wiring.go`'s `runScaffoldValidation`, called from
-the Build + Compliance phase). Three independent triggers, each skipping
+the Build YAML phase). Three independent triggers, each skipping
 any app an earlier one already tested, cover every way a change can
 require this:
 
@@ -453,7 +468,7 @@ introduce and shouldn't be blocked by fixing right now.
 
 - The Linting/Static-Checks goroutine fan-out (one goroutine per step,
   not pooled — there are only ~9 steps total, so no pool is needed).
-- The per-overlay worker pool in the Build + Compliance phase (capped at
+- The per-overlay worker pool in the Build YAML phase (capped at
   `min(Workers(opts), len(overlays))`, so a small changeset never
   over-allocates goroutines for a handful of overlays).
 

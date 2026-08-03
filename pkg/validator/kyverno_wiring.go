@@ -48,23 +48,33 @@ func isKustomizationFile(path string) bool {
 // harmless (findings are deduplicated below, and Kyverno is always a
 // non-blocking advisory regardless of which pass a finding came from).
 //
+// policyPath, when non-empty, is a policy path already prepared once by
+// pkg/pipeline's Setup phase (see validator.Options.PolicyPath's doc
+// comment) - callers that don't prefetch (test-all/build-yaml/scan-all, or
+// a "pipeline" run where the kyverno step isn't enabled) leave this empty,
+// falling back to preparing policies here exactly as before this
+// parameter existed.
+//
 // This is always a non-blocking advisory (see kyverno.FormatComment's own
 // doc comment) - a missing CLI, missing/unpreparable policies, or any
 // per-file write failure all degrade to an empty "Kyverno Policies"
 // section rather than failing the run; Kyverno support is opt-in
 // (stepKyverno defaults off - see docs/CI.md#registered-checks) and
 // best-effort once enabled.
-func runKyvernoValidation(outputs []renderedOverlay, sourceFiles []string, log *logger.Logger) Section {
+func runKyvernoValidation(outputs []renderedOverlay, sourceFiles []string, policyPath string, log *logger.Logger) Section {
 	if len(outputs) == 0 && len(sourceFiles) == 0 {
 		return ComposeKyvernoSection("")
 	}
 
-	policyPath, cleanup, err := kyverno.PreparePolicies()
-	if err != nil {
-		log.Warn("kyverno: preparing policies: %v", err)
-		return ComposeKyvernoSection("")
+	if policyPath == "" {
+		prepared, cleanup, err := kyverno.PreparePolicies()
+		if err != nil {
+			log.Warn("kyverno: preparing policies: %v", err)
+			return ComposeKyvernoSection("")
+		}
+		defer cleanup()
+		policyPath = prepared
 	}
-	defer cleanup()
 
 	files := make([]string, 0, len(outputs)+len(sourceFiles))
 	// remap maps each temp resource file back to the overlay it was

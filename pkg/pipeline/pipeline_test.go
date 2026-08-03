@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
@@ -710,6 +711,43 @@ func TestRun_UsesProviderPipelineHeaderForLogHeader(t *testing.T) {
 	}
 	if strings.Contains(string(out), "GitOps CI Pipeline") {
 		t.Errorf("expected the generic default header to NOT appear when a Branding provider is wired, got:\n%s", out)
+	}
+}
+
+// TestRun_PrintsVersionLineAndSetupHeader guards two additions to Run's
+// console output: (1) the version.String() line (previously only printed
+// by the standalone "version" CLI subcommand, never at the start of an
+// actual pipeline run, unlike a downstream fork's equivalent output), and
+// (2) a "Setup" log.Header banner around setupWorkdir/clone (previously
+// setup only fed the timing collector - tc.Record("Setup", ...) - with no
+// visible banner, unlike every other phase). Uses the same nonexistent-URL/
+// captured-stdout technique as TestRun_UsesProviderPipelineHeaderForLogHeader
+// to fail fast right after these lines are logged.
+func TestRun_PrintsVersionLineAndSetupHeader(t *testing.T) {
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := Run(Options{URL: filepath.Join(t.TempDir(), "does-not-exist")})
+
+	_ = w.Close()
+	os.Stdout = origStdout
+	if runErr == nil {
+		t.Fatal("expected an error for a nonexistent repo URL")
+	}
+	out, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("reading captured stdout: %v", readErr)
+	}
+	got := string(out)
+	if !strings.Contains(got, version.String()) {
+		t.Errorf("expected the version line to be printed at run start, got:\n%s", got)
+	}
+	if !strings.Contains(got, "Setup") {
+		t.Errorf("expected a \"Setup\" header banner around setupWorkdir, got:\n%s", got)
 	}
 }
 

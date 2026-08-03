@@ -1,10 +1,14 @@
 package validator
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 )
 
 func TestToIDSet_Empty(t *testing.T) {
@@ -198,5 +202,39 @@ func TestExternalOverlayYAMLFiles_NoOverlaysAffected(t *testing.T) {
 	external := externalOverlayYAMLFiles([]string{"README.md"})
 	if len(external) != 0 {
 		t.Errorf("expected no external files for a change with no affected overlays, got: %v", external)
+	}
+}
+
+// TestRunLintAndStaticChecks_LogsDurationSuffix guards a regression where
+// each check's "<name>: passed" console line gave no indication of how long
+// that check took - unlike the fully-built (but previously unprinted, see
+// pkg/validator/timing.go) per-step timing already recorded into the
+// TimingCollector for the same checks. Every runLintStep/runStaticStep
+// closure now also prints a "(<duration>)" suffix on its terminal pass/fail
+// line, using the same time.Since(start) already computed for
+// tc.RecordStep - this exercises a real check (config-sort, cheap and
+// dependency-free) end-to-end through the logger's file-backed writer to
+// assert the suffix actually reaches the printed line, not just the
+// TimingCollector.
+func TestRunLintAndStaticChecks_LogsDurationSuffix(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+	logPath := filepath.Join(d, "out.log")
+	log := logger.NewLogger(true, logPath)
+	defer log.Close()
+
+	res := &Result{}
+	tc := NewTimingCollector()
+	runLintAndStaticChecks([]string{filepath.Join(d, "a.yaml")}, Options{}, res, log, tc, nil)
+	log.Close()
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	got := string(data)
+	durationSuffixRe := regexp.MustCompile(`config-sort check: passed \([0-9µm.a-zµ]*s\)`)
+	if !durationSuffixRe.MatchString(got) {
+		t.Errorf("expected a '(<duration>)' suffix on the config-sort check line, got:\n%s", got)
 	}
 }

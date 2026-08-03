@@ -76,23 +76,14 @@ func stepEnabled(id string, disabled, enabled map[string]bool) bool {
 // filters, no shared mutable state besides the mutex-guarded report maps
 // below), populating sections and per-step timing.
 func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector, earlySelectors []exempt.Selector) {
-	phaseStart := time.Now()
-
 	disabled := toIDSet(opts.DisabledChecks)
 	enabled := toIDSet(opts.EnabledChecks)
 
-	log.Header("Linting")
-
-	// ── linting ──────────────────────────────────────────────────────────────
-	lintReports := map[string]string{}
-	var lintOutcomes []CheckOutcome
-	var lintMu sync.Mutex
-	var lintWg sync.WaitGroup
-
-	// lintStepResult is what each linter closure returns: a failure report
-	// (empty when it passed/was skipped) plus enough to build a CheckOutcome
-	// so the Linting section can always render a full sub-check breakdown,
-	// not just a flattened bullet that disappears once a check is clean.
+	// lintStepResult is what each linter/static-check closure returns: a
+	// failure report (empty when it passed/was skipped) plus enough to
+	// build a CheckOutcome so the Linting/Static Checks sections can always
+	// render a full sub-check breakdown, not just a flattened bullet that
+	// disappears once a check is clean.
 	type lintStepResult struct {
 		report  string
 		status  SectionStatus
@@ -100,13 +91,73 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		note    string
 	}
 
-	runLintStep := func(name string, fn func(sl *logger.ScopedLogger) lintStepResult) {
+	// staticReports/staticOutcomes accumulate across all of Large File
+	// Check, YAML Syntax, and the Static Checks phase below - even though
+	// large-file/YAML-syntax now get their own standalone console
+	// log.Header banners (and their own top-level TimingCollector entries,
+	// matching a downstream fork's equivalent phase breakdown), they still
+	// feed the same "Static Checks" Section/PR-comment rendering
+	// (ComposeStaticChecksSection's fixed 5-check order) as before this
+	// split - only the live console/timing-table grouping changed. No mutex
+	// needed for the two sequential appends below (Large File Check/YAML
+	// Syntax run before any goroutine touches these slices); the
+	// concurrent Static Checks group further down still guards its own
+	// appends with staticMu.
+	staticReports := map[string]string{}
+	var staticOutcomes []CheckOutcome
+
+	// ── large file check (standalone phase, sequential) ─────────────────────
+	largeFileStart := time.Now()
+	log.Header("Large File Check")
+	if violations := largefile.Check(changed, largefile.DefaultMaxSize, largefile.DefaultIgnorePatterns); len(violations) > 0 {
+		var sb strings.Builder
+		for _, v := range violations {
+			sb.WriteString(v.String() + "\n")
+		}
+		log.ErrorInSection("LargeFile", "%d large file violation(s)", len(violations))
+		staticReports["large-file"] = sb.String()
+		staticOutcomes = append(staticOutcomes, CheckOutcome{Name: "large-file", Status: StatusError})
+	} else {
+		log.Info("large-file check: passed (%s)", time.Since(largeFileStart).Round(time.Millisecond))
+		staticOutcomes = append(staticOutcomes, CheckOutcome{Name: "large-file", Status: StatusPassed})
+	}
+	tc.Record("Large File Check", time.Since(largeFileStart), false)
+
+	// ── YAML syntax (standalone phase, sequential) ──────────────────────────
+	yamlSyntaxStart := time.Now()
+	log.Header("YAML Syntax")
+	log.Info("checking %d YAML file(s) for syntax errors...", len(filterYAML(changed)))
+	if yvs, _ := yamlsyntax.CheckFiles(changed); len(yvs) > 0 {
+		var sb strings.Builder
+		for _, v := range yvs {
+			fmt.Fprintf(&sb, "%s: %s\n", v.File, v.Message)
+		}
+		log.ErrorInSection("YAMLSyntax", "%d YAML syntax error(s)", len(yvs))
+		staticReports["YAML-syntax"] = sb.String()
+		staticOutcomes = append(staticOutcomes, CheckOutcome{Name: "YAML-syntax", Status: StatusError})
+	} else {
+		log.Info("YAML-syntax check: passed (%s)", time.Since(yamlSyntaxStart).Round(time.Millisecond))
+		staticOutcomes = append(staticOutcomes, CheckOutcome{Name: "YAML-syntax", Status: StatusPassed})
+	}
+	tc.Record("YAML Syntax", time.Since(yamlSyntaxStart), false)
+
+	// ── linting ──────────────────────────────────────────────────────────────
+	lintStart := time.Now()
+	log.Header("Linting")
+
+	lintReports := map[string]string{}
+	var lintOutcomes []CheckOutcome
+	var lintMu sync.Mutex
+	var lintWg sync.WaitGroup
+
+	runLintStep := func(name string, fn func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult) {
 		lintWg.Add(1)
 		go func() {
 			defer lintWg.Done()
 			start := time.Now()
+			elapsed := func() time.Duration { return time.Since(start) }
 			sl := log.Scope()
-			r := fn(sl)
+			r := fn(sl, elapsed)
 			sl.Flush()
 			tc.RecordStep("Linting", name, time.Since(start))
 			lintMu.Lock()
@@ -118,9 +169,13 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		}()
 	}
 
-	runLintStep("markdownlint", func(sl *logger.ScopedLogger) lintStepResult {
+	runLintStep("markdownlint", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
+		if len(markdownlint.Filter(changed)) == 0 {
+			sl.Info("markdownlint: no markdown files changed")
+			return lintStepResult{status: StatusPassed, skipped: true, note: "No markdown files changed."}
+		}
 		if mdOut, err := markdownlint.Run(changed); err == nil {
-			sl.Info("markdownlint: passed")
+			sl.Info("markdownlint: passed (%s)", elapsed().Round(time.Millisecond))
 			return lintStepResult{status: StatusPassed}
 		} else if !errors.Is(err, markdownlint.ErrCLINotFound) {
 			sl.ErrorInSection("Markdownlint", "markdownlint: %s", err)
@@ -134,9 +189,9 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		return lintStepResult{status: StatusPassed, skipped: true, note: "markdownlint not found in PATH."}
 	})
 
-	runLintStep("prettier", func(sl *logger.ScopedLogger) lintStepResult {
+	runLintStep("prettier", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 		if pOut, err := prettier.Run(changed, nil); err == nil {
-			sl.Info("prettier: passed")
+			sl.Info("prettier: passed (%s)", elapsed().Round(time.Millisecond))
 			return lintStepResult{status: StatusPassed}
 		} else if !errors.Is(err, prettier.ErrCLINotFound) {
 			sl.ErrorInSection("Prettier", "prettier: %s", err)
@@ -150,10 +205,20 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		return lintStepResult{status: StatusPassed, skipped: true, note: "prettier not found in PATH."}
 	})
 
-	runLintStep("shellcheck", func(sl *logger.ScopedLogger) lintStepResult {
+	runLintStep("shellcheck", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 		if _, err := exec.LookPath("shellcheck"); err != nil {
 			sl.Debug("shellcheck: not found in PATH, skipping")
 			return lintStepResult{status: StatusPassed, skipped: true, note: "shellcheck not found in PATH."}
+		}
+
+		// yamlChanged feeds both the "any relevant files at all" short-
+		// circuit below and the direct/blocking Tekton+embedded-script
+		// extraction pass further down - computed once and reused rather
+		// than calling filterYAML(changed) twice.
+		yamlChanged := filterYAML(changed)
+		if len(shellcheck.FilterShellScripts(changed)) == 0 && len(yamlChanged) == 0 {
+			sl.Info("shellcheck: no shell files changed")
+			return lintStepResult{status: StatusPassed, skipped: true, note: "No shell files changed."}
 		}
 
 		var sb strings.Builder
@@ -179,11 +244,10 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		// overlay it lives in was affected by an unrelated base/
 		// component change elsewhere - the same distinction
 		// finalizeCompliance already draws for doc/overlay check
-		// findings in the Build+Compliance phase (a base/component
+		// findings in the Post-Build Validation phase (a base/component
 		// change ripples to every overlay that depends on it, and an
 		// issue in a file the author never touched shouldn't block
 		// their PR).
-		yamlChanged := filterYAML(changed)
 		blocking += writeShellcheckExtractionReport(&sb, "", yamlChanged)
 
 		external := externalOverlayYAMLFiles(changed)
@@ -194,15 +258,19 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			return lintStepResult{report: sb.String(), status: StatusError}
 		}
 		if warning > 0 {
-			sl.Info("shellcheck: passed (%d external/non-blocking warning(s))", warning)
+			sl.Info("shellcheck: passed (%d external/non-blocking warning(s)) (%s)", warning, elapsed().Round(time.Millisecond))
 			return lintStepResult{report: sb.String(), status: StatusPassed, note: fmt.Sprintf("%d external warning(s) in overlay files not directly changed (non-blocking).", warning)}
 		}
-		sl.Info("shellcheck: passed")
+		sl.Info("shellcheck: passed (%s)", elapsed().Round(time.Millisecond))
 		return lintStepResult{status: StatusPassed}
 	})
 
 	if stepEnabled(stepGolangci, disabled, enabled) {
-		runLintStep("golangci", func(sl *logger.ScopedLogger) lintStepResult {
+		runLintStep("golangci", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
+			if len(golangci.FilterGo(changed)) == 0 {
+				sl.Info("golangci: no Go files changed")
+				return lintStepResult{status: StatusPassed, skipped: true, note: "No Go files changed."}
+			}
 			glOut, err := golangci.Run(changed)
 			if err != nil && !errors.Is(err, golangci.ErrCLINotFound) {
 				sl.ErrorInSection("Golangci", "golangci: %s", err)
@@ -216,7 +284,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 				sl.Debug("golangci: not found in PATH, skipping")
 				return lintStepResult{status: StatusPassed, skipped: true, note: "golangci-lint not found in PATH."}
 			}
-			sl.Info("golangci-lint: passed")
+			sl.Info("golangci-lint: passed (%s)", elapsed().Round(time.Millisecond))
 			return lintStepResult{status: StatusPassed}
 		})
 	} else {
@@ -225,11 +293,18 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		lintMu.Unlock()
 	}
 
-	runLintStep("kubeconform", func(sl *logger.ScopedLogger) lintStepResult {
+	runLintStep("kubeconform", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 		yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
 		yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
 		kcOpts := kubeconform.DefaultOptions()
-		if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
+		if opts.SchemaDir != "" {
+			// Already extracted once, up front, by pkg/pipeline's Setup
+			// phase (see validator.Options.SchemaDir's doc comment) -
+			// callers that don't prefetch (test-all/build-yaml/scan-all)
+			// leave this empty and fall through to the lazy extraction
+			// below, exactly as before this field existed.
+			kcOpts.SchemaDir = opts.SchemaDir
+		} else if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
 			kcOpts.SchemaDir = schemaDir
 			defer cleanup()
 		}
@@ -238,7 +313,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 				sl.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
 				return lintStepResult{report: kcRes.Summary(), status: StatusError}
 			}
-			sl.Info("kubeconform: passed")
+			sl.Info("kubeconform: passed (%s)", elapsed().Round(time.Millisecond))
 		}
 		return lintStepResult{status: StatusPassed}
 	})
@@ -246,23 +321,25 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	lintWg.Wait()
 
 	res.Sections = append(res.Sections, ComposeLintingSection(lintOutcomes, lintReports))
-	tc.Record("Linting", time.Since(phaseStart), true)
+	tc.Record("Linting", time.Since(lintStart), true)
 
 	// ── static checks ────────────────────────────────────────────────────────
+	// large-file/YAML-syntax outcomes were already appended above (their own
+	// standalone phases); this group only covers the remaining checks that
+	// still share one concurrent "Static Checks" console phase.
 	staticStart := time.Now()
 	log.Header("Static Checks")
-	staticReports := map[string]string{}
-	var staticOutcomes []CheckOutcome
 	var staticMu sync.Mutex
 	var staticWg sync.WaitGroup
 
-	runStaticStep := func(name string, fn func(sl *logger.ScopedLogger) lintStepResult) {
+	runStaticStep := func(name string, fn func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult) {
 		staticWg.Add(1)
 		go func() {
 			defer staticWg.Done()
 			start := time.Now()
+			elapsed := func() time.Duration { return time.Since(start) }
 			sl := log.Scope()
-			r := fn(sl)
+			r := fn(sl, elapsed)
 			sl.Flush()
 			tc.RecordStep("Static Checks", name, time.Since(start))
 			staticMu.Lock()
@@ -274,47 +351,21 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		}()
 	}
 
-	runStaticStep("large-file", func(sl *logger.ScopedLogger) lintStepResult {
-		if violations := largefile.Check(changed, largefile.DefaultMaxSize, largefile.DefaultIgnorePatterns); len(violations) > 0 {
-			var sb strings.Builder
-			for _, v := range violations {
-				sb.WriteString(v.String() + "\n")
-			}
-			sl.ErrorInSection("LargeFile", "%d large file violation(s)", len(violations))
-			return lintStepResult{report: sb.String(), status: StatusError}
-		}
-		sl.Info("large-file check: passed")
-		return lintStepResult{status: StatusPassed}
-	})
-
-	runStaticStep("YAML-syntax", func(sl *logger.ScopedLogger) lintStepResult {
-		if yvs, _ := yamlsyntax.CheckFiles(changed); len(yvs) > 0 {
-			var sb strings.Builder
-			for _, v := range yvs {
-				fmt.Fprintf(&sb, "%s: %s\n", v.File, v.Message)
-			}
-			sl.ErrorInSection("YAMLSyntax", "%d YAML syntax error(s)", len(yvs))
-			return lintStepResult{report: sb.String(), status: StatusError}
-		}
-		sl.Info("YAML-syntax check: passed")
-		return lintStepResult{status: StatusPassed}
-	})
-
-	runStaticStep("config-sort", func(sl *logger.ScopedLogger) lintStepResult {
+	runStaticStep("config-sort", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 		if sorted, err := config.CheckSortOrder(); err == nil && len(sorted) > 0 {
 			sl.ErrorInSection("ConfigSort", "%d unsorted config file(s)", len(sorted))
 			return lintStepResult{report: config.FormatUnsortedError(sorted), status: StatusError}
 		}
-		sl.Info("config-sort check: passed")
+		sl.Info("config-sort check: passed (%s)", elapsed().Round(time.Millisecond))
 		return lintStepResult{status: StatusPassed}
 	})
 
-	runStaticStep("startingCSV", func(sl *logger.ScopedLogger) lintStepResult {
+	runStaticStep("startingCSV", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 		if mismatches, err := csv.CheckStartingCSVFolderMatch(changed); err == nil && len(mismatches) > 0 {
 			sl.ErrorInSection("StartingCSV", "%d startingCSV mismatch(es)", len(mismatches))
 			return lintStepResult{report: csv.FormatMismatches(mismatches), status: StatusError}
 		}
-		sl.Info("startingCSV check: passed")
+		sl.Info("startingCSV check: passed (%s)", elapsed().Round(time.Millisecond))
 		return lintStepResult{status: StatusPassed}
 	})
 
@@ -329,12 +380,12 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	// core can't know whether a given repo's table actually matches the
 	// one-row-per-app-per-overlay shape this check expects.
 	if stepEnabled(stepScaffoldReadme, disabled, enabled) {
-		runStaticStep("scaffold table", func(sl *logger.ScopedLogger) lintStepResult {
+		runStaticStep("scaffold table", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 			if readmeCurrent, readmeDiff := scaffold.CheckReadmeStatus(); !readmeCurrent {
 				sl.ErrorInSection("Scaffold", "%s", readmeDiff)
 				return lintStepResult{report: readmeDiff, status: StatusError}
 			}
-			sl.Info("scaffold table check: passed")
+			sl.Info("scaffold table check: passed (%s)", elapsed().Round(time.Millisecond))
 			return lintStepResult{status: StatusPassed}
 		})
 	} else {
@@ -349,10 +400,19 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	tc.Record("Static Checks", time.Since(staticStart), true)
 }
 
-// runBuildAndPostBuild runs the registry-driven doc + overlay check engine.
+// runBuildAndPostBuild runs the registry-driven doc + overlay check engine,
+// split into two console phases - "Build YAML" (kustomize builds, hooks,
+// scaffold validation) and "Post-Build Validation" (doc/overlay compliance
+// checks, Kyverno, NAD) - matching a downstream fork's equivalent phase
+// breakdown. The split is safe because neither phase's work depends on the
+// other's *findings* as input: the doc engine (runDocChecks) only reads raw
+// changed YAML files, not build output, and the overlay-check pass
+// (runOverlayChecks) is run in the same worker-pool loop as the actual
+// build (buildOverlayWithHooks) since both need the same per-overlay
+// worker-pool parallelism and neither result feeds the other within a
+// single iteration - see runOverlayChecks/buildOverlayWithHooks's
+// respective doc comments.
 func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector) {
-	buildStart := time.Now()
-	log.Header("Build + Compliance")
 	w := Workers(opts)
 
 	// Overlays/apps are resolved up front (rather than after the doc/
@@ -386,25 +446,23 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	hookSelectors, hookExemptErrs := hookExemptSelectorsAndErrors(hookCfgs)
 	selectors := append(builtinExemptSelectors(), hookSelectors...)
 
-	// Doc engine over all changed YAML files. kyverno-test.yaml fixture
-	// directories are excluded from compliance doc-checks (their paired
-	// resources are deliberately non-compliant CLI test data, not real
-	// workloads) - this doesn't affect kubeconform/Kyverno validation,
-	// which run over `changed`/rendered overlays through their own paths.
-	yamlFiles := filterKyvernoTestFixtureDirs(filterYAML(changed))
-	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
-	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
-	// Drop psa-labels findings whose missing labels are commented out
-	// (rather than genuinely absent) in the app's base/ - see
-	// filterCommentedPSAFindings for why this is scoped to exact,
-	// verbatim-missing-label matches only.
-	docResult.Findings = filterCommentedPSAFindings(docResult.Findings)
+	// ── Build YAML ───────────────────────────────────────────────────────────
+	buildStart := time.Now()
+	log.Header("Build YAML")
 
-	// Overlay engine - overlays detected from changed files. Each overlay is
-	// independent (its own checks over its own path/cluster), so fan them out
-	// across a bounded worker pool instead of one-at-a-time; this mirrors the
-	// job-queue pattern runDocChecks/runOverlayChecks already use internally
-	// for per-file/per-overlay checks, one level up.
+	// Scaffold Validation runs first, before the per-app builds below - it's
+	// a drift check of each app's scaffold template against disk, entirely
+	// independent of this run's own overlay-build/compliance-check output,
+	// matching a downstream fork's ordering (scaffold's drift check
+	// precedes the actual per-app kustomize builds in its "Build YAML"
+	// phase). The README scaffold-status table's own structural staleness
+	// check ("scaffold table") runs as a Static Checks sub-check instead
+	// (see runLintAndStaticChecks) - it's a per-PR structural check, not a
+	// per-app drift re-run, so it belongs with large-file/YAML-syntax/
+	// config-sort/startingCSV rather than folded into this section's drift
+	// summary.
+	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
+
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	kyvernoEnabled := stepEnabled(stepKyverno, disabled, enabled)
 	var overlayResult check.Result
@@ -412,6 +470,18 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	hookResults := make(map[string]*appHookResult, len(apps))
 	for _, app := range apps {
 		hookResults[app] = &appHookResult{}
+	}
+	// overlaysPerApp counts each app's overlays (preserving overlays'
+	// global sorted-by-path order - see detectOverlaysForChanges), so the
+	// per-app "Building: <name>" summary banner printed after the loop
+	// below can report each app's overlay count without needing to
+	// serialize the underlying worker-pool build itself (see
+	// appFromOverlayPath) - i.e. builds still run fully in parallel across
+	// every overlay of every app; the banner is a post-hoc summary, not a
+	// live per-app buffered stream.
+	overlaysPerApp := make(map[string]int, len(apps))
+	for _, ov := range overlays {
+		overlaysPerApp[appFromOverlayPath(ov.path)]++
 	}
 	var renderedOverlays []renderedOverlay
 	if len(overlays) > 0 {
@@ -434,7 +504,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
 					app := appFromOverlayPath(ov.path)
 					buildErr, pre, post, rendered := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app])
-					tc.RecordStep("Build+Compliance", ov.path, time.Since(ovStart))
+					tc.RecordStep("Build YAML", ov.path, time.Since(ovStart))
 					overlayMu.Lock()
 					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
 					overlayResult.Exempted = append(overlayResult.Exempted, r.Exempted...)
@@ -471,8 +541,69 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		log.ErrorInSection("Hooks", "%s", err)
 	}
 
+	// Per-app "Building: <name>" summary banner - printed once per app,
+	// after every overlay of every app has already finished building
+	// (fully in parallel, above), reporting that app's overlay count and
+	// detected hook activity. This is a post-hoc summary rather than a
+	// live per-overlay buffered stream, so it doesn't require serializing
+	// the worker-pool build to get a contiguous per-app output block.
+	for _, app := range apps {
+		log.SubHeader("Building: " + app)
+		log.Info("overlays: %d", overlaysPerApp[app])
+		if hr := hookResults[app]; hr != nil {
+			if hr.PreBuild == hookRan {
+				log.Info("hook: PRE_BUILD_HOOK detected")
+			}
+			if hr.PostBuild == hookRan {
+				log.Info("hook: POST_BUILD_HOOK detected")
+			}
+		}
+	}
+
+	fixNeeded, _ := kustomize.CheckFix(changed)
+	hookTable := buildHookTable(apps, hookCfgs, hookResults)
+	// addedFiles feeds ghostpatch.ClassifyOverlay's "is this
+	// kustomization.yaml itself new" check (a ghost patch on a brand-new
+	// overlay is a warning, not this PR's fault to have introduced against
+	// existing history) - an error resolving it (e.g. no git history
+	// available) degrades to "no added files", matching this phase's
+	// existing tolerant-of-git-failure pattern (kustomize.CheckFix above).
+	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
+	ghostTable, ghostBlockingCount := buildGhostTable(apps, addedFiles)
+	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
+	if ghostBlockingCount > 0 {
+		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
+	}
+
+	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(
+		strings.Join(scaffoldResult.DriftLines, "\n"),
+		scaffoldResult.ExecErrors,
+		flattenSkippedClusters(scaffoldResult.SkippedClusters),
+		strings.Join(scaffoldResult.PreExistingDriftLines, "\n"),
+	))
+	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
+	tc.Record("Build YAML", time.Since(buildStart), len(overlays) > 1)
+
+	// ── Post-Build Validation ────────────────────────────────────────────────
+	postBuildStart := time.Now()
+	log.Header("Post-Build Validation")
+
+	// Doc engine over all changed YAML files. kyverno-test.yaml fixture
+	// directories are excluded from compliance doc-checks (their paired
+	// resources are deliberately non-compliant CLI test data, not real
+	// workloads) - this doesn't affect kubeconform/Kyverno validation,
+	// which run over `changed`/rendered overlays through their own paths.
+	yamlFiles := filterKyvernoTestFixtureDirs(filterYAML(changed))
+	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
+	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
+	// Drop psa-labels findings whose missing labels are commented out
+	// (rather than genuinely absent) in the app's base/ - see
+	// filterCommentedPSAFindings for why this is scoped to exact,
+	// verbatim-missing-label matches only.
+	docResult.Findings = filterCommentedPSAFindings(docResult.Findings)
+
 	if kyvernoEnabled {
-		res.Sections = append(res.Sections, runKyvernoValidation(renderedOverlays, yamlFiles, log))
+		res.Sections = append(res.Sections, runKyvernoValidation(renderedOverlays, yamlFiles, opts.PolicyPath, log))
 	}
 
 	// NetworkAttachmentDefinition validation over every successfully-rendered
@@ -501,18 +632,6 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 	res.Check = combinedCheck
 
-	fixNeeded, _ := kustomize.CheckFix(changed)
-	hookTable := buildHookTable(apps, hookCfgs, hookResults)
-	// addedFiles feeds ghostpatch.ClassifyOverlay's "is this
-	// kustomization.yaml itself new" check (a ghost patch on a brand-new
-	// overlay is a warning, not this PR's fault to have introduced against
-	// existing history) - an error resolving it (e.g. no git history
-	// available) degrades to "no added files", matching this phase's
-	// existing tolerant-of-git-failure pattern (kustomize.CheckFix above).
-	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
-	ghostTable, ghostBlockingCount := buildGhostTable(apps, addedFiles)
-	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
-
 	res.Blocking = len(direct) > 0 || ghostBlockingCount > 0
 
 	if len(direct) > 0 {
@@ -520,28 +639,9 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	} else {
 		log.Info("resource compliance: passed")
 	}
-	if ghostBlockingCount > 0 {
-		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
-	}
-
-	// The README scaffold-status table's own structural staleness check
-	// ("scaffold table") runs as a Static Checks sub-check instead (see
-	// runLintAndStaticChecks above) - it's a per-PR structural check, not a
-	// per-app drift re-run, so it belongs with large-file/YAML-syntax/
-	// config-sort/startingCSV rather than folded into this section's drift
-	// summary.
-	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
-	res.Sections = append(res.Sections, ComposeScaffoldValidationSection(
-		strings.Join(scaffoldResult.DriftLines, "\n"),
-		scaffoldResult.ExecErrors,
-		flattenSkippedClusters(scaffoldResult.SkippedClusters),
-		strings.Join(scaffoldResult.PreExistingDriftLines, "\n"),
-	))
-
-	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
 
 	res.Sections = append(res.Sections, ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted))
-	tc.Record("Build+Compliance", time.Since(buildStart), len(overlays) > 1)
+	tc.Record("Post-Build Validation", time.Since(postBuildStart), true)
 }
 
 // overlayRef pairs an overlay path with its cluster name.

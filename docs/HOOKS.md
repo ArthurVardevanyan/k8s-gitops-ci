@@ -21,7 +21,7 @@ empty/false).
 | -------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SCAFFOLD=`                                                    | `SCAFFOLD=false` (or `true`/`yes`/`1`)                                  | Opts an app out of scaffold-drift validation. Defaults to `true` (enabled) when absent. An app that has a scaffold template (so drift detection is actually available for it) but sets `SCAFFOLD=false` gets flagged in the "Scaffold Drift Protection" PR-comment section as a coverage gap (non-blocking) - see [CI.md](CI.md#scaffold-validation). |
 | `AVP_EXCLUDE=`                                                 | `AVP_EXCLUDE="cluster1 cluster2"`                                       | Space-separated list of overlay names to exclude from AVP secret resolution — see [CI.md](CI.md)'s Build Strategies section.                                                                                                                                                                                                                          |
-| `EXEMPTIONS=(...)` or `EXEMPTIONS="..."`                       | see below                                                               | Per-app exemption selectors, merged into every check run during the Build + Compliance phase (see **`EXEMPTIONS=(...)` wiring** below).                                                                                                                                                                                                               |
+| `EXEMPTIONS=(...)` or `EXEMPTIONS="..."`                       | see below                                                               | Per-app exemption selectors, merged into every check run during the Build YAML/Post-Build Validation phases (see **`EXEMPTIONS=(...)` wiring** below).                                                                                                                                                                                                |
 | `PRE_BUILD_HOOK=` / `POST_BUILD_HOOK=` / `POST_VALIDATE_HOOK=` | `PRE_BUILD_HOOK=<cmd>` (optionally `export`-prefixed, like `SCAFFOLD=`) | Names a shell function (defined elsewhere in the same `test.sh`) or external command to invoke around the build — see **Hook execution** below. `<cmd>` empty/absent means "not defined".                                                                                                                                                             |
 
 ### `EXEMPTIONS=(...)` selector syntax
@@ -52,7 +52,7 @@ dropped or applied.
 
 ### `EXEMPTIONS=(...)` wiring
 
-Every app whose test.sh is resolved during the Build + Compliance phase
+Every app whose test.sh is resolved during the Build YAML phase
 (see `resolveAppHookConfigs` in `pkg/validator/hook_wiring.go`) has its
 parsed `ExemptSelectors` bridged into `pkg/validator/exempt.Selector` and
 merged with the built-in selectors (e.g. the `.tekton/` PipelineRun
@@ -78,7 +78,7 @@ fixes the syntax error instead of unknowingly under-exempting.
 function (or external command) that `pkg/hook`'s `RunPreBuildHook`/
 `RunPostBuildHook`/`RunPostValidateHook` (`pkg/hook/exec.go`) actually
 invoke, via `bash -c 'source <test.sh>; "$CMD" <args>'`, during the
-Build+Compliance phase (`buildOverlayWithHooks`/`runAppPostValidateHooks`
+Build YAML phase (`buildOverlayWithHooks`/`runAppPostValidateHooks`
 in `pkg/validator/hook_wiring.go`):
 
 - **`PRE_BUILD_HOOK`** runs once per overlay, before that overlay is
