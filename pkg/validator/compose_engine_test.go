@@ -60,7 +60,7 @@ func TestSanitizeCell(t *testing.T) {
 }
 
 func TestComposeKustomizeBuildSection_NoErrors(t *testing.T) {
-	s := ComposeKustomizeBuildSection(3, nil, "", nil, "")
+	s := ComposeKustomizeBuildSection(3, nil, "", false, nil, "", 0)
 	if s.Error {
 		t.Error("expected no error")
 	}
@@ -74,7 +74,7 @@ func TestComposeKustomizeBuildSection_GroupsBuildErrorsByRootCause(t *testing.T)
 		"kustomize build app/overlays/a: accumulating components: no such file or directory",
 		"kustomize build app/overlays/b: accumulating components: no such file or directory",
 	}
-	s := ComposeKustomizeBuildSection(2, buildErrs, "", nil, "")
+	s := ComposeKustomizeBuildSection(2, buildErrs, "", false, nil, "", 0)
 	if !s.Error {
 		t.Error("expected an error section")
 	}
@@ -83,16 +83,56 @@ func TestComposeKustomizeBuildSection_GroupsBuildErrorsByRootCause(t *testing.T)
 	}
 }
 
-func TestComposeKustomizeBuildSection_HookAndGhostTables(t *testing.T) {
-	s := ComposeKustomizeBuildSection(1, nil, "| App | PRE_BUILD |\n| --- | --- |\n| `app` | ✅ defined |", nil, "| Overlay | Target |\n| --- | --- |\n| `app/overlays/a` | Deployment/foo |")
-	if !s.Error {
-		t.Error("expected ghost patches to mark the section as an error")
+func TestComposeKustomizeBuildSection_HookTable(t *testing.T) {
+	hookTable := "| App | PRE_BUILD |\n| --- | --- |\n| `app` | ✅ defined |"
+
+	passed := ComposeKustomizeBuildSection(1, nil, hookTable, false, nil, "", 0)
+	if passed.Error {
+		t.Error("expected a passing hook table not to mark the section as an error")
 	}
-	if !strings.Contains(s.Body, "PRE_BUILD") {
-		t.Errorf("expected the hook table to render, got:\n%s", s.Body)
+	if !strings.Contains(passed.Body, "- ✅ **Hooks**") {
+		t.Errorf("expected an icon-bearing Hooks bullet, got:\n%s", passed.Body)
 	}
-	if !strings.Contains(s.Body, "Deployment/foo") {
-		t.Errorf("expected the ghost patch table to render, got:\n%s", s.Body)
+	if !strings.Contains(passed.Body, "PRE_BUILD") {
+		t.Errorf("expected the hook table to render, got:\n%s", passed.Body)
+	}
+
+	failed := ComposeKustomizeBuildSection(1, nil, hookTable, true, nil, "", 0)
+	if !failed.Error {
+		t.Error("expected a failing hook to mark the section as an error")
+	}
+	if !strings.Contains(failed.Body, "- ❌ **Hooks**") {
+		t.Errorf("expected an icon-bearing failed Hooks bullet, got:\n%s", failed.Body)
+	}
+}
+
+func TestComposeKustomizeBuildSection_GhostPatches(t *testing.T) {
+	ghostTable := "| Overlay | Target |\n| --- | --- |\n| `app/overlays/a` | Deployment/foo |"
+
+	// Non-blocking (warning-only) ghost: no blocking rows, so this must
+	// not fail the section - matching docs/CI.md's "Ghost Patch
+	// Detection" (pre-existing/brand-new-overlay ghosts are surfaced for
+	// visibility only) and the ⚠️/❌ split ComposeResourceComplianceSection
+	// and "Pre-Existing Scaffold Drift" already use elsewhere in this
+	// file.
+	warn := ComposeKustomizeBuildSection(1, nil, "", false, nil, ghostTable, 0)
+	if warn.Error {
+		t.Error("expected a non-blocking-only ghost patch not to mark the section as an error")
+	}
+	if !strings.Contains(warn.Body, "- ⚠️ **Ghost Patches**") {
+		t.Errorf("expected an icon-bearing warning Ghost Patches bullet, got:\n%s", warn.Body)
+	}
+	if !strings.Contains(warn.Body, "Deployment/foo") {
+		t.Errorf("expected the ghost patch table to render, got:\n%s", warn.Body)
+	}
+
+	// Blocking ghost: must fail the section and show ❌.
+	blocking := ComposeKustomizeBuildSection(1, nil, "", false, nil, ghostTable, 1)
+	if !blocking.Error {
+		t.Error("expected a blocking ghost patch to mark the section as an error")
+	}
+	if !strings.Contains(blocking.Body, "- ❌ **Ghost Patches**") {
+		t.Errorf("expected an icon-bearing failed Ghost Patches bullet, got:\n%s", blocking.Body)
 	}
 }
 

@@ -113,6 +113,28 @@ func TestMergeHookOutcome(t *testing.T) {
 	}
 }
 
+func TestAnyHookFailed(t *testing.T) {
+	if anyHookFailed(map[string]*appHookResult{}) {
+		t.Error("expected no failure for an empty result set")
+	}
+	if anyHookFailed(map[string]*appHookResult{"app": nil}) {
+		t.Error("expected a nil entry to be skipped, not treated as a failure")
+	}
+	allPassed := map[string]*appHookResult{
+		"app": {PreBuild: hookRan, PostBuild: hookRan, PostValidate: hookNotDefined},
+	}
+	if anyHookFailed(allPassed) {
+		t.Error("expected no failure when every hook ran or wasn't defined")
+	}
+	oneFailed := map[string]*appHookResult{
+		"a": {PreBuild: hookRan},
+		"b": {PostValidate: hookFailed},
+	}
+	if !anyHookFailed(oneFailed) {
+		t.Error("expected a failure when any app's hook failed")
+	}
+}
+
 func TestBuildOverlayWithHooks_NoHooksDefined(t *testing.T) {
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")

@@ -416,8 +416,17 @@ func renderAcceptedExceptions(b *strings.Builder, exemptions []exempt.Applied) {
 // comments.go's groupBuildErrors doc comment). hookTable and ghostTable are
 // pre-rendered markdown (typically a table) built by the caller from
 // pkg/hook and pkg/ghostpatch data respectively; empty means "nothing to
-// show" (not "not checked").
-func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, fixNeeded []string, ghostTable string) Section {
+// show" (not "not checked"). hookFailed (anyHookFailed in hook_wiring.go)
+// and ghostBlockingCount (buildGhostTable's second return in
+// build_wiring.go) give the "Hooks"/"Ghost Patches" bullets their own
+// pass/fail icon - without them, a non-empty hookTable/ghostTable used to
+// render as a bare, icon-less nested dropdown line (see docs/CI.md's
+// "Ghost Patch Detection" for why a ghost patch isn't always blocking: a
+// pre-existing or brand-new-overlay ghost is warning-only, so it gets ⚠️
+// and doesn't fail this section, matching the ❌/⚠️ split
+// ComposeResourceComplianceSection and the "Pre-Existing Scaffold Drift"
+// bullet below already use).
+func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, hookFailed bool, fixNeeded []string, ghostTable string, ghostBlockingCount int) Section {
 	var b strings.Builder
 	hasError := false
 
@@ -439,6 +448,12 @@ func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTabl
 
 	// Hook results
 	if hookTable != "" {
+		icon := "✅"
+		if hookFailed {
+			hasError = true
+			icon = "❌"
+		}
+		fmt.Fprintf(&b, "- %s **Hooks**\n\n", icon)
 		b.WriteString(RenderSubDropdown("Hook Results", hookTable))
 		b.WriteString("\n")
 	} else {
@@ -456,10 +471,19 @@ func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTabl
 		b.WriteString("- ✅ **Kustomize Fix** — all kustomization.yaml files are up to date\n")
 	}
 
-	// Ghost patches
+	// Ghost patches - blocking ghosts (ghostBlockingCount > 0, see
+	// buildGhostTable) fail this section; a non-empty ghostTable with no
+	// blocking rows is a warning-only finding (pre-existing, or on a
+	// brand-new overlay - docs/CI.md's "Ghost Patch Detection") and
+	// doesn't.
 	if ghostTable != "" {
-		hasError = true
-		b.WriteString(RenderSubDropdown("Ghost Patches", ghostTable))
+		icon := "⚠️"
+		if ghostBlockingCount > 0 {
+			hasError = true
+			icon = "❌"
+		}
+		fmt.Fprintf(&b, "- %s **Ghost Patches**\n\n", icon)
+		b.WriteString(RenderSubDropdown("Ghost Patch Details", ghostTable))
 		b.WriteString("\n")
 	} else {
 		b.WriteString("- ✅ **Ghost Patches** — none detected\n")

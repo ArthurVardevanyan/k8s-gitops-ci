@@ -118,6 +118,27 @@ func mergeHookOutcome(current, next hookOutcome) hookOutcome {
 	return hookNotDefined
 }
 
+// anyHookFailed reports whether any app in results recorded a hookFailed
+// outcome on any of its three hooks - used by runBuildAndPostBuild to give
+// the Kustomize Build report's "Hooks" line its own pass/fail icon
+// (compose_sections.go's ComposeKustomizeBuildSection), independent of the
+// per-cell ✅/❌ already shown inside the hook table itself (hookCell in
+// build_wiring.go). A hook failure is always also folded into buildErrs
+// (so "Overlay Build" already reflects it too, see
+// buildOverlayWithHooks/runAppPostValidateHooks) - this just lets the
+// "Hooks" summary bullet stop silently omitting its own icon in that case.
+func anyHookFailed(results map[string]*appHookResult) bool {
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		if r.PreBuild == hookFailed || r.PostBuild == hookFailed || r.PostValidate == hookFailed {
+			return true
+		}
+	}
+	return false
+}
+
 // hookBuildRoot is the per-run root under which per-app hook build
 // directories are materialized only when actually needed (an app with a
 // POST_BUILD_HOOK or POST_VALIDATE_HOOK - see needsBuildDir). Kept as a

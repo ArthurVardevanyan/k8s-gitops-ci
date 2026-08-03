@@ -176,6 +176,13 @@ A failure to resolve `main`/`origin/main` (no git history available, e.g.
 a shallow clone) degrades to "unchanged" (never blocking) rather than
 failing the check outright.
 
+The Kustomize Build section's own "Ghost Patches" line mirrors this split:
+❌ (and the section fails) only when at least one detected ghost is
+blocking; a table with warning-only ghosts alone shows ⚠️ without failing
+the section - the same ❌-blocking/⚠️-warning-only convention used by the
+"Pre-Existing Scaffold Drift" and Resource Compliance sections elsewhere
+in this report.
+
 ## Scaffold Validation
 
 Apps that opt into `scafctl`-based scaffolding (a `.scafctl/configs/<app>.yaml`

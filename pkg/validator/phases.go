@@ -562,6 +562,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	fixNeeded, _ := kustomize.CheckFix(changed)
 	hookTable := buildHookTable(apps, hookCfgs, hookResults)
+	hookFailed := anyHookFailed(hookResults)
 	// addedFiles feeds ghostpatch.ClassifyOverlay's "is this
 	// kustomization.yaml itself new" check (a ghost patch on a brand-new
 	// overlay is a warning, not this PR's fault to have introduced against
@@ -570,7 +571,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// existing tolerant-of-git-failure pattern (kustomize.CheckFix above).
 	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
 	ghostTable, ghostBlockingCount := buildGhostTable(apps, addedFiles)
-	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, fixNeeded, ghostTable))
+	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, ghostTable, ghostBlockingCount))
 	if ghostBlockingCount > 0 {
 		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
 	}
