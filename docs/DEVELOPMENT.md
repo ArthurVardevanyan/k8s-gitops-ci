@@ -168,7 +168,12 @@ for build-time-only objects (currently just Kustomize's own
 `Kustomization`/`Component` control objects, listed in
 `clusterScopeNamespaceExempt` in `pkg/validator/namespace/namespace.go`)
 that are never applied to a cluster and so aren't meaningfully "scoped"
-either way.
+either way. Kinds that are never submitted to a Kubernetes API server at
+all — local installer config artifacts like the OpenShift agent-based
+installer's `AgentConfig`/`InstallConfig` (typically declared with a
+bare, groupless `apiVersion`) — are matched by Kind and skipped by the
+check entirely via `installerOnlyKinds`, mirroring the equivalent list in
+`pkg/validator/syncopts`.
 
 ### Generic check-enablement mechanism
 

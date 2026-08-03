@@ -91,6 +91,27 @@ resources:
 	}
 }
 
+func TestValidateBytes_InstallerOnlyKinds(t *testing.T) {
+	cases := []struct {
+		kind string
+		name string
+	}{
+		{"AgentConfig", "okd-test"},
+		{"InstallConfig", "okd"},
+	}
+	for _, c := range cases {
+		data := []byte(`kind: ` + c.kind + `
+apiVersion: v1beta1
+metadata:
+  name: ` + c.name + `
+`)
+		errs := ValidateBytes(data, "agent-config.yaml")
+		if len(errs) != 0 {
+			t.Errorf("%s: expected no errors for installer-only kind: %v", c.kind, errs)
+		}
+	}
+}
+
 func TestValidateBytes_UnknownResource(t *testing.T) {
 	data := []byte(`kind: Widget
 apiVersion: custom.example.com/v1
