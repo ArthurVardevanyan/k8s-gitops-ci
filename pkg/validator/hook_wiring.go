@@ -12,12 +12,19 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
-// resolveHookSource decides which test.sh source to trust for this run - see
-// hook.ResolveSource's doc comment for the fail-closed rules. Options.PR
-// non-empty is passed as prSet, so a PR run without a matching /hook-test
-// comment falls back to the base/target branch's test.sh, never the PR's own.
+// resolveHookSource decides which test.sh source to trust for this run.
+// When no explicit source is set and there is no PR context (i.e. a local
+// test-all/scan-all run), it defaults to SourceLocal so uncommitted
+// test.sh changes in the working tree are picked up automatically.  In
+// pipeline/PR mode (opts.PR non-empty) it falls through to
+// hook.ResolveSource's fail-closed SourceMain default, preventing a PR
+// from smuggling in a weakened test.sh.
 func resolveHookSource(opts Options) hook.Source {
-	return hook.ResolveSource(hook.Source(opts.HookSource), opts.TriggerComment, opts.PR != "")
+	signal := hook.Source(opts.HookSource)
+	if signal == "" && opts.PR == "" {
+		signal = hook.SourceLocal
+	}
+	return hook.ResolveSource(signal, opts.TriggerComment, opts.PR != "")
 }
 
 // resolveAppHookConfigs resolves each app's test.sh once, up front, so the

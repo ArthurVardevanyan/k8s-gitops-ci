@@ -87,7 +87,7 @@ automatically, under its own check ID (`check.Register` calls
 `exempt.RegisterExemptable(c.ID())` unconditionally) — so `namespace`,
 `psa-labels`, `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`,
 `named-ports`, `podspec-defaults`, and `placeholder` are all exemptable
-by their own ID with no extra wiring needed. Three IDs get special
+by their own ID with no extra wiring needed. Four IDs get special
 treatment instead of using their owning check's own ID:
 
 | ID                 | Used by                                                                                                                                                                    | Exemptable?                                                                                                                                                                                                                                                                                                                                                |
@@ -95,6 +95,7 @@ treatment instead of using their owning check's own ID:
 | `image-checksum`   | `pkg/validator/image`                                                                                                                                                      | Yes                                                                                                                                                                                                                                                                                                                                                        |
 | `cluster-name`     | `pkg/validator/clusterid` (a cluster-identity sub-finding)                                                                                                                 | Yes                                                                                                                                                                                                                                                                                                                                                        |
 | `project-ref`      | `pkg/validator/clusterid` (a project-identity sub-finding)                                                                                                                 | Yes                                                                                                                                                                                                                                                                                                                                                        |
+| `kubeconform`      | The kubeconform lint step (`pkg/validator/phases.go`) — a standalone linter, not a `check.Register` entry                                                                  | Yes — `check=kubeconform,file=...` or `check=kubeconform,dir=...` in a `test.sh` `EXEMPTIONS=(...)` block skips matching files from kubeconform schema validation. Intended for non-Kubernetes YAML files (no `kind`/`apiVersion`) that legitimately live in the repository. See [Non-app `test.sh` scoping](#non-app-testsh-scoping) below.               |
 | `cluster-identity` | `pkg/validator/clusterid` (the fallback bucket for structural findings that don't set a more specific ID — e.g. a hypothetical future infraID-mismatch/invalid-JSON check) | **No — deliberately non-exemptable.** `exempt.Exemptable` hardcodes this ID to always return `false`, and `RegisterExemptable` refuses to register it even if called. This is intentional: a structural finding here means the data itself is malformed/untrustworthy, which isn't the kind of thing a selector or annotation should be able to wave away. |
 
 `pkg/validator/nad`'s NetworkAttachmentDefinition validation (see
@@ -102,6 +103,41 @@ treatment instead of using their owning check's own ID:
 part of the `check.Register` framework at all, so it has no check ID to
 exempt by either mode — a NAD finding always blocks regardless of
 `EXEMPTIONS=(...)` or annotations.
+
+## Non-app `test.sh` scoping
+
+The `EXEMPTIONS=(...)` mechanism in [HOOKS.md](HOOKS.md) normally only
+applies to kustomize apps — directories with a `base/`, `overlays/`, or
+`components/` subdirectory whose changed files trigger overlay detection.
+For directories that have no kustomize structure (e.g. `okd/node-config/`,
+which contains agent-based installer node configuration YAML that is not a
+Kubernetes resource), those files are never associated with any app and
+their `test.sh` is never read by the standard app-hook resolution path.
+
+To cover this gap, `pkg/validator/nonapp_wiring.go`'s
+`resolveNonAppHookConfigs` reads a `test.sh` from each unique directory of
+changed files that does **not** fall under any detected app root, before
+either validation phase runs. Its `EXEMPTIONS=(...)` selectors are
+resolved early (via the same `hook.Resolve` trust model — fail-closed to
+`SourceMain`) and passed directly into the kubeconform lint step as
+`earlySelectors`. This means:
+
+- A `test.sh` placed in a non-app directory (e.g. `okd/node-config/test.sh`)
+  is read whenever files from that directory appear in the changeset.
+- Its `EXEMPTIONS=(...)` entries support the same selector keys as any other
+  `test.sh`, including `file=` and `dir=`.
+- Only `check=kubeconform` selectors have effect today — doc/overlay checks
+  run in the Build+Compliance phase and consume their own app-level
+  `EXEMPTIONS=(...)` separately.
+
+**Example** — exempt specific non-Kubernetes YAML files from kubeconform:
+
+```sh
+export EXEMPTIONS=(
+  "check=kubeconform,file=node-config/gpu-1.yaml"
+  "check=kubeconform,file=node-config/worker-1.yaml"
+)
+```
 
 ## Value vs. Token
 
@@ -158,7 +194,7 @@ applied, listing `| Resource | Value | Scope |` per exemption.
 | Field       | Matches                                                                                                                                                                                           |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Check`     | The check ID this selector applies to (**required**).                                                                                                                                             |
-| `File`      | Finding's file, by exact basename or `/`-suffix path match (not a raw substring — `File: "app"` won't match `myapp-config.yaml`).                                                                 |
+| `File`      | Finding's file, by exact basename match (`file=foo.yaml` matches any `…/foo.yaml`) or `/`-prefix suffix match (`file=bar/foo.yaml` matches `…/bar/foo.yaml` but NOT the root-relative `bar/foo.yaml` itself — a leading `/` separator must appear before the value). A full repo-relative path like `okd/node-config/foo.yaml` never self-matches via suffix; use a partial suffix such as `node-config/foo.yaml` or the bare basename `foo.yaml` instead. |
 | `Kind`      | Finding's `Kind`, exact match.                                                                                                                                                                    |
 | `Name`      | Finding's `Name`, exact match.                                                                                                                                                                    |
 | `Namespace` | Finding's `Namespace`, exact match.                                                                                                                                                               |

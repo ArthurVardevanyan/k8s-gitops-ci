@@ -25,6 +25,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
 // Step IDs for standalone (non-check-registry) lint/build steps that
@@ -74,7 +75,7 @@ func stepEnabled(id string, disabled, enabled map[string]bool) bool {
 // (each linter/check is independent - different tools, different file
 // filters, no shared mutable state besides the mutex-guarded report maps
 // below), populating sections and per-step timing.
-func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector) {
+func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector, earlySelectors []exempt.Selector) {
 	phaseStart := time.Now()
 
 	disabled := toIDSet(opts.DisabledChecks)
@@ -226,6 +227,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 
 	runLintStep("kubeconform", func(sl *logger.ScopedLogger) lintStepResult {
 		yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
+		yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
 		kcOpts := kubeconform.DefaultOptions()
 		if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
 			kcOpts.SchemaDir = schemaDir
@@ -636,4 +638,25 @@ func Workers(opts Options) int {
 		return opts.Concurrency
 	}
 	return runtime.NumCPU() * 2
+}
+
+// filterKubeconformExemptions drops files that match any check=kubeconform
+// selector from selectors, reusing the same exempt.Evaluate path that doc
+// and overlay checks use. A file is excluded when at least one selector
+// matches — the caller logs nothing for exempted files; the exemption is
+// intentionally silent in the kubeconform step (matching how
+// IgnoreMissingSchemas-skipped resources appear in kubeconform output).
+func filterKubeconformExemptions(files []string, selectors []exempt.Selector) []string {
+	if len(selectors) == 0 {
+		return files
+	}
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		scalar := exempt.Scalar{File: f}
+		if ok, _ := exempt.Evaluate("kubeconform", scalar, nil, selectors); ok {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }

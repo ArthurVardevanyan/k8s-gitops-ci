@@ -52,6 +52,12 @@ func configureClusterIdentityFromProviders(opts Options) {
 }
 
 func init() {
+	// kubeconform is a standalone lint step (not a check.Register entry) but
+	// is registered as exemptable so EXEMPTIONS=(check=kubeconform,...) entries
+	// in test.sh can suppress kubeconform validation for specific files or
+	// directories (e.g. non-Kubernetes YAML that has no kind/apiVersion).
+	exempt.RegisterExemptable("kubeconform")
+
 	check.Register(namespaceCheck{})
 	check.Register(psaCheck{})
 	check.Register(rbacReadonlyCheck{})

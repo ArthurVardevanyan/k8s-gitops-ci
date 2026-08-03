@@ -91,6 +91,11 @@ func (c *Config) parse(text string) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		// Strip optional "export " prefix uniformly across all directives so
+		// authors can write e.g. "export EXEMPTIONS=(...)" or
+		// "export SCAFFOLD=false" consistently with hook command directives
+		// (hookDirectiveValue already does this for PRE/POST_BUILD_HOOK etc.).
+		line = strings.TrimPrefix(line, "export ")
 		// SCAFFOLD
 		if strings.HasPrefix(line, "SCAFFOLD=") {
 			c.Scaffold = parseBool(strings.TrimPrefix(line, "SCAFFOLD="))
@@ -162,7 +167,7 @@ func hookDirectiveValue(line, key string) (value string, ok bool) {
 }
 
 func (c *Config) parseExemption(line string) {
-	line = strings.TrimSpace(strings.TrimSuffix(line, ")"))
+	line = unquote(strings.TrimSpace(strings.TrimSuffix(line, ")")))
 	if line == "" {
 		return
 	}

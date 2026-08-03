@@ -30,9 +30,9 @@ Both the multi-line bash-array form and the single-line comma-separated
 form parse identically:
 
 ```sh
-EXEMPTIONS=(
-  check=image-checksum,file=foo.yaml
-  check=sync-options,kind=ArgoCD,name=my-argocd-instance
+export EXEMPTIONS=(
+  "check=image-checksum,file=foo.yaml"
+  "check=sync-options,kind=ArgoCD,name=my-argocd-instance"
 )
 ```
 
@@ -112,30 +112,32 @@ touches the filesystem for this.
 
 ## `hook.Source` / `ResolveSource`
 
-`ResolveSource(signal, triggerComment, prSet)` decides whether to trust
-the PR branch's `test.sh` (`SourcePR`) or fall back to the target
-branch's (`SourceMain`) — fail-closed to `SourceMain` in every ambiguous
-case:
+`resolveHookSource` (`pkg/validator/hook_wiring.go`) selects the source
+before `ResolveSource` is called, applying one rule first:
 
-- No signal at all → `SourceMain`.
-- `SourceLocal` → always honored as-is (a local/CLI run explicitly
-  requesting the working tree's own `test.sh`, e.g. via
-  `--hook-source local`).
+- **No explicit `--hook-source` and no PR context** (`opts.PR` empty, i.e.
+  `test-all`/`scan-all`/`build-yaml` local runs) → **`SourceLocal`**,
+  so uncommitted working-tree `test.sh` changes are picked up
+  automatically without needing `--hook-source local`.
+
+`ResolveSource(signal, triggerComment, prSet)` then handles the remaining
+cases, fail-closed to `SourceMain`:
+
+- `SourceLocal` → always honored as-is.
 - `SourcePR` → only honored when the triggering comment was **exactly**
-  `/hook-test` **and** a PR number is set; anything else (including a PR
-  signal without that exact comment) falls back to `SourceMain`. This
-  means a PR's own `test.sh` changes are never trusted by default — an
-  explicit `/hook-test` comment is required, so a PR can't quietly
-  smuggle in a weaker `test.sh` (e.g. removing an `EXEMPTIONS` entry's
-  scoping, or disabling scaffold checks) and have its own, unreviewed
+  `/hook-test` **and** a PR number is set; anything else falls back to
+  `SourceMain`. This means a PR's own `test.sh` changes are never trusted
+  by default — an explicit `/hook-test` comment is required, so a PR
+  can't quietly smuggle in a weaker `test.sh` and have its own, unreviewed
   version take effect.
+- Anything else (including `pipeline --url ... --pr ...` with no
+  `--hook-source`) → `SourceMain`.
 
 The CLI's `--hook-source`/`--trigger-comment` flags
 (`pipeline.Options.HookSource`/`TriggerComment`) flow through to
-`validator.Options`, which calls `ResolveSource` once per run
-(`resolveHookSource` in `pkg/validator/hook_wiring.go`) before resolving
-any app's `test.sh` - every app in the same run shares one resolved
-`hook.Source`.
+`validator.Options`, which calls `resolveHookSource` once per run before
+resolving any app's `test.sh` — every app in the same run shares one
+resolved `hook.Source`.
 
 ## Current Limitations
 
