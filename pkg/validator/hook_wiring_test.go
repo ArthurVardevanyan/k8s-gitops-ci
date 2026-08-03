@@ -426,6 +426,46 @@ func TestRunAll_FailingPostBuildHookBlocks(t *testing.T) {
 	}
 }
 
+// TestRunAll_KustomizeFixFindingBlocks guards the real bug reported
+// against this: composeKustomizeFixChild rendered a Kustomize Fix finding
+// as a StatusError ("❌") sub-dropdown, but runBuildAndPostBuild never
+// called log.ErrorInSection for it (unlike every sibling check in this
+// same section - Overlay Build errors, blocking Ghost Patches), so
+// res.Logger.HasFailures() (and thus "pipeline"'s exit code) stayed false
+// even with a real, visibly-❌ finding in the report - see Result.Failed.
+func TestRunAll_KustomizeFixFindingBlocks(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	// Not normalized: "resources" (alphabetically last of the three keys,
+	// but written first here) sorts after apiVersion/kind once
+	// kustomize.NormalizeYAML runs, so kustomize.CheckFix flags this file.
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"),
+		"resources:\n  - resource.yaml\nkind: Kustomization\napiVersion: kustomize.config.k8s.io/v1beta1\n")
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "resource.yaml"),
+		"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\n  namespace: default\n")
+	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
+
+	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local"})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger == nil || !res.Logger.HasFailures() {
+		t.Error("expected a Kustomize Fix finding to be surfaced as a logger failure")
+	}
+	if !res.Failed() {
+		t.Error("expected a Kustomize Fix finding to make Result.Failed() report true")
+	}
+	var kb ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Kustomize Build" {
+			kb = s
+		}
+	}
+	if kb.Status != StatusError || !strings.Contains(kb.Body, "kustomize edit fix") {
+		t.Errorf("expected the Kustomize Build section to report the fix finding, got:\n%s", kb.Body)
+	}
+}
+
 func TestRunAll_SuccessfulHooksReportRanInBuildSection(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")

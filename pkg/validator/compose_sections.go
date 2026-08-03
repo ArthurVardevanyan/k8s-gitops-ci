@@ -2,6 +2,7 @@ package validator
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -490,7 +491,13 @@ func composeHooksChild(hookTable string, hookFailed bool) ReportSection {
 
 // composeKustomizeFixChild builds the "Kustomize Fix" sub-check from the
 // list of kustomization.yaml files kustomize.CheckFix found needing
-// `kustomize edit fix`.
+// `kustomize edit fix`, plus an actionable fix command per affected
+// directory (`k8s-gitops-ci kustomize-fix -dir <dir>` - see
+// cmd/k8s-gitops-ci/main.go's runKustomizeFix, which actually applies
+// kustomize.Fix and writes the file(s) back, unlike this read-only check)
+// - matching the "Fix command:" convention composeCheckChild's fixHints
+// already use for Linting/Static Checks findings, so a reviewer never has
+// to go find the right command themselves.
 func composeKustomizeFixChild(fixNeeded []string) ReportSection {
 	if len(fixNeeded) == 0 {
 		return ReportSection{Name: "Kustomize Fix", Status: StatusPassed, Summary: "All kustomization.yaml files are up to date."}
@@ -499,6 +506,16 @@ func composeKustomizeFixChild(fixNeeded []string) ReportSection {
 	b.WriteString("The following files need `kustomize edit fix`:\n\n")
 	for _, f := range fixNeeded {
 		fmt.Fprintf(&b, "- `%s`\n", f)
+	}
+	b.WriteString("\n**Fix command:**\n")
+	seenDir := map[string]bool{}
+	for _, f := range fixNeeded {
+		dir := filepath.Dir(f)
+		if seenDir[dir] {
+			continue
+		}
+		seenDir[dir] = true
+		fmt.Fprintf(&b, "- `k8s-gitops-ci kustomize-fix -dir %s`\n", dir)
 	}
 	return ReportSection{Name: "Kustomize Fix", Status: StatusError, Body: b.String()}
 }

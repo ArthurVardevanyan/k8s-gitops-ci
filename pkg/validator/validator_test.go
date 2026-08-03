@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 )
 
 func TestResolveChangeset_DirsWithIncludePrefixes(t *testing.T) {
@@ -201,6 +203,40 @@ func TestResult_FailedSectionCount(t *testing.T) {
 	r2 := &Result{}
 	if got := r2.FailedSectionCount(); got != 0 {
 		t.Errorf("FailedSectionCount() on empty Result = %d, want 0", got)
+	}
+}
+
+// TestResult_Failed guards the single source of truth every CLI entry
+// point's exit code is now based on (pipeline's validatorResultFailed,
+// test-all's runTestAll) - see the real bug this closed: Kustomize Fix
+// findings rendered as a StatusError report section but never set
+// Blocking nor called log.ErrorInSection, so Failed() (and, before it
+// existed, both entry points' own hand-written checks) would have missed
+// them. Also guards the nil-Result and nil-Logger cases so callers don't
+// need to guard those themselves first.
+func TestResult_Failed(t *testing.T) {
+	var nilResult *Result
+	if nilResult.Failed() {
+		t.Error("expected a nil *Result to report Failed()==false")
+	}
+
+	if (&Result{}).Failed() {
+		t.Error("expected a zero-value Result (nil Logger, Blocking=false) to report Failed()==false")
+	}
+
+	if !(&Result{Blocking: true}).Failed() {
+		t.Error("expected Blocking=true to report Failed()==true")
+	}
+
+	log := logger.NewLogger(false, "")
+	log.ErrorInSection("KustomizeBuild", "1 file needs `kustomize edit fix`")
+	if !(&Result{Logger: log}).Failed() {
+		t.Error("expected a Logger with a recorded ErrorInSection call to report Failed()==true, even with Blocking=false")
+	}
+
+	cleanLog := logger.NewLogger(false, "")
+	if (&Result{Logger: cleanLog}).Failed() {
+		t.Error("expected a clean Logger (no recorded failures) and Blocking=false to report Failed()==false")
 	}
 }
 

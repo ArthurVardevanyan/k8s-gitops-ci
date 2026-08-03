@@ -141,3 +141,108 @@ func TestFormatFixNeeded(t *testing.T) {
 		t.Errorf("expected empty, got %q", s)
 	}
 }
+
+// TestFix_RecursivelyNormalizesNestedKustomizationFiles guards the actual
+// bug reported against the "kustomize-fix" CLI command: Fix used to only
+// os.ReadDir a single directory (no recursion), so running it against an
+// app root like "okd/okd-configuration/" would never reach a nested
+// overlay's kustomization.yaml (e.g.
+// "okd/okd-configuration/overlays/sandbox/kustomization.yaml") at all.
+func TestFix_RecursivelyNormalizesNestedKustomizationFiles(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "overlays", "sandbox", "kustomization.yaml")
+	unsorted := "resources:\n  - resource.yaml\nkind: Kustomization\napiVersion: kustomize.config.k8s.io/v1beta1\n"
+	if err := os.MkdirAll(filepath.Dir(nested), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nested, []byte(unsorted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	need, err := CheckFix([]string{nested})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(need) != 1 {
+		t.Fatalf("expected the nested file to need a fix before calling Fix, got: %v", need)
+	}
+
+	fixed, err := Fix(root)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if len(fixed) != 1 || fixed[0] != nested {
+		t.Errorf("expected exactly the nested file to be reported fixed, got: %v", fixed)
+	}
+
+	need, err = CheckFix([]string{nested})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(need) != 0 {
+		t.Errorf("expected the nested file to no longer need a fix after Fix wrote it back, got: %v", need)
+	}
+}
+
+// TestFix_LeavesAlreadyNormalizedFilesUntouched guards that an
+// already-normalized file isn't reported as fixed (and, implicitly, isn't
+// rewritten) - Fix should be idempotent/a no-op on a clean tree.
+func TestFix_LeavesAlreadyNormalizedFilesUntouched(t *testing.T) {
+	root := t.TempDir()
+	f := filepath.Join(root, "kustomization.yaml")
+	sorted := "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - resource.yaml\n"
+	if err := os.WriteFile(f, []byte(sorted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fixed, err := Fix(root)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if len(fixed) != 0 {
+		t.Errorf("expected no files reported as fixed for an already-normalized tree, got: %v", fixed)
+	}
+}
+
+// TestFix_SkipsScaffoldTemplates mirrors TestCheckFix_TemplateFilesSkipped
+// for Fix: a scaffold template's kustomization.yaml is deliberately not
+// real, on-disk app content, so it must never be rewritten.
+func TestFix_SkipsScaffoldTemplates(t *testing.T) {
+	dir := t.TempDir()
+	old := convention.ScaffoldDir
+	convention.ScaffoldDir = dir
+	defer func() { convention.ScaffoldDir = old }()
+
+	tmpl := filepath.Join(dir, "templates", "kustomization.yaml")
+	if err := os.MkdirAll(filepath.Dir(tmpl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unsorted := []byte("zzz: 1\naaa: 2\n")
+	if err := os.WriteFile(tmpl, unsorted, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fixed, err := Fix(dir)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if len(fixed) != 0 {
+		t.Errorf("expected the scaffold template to be skipped, got: %v", fixed)
+	}
+	after, err := os.ReadFile(tmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(unsorted) {
+		t.Errorf("expected the scaffold template to be left untouched, got: %q", after)
+	}
+}
+
+// TestFix_NonexistentRoot guards that a bad root path surfaces a real
+// error instead of silently reporting "nothing to fix".
+func TestFix_NonexistentRoot(t *testing.T) {
+	_, err := Fix(filepath.Join(t.TempDir(), "does-not-exist"))
+	if err == nil {
+		t.Error("expected an error for a nonexistent root")
+	}
+}

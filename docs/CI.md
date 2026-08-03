@@ -149,6 +149,35 @@ anything - it only _detects_ unresolved AVP tokens in
 already-rendered/committed YAML, independent of the build-time
 resolution described above.
 
+## Kustomize Fix
+
+The "Kustomize Fix" sub-check in the Kustomize Build report section
+(`kustomize.CheckFix`, wired via `runBuildAndPostBuild` in
+`pkg/validator/phases.go`) is read-only: it detects `kustomization.yaml`
+files whose field ordering doesn't match `kustomize.NormalizeYAML`'s
+canonical form (`apiVersion`/`kind` first, then every other key sorted
+alphabetically - a self-contained Go YAML round-trip, not a shell-out to
+the real `kustomize` binary, so this check has no runtime dependency on
+one being installed) and lists them, but never writes anything back to
+disk itself. A finding here is blocking - `log.ErrorInSection` is called
+whenever any file needs fixing, so this is treated exactly like any other
+hard failure (a run with only this finding still exits non-zero from
+`pipeline`/`test-all`; see [DEVELOPMENT.md](DEVELOPMENT.md#pipeline-exit-code-pipelinerun-resultfailed)).
+
+To actually apply the fix, use the standalone `kustomize-fix` CLI
+subcommand, which does write the normalized file(s) back to disk:
+
+```sh
+k8s-gitops-ci kustomize-fix -dir <path>   # fix every kustomization.yaml under <path>, recursively
+k8s-gitops-ci kustomize-fix -all          # fix every kustomization.yaml under the current directory, recursively
+```
+
+`-dir` and `-all` are mutually exclusive, and one of them is required -
+running `kustomize-fix` with neither prints usage and exits non-zero
+rather than silently doing nothing. The report's own "Kustomize Fix"
+sub-dropdown includes a ready-to-run `kustomize-fix -dir` command per
+affected directory, so a reviewer never has to construct one by hand.
+
 ## Ghost Patch Detection
 
 Part of the Kustomize Build report section, `pkg/ghostpatch` detects a

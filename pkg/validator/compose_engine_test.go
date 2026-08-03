@@ -106,6 +106,35 @@ func TestComposeKustomizeBuildSection_HookTable(t *testing.T) {
 	}
 }
 
+// TestComposeKustomizeBuildSection_KustomizeFix guards that a real,
+// working fix command is attached per affected directory - unlike the
+// dead hintByCheck["kustomize fix"] entry in comments.go (never actually
+// reachable, since nothing produces a LintFinding with Check=="kustomize
+// fix"), this is the fix hint a reviewer actually sees in a real PR
+// comment (see cmd/k8s-gitops-ci/main.go's runKustomizeFix, which now
+// actually applies the fix given -dir/-all, unlike this read-only check).
+func TestComposeKustomizeBuildSection_KustomizeFix(t *testing.T) {
+	fixNeeded := []string{
+		"okd/okd-configuration/overlays/sandbox/kustomization.yaml",
+		"okd/okd-configuration/overlays/prod/kustomization.yaml",
+	}
+	s := ComposeKustomizeBuildSection(2, nil, "", false, fixNeeded, "", 0)
+	if s.Status != StatusError {
+		t.Error("expected a Kustomize Fix finding to mark the section as an error")
+	}
+	if !strings.Contains(s.Body, "❌ Kustomize Fix") {
+		t.Errorf("expected an icon-bearing Kustomize Fix sub-dropdown, got:\n%s", s.Body)
+	}
+	for _, want := range []string{
+		"k8s-gitops-ci kustomize-fix -dir okd/okd-configuration/overlays/sandbox",
+		"k8s-gitops-ci kustomize-fix -dir okd/okd-configuration/overlays/prod",
+	} {
+		if !strings.Contains(s.Body, want) {
+			t.Errorf("expected a working fix command %q, got:\n%s", want, s.Body)
+		}
+	}
+}
+
 // TestComposeKustomizeBuildSection_GhostPatches guards the actual bug this
 // section's composeGhostPatchesChild/composeParentFromChildren rewrite
 // fixed: a non-blocking-only ghost patch used to render with no icon at

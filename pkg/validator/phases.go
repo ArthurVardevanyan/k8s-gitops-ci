@@ -561,6 +561,13 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 
 	fixNeeded, _ := kustomize.CheckFix(changed)
+	if len(fixNeeded) > 0 {
+		// composeKustomizeFixChild renders this as a StatusError
+		// sub-dropdown - it must also be logged as a real failure here,
+		// otherwise a run with nothing else wrong exits 0/green despite
+		// the report showing a hard ❌ (see Result.Failed's doc comment).
+		log.ErrorInSection("KustomizeBuild", "%d file(s) need `kustomize edit fix`", len(fixNeeded))
+	}
 	hookTable := buildHookTable(apps, hookCfgs, hookResults)
 	hookFailed := anyHookFailed(hookResults)
 	// addedFiles feeds ghostpatch.ClassifyOverlay's "is this

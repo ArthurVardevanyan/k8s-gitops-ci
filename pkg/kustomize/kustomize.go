@@ -51,31 +51,52 @@ func NeedsKustomizeFix(path string) (bool, error) {
 	return string(normal) != string(data), nil
 }
 
-// Fix normalizes all kustomization.yaml files under dir.
-func Fix(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
+// Fix normalizes every kustomization.yaml file found under root, recursively
+// (via filepath.WalkDir - so a root like "okd/okd-configuration/" finds
+// nested overlays like "okd/okd-configuration/overlays/sandbox/
+// kustomization.yaml" too, unlike the single-directory os.ReadDir this used
+// before), writing any file whose normalized form differs from what's on
+// disk back in place. Returns the list of files actually rewritten (a file
+// already normalized is left untouched and not included). Files under a
+// scaffold template directory (convention.ScaffoldTemplatesPrefix) are
+// skipped, matching CheckFix/buildGhostTable's own exclusion - a template
+// is deliberately not real, on-disk-app content.
+//
+// A per-file read/normalize/write error is skipped rather than aborting the
+// whole walk (matching CheckFix's existing tolerant-of-individual-file-
+// errors behavior), so one unreadable/malformed file never blocks fixing
+// every other file the walk would otherwise reach.
+func Fix(root string) ([]string, error) {
 	var fixed []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if e.Name() != "kustomization.yaml" {
-			continue
-		}
-		path := filepath.Join(dir, e.Name())
-		if strings.Contains(path, convention.ScaffoldTemplatesPrefix()) {
-			continue
-		}
-		normal, err := NormalizeYAMLPath(path)
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			continue
+			return err
 		}
-		if err := os.WriteFile(path, normal, 0o644); err == nil {
-			fixed = append(fixed, path)
+		if d.IsDir() || d.Name() != "kustomization.yaml" {
+			return nil
 		}
+		if strings.Contains(path, convention.ScaffoldTemplatesPrefix()) {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil //nolint:nilerr // skip unreadable files, don't abort the walk
+		}
+		normal, err := NormalizeYAML(data)
+		if err != nil {
+			return nil //nolint:nilerr // skip unparseable files, don't abort the walk
+		}
+		if string(normal) == string(data) {
+			return nil
+		}
+		if err := os.WriteFile(path, normal, 0o644); err != nil {
+			return nil //nolint:nilerr // skip write failures (e.g. read-only fs), don't abort the walk
+		}
+		fixed = append(fixed, path)
+		return nil
+	})
+	if err != nil {
+		return fixed, err
 	}
 	return fixed, nil
 }
