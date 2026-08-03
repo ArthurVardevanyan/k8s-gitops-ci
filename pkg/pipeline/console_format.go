@@ -32,15 +32,17 @@ var summaryTagRe = regexp.MustCompile(`<summary>(.*?)</summary>`)
 // whitespace for every dropdown that gets removed.
 var blankRunRe = regexp.MustCompile(`\n{3,}`)
 
-// sanitizeSectionBodyForConsole converts a Section.Body - always
+// SanitizeSectionBodyForConsole converts a Section.Body - always
 // GitHub-flavored markdown built for the PR-comment renderer (literal
 // <details>/<summary> dropdown tags, &nbsp; used purely for visual nesting
 // indentation since GitHub strips inline CSS, **bold** emphasis) - into
 // plain text suitable for a terminal. Section.Body itself is never mutated;
-// this only applies to the copy printed to the console by
-// printFailedSectionDetail, so the PR comment's actual rendering is
-// unaffected.
-func sanitizeSectionBodyForConsole(body string) string {
+// this only applies to the copy printed to the console (by
+// printFailedSectionDetail here, and by cmd/k8s-gitops-ci's test-all/
+// scan-all/build-yaml handlers), so the PR comment's actual rendering is
+// unaffected. Exported so any console-output path outside this package can
+// reuse it instead of dumping raw PR-comment markdown to stdout.
+func SanitizeSectionBodyForConsole(body string) string {
 	body = summaryTagRe.ReplaceAllString(body, "$1:")
 	body = consoleReplacer.Replace(body)
 	body = blankRunRe.ReplaceAllString(body, "\n\n")

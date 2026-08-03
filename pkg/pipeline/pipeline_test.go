@@ -52,7 +52,7 @@ func TestPrintFailedSectionDetail_PrintsBodyOfErroredSections(t *testing.T) {
 	// Guards the actual bug reported against this feature: raw GitHub-comment
 	// markdown (<details>/<summary> dropdown tags, &nbsp; indentation) must
 	// not leak into --verbose console/log output, which has no markdown
-	// renderer - see sanitizeSectionBodyForConsole.
+	// renderer - see SanitizeSectionBodyForConsole.
 	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "&nbsp;"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("did not expect raw markdown artifact %q in console output: %s", unwanted, got)

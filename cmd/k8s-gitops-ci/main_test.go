@@ -2,10 +2,37 @@ package main
 
 import (
 	"flag"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
 )
+
+// captureStdout runs fn with os.Stdout redirected to a pipe and returns
+// everything written to it.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return string(out)
+}
 
 func TestStringSliceFlag_AccumulatesInOrder(t *testing.T) {
 	var apps []string
@@ -196,5 +223,62 @@ func TestSplitCommaList(t *testing.T) {
 				t.Fatalf("splitCommaList(%q) = %v, want %v", in, got, want)
 			}
 		}
+	}
+}
+
+// markdownSection returns a validator.Section whose Body contains the
+// GitHub-PR-comment markdown artifacts (<details>/<summary>, &nbsp;, **bold**)
+// built by pkg/validator/compose_sections.go, mirroring real output.
+func markdownSection(name string, isError bool) validator.Section {
+	return validator.Section{
+		Name: name,
+		Body: "Some intro **bold** text.\n\n" +
+			"<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;❌ Finding (1 finding(s))</summary>\n\n" +
+			"| Kind | Name |\n| --- | --- |\n| Deployment | example |\n\n</details>\n",
+		Error: isError,
+	}
+}
+
+// TestPrintAllSectionsConsole_StripsGitHubMarkdown guards against a
+// regression (see docs/CI.md) where test-all/build-yaml dumped raw
+// PR-comment markdown - literal <details>/<summary> tags, &nbsp;, and **bold**
+// - straight into the terminal instead of console-sanitized plain text,
+// interleaved unreadably with the plain "[INFO]/[ERROR]" logger lines.
+func TestPrintAllSectionsConsole_StripsGitHubMarkdown(t *testing.T) {
+	sections := []validator.Section{markdownSection("ResourceCompliance", true)}
+
+	out := captureStdout(t, func() { printAllSectionsConsole(sections) })
+
+	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "</summary>", "&nbsp;", "**"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("printAllSectionsConsole output must not contain %q, got: %s", unwanted, out)
+		}
+	}
+	for _, want := range []string{"=== ResourceCompliance ===", "❌ Finding (1 finding(s)):", "| Deployment | example |"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printAllSectionsConsole output missing %q, got: %s", want, out)
+		}
+	}
+}
+
+// TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing
+// mirrors TestPrintAllSectionsConsole_StripsGitHubMarkdown for scan-all's
+// renderer, and additionally checks that passing (non-Error) sections are
+// omitted.
+func TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *testing.T) {
+	sections := []validator.Section{
+		markdownSection("Passing", false),
+		markdownSection("Failing", true),
+	}
+
+	out := captureStdout(t, func() { printFailedSectionsConsole(sections) })
+
+	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "&nbsp;", "**", "Passing"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("printFailedSectionsConsole output must not contain %q, got: %s", unwanted, out)
+		}
+	}
+	if !strings.Contains(out, "[FAIL] Failing") {
+		t.Errorf("printFailedSectionsConsole output missing %q, got: %s", "[FAIL] Failing", out)
 	}
 }

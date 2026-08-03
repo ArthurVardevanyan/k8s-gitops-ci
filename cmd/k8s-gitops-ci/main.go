@@ -172,13 +172,34 @@ func runBuildYAML(args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range res.Sections {
-		fmt.Printf("=== %s ===\n%s\n", s.Name, s.Body)
-	}
+	printAllSectionsConsole(res.Sections)
 	if res.Logger != nil {
 		fmt.Println(res.Logger.Summary())
 	}
 	return nil
+}
+
+// printAllSectionsConsole prints every section's console-sanitized (see
+// pipeline.SanitizeSectionBodyForConsole) Body under an "=== Name ==="
+// header - the build-yaml/test-all rendering, which (unlike scan-all) shows
+// passing sections too. Split out from its callers so the console-vs-PR-
+// markdown handling is unit-testable without invoking validator.RunAll
+// (which shells out to git).
+func printAllSectionsConsole(sections []validator.Section) {
+	for _, s := range sections {
+		fmt.Printf("=== %s ===\n%s\n", s.Name, pipeline.SanitizeSectionBodyForConsole(s.Body))
+	}
+}
+
+// printFailedSectionsConsole prints only the errored sections' console-
+// sanitized Body under a "[FAIL] Name" header - the scan-all rendering. See
+// printAllSectionsConsole for why this is split out from its caller.
+func printFailedSectionsConsole(sections []validator.Section) {
+	for _, s := range sections {
+		if s.Error {
+			fmt.Printf("[FAIL] %s\n%s\n", s.Name, pipeline.SanitizeSectionBodyForConsole(s.Body))
+		}
+	}
 }
 
 // ── test-all / scan-all ───────────────────────────────────────────────────────
@@ -266,9 +287,7 @@ func runTestAll(args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range res.Sections {
-		fmt.Printf("=== %s ===\n%s\n", s.Name, s.Body)
-	}
+	printAllSectionsConsole(res.Sections)
 	if res.Logger != nil {
 		fmt.Println(res.Logger.Summary())
 	}
@@ -301,11 +320,7 @@ func runScanAll(args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, s := range res.Sections {
-		if s.Error {
-			fmt.Printf("[FAIL] %s\n%s\n", s.Name, s.Body)
-		}
-	}
+	printFailedSectionsConsole(res.Sections)
 	if res.Logger != nil {
 		fmt.Println(res.Logger.Summary())
 	}

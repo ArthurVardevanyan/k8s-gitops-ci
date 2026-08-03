@@ -24,7 +24,7 @@ func TestSanitizeSectionBodyForConsole_StripsGitHubMarkdown(t *testing.T) {
 		"Pods missing required resource requests/limits or security context fields.\n\n" +
 		"</details>\n"
 
-	got := sanitizeSectionBodyForConsole(body)
+	got := SanitizeSectionBodyForConsole(body)
 
 	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "</summary>", "&nbsp;", "**"} {
 		if strings.Contains(got, unwanted) {
@@ -48,10 +48,10 @@ func TestSanitizeSectionBodyForConsole_StripsGitHubMarkdown(t *testing.T) {
 // no markdown-dropdown artifacts (the common case for most section types)
 // passes through with only whitespace trimmed.
 func TestSanitizeSectionBodyForConsole_PlainBodyUnchanged(t *testing.T) {
-	got := sanitizeSectionBodyForConsole("kustomize build apps/foo/overlays/bar: some error")
+	got := SanitizeSectionBodyForConsole("kustomize build apps/foo/overlays/bar: some error")
 	want := "kustomize build apps/foo/overlays/bar: some error"
 	if got != want {
-		t.Errorf("sanitizeSectionBodyForConsole() = %q, want %q", got, want)
+		t.Errorf("SanitizeSectionBodyForConsole() = %q, want %q", got, want)
 	}
 }
 
@@ -60,7 +60,7 @@ func TestSanitizeSectionBodyForConsole_PlainBodyUnchanged(t *testing.T) {
 // blank lines between dropdown sections.
 func TestSanitizeSectionBodyForConsole_CollapsesBlankRuns(t *testing.T) {
 	body := "<details>\n<summary>A</summary>\n\nbody A\n\n</details>\n\n<details>\n<summary>B</summary>\n\nbody B\n\n</details>"
-	got := sanitizeSectionBodyForConsole(body)
+	got := SanitizeSectionBodyForConsole(body)
 	if strings.Contains(got, "\n\n\n") {
 		t.Errorf("expected no 3+ newline runs, got: %q", got)
 	}

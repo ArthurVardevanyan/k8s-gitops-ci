@@ -206,7 +206,7 @@ func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 		}
 		log.Raw("")
 		log.Info("--- %s: detail ---", s.Name)
-		log.Raw(sanitizeSectionBodyForConsole(s.Body))
+		log.Raw(SanitizeSectionBodyForConsole(s.Body))
 	}
 }
 
