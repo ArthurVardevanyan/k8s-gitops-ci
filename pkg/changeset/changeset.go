@@ -149,6 +149,29 @@ func FilterByPrefix(files []string, prefix string) []string {
 	return out
 }
 
+// ExcludeByPrefixes drops files starting with any of the given prefixes,
+// returning the remainder in their original relative order. An empty prefixes
+// slice returns files unchanged (no-op filter).
+func ExcludeByPrefixes(files, prefixes []string) []string {
+	if len(prefixes) == 0 {
+		return files
+	}
+	var out []string
+	for _, f := range files {
+		matched := false
+		for _, p := range prefixes {
+			if p != "" && strings.HasPrefix(f, p) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // FilterByPrefixes keeps files starting with any of the given prefixes,
 // de-duplicated and in their original relative order. An empty prefixes
 // slice returns files unchanged (no-op filter).

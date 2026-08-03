@@ -28,12 +28,23 @@ func RunAll(opts Options) (*Result, error) {
 	}
 	log.Info("files to validate: %d", len(changed))
 
+	// Resolve test.sh files from non-app directories (e.g. okd/node-config/)
+	// before either phase runs, so their EXEMPTIONS=(...) selectors are
+	// available to the kubeconform lint step in runLintAndStaticChecks.
+	// These directories have no kustomize overlay structure and are therefore
+	// never detected as apps by resolveAppHookConfigs; this early pass
+	// covers them without requiring a full kustomize layout.
+	hookSource := resolveHookSource(opts)
+	nonAppCfgs := resolveNonAppHookConfigs(changed, hookSource)
+	defer cleanupNonAppHookConfigs(nonAppCfgs)
+	earlySelectors := nonAppExemptSelectors(nonAppCfgs)
+
 	if opts.LintOnly {
-		runLintAndStaticChecks(changed, opts, res, log, tc)
+		runLintAndStaticChecks(changed, opts, res, log, tc, earlySelectors)
 		return res, nil
 	}
 
-	runLintAndStaticChecks(changed, opts, res, log, tc)
+	runLintAndStaticChecks(changed, opts, res, log, tc, earlySelectors)
 	runBuildAndPostBuild(changed, opts, res, log, tc)
 
 	res.Status = "ok"

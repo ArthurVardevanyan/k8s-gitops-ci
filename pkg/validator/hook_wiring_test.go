@@ -15,9 +15,19 @@ import (
 // detection itself is covered by pkg/overlay's own tests.
 var kustomizeStrategy = appBuildStrategy{Strategy: overlay.StrategyKustomize}
 
-func TestResolveHookSource_DefaultFailsClosedToMain(t *testing.T) {
-	if got := resolveHookSource(Options{}); got != hook.SourceMain {
-		t.Errorf("expected default (no signal, no PR) to fail closed to SourceMain, got %q", got)
+func TestResolveHookSource_LocalRunDefaultsToLocal(t *testing.T) {
+	// No explicit --hook-source and no PR → local run; should read working
+	// tree test.sh without requiring --hook-source local.
+	if got := resolveHookSource(Options{}); got != hook.SourceLocal {
+		t.Errorf("expected local run (no signal, no PR) to default to SourceLocal, got %q", got)
+	}
+}
+
+func TestResolveHookSource_PRRunDefaultsToMain(t *testing.T) {
+	// PR set with no explicit --hook-source → pipeline run; must still
+	// fail-closed to SourceMain so the PR's own test.sh is never trusted.
+	if got := resolveHookSource(Options{PR: "42"}); got != hook.SourceMain {
+		t.Errorf("expected PR run (no signal, PR set) to fail closed to SourceMain, got %q", got)
 	}
 }
 
