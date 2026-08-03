@@ -67,7 +67,7 @@ metadata:
 	}
 }
 
-func TestValidateReader_OpenShiftGroups_RequireAnnotationByDefault(t *testing.T) {
+func TestValidateReader_OpenShiftDefaultGroups_RequireAnnotationByDefault(t *testing.T) {
 	t.Cleanup(func() { AssumeOpenShift = false })
 	AssumeOpenShift = false
 	cases := []struct {
@@ -75,7 +75,7 @@ func TestValidateReader_OpenShiftGroups_RequireAnnotationByDefault(t *testing.T)
 		data string
 	}{
 		{"GatewayClass", "kind: GatewayClass\napiVersion: gateway.networking.k8s.io/v1\nmetadata:\n  name: openshift-default\n"},
-		{"ImageRegistryConfig", "kind: Config\napiVersion: imageregistry.operator.openshift.io/v1\nmetadata:\n  name: cluster\n"},
+		{"PrometheusRule", "kind: PrometheusRule\napiVersion: monitoring.coreos.com/v1\nmetadata:\n  name: rules\n"},
 		{"BareMetalHost", "kind: BareMetalHost\napiVersion: metal3.io/v1alpha1\nmetadata:\n  name: worker-1\n"},
 	}
 	for _, c := range cases {
@@ -86,7 +86,7 @@ func TestValidateReader_OpenShiftGroups_RequireAnnotationByDefault(t *testing.T)
 	}
 }
 
-func TestValidateReader_OpenShiftGroups_ExemptWhenAssumed(t *testing.T) {
+func TestValidateReader_OpenShiftDefaultGroups_ExemptWhenAssumed(t *testing.T) {
 	t.Cleanup(func() { AssumeOpenShift = false })
 	AssumeOpenShift = true
 	cases := []struct {
@@ -94,13 +94,33 @@ func TestValidateReader_OpenShiftGroups_ExemptWhenAssumed(t *testing.T) {
 		data string
 	}{
 		{"GatewayClass", "kind: GatewayClass\napiVersion: gateway.networking.k8s.io/v1\nmetadata:\n  name: openshift-default\n"},
-		{"ImageRegistryConfig", "kind: Config\napiVersion: imageregistry.operator.openshift.io/v1\nmetadata:\n  name: cluster\n"},
+		{"PrometheusRule", "kind: PrometheusRule\napiVersion: monitoring.coreos.com/v1\nmetadata:\n  name: rules\n"},
 		{"BareMetalHost", "kind: BareMetalHost\napiVersion: metal3.io/v1alpha1\nmetadata:\n  name: worker-1\n"},
 	}
 	for _, c := range cases {
 		errs := ValidateReader(strings.NewReader(c.data), "x.yaml")
 		if len(errs) != 0 {
 			t.Errorf("%s: expected no errors with AssumeOpenShift=true: %v", c.name, errs)
+		}
+	}
+}
+
+func TestValidateReader_OpenShiftExclusiveGroups_AlwaysExempt(t *testing.T) {
+	t.Cleanup(func() { AssumeOpenShift = false })
+	cases := []struct {
+		name string
+		data string
+	}{
+		{"ImageRegistryConfig", "kind: Config\napiVersion: imageregistry.operator.openshift.io/v1\nmetadata:\n  name: cluster\n"},
+		{"Route", "kind: Route\napiVersion: route.openshift.io/v1\nmetadata:\n  name: my-route\n"},
+	}
+	for _, assume := range []bool{false, true} {
+		AssumeOpenShift = assume
+		for _, c := range cases {
+			errs := ValidateReader(strings.NewReader(c.data), "x.yaml")
+			if len(errs) != 0 {
+				t.Errorf("%s (AssumeOpenShift=%v): expected no errors, openshift-exclusive groups are always exempt: %v", c.name, assume, errs)
+			}
 		}
 	}
 }
@@ -191,29 +211,44 @@ func TestIsBuiltinResource(t *testing.T) {
 		{"infrastructure.cluster.x-k8s.io/v1beta1", false, true, "infrastructure.cluster.x-k8s.io (core)"},
 		{"ipam.cluster.x-k8s.io/v1beta1", false, true, "ipam.cluster.x-k8s.io (core)"},
 
-		// openshiftAPIGroups - only exempt when AssumeOpenShift=true.
+		// openshiftExclusiveAPIGroups - always exempt, regardless of
+		// AssumeOpenShift, since these groups can only ever exist on an
+		// OpenShift/OKD API server.
+		{"route.openshift.io/v1", false, true, "route.openshift.io (exclusive, not assumed)"},
+		{"route.openshift.io/v1", true, true, "route.openshift.io (exclusive, assumed)"},
+		{"imageregistry.operator.openshift.io/v1", false, true, "imageregistry.operator.openshift.io (exclusive, not assumed)"},
+
+		// openshiftDefaultAPIGroups - only exempt when AssumeOpenShift=true,
+		// since these groups also ship on non-OpenShift Kubernetes clusters.
 		{"k8s.ovn.org/v1", false, false, "k8s.ovn.org (not assumed)"},
 		{"k8s.ovn.org/v1", true, true, "k8s.ovn.org (assumed)"},
-		{"network.openshift.io/v1", true, true, "network.openshift.io"},
-		{"network.operator.openshift.io/v1", true, true, "network.operator.openshift.io"},
-		{"cloud.network.openshift.io/v1", true, true, "cloud.network.openshift.io"},
-		{"build.openshift.io/v1", true, true, "build.openshift.io"},
-		{"apps.openshift.io/v1", true, true, "apps.openshift.io"},
-		{"template.openshift.io/v1", true, true, "template.openshift.io"},
-		{"authorization.openshift.io/v1", true, true, "authorization.openshift.io"},
-		{"user.openshift.io/v1", true, true, "user.openshift.io"},
-		{"oauth.openshift.io/v1", true, true, "oauth.openshift.io"},
-		{"security.internal.openshift.io/v1", true, true, "security.internal.openshift.io"},
-		{"monitoring.openshift.io/v1", true, true, "monitoring.openshift.io"},
-		{"cloudcredential.openshift.io/v1", true, true, "cloudcredential.openshift.io"},
-		{"performance.openshift.io/v2", true, true, "performance.openshift.io"},
-		{"apiserver.openshift.io/v1", true, true, "apiserver.openshift.io"},
-		{"autoscaling.openshift.io/v1", true, true, "autoscaling.openshift.io"},
+		{"monitoring.coreos.com/v1", false, false, "monitoring.coreos.com (not assumed)"},
+		{"monitoring.coreos.com/v1", true, true, "monitoring.coreos.com (assumed)"},
 		{"operatorhub.io/v1alpha1", true, true, "operatorhub.io"},
+		{"hive.openshift.io/v1", false, false, "hive.openshift.io (not assumed)"},
+		{"hive.openshift.io/v1", true, true, "hive.openshift.io (assumed)"},
+
+		// openshiftExclusiveAPIGroups - always exempt (moved out of the
+		// former flag-gated map).
+		{"network.openshift.io/v1", false, true, "network.openshift.io"},
+		{"network.operator.openshift.io/v1", false, true, "network.operator.openshift.io"},
+		{"cloud.network.openshift.io/v1", false, true, "cloud.network.openshift.io"},
+		{"build.openshift.io/v1", false, true, "build.openshift.io"},
+		{"apps.openshift.io/v1", false, true, "apps.openshift.io"},
+		{"template.openshift.io/v1", false, true, "template.openshift.io"},
+		{"authorization.openshift.io/v1", false, true, "authorization.openshift.io"},
+		{"user.openshift.io/v1", false, true, "user.openshift.io"},
+		{"oauth.openshift.io/v1", false, true, "oauth.openshift.io"},
+		{"security.internal.openshift.io/v1", false, true, "security.internal.openshift.io"},
+		{"monitoring.openshift.io/v1", false, true, "monitoring.openshift.io"},
+		{"cloudcredential.openshift.io/v1", false, true, "cloudcredential.openshift.io"},
+		{"performance.openshift.io/v2", false, true, "performance.openshift.io"},
+		{"apiserver.openshift.io/v1", false, true, "apiserver.openshift.io"},
+		{"autoscaling.openshift.io/v1", false, true, "autoscaling.openshift.io"},
 
 		// Regression for the typo fix: the corrected group name is now
-		// recognized under AssumeOpenShift=true.
-		{"ingress.operator.openshift.io/v1", true, true, "ingress.operator.openshift.io (typo fix)"},
+		// recognized as an always-exempt exclusive group.
+		{"ingress.operator.openshift.io/v1", false, true, "ingress.operator.openshift.io (typo fix)"},
 		// The old, typo'd group name must NOT match anything (it's not a
 		// real API group and shouldn't accidentally be treated as builtin).
 		{"ingressoperator.openshift.io/v1", true, false, "old typo'd group must not match"},
@@ -287,10 +322,13 @@ func TestValidateFile_KyvernoCLITest(t *testing.T) {
 func TestValidateFile_OpenShiftBuiltin(t *testing.T) {
 	t.Cleanup(func() { AssumeOpenShift = false })
 
+	// Route is an openshift-exclusive group: always exempt, regardless of
+	// AssumeOpenShift, since its presence itself proves the target is
+	// OpenShift/OKD.
 	AssumeOpenShift = false
 	errs := ValidateFile("testdata/openshift-builtin.yaml")
-	if len(errs) != 1 {
-		t.Errorf("expected 1 error for a Route with AssumeOpenShift=false, got: %v", errs)
+	if len(errs) != 0 {
+		t.Errorf("expected 0 errors for a Route with AssumeOpenShift=false, got: %v", errs)
 	}
 
 	AssumeOpenShift = true

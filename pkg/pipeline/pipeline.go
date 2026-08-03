@@ -195,7 +195,10 @@ func validatorResultFailed(vr *validator.Result) bool {
 // vr.Sections to the console. This is the console-output analog of what
 // composeSections/postComment already does for the PR comment - see the
 // comment at its call site in Run for why this is needed independently of
-// comment posting.
+// comment posting. Uses log.SubHeader for each section's header so this
+// shares the same "----\n Title\n----" banner family as the phase headers
+// (log.Header/log.SubHeader) and cmd/k8s-gitops-ci's test-all/scan-all/
+// build-yaml failed-section rendering, instead of inventing its own style.
 func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 	if vr == nil {
 		return
@@ -205,7 +208,7 @@ func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 			continue
 		}
 		log.Raw("")
-		log.Info("--- %s: detail ---", s.Name)
+		log.SubHeader(s.Name)
 		log.Raw(SanitizeSectionBodyForConsole(s.Body))
 	}
 }
