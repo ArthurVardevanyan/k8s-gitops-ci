@@ -91,12 +91,39 @@ func TestLogger_Summary(t *testing.T) {
 	l := NewLogger(false, "")
 	l.Error("test error")
 
-	summary := l.Summary()
+	summary := l.Summary(0, 0)
 	if !strings.Contains(summary, "RESULTS SUMMARY") {
 		t.Error("expected RESULTS SUMMARY header")
 	}
 	if !strings.Contains(summary, "Errors: 1") {
 		t.Error("expected error count in summary")
+	}
+}
+
+// TestLogger_SummaryOmitsSectionsLineWhenZero guards the "0 for both omits
+// the line" contract documented on Summary's totalSections parameter:
+// callers with no validator.Result (e.g. this package's own pre-existing
+// tests, or standalone lint-only helpers) shouldn't suddenly grow a
+// "Sections: 0 passed, 0 failed" line just because the parameter exists.
+func TestLogger_SummaryOmitsSectionsLineWhenZero(t *testing.T) {
+	l := NewLogger(false, "")
+	summary := l.Summary(0, 0)
+	if strings.Contains(summary, "Sections:") {
+		t.Errorf("expected no 'Sections:' line when totalSections is 0, got: %s", summary)
+	}
+}
+
+// TestLogger_SummarySectionCounts guards the "Sections: N passed, M
+// failed" line - the generic-core equivalent of a per-run pass/fail tally
+// (see docs comparing this to a downstream fork's "Builds: N | Passes: N |
+// Failures: N" line) - rendering correctly from the totalSections/
+// failedSections counts a caller passes in (typically
+// len(validator.Result.Sections) and validator.Result.FailedSectionCount()).
+func TestLogger_SummarySectionCounts(t *testing.T) {
+	l := NewLogger(false, "")
+	summary := l.Summary(5, 2)
+	if !strings.Contains(summary, "Sections: 3 passed, 2 failed") {
+		t.Errorf("expected 'Sections: 3 passed, 2 failed' in summary, got: %s", summary)
 	}
 }
 
@@ -111,7 +138,7 @@ func TestLogger_ErrorInSectionSurfacesInSummary(t *testing.T) {
 	if len(l.Errors()) != 1 {
 		t.Fatalf("expected 1 error, got %d", len(l.Errors()))
 	}
-	summary := l.Summary()
+	summary := l.Summary(0, 0)
 	if !strings.Contains(summary, "Errors: 1") {
 		t.Errorf("expected Errors: 1 in summary, got: %s", summary)
 	}
@@ -128,7 +155,7 @@ func TestLogger_SummaryFailedSections(t *testing.T) {
 	l.Header("Kubeconform")
 	l.Error("kubeconform: invalid schema")
 
-	summary := l.Summary()
+	summary := l.Summary(0, 0)
 	if !strings.Contains(summary, "Failed sections:") {
 		t.Errorf("expected 'Failed sections:' in summary, got: %s", summary)
 	}
@@ -160,7 +187,7 @@ func TestLogger_SetSection(t *testing.T) {
 	l.SetSection("Sync Options Check")
 	l.Error("missing annotation")
 
-	summary := l.Summary()
+	summary := l.Summary(0, 0)
 	if !strings.Contains(summary, "- Sync Options Check") {
 		t.Errorf("expected '- Sync Options Check' in failed sections, got: %s", summary)
 	}
@@ -340,7 +367,7 @@ func TestScopedLogger_WarnTracksInParent(t *testing.T) {
 	s.Warn("something suspicious: %s", "drift")
 
 	// Check parent summary mentions warnings
-	summary := l.Summary()
+	summary := l.Summary(0, 0)
 	if !strings.Contains(summary, "Warnings: 1") {
 		t.Errorf("expected Warnings: 1 in summary, got: %s", summary)
 	}

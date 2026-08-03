@@ -65,7 +65,7 @@ func TestRunAll_LogsPhasesAndRecordsTiming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	summaryOut := res.Logger.Summary()
+	summaryOut := res.Logger.Summary(len(res.Sections), res.FailedSectionCount())
 	if !strings.Contains(summaryOut, "RESULTS SUMMARY") {
 		t.Errorf("expected a rendered RESULTS SUMMARY banner, got:\n%s", summaryOut)
 	}
@@ -90,17 +90,22 @@ func TestRunAll_RecordsBuildPhaseTimingWhenNotLintOnly(t *testing.T) {
 		t.Fatalf("RunAll: %v", err)
 	}
 	summary := res.Timing.Summary(0)
-	if !strings.Contains(summary, "Build+Compliance") {
-		t.Errorf("expected timing summary to record the Build+Compliance phase, got:\n%s", summary)
+	for _, phase := range []string{"Build YAML", "Post-Build Validation"} {
+		if !strings.Contains(summary, phase) {
+			t.Errorf("expected timing summary to record the %q phase, got:\n%s", phase, summary)
+		}
 	}
 }
 
 // TestRunAll_LintingAndStaticChecksRunInParallel guards the Phase 2
-// parallelization of runLintAndStaticChecks: the 5 linters and 4 static
-// checks now fan out across goroutines instead of running one at a time,
-// so both phases must be recorded as parallel ("parallel" mode, not "seq")
-// and each individual linter/check must show up as an indented sub-step
-// under its parent phase in the timing table.
+// parallelization of runLintAndStaticChecks: the 5 linters and remaining
+// static checks (config-sort/startingCSV/scaffold table) fan out across
+// goroutines instead of running one at a time, so both phases must be
+// recorded as parallel ("parallel" mode, not "seq") and each individual
+// linter/check must show up as an indented sub-step under its parent phase
+// in the timing table. large-file/YAML-syntax are their own standalone,
+// sequential top-level phases (matching a downstream fork's equivalent
+// phase breakdown - see docs/DEVELOPMENT.md), not sub-steps of either.
 func TestRunAll_LintingAndStaticChecksRunInParallel(t *testing.T) {
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
@@ -116,9 +121,14 @@ func TestRunAll_LintingAndStaticChecksRunInParallel(t *testing.T) {
 			t.Errorf("expected timing summary to record the %q sub-step, got:\n%s", sub, summary)
 		}
 	}
-	for _, sub := range []string{"large-file", "YAML-syntax", "config-sort", "startingCSV"} {
+	for _, sub := range []string{"config-sort", "startingCSV"} {
 		if !strings.Contains(summary, sub) {
 			t.Errorf("expected timing summary to record the %q sub-step, got:\n%s", sub, summary)
+		}
+	}
+	for _, top := range []string{"Large File Check", "YAML Syntax"} {
+		if !strings.Contains(summary, top) {
+			t.Errorf("expected timing summary to record the %q top-level phase, got:\n%s", top, summary)
 		}
 	}
 	if !strings.Contains(summary, "parallel") {
@@ -133,7 +143,7 @@ func TestRunAll_LintingAndStaticChecksRunInParallel(t *testing.T) {
 // parallelization of runBuildAndPostBuild's per-overlay loop: each detected
 // overlay is now checked concurrently via a bounded worker pool instead of
 // one at a time, and each overlay's check duration is recorded as its own
-// sub-step under "Build+Compliance" in the timing table.
+// sub-step under "Build YAML" in the timing table.
 func TestRunAll_BuildPhaseFansOutOverlaysInParallel(t *testing.T) {
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "app1", "overlays", "clusterA", "kustomization.yaml"), "resources: []\n")
@@ -163,6 +173,25 @@ func TestResult_HasErrorSection(t *testing.T) {
 	r2 := &Result{Sections: []Section{{Name: "a", Error: false}}}
 	if r2.HasErrorSection() {
 		t.Error("expected HasErrorSection to report false when no section has Error=true")
+	}
+}
+
+// TestResult_FailedSectionCount guards the count Logger.Summary's "Sections:
+// N passed, M failed" line depends on (see logger_test.go's
+// TestLogger_SummarySectionCounts) - it must count Sections with Error=true
+// exactly, independent of len(r.Sections) itself.
+func TestResult_FailedSectionCount(t *testing.T) {
+	r := &Result{Sections: []Section{
+		{Name: "a", Error: false},
+		{Name: "b", Error: true},
+		{Name: "c", Error: true},
+	}}
+	if got := r.FailedSectionCount(); got != 2 {
+		t.Errorf("FailedSectionCount() = %d, want 2", got)
+	}
+	r2 := &Result{}
+	if got := r2.FailedSectionCount(); got != 0 {
+		t.Errorf("FailedSectionCount() on empty Result = %d, want 0", got)
 	}
 }
 

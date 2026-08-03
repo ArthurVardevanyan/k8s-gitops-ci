@@ -10,7 +10,7 @@ import (
 
 func TestRunKyvernoValidation_NoOutputsSkipsEntirely(t *testing.T) {
 	log := logger.NewLogger(false, "")
-	s := runKyvernoValidation(nil, nil, log)
+	s := runKyvernoValidation(nil, nil, "", log)
 	if s.Name != "Kyverno Policies" {
 		t.Errorf("Name = %q, want %q", s.Name, "Kyverno Policies")
 	}
@@ -34,7 +34,7 @@ func TestRunKyvernoValidation_SourceFilesOnlyStillRuns(t *testing.T) {
 	mustWrite(t, f, "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
 
 	log := logger.NewLogger(false, "")
-	s := runKyvernoValidation(nil, []string{f}, log)
+	s := runKyvernoValidation(nil, []string{f}, "", log)
 	if s.Name != "Kyverno Policies" {
 		t.Errorf("Name = %q, want %q", s.Name, "Kyverno Policies")
 	}
@@ -69,7 +69,7 @@ func TestRunKyvernoValidation_MissingCLIDegradesGracefully(t *testing.T) {
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: foo\n")},
 	}
-	s := runKyvernoValidation(outputs, nil, log)
+	s := runKyvernoValidation(outputs, nil, "", log)
 	if s.Error {
 		t.Error("expected no error when the kyverno CLI is unavailable")
 	}
@@ -150,7 +150,7 @@ func TestRunKyvernoValidation_WritesEachOutputAsASeparateFile(t *testing.T) {
 		{overlay: "myapp/overlays/dev", data: []byte("kind: ConfigMap\n")},
 		{overlay: "myapp/overlays/prod", data: []byte("kind: ConfigMap\n")},
 	}
-	s := runKyvernoValidation(outputs, nil, log)
+	s := runKyvernoValidation(outputs, nil, "", log)
 	if !strings.Contains(s.Name, "Kyverno") {
 		t.Errorf("unexpected section: %+v", s)
 	}

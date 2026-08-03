@@ -43,6 +43,23 @@ type Options struct {
 	// pkg/pipeline, which needs to record its own setup/PR-validation phases
 	// alongside the validator's). When nil, RunAll constructs its own.
 	Timing *TimingCollector
+	// SchemaDir, when set, is a pre-extracted kubeconform schema directory
+	// (see kubeconform.ExtractSchemas) that the kubeconform lint step reuses
+	// instead of extracting its own copy - set by pkg/pipeline's Setup phase,
+	// which prefetches schemas once up front (see docs/DEVELOPMENT.md's
+	// timing-table section) rather than paying the extraction cost lazily,
+	// inside the concurrent Linting phase, on every run. Left empty by
+	// callers that don't prefetch (e.g. test-all/build-yaml/scan-all), in
+	// which case the kubeconform step falls back to its own lazy extraction
+	// exactly as before this field existed.
+	SchemaDir string
+	// PolicyPath, when set, is a pre-prepared Kyverno policy file/dir path
+	// (see kyverno.PreparePolicies) that runKyvernoValidation reuses instead
+	// of preparing its own copy - same prefetch rationale as SchemaDir, but
+	// only populated when the opt-in "kyverno" step (default off) is
+	// actually enabled, since preparing policies shells out to `kustomize
+	// build` and shouldn't be paid for runs that never use it.
+	PolicyPath string
 }
 
 // Result carries per-section findings.
@@ -70,6 +87,22 @@ func (r *Result) HasErrorSection() bool {
 		}
 	}
 	return false
+}
+
+// FailedSectionCount returns how many Sections have Error set. Used
+// alongside len(r.Sections) to feed Logger.Summary(totalSections,
+// failedSections int)'s "Sections: N passed, M failed" line - kept as a
+// method here (rather than a loop inlined at each call site) since
+// pkg/logger can't import pkg/validator to compute this itself (validator
+// already imports logger).
+func (r *Result) FailedSectionCount() int {
+	n := 0
+	for _, s := range r.Sections {
+		if s.Error {
+			n++
+		}
+	}
+	return n
 }
 
 // Workers returns concurrency.

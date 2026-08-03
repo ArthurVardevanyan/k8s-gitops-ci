@@ -49,6 +49,18 @@ var clusterScopeNamespaceExempt = map[string]bool{
 	"kustomize.config.k8s.io": true,
 }
 
+// installerOnlyKinds are local config artifacts consumed by installer
+// tooling (e.g. the OpenShift agent-based installer) that are never
+// submitted to a Kubernetes API server, so they have no real namespace
+// scope and are exempt from this check entirely. They're typically
+// declared with a bare, groupless apiVersion (e.g. "v1beta1"), so they're
+// matched by kind instead of by API group. Kept in sync with the
+// equivalent list in pkg/validator/syncopts.
+var installerOnlyKinds = map[string]bool{
+	"AgentConfig":   true,
+	"InstallConfig": true,
+}
+
 // ValidateBytes validates YAML bytes for namespace-scope issues.
 func ValidateBytes(data []byte, source string) []ValidationError {
 	var errs []ValidationError
@@ -71,6 +83,9 @@ func ValidateBytes(data []byte, source string) []ValidationError {
 		}
 		kind := quickString(findKey(mapping, "kind"))
 		if kind == "" || stringsHasSuffix(kind, "List") {
+			continue
+		}
+		if installerOnlyKinds[kind] {
 			continue
 		}
 		apiVersion := quickString(findKey(mapping, "apiVersion"))

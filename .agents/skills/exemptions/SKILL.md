@@ -14,9 +14,9 @@ quick-reference — read the docs for authoritative detail.
 
 ## Pick the right mode
 
-| Situation | Use |
-| --------- | --- |
-| You control the manifest and want a single-resource exemption visible next to the field | Annotation on the resource |
+| Situation                                                                                   | Use                             |
+| ------------------------------------------------------------------------------------------- | ------------------------------- |
+| You control the manifest and want a single-resource exemption visible next to the field     | Annotation on the resource      |
 | Exempting every file in a directory, a resource you don't control, or a non-Kubernetes YAML | `EXEMPTIONS=(...)` in `test.sh` |
 
 ## Annotation exemption
@@ -53,7 +53,7 @@ available keys (`file`, `kind`, `name`, `namespace`, `match`, `value`,
 ### Where to put `test.sh`
 
 **Kustomize app directory** (has `base/`, `overlays/`, or `components/`):
-place `test.sh` at the app root. It is read during the Build+Compliance
+place `test.sh` at the app root. It is read during the Build YAML
 phase whenever any file in that app is in the changeset.
 
 **Non-app directory** (no kustomize structure — e.g. `okd/node-config/`):
@@ -76,12 +76,12 @@ See the full table in
 [`docs/EXCEPTIONS.md#exemptable-check-ids`](../../docs/EXCEPTIONS.md#exemptable-check-ids).
 Commonly used IDs:
 
-| ID | When to use |
-| -- | ----------- |
-| `sync-options` | Resource in a non-builtin API group that ArgoCD manages without dry-run |
+| ID               | When to use                                                                 |
+| ---------------- | --------------------------------------------------------------------------- |
+| `sync-options`   | Resource in a non-builtin API group that ArgoCD manages without dry-run     |
 | `image-checksum` | Image that cannot be pinned to a digest (e.g. `:latest` by upstream design) |
-| `kubeconform` | Non-Kubernetes YAML (no `kind`/`apiVersion`) in a directory under `--dirs` |
-| `namespace` | Cluster-scoped resource that a check misclassifies as namespace-scoped |
+| `kubeconform`    | Non-Kubernetes YAML (no `kind`/`apiVersion`) in a directory under `--dirs`  |
+| `namespace`      | Cluster-scoped resource that a check misclassifies as namespace-scoped      |
 
 `cluster-identity` is deliberately **non-exemptable** — never attempt to
 exempt it.

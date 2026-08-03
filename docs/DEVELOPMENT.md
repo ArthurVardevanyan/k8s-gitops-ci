@@ -168,7 +168,12 @@ for build-time-only objects (currently just Kustomize's own
 `Kustomization`/`Component` control objects, listed in
 `clusterScopeNamespaceExempt` in `pkg/validator/namespace/namespace.go`)
 that are never applied to a cluster and so aren't meaningfully "scoped"
-either way.
+either way. Kinds that are never submitted to a Kubernetes API server at
+all — local installer config artifacts like the OpenShift agent-based
+installer's `AgentConfig`/`InstallConfig` (typically declared with a
+bare, groupless `apiVersion`) — are matched by Kind and skipped by the
+check entirely via `installerOnlyKinds`, mirroring the equivalent list in
+`pkg/validator/syncopts`.
 
 ### Generic check-enablement mechanism
 
@@ -227,16 +232,23 @@ as the current section for error attribution; `SubHeader` prints a lighter
 40-column variant. `Error`/`ErrorInSection` (the latter for use from
 goroutines where the shared "current section" may have been overwritten by
 another goroutine) track errors and failed sections, feeding a final
-`Summary()` banner:
+`Summary(totalSections, failedSections int)` banner - the two counts
+(typically `len(validator.Result.Sections)` and
+`validator.Result.FailedSectionCount()`) render a leading "Sections: N
+passed, M failed" line; pkg/logger can't import pkg/validator itself
+(validator already imports logger), so callers pass plain ints rather than
+a `Section` slice, and passing `0, 0` (e.g. callers with no
+`validator.Result`) omits the line entirely:
 
 ```text
 ============================================================
   RESULTS SUMMARY
 ============================================================
+  Sections: 6 passed, 2 failed
   Warnings: 2
   Errors: 1 (see details above)
   Failed sections:
-    - Build+Compliance
+    - Post-Build Validation
 ============================================================
 ```
 
@@ -271,18 +283,32 @@ concurrency footer:
 --------------------------------------------------------------
 Step                              Duration  Mode
 --------------------------------------------------------------
+Large File Check                          0s  seq
+YAML Syntax                               0s  seq
 Linting                              1.203s  parallel
   golangci-lint                       980ms  parallel
   kubeconform                         640ms  parallel
 Static Checks                         310ms  parallel
-Build+Compliance                     2.010s  parallel
+Build YAML                           1.510s  parallel
+  app1/overlays/prod                  1.510s  parallel
+Post-Build Validation                 500ms  parallel
 --------------------------------------------------------------
 TOTAL (wall)                         3.523s
-TOTAL (sum)                          3.523s
-Parallelism                             2.1x
+TOTAL (sum)                          4.523s
+Parallelism                             1.3x
 Concurrency                                8  (4 CPUs × 2)
 --------------------------------------------------------------
 ```
+
+Setup (in `pkg/pipeline`, when running the full `pipeline` command rather
+than `test-all`/`build-yaml`/`scan-all`) additionally records `clone`,
+`schemas`, and `policies` sub-steps - schemas are always prefetched once,
+up front (a cheap, pure embedded-archive extraction reused by the
+Linting phase's kubeconform step instead of extracting lazily on every
+run - see `validator.Options.SchemaDir`); policies are only prefetched
+when the opt-in `kyverno` step is actually enabled (preparing them shells
+out to `kustomize build`, not worth paying for on every run - see
+`validator.Options.PolicyPath`).
 
 ### `--verbose` console detail without `--comment` (`pkg/pipeline/pipeline.go`)
 

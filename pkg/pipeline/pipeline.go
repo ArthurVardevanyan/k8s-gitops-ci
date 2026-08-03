@@ -8,8 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kyverno"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
@@ -74,18 +77,50 @@ func Run(opts Options) error {
 	// and in the unified PR-comment report (buildReport) instead of only
 	// the latter.
 	log.Header(opts.Providers.PipelineHeader())
+	log.Info("%s", version.String())
 	log.Info("URL: %s", opts.URL)
 	log.Info("PR: %s", opts.PR)
 	log.Info("Revision: %s", resolveRevision(opts.Revision, opts.PR))
 
+	log.Header("Setup")
 	setupStart := time.Now()
+	cloneStart := time.Now()
 	cleanup, err := setupWorkdir(opts)
 	defer cleanup()
-	tc.Record("Setup", time.Since(setupStart), false)
+	tc.RecordStep("Setup", "clone", time.Since(cloneStart))
 	if err != nil {
+		tc.Record("Setup", time.Since(setupStart), false)
 		log.Error("setup failed: %v", err)
 		return fmt.Errorf("pipeline setup: %w", err)
 	}
+
+	// Prefetch schemas/policies once, up front, instead of paying for
+	// their extraction lazily inside the concurrent Linting/Build+
+	// Compliance phases on every run (see validator.Options.SchemaDir/
+	// PolicyPath's doc comments). Schemas are always prefetched -
+	// kubeconform always runs, and extraction is a cheap, pure
+	// embedded-archive unpack. Policies are only prefetched when the
+	// opt-in "kyverno" step (default off) is actually enabled, since
+	// preparing them shells out to `kustomize build` - not worth paying
+	// for on every run that never uses it.
+	var schemaDir, policyPath string
+	if schemasStart := time.Now(); true {
+		if dir, schemaCleanup, schemaErr := kubeconform.ExtractSchemas(); schemaErr == nil {
+			schemaDir = dir
+			defer schemaCleanup()
+		}
+		tc.RecordStep("Setup", "schemas", time.Since(schemasStart))
+	}
+	if kyvernoEnabled(opts) {
+		policiesStart := time.Now()
+		if path, policyCleanup, policyErr := kyverno.PreparePolicies(); policyErr == nil {
+			policyPath = path
+			defer policyCleanup()
+		}
+		tc.RecordStep("Setup", "policies", time.Since(policiesStart))
+	}
+
+	tc.Record("Setup", time.Since(setupStart), false)
 	log.Info("setup complete (%s)", time.Since(setupStart).Round(time.Millisecond))
 
 	res := &Result{}
@@ -121,23 +156,36 @@ func Run(opts Options) error {
 			}
 		}
 		tc.Record("PR Validation", time.Since(prStart), false)
+		// A single consolidated line - gated on the two BLOCKING checks
+		// only (title/unsigned), matching downstream's behavior where this
+		// still appears despite a non-blocking title-suggestion warning or
+		// checklist warning - alongside the individual per-check lines
+		// above, which stay so a failure's specific cause (title vs.
+		// unsigned commits) remains visible; this aggregate only adds a
+		// phase-level "how long did this take" summary.
+		if res.TitleErr == nil && res.UnsignedErr == nil {
+			log.Info("PR validation passed (%s)", time.Since(prStart).Round(time.Millisecond))
+		}
 	}
 	res.PRValid = shouldRunPRChecks(opts) || opts.LintOnly
 
 	vopts := toValidatorOptions(opts)
 	vopts.Timing = tc
+	vopts.SchemaDir = schemaDir
+	vopts.PolicyPath = policyPath
 	vr, verr := validator.RunAll(vopts)
 	res.ValidatorResult = vr
 	res.ValidationErr = verr
 
 	res.ReproduceCommand = validator.ReproduceCommand(vopts)
 
-	// Every phase (Linting, Static Checks, Build+Compliance, ...) composes a
-	// detail-bearing Section per check (the actual file/message list behind
-	// a step's summary "N violation(s)" log line), but res.Sections is
-	// otherwise only ever rendered into the PR comment body - which is
-	// skipped whenever --comment isn't passed (e.g. local/CLI-only runs).
-	// Print the failing sections' full detail to the console here so
+	// Every phase (Linting, Static Checks, Build YAML, Post-Build
+	// Validation, ...) composes a detail-bearing Section per check (the
+	// actual file/message list behind a step's summary "N violation(s)" log
+	// line), but res.Sections is otherwise only ever rendered into the PR
+	// comment body - which is skipped whenever --comment isn't passed
+	// (e.g. local/CLI-only runs). Print the failing sections' full detail
+	// to the console here so
 	// --verbose is self-sufficient without requiring --comment; this
 	// applies uniformly to every section (linting, static checks, build,
 	// scaffold, resource compliance), not just one of them.
@@ -145,16 +193,11 @@ func Run(opts Options) error {
 		printFailedSectionDetail(vr, log)
 	}
 
-	if reason, skip := commentSkipReason(opts); skip {
-		log.Info("comment posting skipped: %s", reason)
-	} else if err := postComment(res, opts); err != nil {
-		log.Warn("posting PR comment failed: %v", err)
-	} else {
-		log.Info("PR comment posted")
-	}
-
 	if vr != nil && vr.Logger != nil {
-		log.Raw(vr.Logger.Summary())
+		if summary := tc.Summary(time.Since(start)); summary != "" {
+			log.Raw(summary)
+		}
+		log.Raw(vr.Logger.Summary(len(vr.Sections), vr.FailedSectionCount()))
 	}
 	log.Info("pipeline completed in %s", time.Since(start).Round(time.Second))
 	if res.ReproduceCommand != "" {
@@ -162,6 +205,23 @@ func Run(opts Options) error {
 		log.Info("Reproduce locally:")
 		log.Info("  %s", res.ReproduceCommand)
 	}
+
+	// Comment posting happens after the local console summary/timing-table/
+	// reproduce-locally output above (not before it, as it used to), so the
+	// lowercase "pipeline completed in %s" line above measures core
+	// validation work only, and the final "Pipeline completed in %s" line
+	// below - a separate, later measurement of the same time.Since(start) -
+	// genuinely differs from it whenever comment posting (a network call)
+	// took measurable time, instead of both lines reporting the identical
+	// value.
+	if reason, skip := commentSkipReason(opts); skip {
+		log.Info("comment posting skipped: %s", reason)
+	} else if err := postComment(res, opts); err != nil {
+		log.Warn("posting PR comment failed: %v", err)
+	} else {
+		log.Info("PR comment posted")
+	}
+	log.Info("Pipeline completed in %s", time.Since(start).Round(time.Second))
 
 	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil || validatorResultFailed(vr) {
 		// Not log.Error here: this exact message is returned as the error
@@ -276,6 +336,19 @@ func isValidPR(pr string) bool {
 
 func (o *Options) isMergeQueue() bool {
 	return strings.Contains(o.TargetBranch, "gh-readonly-queue/")
+}
+
+// kyvernoEnabled reports whether the opt-in "kyverno" step (default off -
+// see phases.go's defaultOffSteps) is enabled for this run, so Run's Setup
+// phase knows whether it's worth prefetching Kyverno policies (which shells
+// out to `kustomize build`) up front versus never touching them at all.
+func kyvernoEnabled(opts Options) bool {
+	for _, id := range opts.EnabledChecks {
+		if id == "kyverno" {
+			return true
+		}
+	}
+	return false
 }
 
 // shouldRunPRChecks reports whether the blocking PR-title and signed-commit
