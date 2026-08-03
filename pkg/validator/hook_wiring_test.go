@@ -415,13 +415,13 @@ func TestRunAll_FailingPostBuildHookBlocks(t *testing.T) {
 	if res.Logger == nil || !res.Logger.HasFailures() {
 		t.Error("expected a failing POST_BUILD_HOOK to be surfaced as a logger failure")
 	}
-	var kb Section
+	var kb ReportSection
 	for _, s := range res.Sections {
 		if s.Name == "Kustomize Build" {
 			kb = s
 		}
 	}
-	if !kb.Error || !strings.Contains(kb.Body, "post-build hook") {
+	if kb.Status != StatusError || !strings.Contains(kb.Body, "post-build hook") {
 		t.Errorf("expected the Kustomize Build section to report the post-build hook failure, got:\n%s", kb.Body)
 	}
 }
@@ -442,7 +442,7 @@ ok_post() { :; }
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	var kb Section
+	var kb ReportSection
 	for _, s := range res.Sections {
 		if s.Name == "Kustomize Build" {
 			kb = s

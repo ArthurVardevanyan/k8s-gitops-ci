@@ -28,10 +28,10 @@ func TestPrintFailedSectionDetail_PrintsBodyOfErroredSections(t *testing.T) {
 	defer log.Close()
 
 	vr := &validator.Result{
-		Sections: []validator.Section{
-			{Name: "Linting", Body: "linting all good", Error: false},
-			{Name: "Resource Compliance", Body: "<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;❌ PSA Labels (1 finding(s))</summary>\n\n| Check | File | Message |\n| --- | --- | --- |\n| psa | ns.yaml | missing label |\n\n</details>\n", Error: true},
-			{Name: "Kustomize Build", Body: "kustomize build apps/foo/overlays/bar: some error", Error: true},
+		Sections: []validator.ReportSection{
+			{Name: "Linting", Body: "linting all good", Status: validator.StatusPassed},
+			{Name: "Resource Compliance", Body: "<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;❌ PSA Labels (1 finding(s))</summary>\n\n| Check | File | Message |\n| --- | --- | --- |\n| psa | ns.yaml | missing label |\n\n</details>\n", Status: validator.StatusError},
+			{Name: "Kustomize Build", Body: "kustomize build apps/foo/overlays/bar: some error", Status: validator.StatusError},
 		},
 	}
 	printFailedSectionDetail(vr, log)
@@ -248,7 +248,7 @@ func TestComposeSections(t *testing.T) {
 	if len(sections) == 0 {
 		t.Errorf("expected sections")
 	}
-	if !sections[0].Error {
+	if sections[0].Status != validator.StatusError {
 		t.Errorf("expected PR checks error")
 	}
 }
@@ -264,7 +264,7 @@ func TestComposeSections_ReusesAlreadyRenderedLintingSection(t *testing.T) {
 	const rendered = "<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;✅ Markdownlint</summary>\n\nPassed.\n\n</details>\n\n"
 	res := &Result{
 		ValidatorResult: &validator.Result{
-			Sections: []validator.Section{
+			Sections: []validator.ReportSection{
 				{Name: "Linting", Body: rendered},
 				{Name: "Static Checks", Body: "static body"},
 				{Name: "Kustomize Build", Body: "should be ignored here"},
@@ -273,7 +273,7 @@ func TestComposeSections_ReusesAlreadyRenderedLintingSection(t *testing.T) {
 	}
 	sections := composeSections(res, Options{})
 
-	var lintSection *validator.Section
+	var lintSection *validator.ReportSection
 	for i := range sections {
 		if sections[i].Name == "Linting" {
 			lintSection = &sections[i]
@@ -301,16 +301,16 @@ func TestComposeSections_ReusesAlreadyRenderedLintingSection(t *testing.T) {
 func TestComposeSections_ReusesKustomizeBuildAndResourceCompliance(t *testing.T) {
 	res := &Result{
 		ValidatorResult: &validator.Result{
-			Sections: []validator.Section{
-				{Name: "Kustomize Build", Body: "real kustomize build body", Error: true},
+			Sections: []validator.ReportSection{
+				{Name: "Kustomize Build", Body: "real kustomize build body", Status: validator.StatusError},
 				{Name: "Scaffold Validation", Body: "real scaffold body"},
-				{Name: "Resource Compliance", Body: "real resource compliance body", Error: true},
+				{Name: "Resource Compliance", Body: "real resource compliance body", Status: validator.StatusError},
 			},
 		},
 	}
 	sections := composeSections(res, Options{})
 
-	byName := map[string]validator.Section{}
+	byName := map[string]validator.ReportSection{}
 	for _, s := range sections {
 		byName[s.Name] = s
 	}
@@ -344,13 +344,13 @@ func TestComposeSections_OmitsKyvernoWhenNotProduced(t *testing.T) {
 func TestComposeSections_ReusesKyvernoWhenProduced(t *testing.T) {
 	res := &Result{
 		ValidatorResult: &validator.Result{
-			Sections: []validator.Section{
-				{Name: "Kyverno Policies", Body: "real kyverno body", Error: true},
+			Sections: []validator.ReportSection{
+				{Name: "Kyverno Policies", Body: "real kyverno body", Status: validator.StatusError},
 			},
 		},
 	}
 	sections := composeSections(res, Options{})
-	var found *validator.Section
+	var found *validator.ReportSection
 	for i := range sections {
 		if sections[i].Name == "Kyverno Policies" {
 			found = &sections[i]
@@ -372,7 +372,7 @@ func TestComposeSections_ReusesKyvernoWhenProduced(t *testing.T) {
 func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.T) {
 	res := &Result{
 		ValidatorResult: &validator.Result{
-			Sections: []validator.Section{
+			Sections: []validator.ReportSection{
 				{Name: "Linting", Body: "lint body"},
 				{Name: "Static Checks", Body: "static body"},
 			},
@@ -380,7 +380,7 @@ func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.
 	}
 	sections := composeSections(res, Options{})
 
-	byName := map[string]validator.Section{}
+	byName := map[string]validator.ReportSection{}
 	for _, s := range sections {
 		byName[s.Name] = s
 	}
@@ -416,13 +416,13 @@ func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.
 func TestComposeSections_ReusesNADSection(t *testing.T) {
 	res := &Result{
 		ValidatorResult: &validator.Result{
-			Sections: []validator.Section{
-				{Name: "NetworkAttachmentDefinition Validation", Body: "real nad body", Error: true},
+			Sections: []validator.ReportSection{
+				{Name: "NetworkAttachmentDefinition Validation", Body: "real nad body", Status: validator.StatusError},
 			},
 		},
 	}
 	sections := composeSections(res, Options{})
-	var found *validator.Section
+	var found *validator.ReportSection
 	for i := range sections {
 		if sections[i].Name == "NetworkAttachmentDefinition Validation" {
 			found = &sections[i]
@@ -434,8 +434,8 @@ func TestComposeSections_ReusesNADSection(t *testing.T) {
 	if found.Body != "real nad body" {
 		t.Errorf("expected the NAD section to be reused verbatim, got:\n%s", found.Body)
 	}
-	if !found.Error {
-		t.Error("expected the NAD section's Error flag to be preserved")
+	if found.Status != validator.StatusError {
+		t.Error("expected the NAD section's error status to be preserved")
 	}
 }
 
@@ -447,13 +447,13 @@ func TestComposeSections_ReusesNADSection(t *testing.T) {
 func TestComposeSections_ReusesScaffoldDriftProtectionSection(t *testing.T) {
 	res := &Result{
 		ValidatorResult: &validator.Result{
-			Sections: []validator.Section{
+			Sections: []validator.ReportSection{
 				{Name: "Scaffold Drift Protection", Body: "real drift protection body"},
 			},
 		},
 	}
 	sections := composeSections(res, Options{})
-	var found *validator.Section
+	var found *validator.ReportSection
 	for i := range sections {
 		if sections[i].Name == "Scaffold Drift Protection" {
 			found = &sections[i]

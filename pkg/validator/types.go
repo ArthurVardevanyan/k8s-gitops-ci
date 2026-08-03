@@ -64,7 +64,7 @@ type Options struct {
 
 // Result carries per-section findings.
 type Result struct {
-	Sections   []Section
+	Sections   []ReportSection
 	Status     string
 	Blocking   bool
 	Check      check.Result
@@ -73,23 +73,20 @@ type Result struct {
 	Timing     *TimingCollector
 }
 
-// Section is a named report section.
-type Section struct {
-	Name, Body string
-	Error      bool
-}
-
-// HasErrorSection reports whether any error-section exists.
+// HasErrorSection reports whether any error-status section exists. Only
+// StatusError counts (matching pre-ReportSection-unification behavior) -
+// StatusWarning/StatusInfo sections are "worth a look" but don't count as
+// a hard failure here, same distinction FailedSectionCount below makes.
 func (r *Result) HasErrorSection() bool {
 	for _, s := range r.Sections {
-		if s.Error {
+		if s.Status == StatusError {
 			return true
 		}
 	}
 	return false
 }
 
-// FailedSectionCount returns how many Sections have Error set. Used
+// FailedSectionCount returns how many Sections have StatusError. Used
 // alongside len(r.Sections) to feed Logger.Summary(totalSections,
 // failedSections int)'s "Sections: N passed, M failed" line - kept as a
 // method here (rather than a loop inlined at each call site) since
@@ -98,7 +95,7 @@ func (r *Result) HasErrorSection() bool {
 func (r *Result) FailedSectionCount() int {
 	n := 0
 	for _, s := range r.Sections {
-		if s.Error {
+		if s.Status == StatusError {
 			n++
 		}
 	}

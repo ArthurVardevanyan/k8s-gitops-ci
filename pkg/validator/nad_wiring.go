@@ -22,15 +22,15 @@ import (
 // entirely rather than rendering a "0 NADs, all good" stub: NAD validation is
 // still always-on (never gated), but an empty section is pure noise on the
 // (common) PRs that touch no NetworkAttachmentDefinition at all.
-func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logger.Logger) (Section, bool) {
+func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logger.Logger) (ReportSection, bool) {
 	if len(outputs) == 0 {
-		return Section{}, false
+		return ReportSection{}, false
 	}
 
 	dir, err := os.MkdirTemp("", "nad-resources-*")
 	if err != nil {
 		log.Warn("nad: creating temp dir: %v", err)
-		return Section{}, false
+		return ReportSection{}, false
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
@@ -51,7 +51,7 @@ func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logg
 	}
 
 	if !present {
-		return Section{}, false
+		return ReportSection{}, false
 	}
 
 	errs := nad.ValidateFiles(files, assumeOpenshift)

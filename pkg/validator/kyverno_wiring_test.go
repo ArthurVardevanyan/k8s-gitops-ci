@@ -14,7 +14,7 @@ func TestRunKyvernoValidation_NoOutputsSkipsEntirely(t *testing.T) {
 	if s.Name != "Kyverno Policies" {
 		t.Errorf("Name = %q, want %q", s.Name, "Kyverno Policies")
 	}
-	if s.Error {
+	if s.Status == StatusError {
 		t.Error("expected no error with no rendered overlays or source files to validate")
 	}
 	if s.Body != "No Kyverno findings." {
@@ -70,7 +70,7 @@ func TestRunKyvernoValidation_MissingCLIDegradesGracefully(t *testing.T) {
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: foo\n")},
 	}
 	s := runKyvernoValidation(outputs, nil, "", log)
-	if s.Error {
+	if s.Status == StatusError {
 		t.Error("expected no error when the kyverno CLI is unavailable")
 	}
 	if log.HasFailures() {

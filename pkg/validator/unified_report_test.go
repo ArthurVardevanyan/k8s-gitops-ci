@@ -12,11 +12,57 @@ func TestReportRender(t *testing.T) {
 		Title:     "T",
 		Header:    "H",
 		Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		Sections:  []Section{{Name: "S", Body: "b", Error: true}},
+		Sections:  []ReportSection{{Name: "S", Status: StatusError, Body: "b"}},
 	}
 	out := r.Render()
 	if !strings.Contains(out, "T") || !strings.Contains(out, "S") {
 		t.Errorf("missing rendered parts: %s", out)
+	}
+}
+
+// TestReportRender_UsesEachSectionsOwnStatusIcon guards the fix for a
+// top-level section only ever being able to show ✅/❌ (a bare bool Error)
+// even when its worst child was a non-blocking StatusWarning/StatusInfo -
+// hiding that a section had something worth a look, or (for
+// StatusWarning-only) overstating it as unchecked-but-fine. Render() must
+// use each Section's own Status.Icon() directly.
+func TestReportRender_UsesEachSectionsOwnStatusIcon(t *testing.T) {
+	r := &Report{
+		Marker: "<!-- m -->",
+		Title:  "T",
+		Sections: []ReportSection{
+			{Name: "Passed", Status: StatusPassed, Body: "ok"},
+			{Name: "Info", Status: StatusInfo, Body: "fyi"},
+			{Name: "Warned", Status: StatusWarning, Body: "careful"},
+			{Name: "Failed", Status: StatusError, Body: "boom"},
+		},
+	}
+	out := r.Render()
+	for _, want := range []string{
+		"✅ Expand: Passed",
+		"ℹ️ Expand: Info",
+		"⚠️ Expand: Warned",
+		"❌ Expand: Failed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in rendered output, got:\n%s", want, out)
+		}
+	}
+}
+
+// TestReportRender_FallsBackToSummaryWhenBodyEmpty guards that a top-level
+// section with no Body (every current Compose* function always populates
+// one, but a future/external caller might not) falls back to Summary
+// rather than rendering an empty <details> body.
+func TestReportRender_FallsBackToSummaryWhenBodyEmpty(t *testing.T) {
+	r := &Report{
+		Marker:   "<!-- m -->",
+		Title:    "T",
+		Sections: []ReportSection{{Name: "S", Status: StatusPassed, Summary: "All good."}},
+	}
+	out := r.Render()
+	if !strings.Contains(out, "All good.") {
+		t.Errorf("expected the Summary fallback to render, got:\n%s", out)
 	}
 }
 

@@ -61,7 +61,7 @@ func isKustomizationFile(path string) bool {
 // section rather than failing the run; Kyverno support is opt-in
 // (stepKyverno defaults off - see docs/CI.md#registered-checks) and
 // best-effort once enabled.
-func runKyvernoValidation(outputs []renderedOverlay, sourceFiles []string, policyPath string, log *logger.Logger) Section {
+func runKyvernoValidation(outputs []renderedOverlay, sourceFiles []string, policyPath string, log *logger.Logger) ReportSection {
 	if len(outputs) == 0 && len(sourceFiles) == 0 {
 		return ComposeKyvernoSection("")
 	}

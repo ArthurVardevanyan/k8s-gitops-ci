@@ -34,7 +34,7 @@ func titleCase(s string) string {
 // child as a ⚠️ warning rather than promoted to a failure - an org's
 // optional title convention (e.g. a ticket-reference suffix) never blocks
 // the pipeline, unlike the required Conventional-Commits prefix (titleErr).
-func ComposePRChecksSection(titleErr, signErr, checklistErr error, titleSuggestion string) Section {
+func ComposePRChecksSection(titleErr, signErr, checklistErr error, titleSuggestion string) ReportSection {
 	children := []ReportSection{
 		prTitleChild(titleErr, titleSuggestion),
 		prCheckChild("Signed Commits", signErr),
@@ -163,19 +163,25 @@ func composeCheckChild(rawName string, outcomes map[string]CheckOutcome, reports
 }
 
 // composeParentFromChildren renders children as nested sub-dropdowns (depth
-// 1) and returns a parent Section whose Error is set when any child's
-// status is StatusError. The parent always has a Body, so the full
+// 1) and returns a parent ReportSection whose Status is the most severe
+// status among its children (StatusError > StatusWarning > StatusInfo >
+// StatusPassed, matching SectionStatus's declared iota order) - so a
+// parent's own icon correctly inherits the worst thing inside it instead of
+// only ever collapsing to a binary ✅/❌ and silently hiding an internal
+// ⚠️/ℹ️ child (e.g. a single non-blocking StatusWarning child, with no
+// StatusError sibling, now rolls the parent up to ⚠️ rather than staying a
+// misleadingly-plain ✅). The parent always has a Body, so the full
 // sub-check breakdown is visible even when every child passed.
-func composeParentFromChildren(name string, children []ReportSection) Section {
-	hasError := false
+func composeParentFromChildren(name string, children []ReportSection) ReportSection {
+	status := StatusPassed
 	var sb strings.Builder
 	for _, c := range children {
-		if c.Status == StatusError {
-			hasError = true
+		if c.Status > status {
+			status = c.Status
 		}
 		renderSubDropdown(&sb, c, 1)
 	}
-	return Section{Name: name, Body: sb.String(), Error: hasError}
+	return ReportSection{Name: name, Status: status, Body: sb.String()}
 }
 
 // ComposeLintingSection renders the Linting section. Every linter
@@ -184,7 +190,7 @@ func composeParentFromChildren(name string, children []ReportSection) Section {
 // (driven by outcomes), so the full breakdown is visible even when
 // everything passed - not just a flat bullet list that disappears once a
 // check is clean.
-func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string) Section {
+func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string) ReportSection {
 	byName := make(map[string]CheckOutcome, len(outcomes))
 	for _, o := range outcomes {
 		byName[o.Name] = o
@@ -200,7 +206,7 @@ func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string) S
 // ComposeStaticChecksSection renders the Static Checks section the same way
 // ComposeLintingSection does: every check always shown as its own nested
 // sub-dropdown, driven by outcomes.
-func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]string) Section {
+func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]string) ReportSection {
 	byName := make(map[string]CheckOutcome, len(outcomes))
 	for _, o := range outcomes {
 		byName[o.Name] = o
@@ -221,16 +227,20 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 // blocking findings are in files this PR directly modifies (must be fixed
 // before merge, per finalizeCompliance); warning findings are pre-existing
 // (surfaced for visibility, non-blocking). A check's sub-section renders
-// with a ❌ icon (and rolls the parent section's Error up) when it has any
-// blocking finding, otherwise ⚠️. Check IDs are sorted for deterministic
-// output - this generic core has no fixed, org-defined check ordering
-// (unlike an org layer's own `complianceCheckOrder`, which is exactly the
-// kind of policy decision that doesn't belong here).
-func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempted []exempt.Applied) Section {
+// with a ❌ icon (and rolls the parent section's Status up to StatusError)
+// when it has any blocking finding, otherwise ⚠️ (rolling the parent up to
+// StatusWarning at most). Exemptions alone (no findings at all) roll the
+// parent up to StatusInfo instead - "nothing wrong, but here's an audit
+// trail of what was excused" is worth a glance, but shouldn't look like an
+// active warning. Check IDs are sorted for deterministic output - this
+// generic core has no fixed, org-defined check ordering (unlike an org
+// layer's own `complianceCheckOrder`, which is exactly the kind of policy
+// decision that doesn't belong here).
+func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempted []exempt.Applied) ReportSection {
 	hasFindings := len(blocking) > 0 || len(warning) > 0
 	hasExemptions := len(exempted) > 0
 	if !hasFindings && !hasExemptions {
-		return Section{Name: "Resource Compliance", Body: "No compliance findings."}
+		return ReportSection{Name: "Resource Compliance", Status: StatusPassed, Body: "No compliance findings."}
 	}
 
 	byCheck := map[string][]check.Finding{}
@@ -268,7 +278,17 @@ func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempte
 		renderAcceptedExceptions(&b, exempted)
 	}
 
-	return Section{Name: "Resource Compliance", Body: b.String(), Error: len(blocking) > 0}
+	status := StatusPassed
+	switch {
+	case len(blocking) > 0:
+		status = StatusError
+	case len(warning) > 0:
+		status = StatusWarning
+	case hasExemptions:
+		status = StatusInfo
+	}
+
+	return ReportSection{Name: "Resource Compliance", Body: b.String(), Status: status}
 }
 
 // complianceTitle returns a check's registered TableSpec.Title (a fuller,
@@ -405,145 +425,174 @@ func renderAcceptedExceptions(b *strings.Builder, exemptions []exempt.Applied) {
 	b.WriteString("\n</details>\n\n")
 }
 
-// ComposeKustomizeBuildSection renders the Kustomize Build section: overlay
-// build pass/fail (grouped by root cause via groupBuildErrors/
-// formatBuildErrors so N overlays sharing one underlying error don't repeat
-// it N times), a hooks matrix, files needing `kustomize edit fix`, and any
-// ghost-patch findings.
-//
-// buildErrs are raw error strings in this repo's real overlay-build format
-// ("kustomize build <overlay>: <cause>", see pkg/overlay/overlay.go and
-// comments.go's groupBuildErrors doc comment). hookTable and ghostTable are
-// pre-rendered markdown (typically a table) built by the caller from
-// pkg/hook and pkg/ghostpatch data respectively; empty means "nothing to
-// show" (not "not checked"). hookFailed (anyHookFailed in hook_wiring.go)
-// and ghostBlockingCount (buildGhostTable's second return in
-// build_wiring.go) give the "Hooks"/"Ghost Patches" bullets their own
-// pass/fail icon - without them, a non-empty hookTable/ghostTable used to
-// render as a bare, icon-less nested dropdown line (see docs/CI.md's
-// "Ghost Patch Detection" for why a ghost patch isn't always blocking: a
-// pre-existing or brand-new-overlay ghost is warning-only, so it gets ⚠️
-// and doesn't fail this section, matching the ❌/⚠️ split
-// ComposeResourceComplianceSection and the "Pre-Existing Scaffold Drift"
-// bullet below already use).
-func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, hookFailed bool, fixNeeded []string, ghostTable string, ghostBlockingCount int) Section {
-	var b strings.Builder
-	hasError := false
-
-	// Overlay build summary
-	groups, other := groupBuildErrors(buildErrs)
-	if len(groups) == 0 && len(other) == 0 {
-		fmt.Fprintf(&b, "- ✅ **Overlay Build** — %d overlay(s) built successfully\n", overlayCount)
-	} else {
-		hasError = true
-		b.WriteString("- ❌ **Overlay Build**\n\n")
-		if len(groups) > 0 {
-			formatBuildErrors(&b, groups)
-		}
-		for _, e := range other {
-			fmt.Fprintf(&b, "> - %s\n", e)
-		}
-		b.WriteString("\n")
+// ComposeKustomizeBuildSection renders the Kustomize Build section as four
+// always-shown sub-dropdowns - Overlay Build, Hooks, Kustomize Fix, Ghost
+// Patches (see the composeXChild helpers below) - via the same
+// composeParentFromChildren/ReportSection machinery ComposeLintingSection/
+// ComposeStaticChecksSection/ComposePRChecksSection already use. Each child
+// renders as a single icon-bearing <details> line (never a separate
+// icon-less bullet followed by a differently-titled nested dropdown, which
+// is how this used to render before it was rewritten to use
+// composeParentFromChildren), and the parent's own icon correctly inherits
+// the *worst* child status: a non-blocking-only Ghost Patches finding rolls
+// the parent up to ⚠️, not plain ✅ (which would hide it) or ❌ (which would
+// overstate it) - see docs/CI.md's "Ghost Patch Detection".
+func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, hookFailed bool, fixNeeded []string, ghostTable string, ghostBlockingCount int) ReportSection {
+	children := []ReportSection{
+		composeOverlayBuildChild(overlayCount, buildErrs),
+		composeHooksChild(hookTable, hookFailed),
+		composeKustomizeFixChild(fixNeeded),
+		composeGhostPatchesChild(ghostTable, ghostBlockingCount),
 	}
-
-	// Hook results
-	if hookTable != "" {
-		icon := "✅"
-		if hookFailed {
-			hasError = true
-			icon = "❌"
-		}
-		fmt.Fprintf(&b, "- %s **Hooks**\n\n", icon)
-		b.WriteString(RenderSubDropdown("Hook Results", hookTable))
-		b.WriteString("\n")
-	} else {
-		b.WriteString("- ✅ **Hooks** — no hooks defined\n")
-	}
-
-	// Kustomize fix
-	if len(fixNeeded) > 0 {
-		hasError = true
-		b.WriteString("- ❌ **Kustomize Fix** — the following files need `kustomize edit fix`:\n")
-		for _, f := range fixNeeded {
-			fmt.Fprintf(&b, "  - `%s`\n", f)
-		}
-	} else {
-		b.WriteString("- ✅ **Kustomize Fix** — all kustomization.yaml files are up to date\n")
-	}
-
-	// Ghost patches - blocking ghosts (ghostBlockingCount > 0, see
-	// buildGhostTable) fail this section; a non-empty ghostTable with no
-	// blocking rows is a warning-only finding (pre-existing, or on a
-	// brand-new overlay - docs/CI.md's "Ghost Patch Detection") and
-	// doesn't.
-	if ghostTable != "" {
-		icon := "⚠️"
-		if ghostBlockingCount > 0 {
-			hasError = true
-			icon = "❌"
-		}
-		fmt.Fprintf(&b, "- %s **Ghost Patches**\n\n", icon)
-		b.WriteString(RenderSubDropdown("Ghost Patch Details", ghostTable))
-		b.WriteString("\n")
-	} else {
-		b.WriteString("- ✅ **Ghost Patches** — none detected\n")
-	}
-
-	return Section{Name: "Kustomize Build", Body: b.String(), Error: hasError}
+	return composeParentFromChildren("Kustomize Build", children)
 }
 
-// ComposeScaffoldValidationSection renders scaffold validation results.
-func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingClusters []string, preExistingDriftSummary string) Section {
+// composeOverlayBuildChild builds the "Overlay Build" sub-check: grouped
+// build errors by root cause (groupBuildErrors/formatBuildErrors, so N
+// overlays sharing one underlying error don't repeat it N times), or a
+// passing summary with the built overlay count. buildErrs are raw error
+// strings in this repo's real overlay-build format ("kustomize build
+// <overlay>: <cause>", see pkg/overlay/overlay.go and comments.go's
+// groupBuildErrors doc comment).
+func composeOverlayBuildChild(overlayCount int, buildErrs []string) ReportSection {
+	groups, other := groupBuildErrors(buildErrs)
+	if len(groups) == 0 && len(other) == 0 {
+		return ReportSection{Name: "Overlay Build", Status: StatusPassed, Summary: fmt.Sprintf("%d overlay(s) built successfully.", overlayCount)}
+	}
 	var b strings.Builder
-	hasError := false
+	if len(groups) > 0 {
+		formatBuildErrors(&b, groups)
+	}
+	for _, e := range other {
+		fmt.Fprintf(&b, "> - %s\n", e)
+	}
+	return ReportSection{Name: "Overlay Build", Status: StatusError, Body: b.String()}
+}
 
-	// Drift
+// composeHooksChild builds the "Hooks" sub-check from hookTable (a
+// pre-rendered markdown matrix built by the caller from pkg/hook data via
+// buildHookTable in build_wiring.go; empty means no app in scope defines
+// any hook) and hookFailed (anyHookFailed in hook_wiring.go - whether any
+// app's hook actually failed). A hook failure is always also folded into
+// buildErrs, so composeOverlayBuildChild's "Overlay Build" child already
+// reflects it too; this just gives the hook-matrix's own line a matching
+// icon instead of always showing ✅ regardless of outcome.
+func composeHooksChild(hookTable string, hookFailed bool) ReportSection {
+	if hookTable == "" {
+		return ReportSection{Name: "Hooks", Status: StatusPassed, Summary: "No hooks defined."}
+	}
+	status := StatusPassed
+	if hookFailed {
+		status = StatusError
+	}
+	return ReportSection{Name: "Hooks", Status: status, Body: hookTable}
+}
+
+// composeKustomizeFixChild builds the "Kustomize Fix" sub-check from the
+// list of kustomization.yaml files kustomize.CheckFix found needing
+// `kustomize edit fix`.
+func composeKustomizeFixChild(fixNeeded []string) ReportSection {
+	if len(fixNeeded) == 0 {
+		return ReportSection{Name: "Kustomize Fix", Status: StatusPassed, Summary: "All kustomization.yaml files are up to date."}
+	}
+	var b strings.Builder
+	b.WriteString("The following files need `kustomize edit fix`:\n\n")
+	for _, f := range fixNeeded {
+		fmt.Fprintf(&b, "- `%s`\n", f)
+	}
+	return ReportSection{Name: "Kustomize Fix", Status: StatusError, Body: b.String()}
+}
+
+// composeGhostPatchesChild builds the "Ghost Patches" sub-check from
+// ghostTable (a pre-rendered markdown table built by the caller from
+// pkg/ghostpatch data via buildGhostTable in build_wiring.go; empty means
+// none found) and ghostBlockingCount (buildGhostTable's second return).
+// Per docs/CI.md's "Ghost Patch Detection": a ghost patch on a
+// kustomization.yaml whose patches section changed in this PR (and isn't
+// itself newly added) is blocking (❌); a ghost patch that predates this PR
+// or is on a brand-new overlay is surfaced for visibility only (⚠️), never
+// promoted to an error.
+func composeGhostPatchesChild(ghostTable string, ghostBlockingCount int) ReportSection {
+	if ghostTable == "" {
+		return ReportSection{Name: "Ghost Patches", Status: StatusPassed, Summary: "None detected."}
+	}
+	status := StatusWarning
+	if ghostBlockingCount > 0 {
+		status = StatusError
+	}
+	return ReportSection{Name: "Ghost Patches", Status: status, Body: ghostTable}
+}
+
+// ComposeScaffoldValidationSection renders scaffold validation results as
+// four always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec,
+// Pre-Existing Scaffold Drift, Cluster Coverage - see the composeXChild
+// helpers below), via the same composeParentFromChildren/ReportSection
+// machinery ComposeKustomizeBuildSection uses, for the same reason: a
+// single icon-bearing <details> line per child, and a parent icon that
+// correctly inherits the worst child status instead of collapsing to a
+// binary ✅/❌.
+func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingClusters []string, preExistingDriftSummary string) ReportSection {
+	children := []ReportSection{
+		composeScaffoldDriftChild(driftSummary),
+		composeScaffoldExecChild(execErrors),
+		composePreExistingDriftChild(preExistingDriftSummary),
+		composeClusterCoverageChild(missingClusters),
+	}
+	return composeParentFromChildren("Scaffold Validation", children)
+}
+
+// composeScaffoldDriftChild builds the blocking "Scaffold Drift" sub-check
+// from driftSummary (pre-joined drift-line markdown; empty means none).
+func composeScaffoldDriftChild(driftSummary string) ReportSection {
 	if driftSummary == "" {
-		b.WriteString("- ✅ **Scaffold Drift** — no drift detected\n")
-	} else {
-		hasError = true
-		b.WriteString("- ❌ **Scaffold Drift**\n\n")
-		b.WriteString(RenderSubDropdown("Drift Details", driftSummary))
-		b.WriteString("\n")
+		return ReportSection{Name: "Scaffold Drift", Status: StatusPassed, Summary: "No drift detected."}
 	}
+	return ReportSection{Name: "Scaffold Drift", Status: StatusError, Body: driftSummary}
+}
 
-	// Pre-existing drift - overlays that also drift against the merge-base
-	// template/config (see computeBaselineMismatches in scaffold_wiring.go)
-	// and that this PR doesn't itself touch. Non-blocking: surfaced for
-	// visibility, not something this PR is responsible for fixing.
-	if preExistingDriftSummary != "" {
-		b.WriteString("- ⚠️ **Pre-Existing Scaffold Drift** (not introduced by this PR)\n\n")
-		b.WriteString(RenderSubDropdown("Drift Details", preExistingDriftSummary))
-		b.WriteString("\n")
-	}
-
-	// Exec errors
+// composeScaffoldExecChild builds the blocking "Scaffold Exec" sub-check
+// from scaffold-run execution errors (as opposed to detected drift).
+func composeScaffoldExecChild(execErrors []string) ReportSection {
 	if len(execErrors) == 0 {
-		b.WriteString("- ✅ **Scaffold Exec** — all scaffold runs succeeded\n")
-	} else {
-		hasError = true
-		b.WriteString("- ❌ **Scaffold Exec**\n")
-		for _, e := range execErrors {
-			fmt.Fprintf(&b, "  - %s\n", e)
-		}
+		return ReportSection{Name: "Scaffold Exec", Status: StatusPassed, Summary: "All scaffold runs succeeded."}
 	}
+	var b strings.Builder
+	for _, e := range execErrors {
+		fmt.Fprintf(&b, "- %s\n", e)
+	}
+	return ReportSection{Name: "Scaffold Exec", Status: StatusError, Body: b.String()}
+}
 
-	// Missing clusters - overlays scaffold.Run skipped rather than
-	// validated (disabled, or no on-disk directory yet: not yet rolled
-	// out, or removed by this PR). Deliberately non-blocking: this is an
-	// informational "here's what wasn't checked and why" list, not a
-	// finding - see scaffold.Run's own doc comment ("skipped ... never
-	// Failed").
+// composePreExistingDriftChild builds the non-blocking "Pre-Existing
+// Scaffold Drift" sub-check: overlays that also drift against the
+// merge-base template/config (see computeBaselineMismatches in
+// scaffold_wiring.go) and that this PR doesn't itself touch. Surfaced for
+// visibility (⚠️), never promoted to an error - this PR isn't responsible
+// for fixing it.
+func composePreExistingDriftChild(preExistingDriftSummary string) ReportSection {
+	if preExistingDriftSummary == "" {
+		return ReportSection{Name: "Pre-Existing Scaffold Drift", Status: StatusPassed, Summary: "None detected."}
+	}
+	return ReportSection{Name: "Pre-Existing Scaffold Drift", Status: StatusWarning, Body: preExistingDriftSummary}
+}
+
+// composeClusterCoverageChild builds the "Cluster Coverage" sub-check from
+// missingClusters - overlays scaffold.Run skipped rather than validated
+// (disabled, or no on-disk directory yet: not yet rolled out, or removed by
+// this PR). Deliberately StatusInfo rather than StatusWarning/StatusError:
+// this is an informational "here's what wasn't checked and why" list, not
+// a finding - see scaffold.Run's own doc comment ("skipped ... never
+// Failed").
+func composeClusterCoverageChild(missingClusters []string) ReportSection {
 	if len(missingClusters) == 0 {
-		b.WriteString("- ✅ **Cluster Coverage** — all clusters accounted for\n")
-	} else {
-		b.WriteString("- ⚠️ **Missing Clusters** — skipped (not yet rolled out, or removed by this PR)\n")
-		for _, c := range missingClusters {
-			fmt.Fprintf(&b, "  - `%s`\n", c)
-		}
+		return ReportSection{Name: "Cluster Coverage", Status: StatusPassed, Summary: "All clusters accounted for."}
 	}
-
-	return Section{Name: "Scaffold Validation", Body: b.String(), Error: hasError}
+	var b strings.Builder
+	b.WriteString("Skipped (not yet rolled out, or removed by this PR):\n\n")
+	for _, c := range missingClusters {
+		fmt.Fprintf(&b, "- `%s`\n", c)
+	}
+	return ReportSection{Name: "Cluster Coverage", Status: StatusInfo, Body: b.String()}
 }
 
 // ComposeDriftProtectionSection renders a warning for every app that has a
@@ -553,10 +602,10 @@ func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingCl
 // findUnprotectedApps in scaffold_wiring.go. Unlike Scaffold Validation
 // (which reports drift for apps that ARE protected), this is the "you have
 // no coverage here at all" gap, non-blocking (it's a coverage warning, not
-// a drift finding).
-func ComposeDriftProtectionSection(unprotectedApps []string) Section {
+// a drift finding) - StatusWarning, never StatusError.
+func ComposeDriftProtectionSection(unprotectedApps []string) ReportSection {
 	if len(unprotectedApps) == 0 {
-		return Section{Name: "Scaffold Drift Protection", Body: "All modified overlays with a scaffold template have drift protection enabled."}
+		return ReportSection{Name: "Scaffold Drift Protection", Status: StatusPassed, Body: "All modified overlays with a scaffold template have drift protection enabled."}
 	}
 
 	var b strings.Builder
@@ -566,33 +615,34 @@ func ComposeDriftProtectionSection(unprotectedApps []string) Section {
 		fmt.Fprintf(&b, "- `%s`\n", app)
 	}
 
-	return Section{Name: "Scaffold Drift Protection", Body: b.String()}
+	return ReportSection{Name: "Scaffold Drift Protection", Status: StatusWarning, Body: b.String()}
 }
 
 // ComposeKyvernoSection renders the Kyverno subsection.
-func ComposeKyvernoSection(body string) Section {
+func ComposeKyvernoSection(body string) ReportSection {
 	if body == "" {
-		return Section{Name: "Kyverno Policies", Body: "No Kyverno findings."}
+		return ReportSection{Name: "Kyverno Policies", Status: StatusPassed, Body: "No Kyverno findings."}
 	}
-	return Section{Name: "Kyverno Policies", Body: body, Error: true}
+	return ReportSection{Name: "Kyverno Policies", Status: StatusError, Body: body}
 }
 
-// ComposeCINotesSection renders CI notes.
-func ComposeCINotesSection(body string) Section {
-	return Section{Name: "CI Notes", Body: body}
+// ComposeCINotesSection renders CI notes. Purely informational (build
+// metadata/reproduce-command, never a finding), so always StatusPassed.
+func ComposeCINotesSection(body string) ReportSection {
+	return ReportSection{Name: "CI Notes", Status: StatusPassed, Body: body}
 }
 
 // ComposeNADSection renders NetworkAttachmentDefinition validation results.
 // tier reflects which rule set actually ran: "structural" (the always-on
 // default) or "OVN-aware" (Options.AssumeOpenShift's additional semantic
 // tier - see pkg/validator/nad's package doc comment).
-func ComposeNADSection(nadErrors []nad.ValidationError, assumeOpenshift bool) Section {
+func ComposeNADSection(nadErrors []nad.ValidationError, assumeOpenshift bool) ReportSection {
 	tier := "structural"
 	if assumeOpenshift {
 		tier = "OVN-aware"
 	}
 	if len(nadErrors) == 0 {
-		return Section{Name: "NetworkAttachmentDefinition Validation", Body: fmt.Sprintf("All NetworkAttachmentDefinition resources passed %s validation.", tier)}
+		return ReportSection{Name: "NetworkAttachmentDefinition Validation", Status: StatusPassed, Body: fmt.Sprintf("All NetworkAttachmentDefinition resources passed %s validation.", tier)}
 	}
 
 	var b strings.Builder
@@ -602,5 +652,5 @@ func ComposeNADSection(nadErrors []nad.ValidationError, assumeOpenshift bool) Se
 		fmt.Fprintf(&b, "| %s | %s |\n", e.File, strings.ReplaceAll(e.Message, "|", "\\|"))
 	}
 
-	return Section{Name: "NetworkAttachmentDefinition Validation", Body: b.String(), Error: true}
+	return ReportSection{Name: "NetworkAttachmentDefinition Validation", Status: StatusError, Body: b.String()}
 }

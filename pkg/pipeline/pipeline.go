@@ -264,7 +264,7 @@ func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 		return
 	}
 	for _, s := range vr.Sections {
-		if !s.Error || strings.TrimSpace(s.Body) == "" {
+		if s.Status != validator.StatusError || strings.TrimSpace(s.Body) == "" {
 			continue
 		}
 		log.Raw("")
@@ -479,11 +479,11 @@ func postComment(res *Result, opts Options) error {
 // when vr is nil (e.g. the validation phase never ran) or the named section
 // wasn't produced (e.g. --lint-only mode, which skips the build phase
 // entirely and so never produces "Kustomize Build" et al).
-func validatorSectionOrFallback(vr *validator.Result, name string) validator.Section {
+func validatorSectionOrFallback(vr *validator.Result, name string) validator.ReportSection {
 	if s, ok := validatorSection(vr, name); ok {
 		return s
 	}
-	return validator.Section{Name: name, Body: "No results."}
+	return validator.ReportSection{Name: name, Status: validator.StatusPassed, Body: "No results."}
 }
 
 // validatorSection looks up a named section in vr.Sections, reporting
@@ -491,20 +491,20 @@ func validatorSectionOrFallback(vr *validator.Result, name string) validator.Sec
 // whom "not produced at all" (e.g. an opt-in phase that never ran) means
 // something different than "produced, found nothing" use this to omit the
 // section entirely instead of rendering a fallback stub.
-func validatorSection(vr *validator.Result, name string) (validator.Section, bool) {
+func validatorSection(vr *validator.Result, name string) (validator.ReportSection, bool) {
 	if vr == nil {
-		return validator.Section{}, false
+		return validator.ReportSection{}, false
 	}
 	for _, s := range vr.Sections {
 		if s.Name == name {
 			return s, true
 		}
 	}
-	return validator.Section{}, false
+	return validator.ReportSection{}, false
 }
 
-func composeSections(res *Result, opts Options) []validator.Section {
-	sections := make([]validator.Section, 0, 7)
+func composeSections(res *Result, opts Options) []validator.ReportSection {
+	sections := make([]validator.ReportSection, 0, 7)
 
 	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr, res.TitleSuggestion))

@@ -39,7 +39,7 @@ func TestRunNADValidation_ValidNADShowsPassingSection(t *testing.T) {
 	if s.Name != "NetworkAttachmentDefinition Validation" {
 		t.Errorf("Name = %q, want %q", s.Name, "NetworkAttachmentDefinition Validation")
 	}
-	if s.Error {
+	if s.Status == StatusError {
 		t.Errorf("expected a passing (non-error) section for a valid NAD, got: %+v", s)
 	}
 }
@@ -53,7 +53,7 @@ func TestRunNADValidation_StructuralFindingRemapsToOverlay(t *testing.T) {
 	if !present {
 		t.Fatal("expected a section (present=true) when a NAD is in the chain")
 	}
-	if !s.Error {
+	if s.Status != StatusError {
 		t.Fatalf("expected an error section for an empty spec.config, got: %+v", s)
 	}
 	if !strings.Contains(s.Body, "myapp/overlays/prod") {
@@ -75,10 +75,10 @@ spec:
 `
 	outputs := []renderedOverlay{{overlay: "myapp/overlays/prod", data: []byte(cfg)}}
 
-	if s, present := runNADValidation(outputs, false, log); !present || s.Error {
+	if s, present := runNADValidation(outputs, false, log); !present || s.Status == StatusError {
 		t.Errorf("expected structural tier to surface a passing section, got present=%v s=%+v", present, s)
 	}
-	if s, present := runNADValidation(outputs, true, log); !present || !s.Error {
+	if s, present := runNADValidation(outputs, true, log); !present || s.Status != StatusError {
 		t.Errorf("expected OVN-aware tier to catch the persistent-IPs-on-layer3 violation, got present=%v s=%+v", present, s)
 	}
 }
@@ -121,7 +121,7 @@ func TestRunAll_NADSectionPresentWhenNADInChain(t *testing.T) {
 	for _, s := range res.Sections {
 		if s.Name == "NetworkAttachmentDefinition Validation" {
 			found = true
-			if s.Error {
+			if s.Status == StatusError {
 				t.Errorf("expected a passing NAD section for a valid NAD, got: %+v", s)
 			}
 		}

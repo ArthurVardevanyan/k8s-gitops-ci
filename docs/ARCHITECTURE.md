@@ -64,7 +64,7 @@ flowchart LR
   classification rule, which is reused for the shellcheck extraction
   findings described there too.
 - **Unified Report** — one PR comment (or, without `--comment`, console
-  output) assembled from every phase's `Section`s. See
+  output) assembled from every phase's `ReportSection`s. See
   [CI.md](CI.md) for the report structure.
 
 ## Why "app-aware" overlay detection matters
