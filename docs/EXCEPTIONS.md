@@ -115,25 +115,39 @@ Kubernetes resource), those files are never associated with any app and
 their `test.sh` is never read by the standard app-hook resolution path.
 
 To cover this gap, `pkg/validator/nonapp_wiring.go`'s
-`resolveNonAppHookConfigs` reads a `test.sh` from each unique directory of
+`resolveNonAppHookConfigs` reads a `test.sh` for each unique directory of
 changed files that does **not** fall under any detected app root, before
 either validation phase runs. Its `EXEMPTIONS=(...)` selectors are
 resolved early (via the same `hook.Resolve` trust model — fail-closed to
 `SourceMain`) and passed directly into the kubeconform lint step as
 `earlySelectors`. This means:
 
-- A `test.sh` placed in a non-app directory (e.g. `okd/node-config/test.sh`)
-  is read whenever files from that directory appear in the changeset.
-- Its `EXEMPTIONS=(...)` entries support the same selector keys as any other
-  `test.sh`, including `file=` and `dir=`.
+- A `test.sh` placed in a non-app directory (e.g. `okd/test.sh`) is read
+  whenever a changed file's directory — or any of that directory's
+  descendants with no `test.sh` of their own — appears in the changeset.
+- Resolution walks **upward** from a changed file's own directory toward
+  the repository root, stopping at the **nearest ancestor that actually
+  declares a `test.sh`** (closest-match-wins — the same cascading pattern
+  `.gitignore`/`.editorconfig` use, not a merge across ancestors). This
+  lets one `test.sh` placed at a shared parent directory (e.g.
+  `okd/test.sh`) cover both files directly in that directory and files in
+  a non-app subdirectory (e.g. `okd/node-config/*.yaml`) that has no
+  `test.sh` of its own — no need for a `test.sh` in every leaf directory.
+  If a subdirectory **does** declare its own `test.sh`, that one applies
+  instead and the parent's is never consulted for those files.
+- Its `EXEMPTIONS=(...)` entries support the same selector keys as any
+  other `test.sh` (`file`, `kind`, `name`, `namespace`, `match`, `value`,
+  `path` — see the [selector reference](#selector-reference)).
 - Only `check=kubeconform` selectors have effect today — doc/overlay checks
   run in the Build+Compliance phase and consume their own app-level
   `EXEMPTIONS=(...)` separately.
 
-**Example** — exempt specific non-Kubernetes YAML files from kubeconform:
+**Example** — one `test.sh` at `okd/` covering both root-level files and a
+non-app subdirectory:
 
 ```sh
 export EXEMPTIONS=(
+  "check=kubeconform,file=install-config.yaml"
   "check=kubeconform,file=node-config/gpu-1.yaml"
   "check=kubeconform,file=node-config/worker-1.yaml"
 )

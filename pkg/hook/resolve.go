@@ -81,6 +81,36 @@ func resolveFromWorkingTree(app string) (*Config, error) {
 	return ParseTestScript(FindTestScript(app))
 }
 
+// Exists reports whether a test.sh is actually present for app under the
+// given source, without parsing it. Unlike Resolve (which always returns a
+// usable *Config, defaulting silently when no script exists), Exists lets a
+// caller distinguish "no test.sh here" from "a test.sh here with default
+// settings" — needed by callers that walk a directory tree looking for the
+// nearest ancestor that actually declares a test.sh (see
+// pkg/validator/nonapp_wiring.go's resolveNonAppHookConfigs). Honors the
+// same per-source trust model as Resolve: SourceMain checks the base/target
+// branch via git, never the (possibly PR-controlled) working tree.
+func Exists(app string, source Source) bool {
+	switch source {
+	case SourceMain:
+		return existsOnMain(app)
+	case SourcePR, SourceLocal:
+		_, err := os.Stat(FindTestScript(app))
+		return err == nil
+	default:
+		return existsOnMain(app)
+	}
+}
+
+// existsOnMain reports whether app's test.sh exists on the base/target
+// branch, via a cheap `git cat-file -e` existence check (no content
+// transfer, unlike `git show`).
+func existsOnMain(app string) bool {
+	ref := fmt.Sprintf("main:%s", FindTestScript(app))
+	cmd := exec.CommandContext(context.Background(), "git", "cat-file", "-e", ref)
+	return cmd.Run() == nil
+}
+
 // CleanupConfig removes the temp script file Resolve(..., SourceMain) may
 // have created for cfg. Safe to call on any Config (including nil, or one
 // resolved from the working tree) - it only ever removes files matching the

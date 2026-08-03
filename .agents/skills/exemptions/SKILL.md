@@ -57,10 +57,18 @@ place `test.sh` at the app root. It is read during the Build+Compliance
 phase whenever any file in that app is in the changeset.
 
 **Non-app directory** (no kustomize structure — e.g. `okd/node-config/`):
-place `test.sh` in that directory. It is read during the Linting phase
-via `resolveNonAppHookConfigs` whenever any file from that directory is
-in the changeset. Only `check=kubeconform` selectors take effect from
-non-app `test.sh` files today.
+place `test.sh` in that directory, or in any **ancestor** directory.
+Resolution walks upward from a changed file's own directory toward the
+repository root during the Linting phase (`resolveNonAppHookConfigs`),
+stopping at the **nearest ancestor that declares a `test.sh`**
+(closest-match-wins — like `.gitignore`/`.editorconfig` cascading, not a
+merge across ancestors). This means **one `test.sh` at a shared parent
+directory can cover multiple non-app subdirectories** that have no
+`test.sh` of their own — you don't need a `test.sh` in every leaf
+directory. If a subdirectory has its own `test.sh`, that one applies
+instead and the parent's is never consulted for those files. Only
+`check=kubeconform` selectors take effect from non-app `test.sh` files
+today.
 
 ### Exemptable check IDs
 
@@ -80,12 +88,17 @@ exempt it.
 
 ## Common patterns
 
-### Exempt a specific file from kubeconform (non-Kubernetes YAML)
+### Exempt several files under a shared directory from kubeconform (non-Kubernetes YAML)
 
-In `<dir>/test.sh` alongside the files:
+Place **one** `test.sh` at the shared parent directory rather than one per
+leaf directory — ancestor walk-up means files in subdirectories with no
+`test.sh` of their own still match:
 
 ```sh
+# okd/test.sh — covers okd/install-config.yaml directly, AND
+# okd/node-config/*.yaml even though node-config/ has no test.sh itself.
 export EXEMPTIONS=(
+  "check=kubeconform,file=install-config.yaml"
   "check=kubeconform,file=node-config/gpu-1.yaml"
   "check=kubeconform,file=node-config/worker-1.yaml"
 )

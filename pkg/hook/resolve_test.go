@@ -138,3 +138,65 @@ func TestCleanupConfig_LeavesNonTempFile(t *testing.T) {
 		t.Errorf("expected working-tree test.sh to remain, got: %v", err)
 	}
 }
+
+func TestExists_SourceLocal_True(t *testing.T) {
+	dir := t.TempDir()
+	app := "has-test-sh"
+	appDir := filepath.Join(dir, app)
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "test.sh"), []byte("SCAFFOLD=false\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if !Exists(app, SourceLocal) {
+		t.Error("expected Exists to report true for a directory with a test.sh")
+	}
+}
+
+func TestExists_SourceLocal_False(t *testing.T) {
+	dir := t.TempDir()
+	app := "no-test-sh"
+	if err := os.MkdirAll(filepath.Join(dir, app), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if Exists(app, SourceLocal) {
+		t.Error("expected Exists to report false for a directory with no test.sh")
+	}
+}
+
+func TestExists_SourcePR_UsesWorkingTree(t *testing.T) {
+	dir := t.TempDir()
+	app := "pr-app"
+	appDir := filepath.Join(dir, app)
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "test.sh"), []byte("SCAFFOLD=false\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	if !Exists(app, SourcePR) {
+		t.Error("expected SourcePR to check the working tree like SourceLocal")
+	}
+}

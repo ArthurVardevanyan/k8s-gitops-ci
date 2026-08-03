@@ -7,39 +7,66 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
-// resolveNonAppHookConfigs reads a test.sh from each unique directory of
-// changed files that does NOT fall under any detected kustomize app root.
-// This allows directories like okd/node-config/ — which have no base/,
+// resolveNonAppHookConfigs reads a test.sh for each unique directory of
+// changed files that does NOT fall under any detected kustomize app root,
+// walking upward from that directory toward the repository root and
+// stopping at the nearest ancestor that actually declares a test.sh
+// (closest-match-wins, the same cascading pattern .gitignore/.editorconfig
+// use — not a merge across ancestors). This allows a single test.sh placed
+// at a shared parent directory (e.g. okd/test.sh) to cover both files
+// directly in that directory and files in its non-app subdirectories (e.g.
+// okd/node-config/*.yaml), without requiring a test.sh in every leaf
+// directory. Directories like okd/node-config/ — which have no base/,
 // overlays/, or components/ structure and are therefore never detected as
-// kustomize apps — to still declare EXEMPTIONS=(...) for standalone lint
-// steps such as kubeconform (check=kubeconform) that run before the
-// Build+Compliance phase's normal app-hook resolution.
+// kustomize apps — still benefit from this: their EXEMPTIONS=(...) apply to
+// standalone lint steps such as kubeconform (check=kubeconform) that run
+// before the Build+Compliance phase's normal app-hook resolution.
 //
-// The returned map is keyed by directory path. Callers must defer
-// cleanupNonAppHookConfigs(result) since SourceMain resolution writes a
-// temp file per directory (matching the same hook.Resolve contract that
-// resolveAppHookConfigs uses for app-level test.sh files).
+// The returned map is keyed by the directory whose test.sh was actually
+// used (which may be an ancestor of, not equal to, some changed files'
+// directories). Callers must defer cleanupNonAppHookConfigs(result) since
+// SourceMain resolution writes a temp file per directory (matching the
+// same hook.Resolve contract that resolveAppHookConfigs uses for app-level
+// test.sh files).
 func resolveNonAppHookConfigs(changed []string, source hook.Source) map[string]*hook.Config {
 	appRoots := detectAppRoots(changed)
-	seen := make(map[string]bool)
+	seenStartDir := make(map[string]bool)
 	cfgs := make(map[string]*hook.Config)
 	for _, f := range changed {
 		dir := filepath.Dir(f)
-		if seen[dir] {
+		if seenStartDir[dir] {
 			continue
 		}
-		seen[dir] = true
+		seenStartDir[dir] = true
 		// Skip directories that already fall under a kustomize app root —
 		// their test.sh is handled by resolveAppHookConfigs during the
-		// Build+Compliance phase, which has the full overlay context.
+		// Build+Compliance phase, which has the full overlay context. An
+		// ancestor of a non-app-root file's directory can never itself be
+		// "under" an app root (nesting only decreases while walking
+		// upward), so this check need only run once, on the starting
+		// directory, before the walk begins.
 		if isUnderAnyRoot(f, appRoots) {
 			continue
 		}
-		cfg, err := hook.Resolve(dir, source)
-		if err != nil || cfg == nil {
-			continue
+		for cur := dir; ; {
+			if _, already := cfgs[cur]; already {
+				break
+			}
+			if hook.Exists(cur, source) {
+				if cfg, err := hook.Resolve(cur, source); err == nil && cfg != nil {
+					cfgs[cur] = cfg
+				}
+				break
+			}
+			if cur == "." {
+				break
+			}
+			parent := filepath.Dir(cur)
+			if parent == cur {
+				break
+			}
+			cur = parent
 		}
-		cfgs[dir] = cfg
 	}
 	return cfgs
 }
