@@ -16,12 +16,15 @@ const (
 	Marker             = "<!-- sync-options-warning -->"
 )
 
-// AssumeOpenShift enables treating OpenShift/OKD-only API groups (OLM,
-// Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API,
-// the built-in image registry, Metal3, etc.) as builtin/exempt from the
-// sync-options requirement. These groups only ship by default on
-// OpenShift/OKD clusters — enable this only if ALL target clusters are
-// OpenShift/OKD. Set once at process startup (see validator.RunAll).
+// AssumeOpenShift enables treating "default-but-portable" OpenShift/OKD
+// API groups (OLM, Prometheus Operator, SR-IOV/Multus/OVN-Kubernetes CNI,
+// Gateway API, Metal3, etc. — see openshiftDefaultAPIGroups) as
+// builtin/exempt from the sync-options requirement. These groups ship by
+// default on OpenShift/OKD but, unlike openshiftExclusiveAPIGroups, are
+// also commonly installed standalone on non-OpenShift Kubernetes clusters,
+// so their mere presence doesn't prove the target is OpenShift/OKD —
+// enable this only if ALL target clusters are OpenShift/OKD. Set once at
+// process startup (see validator.RunAll).
 var AssumeOpenShift = false
 
 // coreAPIGroups lists distro-agnostic API groups considered "built-in" (no
@@ -73,16 +76,13 @@ var coreAPIGroups = map[string]bool{
 	"ipam.cluster.x-k8s.io":           true,
 }
 
-// openshiftAPIGroups lists API groups that ship by default on OpenShift/OKD
-// clusters (but not on a generic/vanilla Kubernetes cluster). These are only
-// treated as exempt when AssumeOpenShift is true.
-var openshiftAPIGroups = map[string]bool{
-	// Prometheus Operator / OLM — bundled with OpenShift/OKD's cluster
-	// monitoring and Operator Lifecycle Manager respectively.
-	"monitoring.coreos.com": true,
-	"operators.coreos.com":  true,
-
-	// OpenShift API groups.
+// openshiftExclusiveAPIGroups lists API groups that can only ever exist on
+// an OpenShift/OKD API server — there's no standalone/vanilla-Kubernetes
+// distribution of these. Seeing a resource in one of these groups is
+// itself proof the target cluster is OpenShift/OKD, so they're always
+// treated as exempt, regardless of AssumeOpenShift.
+var openshiftExclusiveAPIGroups = map[string]bool{
+	// Core OpenShift platform API groups.
 	"operator.openshift.io":               true,
 	"config.openshift.io":                 true,
 	"route.openshift.io":                  true,
@@ -98,35 +98,6 @@ var openshiftAPIGroups = map[string]bool{
 	"machineconfiguration.openshift.io":   true,
 	"ingress.operator.openshift.io":       true,
 	"samples.operator.openshift.io":       true,
-	"hive.openshift.io":                   true,
-	"agent-install.openshift.io":          true,
-	"controlplane.operator.openshift.io":  true,
-
-	// Gateway API — OpenShift/OKD's built-in Gateway API implementation
-	// (Cluster Ingress Operator), not shipped by default on vanilla k8s.
-	"gateway.networking.k8s.io": true,
-
-	// Cluster Baremetal Operator — ships on OpenShift/OKD baremetal-
-	// platform installs.
-	"metal3.io": true,
-
-	// CNI / networking-related operator groups.
-	"whereabouts.cni.cncf.io":   true,
-	"k8s.cni.cncf.io":           true,
-	"sriovnetwork.openshift.io": true,
-	"nmstate.io":                true,
-
-	// OLM / operator framework groups.
-	"operatorframework.io":          true,
-	"olm.operatorframework.io":      true,
-	"packages.operators.coreos.com": true,
-
-	// Ships with OLM's default catalog on OpenShift/OKD.
-	"operatorhub.io": true,
-
-	// CNI, grouped with the existing whereabouts/k8s.cni.cncf.io entries
-	// above for consistency.
-	"k8s.ovn.org": true,
 
 	// OpenShift-namespaced groups.
 	"network.openshift.io":           true,
@@ -144,6 +115,52 @@ var openshiftAPIGroups = map[string]bool{
 	"performance.openshift.io":       true,
 	"apiserver.openshift.io":         true,
 	"autoscaling.openshift.io":       true,
+}
+
+// openshiftDefaultAPIGroups lists API groups that ship by default on
+// OpenShift/OKD but, unlike openshiftExclusiveAPIGroups, are also
+// installable standalone on a generic/vanilla Kubernetes cluster (e.g.
+// Prometheus Operator, OLM, Multus/OVN-Kubernetes CNI, or upstream
+// Gateway API deployed on any distro). Their mere presence doesn't prove
+// the target is OpenShift/OKD, so they're only treated as exempt when
+// AssumeOpenShift is true.
+var openshiftDefaultAPIGroups = map[string]bool{
+	// Prometheus Operator / OLM — bundled with OpenShift/OKD's cluster
+	// monitoring and Operator Lifecycle Manager respectively, but both
+	// are also commonly installed standalone on any Kubernetes cluster.
+	"monitoring.coreos.com": true,
+	"operators.coreos.com":  true,
+
+	// Gateway API — an upstream k8s-sigs API also installable on any
+	// distro; OpenShift/OKD just ships an implementation of it by
+	// default via the Cluster Ingress Operator.
+	"gateway.networking.k8s.io": true,
+
+	// Cluster Baremetal Operator / Metal3 — also runs as a standalone
+	// project on non-OpenShift clusters.
+	"metal3.io": true,
+
+	// CNI / networking-related operator groups — all also deployable on
+	// non-OpenShift clusters (e.g. bare-metal kubeadm installs).
+	"whereabouts.cni.cncf.io":   true,
+	"k8s.cni.cncf.io":           true,
+	"sriovnetwork.openshift.io": true,
+	"nmstate.io":                true,
+	"k8s.ovn.org":               true,
+
+	// OLM / operator framework groups — OLM itself is installable
+	// standalone via operator-sdk on any Kubernetes cluster.
+	"operatorframework.io":          true,
+	"olm.operatorframework.io":      true,
+	"packages.operators.coreos.com": true,
+	"operatorhub.io":                true,
+
+	// Hive / Assisted Installer / HyperShift — these manage OpenShift
+	// clusters from a hub/management cluster that need not itself be
+	// OpenShift/OKD.
+	"hive.openshift.io":                  true,
+	"agent-install.openshift.io":         true,
+	"controlplane.operator.openshift.io": true,
 }
 
 // nonExemptCRDGroups lists known CRD-providing groups that are NOT exempt —
@@ -293,8 +310,11 @@ func isBuiltinResource(apiVersion string) bool {
 	if v, ok := coreAPIGroups[g]; ok {
 		return v
 	}
+	if v, ok := openshiftExclusiveAPIGroups[g]; ok {
+		return v
+	}
 	if AssumeOpenShift {
-		if v, ok := openshiftAPIGroups[g]; ok {
+		if v, ok := openshiftDefaultAPIGroups[g]; ok {
 			return v
 		}
 	}

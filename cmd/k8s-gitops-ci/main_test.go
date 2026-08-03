@@ -247,38 +247,56 @@ func markdownSection(name string, isError bool) validator.Section {
 func TestPrintAllSectionsConsole_StripsGitHubMarkdown(t *testing.T) {
 	sections := []validator.Section{markdownSection("ResourceCompliance", true)}
 
-	out := captureStdout(t, func() { printAllSectionsConsole(sections) })
+	out := captureStdout(t, func() { printAllSectionsConsole(nil, sections) })
 
 	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "</summary>", "&nbsp;", "**"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("printAllSectionsConsole output must not contain %q, got: %s", unwanted, out)
 		}
 	}
-	for _, want := range []string{"=== ResourceCompliance ===", "❌ Finding (1 finding(s)):", "| Deployment | example |"} {
+	for _, want := range []string{"--- ResourceCompliance ---", "❌ Finding (1 finding(s)):", "| Deployment | example |"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("printAllSectionsConsole output missing %q, got: %s", want, out)
 		}
 	}
 }
 
+// TestPrintAllSectionsConsole_PassingSectionIsOneLine guards against a
+// regression where a passing section's full body was dumped a second time
+// (in a different style) after the per-check "[INFO] X: passed" line had
+// already been streamed live by the Logger during RunAll - see
+// printAllSectionsConsole's doc comment. Passing sections must render as a
+// single terse summary line, not their full (duplicate) Body.
+func TestPrintAllSectionsConsole_PassingSectionIsOneLine(t *testing.T) {
+	sections := []validator.Section{markdownSection("Linting", false)}
+
+	out := captureStdout(t, func() { printAllSectionsConsole(nil, sections) })
+
+	want := "✅ Linting: passed"
+	if strings.TrimSpace(out) != want {
+		t.Errorf("printAllSectionsConsole(passing) = %q, want %q", out, want)
+	}
+}
+
 // TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing
 // mirrors TestPrintAllSectionsConsole_StripsGitHubMarkdown for scan-all's
 // renderer, and additionally checks that passing (non-Error) sections are
-// omitted.
+// omitted entirely (not even a one-line summary - scan-all only reports
+// failures).
 func TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *testing.T) {
 	sections := []validator.Section{
 		markdownSection("Passing", false),
 		markdownSection("Failing", true),
 	}
 
-	out := captureStdout(t, func() { printFailedSectionsConsole(sections) })
+	out := captureStdout(t, func() { printFailedSectionsConsole(nil, sections) })
 
 	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "&nbsp;", "**", "Passing"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("printFailedSectionsConsole output must not contain %q, got: %s", unwanted, out)
 		}
 	}
-	if !strings.Contains(out, "[FAIL] Failing") {
-		t.Errorf("printFailedSectionsConsole output missing %q, got: %s", "[FAIL] Failing", out)
+	if !strings.Contains(out, "--- Failing ---") {
+		t.Errorf("printFailedSectionsConsole output missing %q, got: %s", "--- Failing ---", out)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/prettier"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/shellcheck"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/yamlsyntax"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/pipeline"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
@@ -101,7 +102,7 @@ func runPipeline(args []string) error {
 	fs.BoolVar(&opts.LintOnly, "lint-only", false, "lint only, skip build checks")
 	fs.BoolVar(&opts.PostComment, "comment", false, "post PR comment (default: off)")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
-	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-only API groups (OLM, Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API, Metal3) as exempt from the sync-options check; only enable if ALL target clusters are OpenShift/OKD")
+	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
 	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
 	fs.StringVar(&enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
 	fs.IntVar(&opts.Concurrency, "concurrency", 0, "worker concurrency (0=auto)")
@@ -172,34 +173,72 @@ func runBuildYAML(args []string) error {
 	if err != nil {
 		return err
 	}
-	printAllSectionsConsole(res.Sections)
+	printAllSectionsConsole(res.Logger, res.Sections)
 	if res.Logger != nil {
 		fmt.Println(res.Logger.Summary())
 	}
 	return nil
 }
 
-// printAllSectionsConsole prints every section's console-sanitized (see
-// pipeline.SanitizeSectionBodyForConsole) Body under an "=== Name ==="
-// header - the build-yaml/test-all rendering, which (unlike scan-all) shows
-// passing sections too. Split out from its callers so the console-vs-PR-
-// markdown handling is unit-testable without invoking validator.RunAll
-// (which shells out to git).
-func printAllSectionsConsole(sections []validator.Section) {
+// printAllSectionsConsole prints every section's result to the console: a
+// compact "✅ Name: passed" line for passing sections (full detail was
+// already streamed live by log during RunAll - see phases.go - so repeating
+// it here would just duplicate that output in a different style), and the
+// full console-sanitized (see pipeline.SanitizeSectionBodyForConsole) Body
+// under a log.SubHeader box for failing ones, matching the "====\n Title\n
+// ===="/"----\n Title\n----" banner family log already uses for phases -
+// this is the build-yaml/test-all rendering. Split out from its callers so
+// the console-vs-PR-markdown handling is unit-testable without invoking
+// validator.RunAll (which shells out to git).
+func printAllSectionsConsole(log *logger.Logger, sections []validator.Section) {
 	for _, s := range sections {
-		fmt.Printf("=== %s ===\n%s\n", s.Name, pipeline.SanitizeSectionBodyForConsole(s.Body))
+		if s.Error {
+			printFailedSectionConsole(log, s)
+			continue
+		}
+		printPassedSectionConsole(log, s.Name)
 	}
 }
 
-// printFailedSectionsConsole prints only the errored sections' console-
-// sanitized Body under a "[FAIL] Name" header - the scan-all rendering. See
-// printAllSectionsConsole for why this is split out from its caller.
-func printFailedSectionsConsole(sections []validator.Section) {
+// printFailedSectionsConsole prints only the errored sections' full detail
+// (see printAllSectionsConsole) - the scan-all rendering, which (unlike
+// test-all/build-yaml) omits passing sections entirely rather than even a
+// one-line summary. See printAllSectionsConsole for why this is split out
+// from its caller.
+func printFailedSectionsConsole(log *logger.Logger, sections []validator.Section) {
 	for _, s := range sections {
 		if s.Error {
-			fmt.Printf("[FAIL] %s\n%s\n", s.Name, pipeline.SanitizeSectionBodyForConsole(s.Body))
+			printFailedSectionConsole(log, s)
 		}
 	}
+}
+
+// printPassedSectionConsole prints a single-line "✅ Name: passed" summary
+// for a section that produced no blocking findings - the per-check detail
+// was already streamed live via log during RunAll, so this is intentionally
+// terse rather than repeating that detail a second time.
+func printPassedSectionConsole(log *logger.Logger, name string) {
+	line := "✅ " + name + ": passed"
+	if log != nil {
+		log.Raw(line)
+		return
+	}
+	fmt.Println(line)
+}
+
+// printFailedSectionConsole prints a section's console-sanitized Body under
+// a log.SubHeader(s.Name) box, so every console entry point (test-all,
+// scan-all, build-yaml, and pipeline --verbose's printFailedSectionDetail)
+// shares one consistent header style instead of each inventing its own.
+func printFailedSectionConsole(log *logger.Logger, s validator.Section) {
+	body := pipeline.SanitizeSectionBodyForConsole(s.Body)
+	if log != nil {
+		log.Raw("")
+		log.SubHeader(s.Name)
+		log.Raw(body)
+		return
+	}
+	fmt.Printf("\n--- %s ---\n%s\n", s.Name, body)
 }
 
 // ── test-all / scan-all ───────────────────────────────────────────────────────
@@ -229,7 +268,7 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.StringVar(&v.disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
 	fs.StringVar(&v.enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
 	fs.IntVar(&v.concurrency, "concurrency", 0, "worker concurrency (0=auto)")
-	fs.BoolVar(&v.assumeOpenshift, "assume-openshift", false, "treat OpenShift/OKD-only API groups (OLM, Prometheus Operator, *.openshift.io, SR-IOV/Multus CNI, Gateway API, Metal3) as exempt from the sync-options check; only enable if ALL target clusters are OpenShift/OKD")
+	fs.BoolVar(&v.assumeOpenshift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
 	fs.BoolVar(&v.verbose, "verbose", false, "verbose output")
 	fs.Var(newStringSliceFlag(&v.apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
 	fs.Var(newStringSliceFlag(&v.clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
@@ -287,7 +326,7 @@ func runTestAll(args []string) error {
 	if err != nil {
 		return err
 	}
-	printAllSectionsConsole(res.Sections)
+	printAllSectionsConsole(res.Logger, res.Sections)
 	if res.Logger != nil {
 		fmt.Println(res.Logger.Summary())
 	}
@@ -320,7 +359,7 @@ func runScanAll(args []string) error {
 	if err != nil {
 		return err
 	}
-	printFailedSectionsConsole(res.Sections)
+	printFailedSectionsConsole(res.Logger, res.Sections)
 	if res.Logger != nil {
 		fmt.Println(res.Logger.Summary())
 	}
