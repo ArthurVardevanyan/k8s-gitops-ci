@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"testing"
 )
 
@@ -359,5 +361,156 @@ func mustWrite(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// ── DryRunParse mode ─────────────────────────────────────────────────────────
+
+// fakeScaffoldTool writes a fake scaffold CLI to a temp dir and points
+// Binary at it, restoring Binary/DriftMode/ScaffoldArgs/CreatedFileMarkers
+// on cleanup. The script echoes the SCAFFOLD_OUTPUT env var to stdout, so a
+// test controls exactly what "created" lines the tool reports. exitCode
+// lets a test simulate a tool execution failure.
+func fakeScaffoldTool(t *testing.T, output string, exitCode int) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake shell tool not supported on windows")
+	}
+	bin := filepath.Join(t.TempDir(), "faketool")
+	script := "#!/bin/sh\nprintf '%s' \"$SCAFFOLD_OUTPUT\"\nexit " + strconv.Itoa(exitCode) + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { //nolint:gosec // test-only fake tool
+		t.Fatal(err)
+	}
+	t.Setenv("SCAFFOLD_OUTPUT", output)
+
+	origBin, origMode, origArgs, origMarkers := Binary, DriftMode, ScaffoldArgs, CreatedFileMarkers
+	Binary = bin
+	DriftMode = DryRunParse
+	CreatedFileMarkers = []string{"Created File:"}
+	ScaffoldArgs = func(_, _ string, _ bool) []string { return []string{"scaffold"} }
+	t.Cleanup(func() {
+		Binary, DriftMode, ScaffoldArgs, CreatedFileMarkers = origBin, origMode, origArgs, origMarkers
+	})
+}
+
+func TestRun_DryRunParse_PerClusterPass(t *testing.T) {
+	dir := t.TempDir()
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"), "resources: []\n")
+
+	fakeScaffoldTool(t, "", 0) // no "created" lines -> no drift
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Passed != 1 || summary.Failed != 0 {
+		t.Errorf("expected clean pass, got passed=%d failed=%d errors=%v", summary.Passed, summary.Failed, summary.Errors)
+	}
+}
+
+func TestRun_DryRunParse_PerClusterDrift(t *testing.T) {
+	dir := t.TempDir()
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"), "resources: []\n")
+
+	// The tool reports it would create a file for an existing overlay -> drift.
+	fakeScaffoldTool(t, "Created File: myapp/overlays/dev/new.yaml\n", 0)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed == 0 {
+		t.Errorf("expected drift failure, got passed=%d failed=%d", summary.Passed, summary.Failed)
+	}
+	if len(summary.MismatchFiles) != 1 {
+		t.Errorf("expected 1 mismatch file, got %v", summary.MismatchFiles)
+	}
+}
+
+func TestRun_DryRunParse_FullTestSkipsNewCluster(t *testing.T) {
+	dir := t.TempDir()
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"), "resources: []\n")
+
+	// One created file for an existing overlay (drift) and one for a cluster
+	// with no on-disk overlay and not in the changeset (new cluster -> skip).
+	fakeScaffoldTool(t, "Created File: myapp/overlays/dev/new.yaml\nCreated File: myapp/overlays/future/new.yaml\n", 0)
+
+	// FullTest runs a single all-overlays invocation; overlays list must
+	// include an on-disk cluster so it survives the pre-filter to toRun.
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}, FullTest: true})
+	if len(summary.MismatchFiles) != 1 {
+		t.Errorf("expected 1 mismatch (dev), got %v", summary.MismatchFiles)
+	}
+	if len(summary.SkippedClusters) != 1 || summary.SkippedClusters[0] != "future" {
+		t.Errorf("expected 'future' skipped as a new cluster, got %v", summary.SkippedClusters)
+	}
+}
+
+func TestRun_DryRunParse_ExecFailure(t *testing.T) {
+	dir := t.TempDir()
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"), "resources: []\n")
+
+	// Tool exits non-zero for an existing overlay -> execution error.
+	fakeScaffoldTool(t, "boom\n", 1)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed == 0 || len(summary.Errors) == 0 {
+		t.Errorf("expected an execution failure, got passed=%d failed=%d errors=%v", summary.Passed, summary.Failed, summary.Errors)
+	}
+}
+
+func TestRun_DryRunParse_MissingScaffoldArgs(t *testing.T) {
+	dir := t.TempDir()
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"), "resources: []\n")
+
+	origMode, origArgs := DriftMode, ScaffoldArgs
+	DriftMode = DryRunParse
+	ScaffoldArgs = nil
+	t.Cleanup(func() { DriftMode, ScaffoldArgs = origMode, origArgs })
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if len(summary.Errors) == 0 || summary.Failed == 0 {
+		t.Error("expected an error when ScaffoldArgs is unset in DryRunParse mode")
+	}
+}
+
+func TestExtractCreatedFiles_CldctlMarkers(t *testing.T) {
+	orig := CreatedFileMarkers
+	CreatedFileMarkers = []string{"Created File:", "✓ Dry Run - Would Have Created File:"}
+	t.Cleanup(func() { CreatedFileMarkers = orig })
+
+	got := ExtractCreatedFiles(
+		"noise\nCreated File: a/overlays/dev/x.yaml\n" +
+			"✓ Dry Run - Would Have Created File: a/overlays/prod/y.yaml\nmore noise\n",
+	)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 created files, got %v", got)
+	}
+	if got[0] != "a/overlays/dev/x.yaml" || got[1] != "a/overlays/prod/y.yaml" {
+		t.Errorf("unexpected parse: %v", got)
 	}
 }

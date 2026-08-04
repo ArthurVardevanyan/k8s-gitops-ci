@@ -150,8 +150,12 @@ disable the built-in exemption that lets Tekton Pipelines-as-code-managed
 `PipelineRun` manifests there skip the `sync-options`/`namespace` checks,
 since PAC's own controller manages their lifecycle rather than Argo CD),
 `pkg/scaffold`'s `Binary`/`ConfigSource` (retarget the scaffolding
-CLI/config-source name) and `ExcludedClusters` (permanently skip named
-overlays from scaffold-drift validation, independent of the per-app
+CLI/config-source name), `DriftMode`/`ScaffoldArgs`/`CreatedFileMarkers`
+(switch from the default `DiffDirs` generate-and-diff strategy to
+`DryRunParse` for a scaffolding CLI whose dry-run mode reports the files
+it would create rather than supporting a directory-diff contract), and
+`ExcludedClusters` (permanently skip named overlays from scaffold-drift
+validation, independent of the per-app
 `IsOverlayDisabled`/`IsChangeGroupDisabled` config-driven opt-outs),
 `pkg/validator`'s `ExtraNonAppDirs` (extra top-level repository
 directories - e.g. a vendored example or internal-tooling directory

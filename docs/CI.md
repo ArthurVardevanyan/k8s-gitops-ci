@@ -7,43 +7,45 @@ package map; this is the detailed, step-by-step reference.
 
 ## Table of Contents
 
-- [Pipeline Flow](#pipeline-flow)
-- [Modes](#modes)
-- [Build Strategies](#build-strategies)
-- [Validation Steps](#validation-steps)
-  - [Linting phase (all steps run concurrently)](#linting-phase-all-steps-run-concurrently)
-    - [`markdownlint`](#markdownlint)
-    - [`prettier`](#prettier)
-    - [`golangci`](#golangci)
-    - [`kubeconform`](#kubeconform)
-    - [`shellcheck`](#shellcheck)
-  - [Static Checks phase (all steps run concurrently)](#static-checks-phase-all-steps-run-concurrently)
-    - [`large-file`](#large-file)
-    - [`YAML-syntax`](#yaml-syntax)
-    - [`config-sort`](#config-sort)
-    - [`startingCSV`](#startingcsv)
-    - [`scaffold-readme`](#scaffold-readme)
-  - [Kustomize Fix](#kustomize-fix)
-  - [Ghost Patch Detection](#ghost-patch-detection)
-  - [Scaffold Validation](#scaffold-validation)
-  - [Registered checks](#registered-checks)
-    - [`namespace`](#namespace)
-    - [`psa-labels`](#psa-labels)
-    - [`rbac-readonly`](#rbac-readonly)
-    - [`rbac-wildcards`](#rbac-wildcards)
-    - [`crb`](#crb)
-    - [`sync-options`](#sync-options)
-    - [`image-checksum`](#image-checksum)
-    - [`named-ports`](#named-ports)
-    - [`podspec-defaults`](#podspec-defaults)
-    - [`placeholder`](#placeholder)
-    - [`cluster-identity`](#cluster-identity)
-    - [`avp`](#avp)
-    - [`kyverno`](#kyverno)
-  - [NetworkAttachmentDefinition (NAD) validation](#networkattachmentdefinition-nad-validation)
-- [Direct vs. external findings](#direct-vs-external-findings)
-- [Concurrency](#concurrency)
-- [Report structure](#report-structure)
+- [CI Pipeline](#ci-pipeline)
+  - [Table of Contents](#table-of-contents)
+  - [Pipeline Flow](#pipeline-flow)
+  - [Modes](#modes)
+  - [Build Strategies](#build-strategies)
+  - [Validation Steps](#validation-steps)
+    - [Linting phase (all steps run concurrently)](#linting-phase-all-steps-run-concurrently)
+      - [`markdownlint`](#markdownlint)
+      - [`prettier`](#prettier)
+      - [`golangci`](#golangci)
+      - [`kubeconform`](#kubeconform)
+      - [`shellcheck`](#shellcheck)
+    - [Static Checks phase (all steps run concurrently)](#static-checks-phase-all-steps-run-concurrently)
+      - [`large-file`](#large-file)
+      - [`YAML-syntax`](#yaml-syntax)
+      - [`config-sort`](#config-sort)
+      - [`startingCSV`](#startingcsv)
+      - [`scaffold-readme`](#scaffold-readme)
+    - [Kustomize Fix](#kustomize-fix)
+    - [Ghost Patch Detection](#ghost-patch-detection)
+    - [Scaffold Validation](#scaffold-validation)
+    - [Registered checks](#registered-checks)
+      - [`namespace`](#namespace)
+      - [`psa-labels`](#psa-labels)
+      - [`rbac-readonly`](#rbac-readonly)
+      - [`rbac-wildcards`](#rbac-wildcards)
+      - [`crb`](#crb)
+      - [`sync-options`](#sync-options)
+      - [`image-checksum`](#image-checksum)
+      - [`named-ports`](#named-ports)
+      - [`podspec-defaults`](#podspec-defaults)
+      - [`placeholder`](#placeholder)
+      - [`cluster-identity`](#cluster-identity)
+      - [`avp`](#avp)
+      - [`kyverno`](#kyverno)
+    - [NetworkAttachmentDefinition (NAD) validation](#networkattachmentdefinition-nad-validation)
+  - [Direct vs. external findings](#direct-vs-external-findings)
+  - [Concurrency](#concurrency)
+  - [Report structure](#report-structure)
 
 ## Pipeline Flow
 
@@ -517,8 +519,25 @@ tested, cover every way a change can require this:
    classification `overlay.GetOverlaysToTest` uses for the build phase
    itself.
 
-For each app, `pkg/scaffold.Run` regenerates its overlays via scafctl once
-(bounded by a 2-minute timeout) and diffs the result against every
+`pkg/scaffold.Run` supports two drift-detection strategies, selected by the
+`scaffold.DriftMode` package var (an org seam - default `DiffDirs`):
+
+- **`DiffDirs`** (default, the `scafctl` contract): regenerate every overlay
+  into a temp directory in one shot (`scafctl scaffold --config
+<ConfigSource>=<path> --output <dir>`) and diff each committed overlay
+  against it.
+- **`DryRunParse`**: run the tool in dry-run mode (args built by the
+  `scaffold.ScaffoldArgs` seam) and treat every file it reports it _would_
+  create (`scaffold.ExtractCreatedFiles`, matching `scaffold.CreatedFileMarkers`)
+  as evidence its overlay drifted. For tools whose dry-run output enumerates
+  the files they would write rather than supporting the `--output`-to-dir
+  contract `DiffDirs` assumes (e.g. a vendored `cldctl`). Preserves the same
+  skip/mismatch classification (overlay exists → mismatch, deleted-by-PR →
+  mismatch, not-yet-rolled-out cluster → skip) and `operatorOverlays` (full)
+  vs. `clusterOverlays` (per-cluster, driven by `RunOptions.FullTest`) split.
+
+For each app, `pkg/scaffold.Run` regenerates its overlays via the scaffold
+tool once (bounded by a 2-minute timeout) and diffs the result against every
 overlay actually being checked, **bounded-parallel** (up to
 `runtime.NumCPU()*2` overlays at once - the per-app fan-out above is
 similarly bounded-parallel across apps). An overlay is skipped rather
