@@ -553,6 +553,7 @@ var resourceScope = map[string]bool{
 	"operator.tekton.dev/TektonTrigger":                                       true,
 	"operator.victoriametrics.com/VLAgent":                                    false,
 	"operator.victoriametrics.com/VLCluster":                                  false,
+	"operator.victoriametrics.com/VLDistributed":                              false,
 	"operator.victoriametrics.com/VLSingle":                                   false,
 	"operator.victoriametrics.com/VLogs":                                      false,
 	"operator.victoriametrics.com/VMAgent":                                    false,
