@@ -96,13 +96,27 @@ Both modes take effect today; pick based on scope:
 
 ## Exemptable check IDs
 
-Every check registered via `check.Register` becomes exemptable
-automatically, under its own check ID (`check.Register` calls
-`exempt.RegisterExemptable(c.ID())` unconditionally) — so `namespace`,
-`psa-labels`, `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`,
-`named-ports`, `podspec-defaults`, and `placeholder` are all exemptable
-by their own ID with no extra wiring needed. Four IDs get special
-treatment instead of using their owning check's own ID:
+Every check registered via `check.Register` becomes exemptable via the
+`EXEMPTIONS=(...)` **selector** mode automatically, under its own check ID
+(`check.Register` calls `exempt.RegisterExemptable(c.ID())`
+unconditionally) — so `namespace`, `psa-labels`, `rbac-readonly`,
+`rbac-wildcards`, `crb`, `sync-options`, `named-ports`, `podspec-defaults`,
+and `placeholder` are all selector-exemptable by their own ID with no
+extra wiring needed.
+
+**Annotation-mode support is separate and per-check** (see "Adding
+exemption support to a new check" below): a check only honors
+`gitops-ci.k8s.io/exempt-<id>` if its adapter in `register_checks.go`
+populates `Finding.Value`/`Token` (what the annotation's value must match)
+_and_ `Finding.Annotations` (the resource's own annotations, threaded
+through from the underlying validator). Of the checks above,
+`rbac-wildcards`, `named-ports`, and `podspec-defaults` do both today
+(`Value` is the wildcarded rule field, the numeric port, and the
+joined missing-fields list, respectively). `namespace`, `psa-labels`,
+`rbac-readonly`, `crb`, `sync-options`, and `placeholder` don't yet
+populate either — only their `EXEMPTIONS=(...)` selector form works.
+Four IDs get special treatment instead of using their owning check's own
+ID:
 
 | ID                 | Used by                                                                                                                                                                    | Exemptable?                                                                                                                                                                                                                                                                                                                                                |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

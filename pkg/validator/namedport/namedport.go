@@ -14,6 +14,14 @@ import (
 // ValidationError records a numeric/unnamed port finding.
 type ValidationError struct {
 	File, Kind, Name, Container, Path, Issue string
+	// Value is the stable match target for annotation/selector exemptions
+	// (the numeric port, or missing-name port number, the finding is
+	// about) - see exempt.Scalar.Value / Scalar.annotationValue().
+	Value string
+	// Annotations carries the finding's own resource's metadata.annotations,
+	// so a gitops-ci.k8s.io/exempt-named-ports annotation on the resource
+	// itself can grant an exemption, not just an EXEMPTIONS=(...) selector.
+	Annotations map[string]string
 }
 
 func (e ValidationError) String() string {
@@ -84,20 +92,21 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 			continue
 		}
 		name := quickName(mapping)
-		errs = append(errs, validateDoc(mapping, kind, name, source)...)
+		annotations := extractAnnotations(findKey(mapping, "metadata"))
+		errs = append(errs, validateDoc(mapping, kind, name, source, annotations)...)
 	}
 	return errs
 }
 
-func validateDoc(mapping *yaml.Node, kind, name, source string) []ValidationError {
+func validateDoc(mapping *yaml.Node, kind, name, source string, annotations map[string]string) []ValidationError {
 	var errs []ValidationError
 	switch kind {
 	case "Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod":
-		errs = append(errs, validateWorkload(mapping, kind, name, source)...)
+		errs = append(errs, validateWorkload(mapping, kind, name, source, annotations)...)
 	case "Service":
-		errs = append(errs, validateService(mapping, kind, name, source)...)
+		errs = append(errs, validateService(mapping, kind, name, source, annotations)...)
 	case "Ingress":
-		errs = append(errs, validateIngress(mapping, kind, name, source)...)
+		errs = append(errs, validateIngress(mapping, kind, name, source, annotations)...)
 	}
 	return errs
 }
@@ -119,7 +128,7 @@ func podSpecPath(kind string) string {
 	}
 }
 
-func validateWorkload(mapping *yaml.Node, kind, name, source string) []ValidationError {
+func validateWorkload(mapping *yaml.Node, kind, name, source string, annotations map[string]string) []ValidationError {
 	var errs []ValidationError
 	podPath := podSpecPath(kind)
 	podSpec := getNodeAtPath(mapping, podPath)
@@ -151,10 +160,13 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 				}
 				portName := quickString(findKey(p, "name"))
 				if strings.TrimSpace(portName) == "" {
+					containerPort := quickString(findKey(p, "containerPort"))
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name, Container: cname,
-						Path:  fmt.Sprintf("%s.ports[%d]", containersPath, i),
-						Issue: fmt.Sprintf("container port %s missing name (define ports[].name so it can be referenced by name)", quickString(findKey(p, "containerPort"))),
+						Path:        fmt.Sprintf("%s.ports[%d]", containersPath, i),
+						Issue:       fmt.Sprintf("container port %s missing name (define ports[].name so it can be referenced by name)", containerPort),
+						Value:       containerPort,
+						Annotations: annotations,
 					})
 				}
 			}
@@ -174,8 +186,10 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 					if portField != nil && isNumericPort(portField) {
 						errs = append(errs, ValidationError{
 							File: source, Kind: kind, Name: name, Container: cname,
-							Path:  fmt.Sprintf("%s.%s.port", containersPath, pt),
-							Issue: fmt.Sprintf("%s.port is numeric (%s); reference a named containerPort instead", pt, portField.Value),
+							Path:        fmt.Sprintf("%s.%s.port", containersPath, pt),
+							Issue:       fmt.Sprintf("%s.port is numeric (%s); reference a named containerPort instead", pt, portField.Value),
+							Value:       portField.Value,
+							Annotations: annotations,
 						})
 					}
 				}
@@ -185,7 +199,7 @@ func validateWorkload(mapping *yaml.Node, kind, name, source string) []Validatio
 	return errs
 }
 
-func validateService(mapping *yaml.Node, kind, name, source string) []ValidationError {
+func validateService(mapping *yaml.Node, kind, name, source string, annotations map[string]string) []ValidationError {
 	var errs []ValidationError
 	spec := findKey(mapping, "spec")
 	if spec == nil || spec.Kind != yaml.MappingNode {
@@ -205,25 +219,30 @@ func validateService(mapping *yaml.Node, kind, name, source string) []Validation
 		}
 		portName := quickString(findKey(p, "name"))
 		if strings.TrimSpace(portName) == "" {
+			port := quickString(findKey(p, "port"))
 			errs = append(errs, ValidationError{
 				File: source, Kind: kind, Name: name,
-				Path:  fmt.Sprintf("spec.ports[%d]", i),
-				Issue: fmt.Sprintf("service port %s missing name", quickString(findKey(p, "port"))),
+				Path:        fmt.Sprintf("spec.ports[%d]", i),
+				Issue:       fmt.Sprintf("service port %s missing name", port),
+				Value:       port,
+				Annotations: annotations,
 			})
 		}
 		targetPort := findKey(p, "targetPort")
 		if targetPort != nil && isNumericPort(targetPort) {
 			errs = append(errs, ValidationError{
 				File: source, Kind: kind, Name: name,
-				Path:  fmt.Sprintf("spec.ports[%d].targetPort", i),
-				Issue: fmt.Sprintf("targetPort is numeric (%s); reference a named containerPort instead", targetPort.Value),
+				Path:        fmt.Sprintf("spec.ports[%d].targetPort", i),
+				Issue:       fmt.Sprintf("targetPort is numeric (%s); reference a named containerPort instead", targetPort.Value),
+				Value:       targetPort.Value,
+				Annotations: annotations,
 			})
 		}
 	}
 	return errs
 }
 
-func validateIngress(mapping *yaml.Node, kind, name, source string) []ValidationError {
+func validateIngress(mapping *yaml.Node, kind, name, source string, annotations map[string]string) []ValidationError {
 	var errs []ValidationError
 	spec := findKey(mapping, "spec")
 	if spec == nil || spec.Kind != yaml.MappingNode {
@@ -237,8 +256,10 @@ func validateIngress(mapping *yaml.Node, kind, name, source string) []Validation
 					baseName := quickString(findKey(svc, "name"))
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name,
-						Path:  "spec.defaultBackend.service.port.number",
-						Issue: fmt.Sprintf("ingress backend for service %q uses port.number (%s); use port.name instead", baseName, n.Value),
+						Path:        "spec.defaultBackend.service.port.number",
+						Issue:       fmt.Sprintf("ingress backend for service %q uses port.number (%s); use port.name instead", baseName, n.Value),
+						Value:       n.Value,
+						Annotations: annotations,
 					})
 				}
 			}
@@ -277,8 +298,10 @@ func validateIngress(mapping *yaml.Node, kind, name, source string) []Validation
 				baseName := quickString(findKey(svc, "name"))
 				errs = append(errs, ValidationError{
 					File: source, Kind: kind, Name: name,
-					Path:  fmt.Sprintf("spec.rules[].http.paths[%d].backend.service.port.number", i),
-					Issue: fmt.Sprintf("ingress backend for service %q uses port.number (%s); use port.name instead", baseName, n.Value),
+					Path:        fmt.Sprintf("spec.rules[].http.paths[%d].backend.service.port.number", i),
+					Issue:       fmt.Sprintf("ingress backend for service %q uses port.number (%s); use port.name instead", baseName, n.Value),
+					Value:       n.Value,
+					Annotations: annotations,
 				})
 			}
 		}
@@ -334,6 +357,24 @@ func getNodeAtPath(root *yaml.Node, path string) *yaml.Node {
 		cur = findKey(cur, p)
 	}
 	return cur
+}
+
+// extractAnnotations returns a resource's metadata.annotations, so callers
+// can plumb them onto a Finding for annotation-based exemptions
+// (gitops-ci.k8s.io/exempt-named-ports).
+func extractAnnotations(meta *yaml.Node) map[string]string {
+	out := make(map[string]string)
+	if meta == nil || meta.Kind != yaml.MappingNode {
+		return out
+	}
+	obj := findKey(meta, "annotations")
+	if obj == nil || obj.Kind != yaml.MappingNode {
+		return out
+	}
+	for i := 0; i < len(obj.Content); i += 2 {
+		out[obj.Content[i].Value] = obj.Content[i+1].Value
+	}
+	return out
 }
 
 func quickName(mapping *yaml.Node) string {

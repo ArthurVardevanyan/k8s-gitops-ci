@@ -156,6 +156,12 @@ func (rbacWildcardCheck) CheckDoc(data []byte, source string) []check.Finding {
 		out = append(out, check.Finding{
 			CheckID: "rbac-wildcards", File: e.File,
 			Kind: e.Kind, Name: e.Resource, Message: e.String(),
+			// Value is the wildcarded rule field (e.g. "resources") -
+			// shared across every rule index on the same
+			// ClusterRole/Role that wildcards the same field, so one
+			// annotation/selector exempts all of them at once.
+			Value:       e.Field,
+			Annotations: e.Annotations,
 		})
 	}
 	return out
@@ -250,7 +256,9 @@ func (namedportCheck) CheckDoc(data []byte, source string) []check.Finding {
 			CheckID: "named-ports", File: e.File,
 			Kind: e.Kind, Name: e.Name,
 			Container: e.Container, Path: e.Path,
-			Message: e.Issue,
+			Message:     e.Issue,
+			Value:       e.Value,
+			Annotations: e.Annotations,
 		})
 	}
 	return out
@@ -273,7 +281,9 @@ func (podspecCheck) CheckDoc(data []byte, source string) []check.Finding {
 			CheckID: "podspec-defaults", File: e.File,
 			Kind: e.Kind, Name: e.Name,
 			Container: e.Container, Path: e.Path,
-			Message: strings.Join(e.MissingFields, ", "),
+			Message:     strings.Join(e.MissingFields, ", "),
+			Value:       e.Value(),
+			Annotations: e.Annotations,
 		})
 	}
 	return out

@@ -35,6 +35,17 @@ type ValidationError struct {
 	File, Name, Kind, Container string
 	MissingFields               []string
 	Path                        string
+	// Annotations carries the workload's own metadata.annotations, so a
+	// gitops-ci.k8s.io/exempt-podspec-defaults annotation on the resource
+	// itself can grant an exemption, not just an EXEMPTIONS=(...) selector.
+	Annotations map[string]string
+}
+
+// Value is the stable match target for annotation/selector exemptions -
+// the joined MissingFields list, the same string already used for
+// FormatComment/FormatDeduplicatedComment/register_checks.go's Message.
+func (e ValidationError) Value() string {
+	return strings.Join(e.MissingFields, ", ")
 }
 
 func (e ValidationError) String() string {
@@ -95,13 +106,14 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 			continue
 		}
 		name := quickName(mapping)
+		annotations := extractAnnotations(findKey(mapping, "metadata"))
 		podPath := podSpecPath(kind)
 		podSpec := getNodeAtPath(mapping, podPath)
 		if podSpec == nil || podSpec.Kind != yaml.MappingNode {
 			continue
 		}
-		errs = append(errs, validatePodFields(source, kind, name, podSpec, podPath)...)
-		errs = append(errs, validateContainerFields(source, kind, name, podSpec, podPath)...)
+		errs = append(errs, validatePodFields(source, kind, name, podSpec, podPath, annotations)...)
+		errs = append(errs, validateContainerFields(source, kind, name, podSpec, podPath, annotations)...)
 	}
 	return errs
 }
@@ -199,7 +211,7 @@ func podSpecPath(kind string) string {
 	}
 }
 
-func validatePodFields(source, kind, name string, podSpec *yaml.Node, podPath string) []ValidationError {
+func validatePodFields(source, kind, name string, podSpec *yaml.Node, podPath string, annotations map[string]string) []ValidationError {
 	var errs []ValidationError
 	var missing []string
 	for _, f := range RequiredPodFields {
@@ -210,12 +222,13 @@ func validatePodFields(source, kind, name string, podSpec *yaml.Node, podPath st
 	if len(missing) > 0 {
 		errs = append(errs, ValidationError{
 			File: source, Kind: kind, Name: name, MissingFields: missing, Path: podPath,
+			Annotations: annotations,
 		})
 	}
 	return errs
 }
 
-func validateContainerFields(source, kind, name string, podSpec *yaml.Node, podPath string) []ValidationError {
+func validateContainerFields(source, kind, name string, podSpec *yaml.Node, podPath string, annotations map[string]string) []ValidationError {
 	var errs []ValidationError
 	for _, listKey := range []string{"containers", "initContainers"} {
 		list := findKey(podSpec, listKey)
@@ -233,6 +246,7 @@ func validateContainerFields(source, kind, name string, podSpec *yaml.Node, podP
 				errs = append(errs, ValidationError{
 					File: source, Kind: kind, Name: name, Container: cname,
 					MissingFields: RequiredSecurityContextFields, Path: path,
+					Annotations: annotations,
 				})
 			} else {
 				var missing []string
@@ -246,6 +260,7 @@ func validateContainerFields(source, kind, name string, podSpec *yaml.Node, podP
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name, Container: cname,
 						MissingFields: missing, Path: path,
+						Annotations: annotations,
 					})
 				}
 			}
@@ -266,6 +281,7 @@ func validateContainerFields(source, kind, name string, podSpec *yaml.Node, podP
 				errs = append(errs, ValidationError{
 					File: source, Kind: kind, Name: name, Container: cname,
 					MissingFields: missingRes, Path: path,
+					Annotations: annotations,
 				})
 			}
 		}
@@ -283,6 +299,24 @@ func getNodeAtPath(root *yaml.Node, path string) *yaml.Node {
 		cur = findKey(cur, p)
 	}
 	return cur
+}
+
+// extractAnnotations returns a workload's metadata.annotations, so callers
+// can plumb them onto a Finding for annotation-based exemptions
+// (gitops-ci.k8s.io/exempt-podspec-defaults).
+func extractAnnotations(meta *yaml.Node) map[string]string {
+	out := make(map[string]string)
+	if meta == nil || meta.Kind != yaml.MappingNode {
+		return out
+	}
+	obj := findKey(meta, "annotations")
+	if obj == nil || obj.Kind != yaml.MappingNode {
+		return out
+	}
+	for i := 0; i < len(obj.Content); i += 2 {
+		out[obj.Content[i].Value] = obj.Content[i+1].Value
+	}
+	return out
 }
 
 func quickName(mapping *yaml.Node) string {

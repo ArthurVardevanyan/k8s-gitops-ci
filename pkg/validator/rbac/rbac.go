@@ -54,6 +54,11 @@ type WildcardError struct {
 	File, Resource, Kind string
 	RuleIndex            int
 	Field                string
+	// Annotations carries the ClusterRole/Role's own metadata.annotations,
+	// so a gitops-ci.k8s.io/exempt-rbac-wildcards annotation on the
+	// resource itself can grant an exemption (see exempt.Accepts) - not
+	// just an EXEMPTIONS=(...) selector in test.sh.
+	Annotations map[string]string
 }
 
 func (e WildcardError) String() string {
@@ -177,6 +182,7 @@ func ValidateWildcardsReader(r io.Reader, source string) []WildcardError {
 			continue
 		}
 		resource := quickName(mapping)
+		annotations := extractAnnotations(findKey(mapping, "metadata"))
 		rules := findKey(mapping, "rules")
 		if rules == nil || rules.Kind != yaml.SequenceNode {
 			continue
@@ -189,7 +195,7 @@ func ValidateWildcardsReader(r io.Reader, source string) []WildcardError {
 				if hasWildcard(findKey(ruleNode, field)) {
 					errs = append(errs, WildcardError{
 						File: source, Kind: kind, Resource: resource,
-						RuleIndex: i, Field: field,
+						RuleIndex: i, Field: field, Annotations: annotations,
 					})
 				}
 			}
@@ -346,18 +352,32 @@ func hasWildcard(n *yaml.Node) bool {
 }
 
 func extractLabels(meta *yaml.Node) map[string]string {
-	labels := make(map[string]string)
+	return extractStringMap(meta, "labels")
+}
+
+// extractAnnotations returns a ClusterRole/Role's metadata.annotations, so
+// callers can plumb them onto a Finding for annotation-based exemptions
+// (gitops-ci.k8s.io/exempt-<check-id>) - the same mechanism extractLabels
+// already supports for the readonly check's aggregate-label detection.
+func extractAnnotations(meta *yaml.Node) map[string]string {
+	return extractStringMap(meta, "annotations")
+}
+
+// extractStringMap reads a flat string-keyed map (labels or annotations)
+// from a metadata node.
+func extractStringMap(meta *yaml.Node, key string) map[string]string {
+	out := make(map[string]string)
 	if meta == nil || meta.Kind != yaml.MappingNode {
-		return labels
+		return out
 	}
-	obj := findKey(meta, "labels")
+	obj := findKey(meta, key)
 	if obj == nil || obj.Kind != yaml.MappingNode {
-		return labels
+		return out
 	}
 	for i := 0; i < len(obj.Content); i += 2 {
-		labels[obj.Content[i].Value] = obj.Content[i+1].Value
+		out[obj.Content[i].Value] = obj.Content[i+1].Value
 	}
-	return labels
+	return out
 }
 
 func quickName(mapping *yaml.Node) string {

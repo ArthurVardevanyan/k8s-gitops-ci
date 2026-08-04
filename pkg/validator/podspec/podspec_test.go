@@ -59,6 +59,42 @@ spec:
 	}
 }
 
+func TestValidateReader_CarriesResourceAnnotationsAndValue(t *testing.T) {
+	data := `kind: Deployment
+metadata:
+  name: bad
+  annotations:
+    gitops-ci.k8s.io/exempt-podspec-defaults: "enableServiceLinks, restartPolicy, schedulerName, dnsPolicy, automountServiceAccountToken"
+spec:
+  template:
+    spec:
+      containers:
+      - name: c
+        image: x
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) == 0 {
+		t.Fatal("expected errors")
+	}
+	var podLevel *ValidationError
+	for i := range errs {
+		if errs[i].Container == "" {
+			podLevel = &errs[i]
+			break
+		}
+	}
+	if podLevel == nil {
+		t.Fatalf("expected a pod-level (Container == \"\") finding, got %v", errs)
+	}
+	wantValue := "enableServiceLinks, restartPolicy, schedulerName, dnsPolicy, automountServiceAccountToken"
+	if podLevel.Value() != wantValue {
+		t.Errorf("Value() = %q, want %q", podLevel.Value(), wantValue)
+	}
+	if podLevel.Annotations["gitops-ci.k8s.io/exempt-podspec-defaults"] != wantValue {
+		t.Errorf("Annotations not carried through: %v", podLevel.Annotations)
+	}
+}
+
 func TestValidateReader_BadCronJob(t *testing.T) {
 	// Regression: CronJob nests its pod spec three levels deeper than
 	// every other workload kind (spec.jobTemplate.spec.template.spec, not
