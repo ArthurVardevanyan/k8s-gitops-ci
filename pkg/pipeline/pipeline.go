@@ -447,11 +447,12 @@ func buildReport(res *Result, opts Options) validator.Report {
 		marker = "<!-- gitops-ci-report -->"
 	}
 	return validator.Report{
-		Marker:   marker,
-		Title:    opts.Providers.ReportTitle(),
-		Header:   opts.Providers.PipelineHeader(),
-		Sections: composeSections(res, opts),
-		Body:     "```bash\n" + res.ReproduceCommand + "\n```",
+		Marker:    marker,
+		Title:     opts.Providers.ReportTitle(),
+		Header:    opts.Providers.PipelineHeader(),
+		Timestamp: time.Now(),
+		Sections:  composeSections(res, opts),
+		Body:      "```bash\n" + res.ReproduceCommand + "\n```",
 	}
 }
 
