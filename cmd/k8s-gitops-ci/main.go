@@ -12,6 +12,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/config"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/csv"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/ghostpatch"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/kustomize"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/golangci"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
@@ -92,14 +93,14 @@ func runPipeline(args []string) error {
 	opts := pipeline.EnvOptions()
 	opts.Providers = provider.Providers{}
 
-	var dirs, disableChecks, enableChecks string
+	var dirs, disableChecks, enableChecks, hookSource string
 	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL (e.g. https://github.com/org/repo — NOT a PR URL; pass the PR number via --pr)")
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
 	fs.StringVar(&opts.TargetBranch, "target-branch", opts.TargetBranch, "target branch")
-	fs.StringVar(&opts.HookSource, "hook-source", opts.HookSource, "hook source (main|pr|local)")
+	fs.StringVar(&hookSource, "hook-source", string(opts.HookSource), "hook source (main|pr|local)")
 	fs.StringVar(&opts.TriggerComment, "trigger-comment", opts.TriggerComment, "trigger comment text")
-	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to restrict the changeset to (e.g. kubernetes/,tekton/,.tekton/,okd/)")
+	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to validate in full, replacing the diff/PR-derived changeset entirely (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.BoolVar(&opts.LintOnly, "lint-only", false, "lint only, skip build checks")
 	fs.BoolVar(&opts.PostComment, "comment", false, "post PR comment (default: off)")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
@@ -112,7 +113,8 @@ func runPipeline(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	opts.IncludePrefixes = splitCommaList(dirs)
+	opts.Dirs = splitCommaList(dirs)
+	opts.HookSource = hook.Source(hookSource)
 	opts.DisabledChecks = splitCommaList(disableChecks)
 	opts.EnabledChecks = splitCommaList(enableChecks)
 	return pipeline.Run(opts)
@@ -285,7 +287,7 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.StringVar(&v.pr, "pr", "", "pull request number")
 	fs.StringVar(&v.targetBranch, "target-branch", "", "target branch")
 	fs.StringVar(&v.hookSource, "hook-source", "", "hook source (main|pr|local)")
-	fs.StringVar(&v.dirs, "dirs", "", "comma-separated path prefixes to restrict the changeset to (e.g. kubernetes/,tekton/,.tekton/,okd/)")
+	fs.StringVar(&v.dirs, "dirs", "", "comma-separated path prefixes to validate in full, replacing the diff/PR-derived changeset entirely (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.StringVar(&v.disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
 	fs.StringVar(&v.enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
 	fs.IntVar(&v.concurrency, "concurrency", 0, "worker concurrency (0=auto)")
@@ -296,18 +298,17 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	return v
 }
 
-// applyTo copies the parsed flags onto opts. Dirs (the positional,
-// full-tree-walk changeset source) is deliberately left untouched here -
-// callers that support it (test-all) set opts.Dirs separately from
-// fs.Args(), since it's a distinct changeset source from --dirs
-// (IncludePrefixes, which filters a git-diff/PR changeset rather than
-// replacing it).
+// applyTo copies the parsed flags onto opts, including Dirs from --dirs.
+// For test-all, which also supports positional [dirs...], parseTestAllOptions
+// overwrites opts.Dirs with the positional args when present, since both are
+// the same full-tree-walk changeset source and positional args take
+// precedence over the flag.
 func (v *validatorFlagSet) applyTo(opts *validator.Options) {
 	opts.RepoURL = v.url
 	opts.PR = v.pr
 	opts.BaseRef = v.targetBranch
-	opts.HookSource = v.hookSource
-	opts.IncludePrefixes = splitCommaList(v.dirs)
+	opts.HookSource = hook.Source(v.hookSource)
+	opts.Dirs = splitCommaList(v.dirs)
 	opts.DisabledChecks = splitCommaList(v.disableChecks)
 	opts.EnabledChecks = splitCommaList(v.enableChecks)
 	opts.Concurrency = v.concurrency
@@ -332,9 +333,11 @@ func parseTestAllOptions(args []string) (validator.Options, error) {
 	vf.applyTo(&opts)
 	// Positional [dirs...] args are a full-tree walk under those paths
 	// (bypassing git diff entirely) - kept for backward compatibility
-	// alongside the new --dirs flag, which instead filters a git-diff/PR
-	// changeset (see resolveChangeset in pkg/validator/validator.go).
-	opts.Dirs = fs.Args()
+	// alongside the new --dirs flag (also folded into Dirs by applyTo).
+	// Positional args take precedence when present.
+	if len(fs.Args()) > 0 {
+		opts.Dirs = fs.Args()
+	}
 	return opts, nil
 }
 

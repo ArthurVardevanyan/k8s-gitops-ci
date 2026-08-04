@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -27,7 +28,7 @@ type Options struct {
 	// --hook-source flag) that hook.ResolveSource normalizes - fail-closed
 	// to the base/target branch's test.sh - before every app's hooks and
 	// EXEMPTIONS are resolved. See resolveHookSource in hook_wiring.go.
-	HookSource       string
+	HookSource       hook.Source
 	LintOnly         bool
 	Verbose          bool
 	IncludeDeletions bool
@@ -36,9 +37,16 @@ type Options struct {
 	EnabledChecks    []string // IDs to explicitly enable; only affects steps that default to disabled (e.g. "kyverno")
 	Concurrency      int
 	Apps, Clusters   []string
-	Dirs             []string // explicit subdirectories to validate; bypasses git diff
-	IncludePrefixes  []string // restrict the resolved changeset (git diff or PR files) to files under these path prefixes; empty means no restriction
-	Providers        provider.Providers
+	// Dirs is the single changeset-scoping source for path prefixes:
+	// populated from either the --dirs flag or (for test-all) positional
+	// [dirs...] args, both of which do the same full recursive walk of
+	// exactly these paths, replacing diff/PR-based changeset resolution
+	// entirely - see resolveChangeset and docs/CI.md's Modes section for
+	// the exact semantics (and cmd/k8s-gitops-ci/main.go's
+	// parseTestAllOptions for how positional args take precedence over the
+	// flag when both are given).
+	Dirs      []string
+	Providers provider.Providers
 	// Timing allows an external TimingCollector to be passed in (e.g. from
 	// pkg/pipeline, which needs to record its own setup/PR-validation phases
 	// alongside the validator's). When nil, RunAll constructs its own.

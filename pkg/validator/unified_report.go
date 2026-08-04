@@ -134,10 +134,11 @@ func LegacyMarkers() []string {
 // This must stay in sync with every Options field that changes what actually
 // gets validated (as opposed to purely cosmetic/output fields like Verbose) -
 // otherwise the printed command silently reproduces a different, narrower
-// run than the one that actually failed. IncludePrefixes (--dirs) in
-// particular scopes the whole changeset, so omitting it here previously
-// meant "reproduce locally" could pass locally while the original run
-// (scoped to specific directories) failed, or vice versa.
+// run than the one that actually failed. Dirs (--dirs) in particular
+// replaces the whole changeset with a full-tree walk of the given paths, so
+// omitting it here previously meant "reproduce locally" could pass locally
+// while the original run (scoped to specific directories) failed, or vice
+// versa.
 //
 // --target-branch (BaseRef) is deliberately omitted: in PR mode the pipeline
 // resolves the base ref from the PR itself (see resolveBaseRef in
@@ -145,8 +146,8 @@ func LegacyMarkers() []string {
 // just be redundant noise, not something needed to reproduce the failure.
 func ReproduceCommand(opts Options) string {
 	cmd := fmt.Sprintf("k8s-gitops-ci pipeline --url=%q --pr=%s", opts.RepoURL, opts.PR)
-	if len(opts.IncludePrefixes) > 0 {
-		cmd += fmt.Sprintf(" --dirs=%q", strings.Join(opts.IncludePrefixes, ","))
+	if len(opts.Dirs) > 0 {
+		cmd += fmt.Sprintf(" --dirs=%q", strings.Join(opts.Dirs, ","))
 	}
 	if len(opts.DisabledChecks) > 0 {
 		cmd += fmt.Sprintf(" --disable-checks=%q", strings.Join(opts.DisabledChecks, ","))

@@ -10,17 +10,15 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 )
 
-func TestResolveChangeset_DirsWithIncludePrefixes(t *testing.T) {
+func TestResolveChangeset_DirsWithDirs(t *testing.T) {
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "kubernetes", "app", "base.yaml"), "kind: Deployment\n")
 	mustWrite(t, filepath.Join(d, "ansible", "playbook.yaml"), "- hosts: all\n")
 
 	kubernetesDir := filepath.Join(d, "kubernetes")
-	ansibleDir := filepath.Join(d, "ansible")
 
 	files, err := resolveChangeset(Options{
-		Dirs:            []string{kubernetesDir, ansibleDir},
-		IncludePrefixes: []string{kubernetesDir},
+		Dirs: []string{kubernetesDir},
 	})
 	if err != nil {
 		t.Fatalf("resolveChangeset: %v", err)
@@ -33,7 +31,7 @@ func TestResolveChangeset_DirsWithIncludePrefixes(t *testing.T) {
 	}
 }
 
-func TestResolveChangeset_NoIncludePrefixes(t *testing.T) {
+func TestResolveChangeset_NoDirs(t *testing.T) {
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
 

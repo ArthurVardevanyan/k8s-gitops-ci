@@ -23,11 +23,11 @@ flowchart LR
 ```
 
 - **Clone / Resolve Changeset** — `pkg/git`/`pkg/github` clone the repo
-  and resolve the PR's changed-file list (or, for `test-all`, every file
-  under given directories; or, for `scan-all`, the current working
-  tree's uncommitted git diff — see [CI.md](CI.md)'s Modes table for the
-  exact, non-obvious semantics of each); `pkg/changeset` filters that
-  list by path prefix (`--dirs`) and extension.
+  and resolve the PR's changed-file list (or, for `test-all`/`--dirs`,
+  every file under the given directories, replacing the diff entirely;
+  or, for `scan-all`, the current working tree's uncommitted git diff —
+  see [CI.md](CI.md)'s Modes table for the exact, non-obvious semantics
+  of each); `pkg/changeset` narrows that list by extension.
 - **Linting** and **Static Checks** — a fixed set of independent,
   concurrently-run steps over the changeset (see [CI.md](CI.md) for the
   full list). Neither phase touches Kubernetes semantics; they're

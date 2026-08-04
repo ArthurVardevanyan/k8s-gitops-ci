@@ -90,11 +90,11 @@ error=N` line and per-phase timing, instead of only the aggregated
   changeset-scoping and check-enablement flag `pipeline` accepts is also
   accepted by `test-all` and `scan-all`, so a failing `pipeline --url ...
 --pr ...` run can be reproduced locally without a remote/PR (e.g.
-  `k8s-gitops-ci test-all --dirs=kubernetes/ --disable-checks=avp`). Note
-  `test-all`'s positional `[dirs...]` (a full-tree walk, replacing the
-  changeset source entirely) is distinct from `--dirs` (a path-prefix
-  filter applied on top of the resolved changeset) — see
-  [`docs/CI.md`](docs/CI.md) for the details.
+  `k8s-gitops-ci test-all --dirs=kubernetes/ --disable-checks=avp`).
+  `--dirs` and `test-all`'s positional `[dirs...]` do the same
+  full-tree walk, replacing the diff/PR-derived changeset source
+  entirely — the positional form just takes precedence when both are
+  given — see [`docs/CI.md`](docs/CI.md) for the details.
 
 ## Development
 

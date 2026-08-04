@@ -39,7 +39,7 @@ func TestResolveHookSource_ExplicitLocalHonored(t *testing.T) {
 }
 
 func TestResolveHookSource_PRWithoutHookTestCommentFallsBackToMain(t *testing.T) {
-	opts := Options{HookSource: string(hook.SourcePR), PR: "42", TriggerComment: "/deploy"}
+	opts := Options{HookSource: hook.SourcePR, PR: "42", TriggerComment: "/deploy"}
 	if got := resolveHookSource(opts); got != hook.SourceMain {
 		t.Errorf("expected a PR signal without the exact /hook-test comment to fail closed to main, got %q", got)
 	}

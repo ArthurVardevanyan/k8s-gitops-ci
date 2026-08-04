@@ -141,11 +141,11 @@ func TestOptionsWorkers(t *testing.T) {
 	}
 }
 
-func TestToValidatorOptions_IncludePrefixes(t *testing.T) {
-	opts := Options{IncludePrefixes: []string{"kubernetes/", "tekton/"}}
+func TestToValidatorOptions_Dirs(t *testing.T) {
+	opts := Options{Dirs: []string{"kubernetes/", "tekton/"}}
 	vopts := toValidatorOptions(opts)
-	if len(vopts.IncludePrefixes) != 2 {
-		t.Fatalf("expected 2 include prefixes, got %v", vopts.IncludePrefixes)
+	if len(vopts.Dirs) != 2 {
+		t.Fatalf("expected 2 dirs, got %v", vopts.Dirs)
 	}
 }
 
