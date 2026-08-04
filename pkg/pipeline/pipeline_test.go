@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
@@ -498,6 +499,24 @@ func TestBuildReport_DefaultsWhenNoProviders(t *testing.T) {
 	}
 	if report.Header != "GitOps CI Pipeline" {
 		t.Errorf("Header = %q, want the generic default", report.Header)
+	}
+}
+
+// TestBuildReport_SetsTimestamp guards that buildReport stamps the report
+// with the current time so the rendered PR comment includes the
+// "Last Updated" line (Report.Render only emits it when Timestamp is
+// non-zero).
+func TestBuildReport_SetsTimestamp(t *testing.T) {
+	before := time.Now().Add(-time.Second)
+	report := buildReport(&Result{}, Options{})
+	if report.Timestamp.IsZero() {
+		t.Fatal("buildReport must set Report.Timestamp so the report renders a Last Updated line")
+	}
+	if report.Timestamp.Before(before) {
+		t.Errorf("Timestamp = %v, want ~now", report.Timestamp)
+	}
+	if !strings.Contains(report.Render(), "Last Updated:") {
+		t.Error("rendered report must include a Last Updated line")
 	}
 }
 
