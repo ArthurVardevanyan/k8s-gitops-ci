@@ -45,6 +45,8 @@ linters:
         - G204 # Subprocess launched with variable — this is a CI tool that intentionally runs git/kustomize/kubeconform/etc.
         - G304 # File inclusion via variable — this tool reads workspace files by computed path
         - G306 # WriteFile permissions — CI tool writes to workspace files that need group-readable perms
+        - G703 # Path traversal via taint analysis — broader superset of G304; same trusted-workspace-path rationale
+        - G122 # Race-prone path in filepath.Walk/WalkDir callback — this tool only walks its own trusted workspace, not adversary-controlled input (see docs/SECURITY.md trust model)
     revive:
       rules:
         - name: blank-imports
