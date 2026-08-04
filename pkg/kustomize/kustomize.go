@@ -196,6 +196,11 @@ func Fix(root string) ([]string, error) {
 // elsewhere (e.g. the Linting phase's prettier --check step) - this
 // pipeline's correctness depends on it actually running.
 func runFixPipeline(dir, file string) error {
+	hadDocSeparator, err := hasLeadingDocSeparator(file)
+	if err != nil {
+		return err
+	}
+
 	cmd := exec.CommandContext(context.Background(), "kustomize", "edit", "fix", "--vars")
 	cmd.Dir = dir
 	var stderr bytes.Buffer
@@ -207,10 +212,56 @@ func runFixPipeline(dir, file string) error {
 		return fmt.Errorf("kustomize edit fix --vars: %w", err)
 	}
 
+	// kustomize edit fix's own writer unconditionally drops a leading
+	// "---" YAML document-start marker when it rewrites the file (it's
+	// valid, optional YAML that kustomize's underlying kyaml
+	// serialization simply doesn't round-trip) - restore it here when the
+	// original had one, since prettier's own --write pass (below) neither
+	// strips nor restores it and would otherwise let this silently
+	// disappear from every file `kustomize-fix` touches.
+	if hadDocSeparator {
+		if err := restoreLeadingDocSeparator(file); err != nil {
+			return err
+		}
+	}
+
 	if _, err := prettier.Write([]string{file}); err != nil {
 		return fmt.Errorf("prettier --write: %w", err)
 	}
 	return nil
+}
+
+// hasLeadingDocSeparator reports whether path's first line (trimmed of
+// surrounding whitespace) is exactly the YAML document-start marker
+// "---".
+func hasLeadingDocSeparator(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	firstLine, _, _ := bytes.Cut(data, []byte("\n"))
+	return strings.TrimSpace(string(firstLine)) == "---", nil
+}
+
+// restoreLeadingDocSeparator prepends a "---\n" document-start marker to
+// path unless it already has one - kustomize edit fix never adds this
+// marker back itself (see runFixPipeline), so the idempotency check here
+// is purely defensive.
+func restoreLeadingDocSeparator(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	firstLine, _, _ := bytes.Cut(data, []byte("\n"))
+	if strings.TrimSpace(string(firstLine)) == "---" {
+		return nil
+	}
+
+	perm := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		perm = info.Mode()
+	}
+	return os.WriteFile(path, append([]byte("---\n"), data...), perm)
 }
 
 // FormatFixNeeded renders a human-readable message for kustomization files needing fix.

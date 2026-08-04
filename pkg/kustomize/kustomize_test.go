@@ -321,3 +321,133 @@ func TestFix_NonexistentRoot(t *testing.T) {
 		t.Error("expected an error for a nonexistent root")
 	}
 }
+
+// TestFix_PreservesLeadingDocumentSeparator guards against a real
+// regression: `kustomize edit fix`'s own writer silently drops a leading
+// "---" YAML document-start marker, and prettier's --write pass (which
+// always runs right after) doesn't restore it either - so without
+// runFixPipeline's explicit restore step, `kustomize-fix` would strip a
+// marker the operator had in their file on disk.
+func TestFix_PreservesLeadingDocumentSeparator(t *testing.T) {
+	requireKustomizeCLI(t)
+	root := t.TempDir()
+	f := filepath.Join(root, "kustomization.yaml")
+	content := `---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+vars:
+  - name: FOO
+    objref:
+      kind: ConfigMap
+      name: my-configmap
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.foo
+`
+	if err := os.WriteFile(f, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fixed, err := Fix(root)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if len(fixed) != 1 {
+		t.Fatalf("expected the file to be reported fixed (vars: -> replacements:), got: %v", fixed)
+	}
+
+	after, err := os.ReadFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(after), "---\n") {
+		t.Errorf("expected the leading --- document separator to be preserved, got:\n%s", after)
+	}
+	if !strings.Contains(string(after), "replacements:") || strings.Contains(string(after), "vars:") {
+		t.Errorf("expected vars: to still be converted to replacements:, got:\n%s", after)
+	}
+
+	// CheckFix must agree the file is now clean - otherwise the
+	// preserved "---" would make Fix/CheckFix disagree forever.
+	need, err := CheckFix([]string{f})
+	if err != nil {
+		t.Fatalf("CheckFix: %v", err)
+	}
+	if len(need) != 0 {
+		t.Errorf("expected the fixed file not to be flagged again, got: %v", need)
+	}
+}
+
+// TestFix_NoLeadingDocumentSeparatorNotAdded guards the other direction:
+// a file that never had a leading "---" must not gain one.
+func TestFix_NoLeadingDocumentSeparatorNotAdded(t *testing.T) {
+	requireKustomizeCLI(t)
+	root := t.TempDir()
+	f := filepath.Join(root, "kustomization.yaml")
+	content := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+vars:
+  - name: FOO
+    objref:
+      kind: ConfigMap
+      name: my-configmap
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.foo
+`
+	if err := os.WriteFile(f, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Fix(root); err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+
+	after, err := os.ReadFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(string(after), "---") {
+		t.Errorf("expected no leading --- to be added, got:\n%s", after)
+	}
+}
+
+// TestCheckFix_AlreadyFixedFileWithLeadingSeparatorNotFlagged mirrors
+// TestCheckFix_AlreadyFixedFileNotFlagged specifically for a file with a
+// leading "---": the restore step in runFixPipeline must be idempotent,
+// or CheckFix/Fix would never converge for such a file.
+func TestCheckFix_AlreadyFixedFileWithLeadingSeparatorNotFlagged(t *testing.T) {
+	requireKustomizeCLI(t)
+	dir := t.TempDir()
+	f := filepath.Join(dir, "kustomization.yaml")
+	content := `---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: my-app
+resources:
+  - deployment.yaml
+patches:
+  - path: patch.yaml
+`
+	if err := os.WriteFile(f, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bring it to the real fix pipeline's stable form first, same as
+	// TestCheckFix_AlreadyFixedFileNotFlagged.
+	if _, err := Fix(dir); err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+
+	need, err := CheckFix([]string{f})
+	if err != nil {
+		t.Fatalf("CheckFix: %v", err)
+	}
+	if len(need) != 0 {
+		t.Errorf("expected an already-fixed file (with a leading ---) not to be flagged again, got: %v", need)
+	}
+}
