@@ -138,7 +138,8 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		for _, v := range violations {
 			sb.WriteString(v.String() + "\n")
 		}
-		log.ErrorInSection("LargeFile", "%d large file violation(s)", len(violations))
+		detail := strings.TrimRight(sb.String(), "\n")
+		log.ErrorInSection("LargeFile", "%d large file violation(s)\n%s", len(violations), detail)
 		staticReports["large-file"] = sb.String()
 		staticOutcomes = append(staticOutcomes, CheckOutcome{Name: "large-file", Status: StatusError})
 	} else {
@@ -217,13 +218,24 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			sl.Info("%s: passed (%s)", passLabel, elapsed().Round(time.Millisecond))
 			return lintStepResult{status: StatusPassed}
 		}
-		sl.ErrorInSection(displayName, "%s: %s", passLabel, err)
 		if errors.Is(err, notFoundErr) {
+			sl.ErrorInSection(displayName, "%s: %s", passLabel, err)
 			return lintStepResult{status: StatusError, note: notFoundNote}
 		}
 		detail := out
 		if detail == "" {
 			detail = err.Error()
+			sl.ErrorInSection(displayName, "%s: %s", passLabel, err)
+		} else {
+			// Surface the CLI's own per-file/line output immediately, not
+			// just a bare error - otherwise this detail (which files/what
+			// broke) only ever reaches the console via
+			// pipeline.printFailedSectionDetail's single end-of-run pass,
+			// long after a slow Build YAML/Post-Build Validation phase
+			// finishes on a large changeset. Matches kubeconform's existing
+			// ErrorInSection call, which already logs its full multi-line
+			// Summary() immediately rather than just a count.
+			sl.ErrorInSection(displayName, "%s: %s\n%s", passLabel, err, strings.TrimRight(detail, "\n"))
 		}
 		return lintStepResult{report: detail, status: StatusError}
 	}
@@ -310,7 +322,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			warning += writeShellcheckExtractionReport(&sb, " (external)", external)
 
 			if blocking > 0 {
-				sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", blocking)
+				sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)\n%s", blocking, strings.TrimRight(sb.String(), "\n"))
 				return lintStepResult{report: sb.String(), status: StatusError}
 			}
 			if warning > 0 {

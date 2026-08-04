@@ -3,7 +3,7 @@ module github.com/ArthurVardevanyan/k8s-gitops-ci
 go 1.26.5
 
 require (
-	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260803142856-7798ed5d9aaa
+	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260804105810-ae11b76235ef
 	github.com/yannh/kubeconform v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.21.3
@@ -62,7 +62,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/openshift/api v0.0.0-20260803162554-181bcde0d9c7 // indirect
+	github.com/openshift/api v0.0.0-20260804210737-0986d0517548 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
