@@ -173,11 +173,17 @@ func TestValidatePRChecklist_Logic(t *testing.T) {
 - [ ] d
 `
 	spec := ChecklistSpec{
-		Required:  []string{"a"},
-		SelectOne: [][]string{{"b", "c"}},
+		Items: []ChecklistItem{
+			{ID: "a", LabelPattern: "a"},
+			{ID: "b", LabelPattern: "b"},
+			{ID: "c", LabelPattern: "c"},
+			{ID: "d", LabelPattern: "d"},
+		},
+		Required:  []string{"d"}, // d is unchecked → error
+		SelectOne: []SelectOneGroup{{Name: "group", Options: []string{"a", "c"}}},
 	}
 	if err := ValidatePRChecklistString(body, spec); err == nil {
-		t.Error("expected error for unchecked required and one-of")
+		t.Error("expected error for unchecked required and multiple one-of")
 	}
 }
 
