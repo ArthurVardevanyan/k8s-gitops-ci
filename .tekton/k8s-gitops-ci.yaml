@@ -5,6 +5,10 @@ metadata:
   name: k8s-gitops-ci
   annotations:
     io.kubernetes.cri-o.TrySkipVolumeSELinuxLabel: "true"
+    # The toolbox image is deliberately floating (Renovate-updated, not
+    # git-tracked per-digest) - both the `build` and `lint` steps below use
+    # it. See docs/EXCEPTIONS.md's annotation-exemption mode.
+    gitops-ci.k8s.io/exempt-image-checksum: "registry.arthurvardevanyan.com/homelab/toolbox:not_latest"
     pipelinesascode.tekton.dev/on-cel-expression: |
       (event == "pull_request" || event == "push") && target_branch == "main"
     pipelinesascode.tekton.dev/max-concurrency: "1"
@@ -21,6 +25,8 @@ spec:
       value: "{{ pull_request_number }}"
     - name: event
       value: "{{ event_type }}"
+    - name: target-branch
+      value: "{{ target_branch }}"
   pipelineSpec:
     params:
       - name: git-url
@@ -31,6 +37,8 @@ spec:
         type: string
         default: ""
       - name: event
+        type: string
+      - name: target-branch
         type: string
     workspaces:
       - name: git_auth_secret
@@ -267,6 +275,105 @@ spec:
                   echo "Creating snapshot release: ${TAG}"
                   GORELEASER_CURRENT_TAG="${TAG}" goreleaser release --snapshot --skip=ko --clean
                 fi
+
+      - name: lint
+        workspaces:
+          - name: basic-auth
+            workspace: git_auth_secret
+        params:
+          - name: git-url
+            value: $(params.git-url)
+          - name: revision
+            value: $(params.git-commit)
+          - name: pull-request-number
+            value: $(params.pull-request-number)
+          - name: target-branch
+            value: $(params.target-branch)
+        taskSpec:
+          params:
+            - name: git-url
+              type: string
+            - name: revision
+              type: string
+            - name: pull-request-number
+              type: string
+              default: ""
+            - name: target-branch
+              type: string
+          workspaces:
+            - name: basic-auth
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 512Mi
+          stepTemplate:
+            name: stepTemplate
+            volumeMounts:
+              - name: tmp
+                mountPath: /tmp
+            computeResources:
+              requests:
+                cpu: 250m
+                memory: 256Mi
+                ephemeral-storage: 256Mi
+              limits:
+                cpu: "2"
+                memory: 1Gi
+                ephemeral-storage: 1Gi
+            securityContext:
+              privileged: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              seccompProfile:
+                type: RuntimeDefault
+              capabilities:
+                drop:
+                  - ALL
+          steps:
+            - name: lint
+              image: registry.arthurvardevanyan.com/homelab/toolbox:not_latest
+              env:
+                - name: PARAM_GIT_URL
+                  value: $(params.git-url)
+                - name: PARAM_REVISION
+                  value: $(params.revision)
+                - name: PARAM_PR_NUMBER
+                  value: $(params.pull-request-number)
+                - name: PARAM_TARGET_BRANCH
+                  value: $(params.target-branch)
+                - name: AUTH_PATH
+                  value: $(workspaces.basic-auth.path)
+              script: |
+                #!/bin/bash
+                set -o errexit
+                set -o nounset
+                set -o pipefail
+
+                # Declare Tekton-injected env vars for shellcheck
+                : "${PARAM_GIT_URL:=""}"
+                : "${PARAM_REVISION:=""}"
+                : "${PARAM_PR_NUMBER:=""}"
+                : "${PARAM_TARGET_BRANCH:=""}"
+                : "${AUTH_PATH:=""}"
+
+                # No separate clone step: `k8s-gitops-ci pipeline --url`
+                # clones into its own temp directory internally (see
+                # pkg/git.Clone) and cleans up after itself. gh auth setup-git
+                # installs a git credential helper for that internal clone,
+                # same rationale as the `build` step's own clone above.
+                gh auth login --hostname "github.com" \
+                  --with-token <"${AUTH_PATH}/git-provider-token"
+                gh auth setup-git --hostname "github.com"
+
+                k8s-gitops-ci pipeline \
+                  --url "${PARAM_GIT_URL}" \
+                  --pr "${PARAM_PR_NUMBER}" \
+                  --revision "${PARAM_REVISION}" \
+                  --target-branch "${PARAM_TARGET_BRANCH}" \
+                  --lint-only \
+                  --disable-checks golangci \
+                  --comment
 
       # TODO: clair scan (re-enable once image build is wired up)
       # - name: clair-action

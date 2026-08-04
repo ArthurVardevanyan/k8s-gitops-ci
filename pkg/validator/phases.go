@@ -266,7 +266,8 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			// so a changeset with no shell-related content at all still
 			// skips cleanly even when shellcheck isn't installed.
 			yamlChanged := filterYAML(changed)
-			if len(shellcheck.FilterShellScripts(changed)) == 0 && len(yamlChanged) == 0 {
+			shellChanged := excludeInvalidTestdata(changed)
+			if len(shellcheck.FilterShellScripts(shellChanged)) == 0 && len(yamlChanged) == 0 {
 				sl.Info("shellcheck: no shell files changed")
 				return lintStepResult{status: StatusPassed, skipped: true, note: "No shell files changed."}
 			}
@@ -282,7 +283,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			// Raw shell script files: always direct/blocking - they're
 			// literally files in this changeset's diff, so any finding here
 			// is the author's own responsibility to fix.
-			scViolations, _, scErr := shellcheck.Run(changed)
+			scViolations, _, scErr := shellcheck.Run(shellChanged)
 			if scErr != nil {
 				sl.ErrorInSection("Shellcheck", "shellcheck: %s", scErr)
 				return lintStepResult{report: scErr.Error(), status: StatusError}
@@ -348,6 +349,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		// them from schema validation - otherwise every changed
 		// <ScaffoldDir>/configs/*.yaml trips a "missing 'kind' key" error.
 		yamlFiles = excludeScaffoldArtifacts(yamlFiles)
+		yamlFiles = excludeInvalidTestdata(yamlFiles)
 		yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
 		kcOpts := kubeconform.DefaultOptions()
 		if opts.SchemaDir != "" {
@@ -767,6 +769,32 @@ func excludeScaffoldArtifacts(files []string) []string {
 	return out
 }
 
+// isInvalidTestdata reports whether f lives under a `testdata/invalid/`
+// directory. By repo convention, deliberately-malformed fixtures (inputs a
+// linter/validator is expected to reject) live in a `testdata/invalid/`
+// subfolder; valid/"good" fixtures sit directly under `testdata/`. Only the
+// `invalid/` subfolder is excluded from linting - e.g. a vendored Go module
+// checked into the repo carries the upstream's bad-by-design shellcheck /
+// kubeconform fixtures there. `testdata` itself is a Go-toolchain-reserved
+// directory name (ignored by the go tool).
+func isInvalidTestdata(f string) bool {
+	s := filepath.ToSlash(f)
+	return strings.HasPrefix(s, "testdata/invalid/") || strings.Contains(s, "/testdata/invalid/")
+}
+
+// excludeInvalidTestdata drops files under any `testdata/invalid/` directory
+// (see isInvalidTestdata).
+func excludeInvalidTestdata(files []string) []string {
+	var out []string
+	for _, f := range files {
+		if isInvalidTestdata(f) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 func filterYAML(files []string) []string {
 	var out []string
 	for _, f := range files {
@@ -778,6 +806,11 @@ func filterYAML(files []string) []string {
 		// standalone YAML (unresolved {{ ... }}); never syntax/manifest-check
 		// them as raw files.
 		if convention.IsScaffoldTemplate(f) {
+			continue
+		}
+		// Deliberately-invalid test fixtures (testdata/invalid/) are meant to
+		// be rejected by a validator; never lint them.
+		if isInvalidTestdata(f) {
 			continue
 		}
 		if _, err := os.Stat(f); err == nil {
