@@ -1,26 +1,30 @@
 # Tekton
 
-This repo's own CI is a **single** Tekton `PipelineRun` with one inline
-step — deliberately much simpler than a typical multi-Task Tekton
-pipeline, since `k8s-gitops-ci` itself is the thing that would otherwise
-be a pile of separate lint/test/build Tasks. This document describes
-that actual footprint, not a general Tekton architecture.
+This repo's own CI is a **single** Tekton `PipelineRun` with two inline
+tasks (`build` and `lint`, run in parallel) — deliberately much simpler
+than a typical multi-Task Tekton pipeline, since `k8s-gitops-ci` itself is
+the thing that would otherwise be a pile of separate lint/test/build
+Tasks. This document describes that actual footprint, not a general
+Tekton architecture.
 
 ## Table of Contents
 
 - [Directory layout](#directory-layout)
 - [PaC trigger](#pac-trigger)
-- [The build step](#the-build-step)
+- [The build task](#the-build-task)
+- [The lint task](#the-lint-task)
 - [Caching](#caching)
 - [Known limitations](#known-limitations)
 
 ## Directory layout
 
 - **`.tekton/k8s-gitops-ci.yaml`** — the Pipelines-as-Code (PaC)
-  `PipelineRun`: one `pipelineSpec` with one `tasks[]` entry (`build`),
-  whose `taskSpec` has exactly one `steps[]` entry. There is no separate
-  `Pipeline` or `Task` CRD file anywhere — everything is inline in this
-  one `PipelineRun`.
+  `PipelineRun`: one `pipelineSpec` with two `tasks[]` entries (`build`,
+  `lint`, running in parallel — neither has a `runAfter` on the other),
+  each with its own inline `taskSpec` (its own params/workspaces/volumes/
+  stepTemplate/steps, entirely independent of the other's). There is no
+  separate `Pipeline` or `Task` CRD file anywhere — everything is inline
+  in this one `PipelineRun`.
 - **`tekton/base/repo.yaml`** — the Pipelines-as-Code `Repository` CR
   (`concurrency_limit: 1`).
 - **`tekton/k8s-gitops-ci/`** — the actual deployed overlay:
@@ -42,9 +46,10 @@ pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
 ```
 
 Fires on both `pull_request` and `push` events targeting `main` — the
-single build step branches on `event` internally (see
-[The build step](#the-build-step) below) rather than having two separate
-trigger definitions. `max-concurrency: "1"` (per-event-source
+`build` task's step branches on `event` internally (see
+[The build task](#the-build-task) below) rather than having two separate
+trigger definitions (`lint` ignores `event` entirely — it always runs the
+same `--lint-only` pass regardless). `max-concurrency: "1"` (per-event-source
 concurrency) plus the `Repository` CR's `concurrency_limit: 1`
 (repo-wide) together mean **only one `PipelineRun` executes at a time**
 for this repo, regardless of how many PRs/pushes arrive — a second event
@@ -56,7 +61,7 @@ an external Clair scan Task definition from another repo — see
 [Known limitations](#known-limitations); it's not currently referenced
 by any task in the pipeline.
 
-## The build step
+## The build task
 
 One step (`name: build`, `image:
 registry.arthurvardevanyan.com/homelab/toolbox:not_latest`), materially
@@ -83,6 +88,42 @@ FETCH_HEAD` (works for any ref/SHA reachable on the remote, not just a
 A commented-out `clair-action` task (`runAfter: [build]`, referencing the
 external Task pulled in by the `task-1` annotation above) is present but
 disabled — see [Known limitations](#known-limitations).
+
+## The lint task
+
+Runs in parallel with `build` (no `runAfter` between them) and has its
+own, much lighter `taskSpec` — it doesn't build anything, so it needs
+neither the `go-cache` workspace nor the Go-cache env/volume setup `build`
+has:
+
+1. **No separate clone step** — unlike `build`'s own manual `git
+init`/`fetch`/`checkout`, this task invokes the `k8s-gitops-ci` binary
+   directly (the toolbox image's own pinned, Renovate-updated install at
+   `/usr/local/bin/k8s-gitops-ci` — not the one `build` is compiling from
+   source this run), and `k8s-gitops-ci pipeline --url` clones into its
+   own `os.MkdirTemp` directory internally (see `pkg/git.Clone`), chdirs
+   there for the run, and cleans up after itself. The step still runs `gh
+auth login --with-token` + `gh auth setup-git` first (same rationale
+   as `build`'s own clone: installs a git credential helper for that
+   internal clone) and mounts a small `emptyDir` at `/tmp` (the pod's root
+   filesystem is read-only, and that internal clone's temp dir defaults to
+   `/tmp`).
+2. **`k8s-gitops-ci pipeline --lint-only --disable-checks golangci
+--comment`** — dogfoods this repo's own tiny Kubernetes-manifest
+   footprint (`.tekton/`, `tekton/`) through the CI engine's Linting +
+   Static Checks phases (see [CI.md](CI.md#modes)'s `--lint-only`
+   coverage). `--disable-checks golangci` skips the pipeline's own
+   diff-scoped `golangci` check, since `build`'s `task ci` already runs
+   `golangci-lint` across the full Go source separately — running it again
+   here would be redundant. `--target-branch` is hardcoded to `main` in
+   the script (this pipeline's own PaC trigger only ever fires for
+   `target_branch == "main"` anyway), fed from a `target-branch` param
+   bound to `{{ target_branch }}` on the shared `pipelineSpec.params`.
+
+There's no PR-comment collision with `build`: `build` never invokes
+`k8s-gitops-ci pipeline` (it runs `task ci` + `goreleaser` instead), so
+`lint` is the only task in this pipeline that posts/updates the marker-
+based PR comment.
 
 ## Caching
 
@@ -119,6 +160,17 @@ build`/`install`'s scratch work dirs (`os.TempDir()`, default `/tmp`)
 
 ## Known limitations
 
+- **`lint` dogfoods via the last release, not this PR's own source.** It
+  execs the toolbox image's pinned, Renovate-updated `k8s-gitops-ci`
+  install - never the code `build` is compiling from source this same
+  run. Any PR that both (a) relies on `lint` to assess it and (b) needs
+  validator/lint behavior newer than that pinned release (e.g. a PR fixing
+  a false positive in a `testdata/invalid/` exclusion, or adding a new
+  check) will see `lint` fail against its own not-yet-released fix -
+  self-resolving once merged and the toolbox image's pin catches up, but
+  a real, visible false failure on that PR in the meantime. Not something
+  more code in this repo can close: it's inherent to validating via a
+  pre-built binary rather than the sources `build` is compiling.
 - **The Clair image-vulnerability scan is planned, not enabled.** The
   `pipelinesascode.tekton.dev/task-1` annotation pulls in an external
   Task definition, and a `clair-action` task block referencing it exists

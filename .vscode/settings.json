@@ -26,5 +26,12 @@
   },
   "yaml.format.printWidth": 200,
   "yaml.format.proseWrap": "preserve",
-  "cSpell.words": ["goarch", "Kubeconform", "Kyverno", "pipelinesascode"]
+  "cSpell.words": [
+    "gitops",
+    "goarch",
+    "golangci",
+    "Kubeconform",
+    "Kyverno",
+    "pipelinesascode"
+  ]
 }

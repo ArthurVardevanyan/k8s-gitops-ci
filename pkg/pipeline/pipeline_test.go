@@ -365,12 +365,16 @@ func TestComposeSections_ReusesKyvernoWhenProduced(t *testing.T) {
 	}
 }
 
-// TestComposeSections_FallsBackWhenValidatorResultMissingSections guards
-// the --lint-only path: runBuildAndPostBuild never runs, so
-// ValidatorResult.Sections only has "Linting"/"Static Checks" - composeSections
-// must still return every section name (with a "No results." fallback body)
-// rather than omitting them or panicking.
-func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.T) {
+// TestComposeSections_OmitsBuildSectionsWhenAbsent guards the --lint-only
+// path: runBuildAndPostBuild never runs, so ValidatorResult.Sections only
+// has "Linting"/"Static Checks" - composeSections must omit every
+// build-phase section entirely (Kustomize Build, Scaffold Validation,
+// Scaffold Drift Protection, Resource Compliance) rather than synthesizing
+// a misleading "No results." stub that reads as "ran, found nothing" for a
+// phase that never ran at all. Regression guard: composeSections used to
+// unconditionally stub these 4, so a real --lint-only PR comment showed
+// "✅ No results." for phases it never executed.
+func TestComposeSections_OmitsBuildSectionsWhenAbsent(t *testing.T) {
 	res := &Result{
 		ValidatorResult: &validator.Result{
 			Sections: []validator.ReportSection{
@@ -379,27 +383,27 @@ func TestComposeSections_FallsBackWhenValidatorResultMissingSections(t *testing.
 			},
 		},
 	}
-	sections := composeSections(res, Options{})
+	sections := composeSections(res, Options{LintOnly: true})
 
 	byName := map[string]validator.ReportSection{}
 	for _, s := range sections {
 		byName[s.Name] = s
 	}
-	for _, name := range []string{"Kustomize Build", "Scaffold Validation", "Resource Compliance"} {
-		s, ok := byName[name]
-		if !ok {
-			t.Errorf("expected a %q section to be present even in --lint-only mode", name)
-			continue
-		}
-		if s.Body != "No results." {
-			t.Errorf("expected %q to fall back to %q, got %q", name, "No results.", s.Body)
-		}
+	if _, ok := byName["Linting"]; !ok {
+		t.Error("expected Linting to be present under --lint-only")
 	}
-	// NAD is now omit-when-absent (like Kyverno Policies): with no NAD
-	// section produced upstream, composeSections must not synthesize a
-	// "No results." stub for it.
-	if _, ok := byName["NetworkAttachmentDefinition Validation"]; ok {
-		t.Error("expected no NetworkAttachmentDefinition Validation section when none was produced upstream")
+	if _, ok := byName["Static Checks"]; !ok {
+		t.Error("expected Static Checks to be present under --lint-only")
+	}
+	// Build-phase sections, and NAD/Kyverno (already omit-when-absent),
+	// must all be omitted entirely - none was produced upstream.
+	for _, name := range []string{
+		"Kustomize Build", "Scaffold Validation", "Scaffold Drift Protection",
+		"Resource Compliance", "NetworkAttachmentDefinition Validation", "Kyverno Policies",
+	} {
+		if _, ok := byName[name]; ok {
+			t.Errorf("expected no %q section under --lint-only when none was produced upstream", name)
+		}
 	}
 }
 

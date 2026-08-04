@@ -475,14 +475,15 @@ func postComment(res *Result, opts Options) error {
 }
 
 // validatorSectionOrFallback looks up a named section in vr.Sections (the
-// fully-realized, nested-dropdown Sections phases.go already builds -
-// Linting/Static Checks/Kustomize Build/Scaffold Validation/Resource
-// Compliance), reusing it verbatim instead of re-deriving it from an
-// already-rendered Body string and composing it a second time (which used
-// to double-nest the markdown). Falls back to a plain "No results." stub
-// when vr is nil (e.g. the validation phase never ran) or the named section
-// wasn't produced (e.g. --lint-only mode, which skips the build phase
-// entirely and so never produces "Kustomize Build" et al).
+// fully-realized, nested-dropdown Sections phases.go already builds),
+// reusing it verbatim instead of re-deriving it from an already-rendered
+// Body string and composing it a second time (which used to double-nest
+// the markdown). Falls back to a plain "No results." stub only when vr is
+// nil (a hard setup failure inside validator.RunAll before any phase ran) -
+// used exclusively for Linting/Static Checks, which otherwise always run.
+// See validatorSection for the omit-when-absent alternative used by every
+// section that's conditionally produced (the build phase's own sections
+// under --lint-only, plus NAD/Kyverno).
 func validatorSectionOrFallback(vr *validator.Result, name string) validator.ReportSection {
 	if s, ok := validatorSection(vr, name); ok {
 		return s
@@ -513,29 +514,31 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr, res.TitleSuggestion))
 
-	// 2–7. Linting, Static Checks, Kustomize Build, Scaffold Validation,
-	// Scaffold Drift Protection, and Resource Compliance are all fully
-	// composed by phases.go during validator.RunAll - reuse them by name
-	// rather than recomposing. These are unconditional (--lint-only mode,
-	// which skips the build phase entirely, is the only reason one'd be
-	// missing - hence the "No results." fallback).
-	names := []string{
-		"Linting", "Static Checks", "Kustomize Build", "Scaffold Validation",
-		"Scaffold Drift Protection", "Resource Compliance",
-	}
-	for _, name := range names {
+	// 2–3. Linting and Static Checks are fully composed by phases.go during
+	// validator.RunAll - reuse them by name rather than recomposing. Both
+	// run in every mode (including --lint-only - runLintAndStaticChecks is
+	// exactly what --lint-only still runs), so the "No results." fallback
+	// only guards a res.ValidatorResult that's nil outright (e.g. a hard
+	// setup failure inside RunAll before either phase ran).
+	for _, name := range []string{"Linting", "Static Checks"} {
 		sections = append(sections, validatorSectionOrFallback(res.ValidatorResult, name))
 	}
 
-	// 8–9. NetworkAttachmentDefinition Validation and Kyverno Policies are
-	// both omit-when-absent: phases.go only produces the NAD section when a
-	// NAD is actually present in the rendered chain, and the Kyverno section
-	// only when the opt-in "kyverno" step is enabled (default off - see
-	// docs/CI.md#registered-checks). validatorSectionOrFallback's "No
-	// results." stub for a name phases.go never produced would be misleading
-	// here (it'd read as "checked, found nothing" rather than "no NAD in this
-	// change"/"not run"), so each is appended only when actually present.
-	for _, name := range []string{"NetworkAttachmentDefinition Validation", "Kyverno Policies"} {
+	// 4–9. Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
+	// Resource Compliance, NetworkAttachmentDefinition Validation, and
+	// Kyverno Policies are all omit-when-absent: phases.go only produces
+	// these from runBuildAndPostBuild, which --lint-only skips entirely (it
+	// runs only runLintAndStaticChecks - see validator.RunAll) - and NAD/
+	// Kyverno are additionally opt-in/conditional even when that phase does
+	// run (see below). A "No results." stub for any of these under
+	// --lint-only would misleadingly read as "checked this PR's build
+	// output, found nothing" rather than "this phase never ran for this
+	// request" - so each is appended only when actually present in
+	// res.ValidatorResult.Sections.
+	for _, name := range []string{
+		"Kustomize Build", "Scaffold Validation", "Scaffold Drift Protection",
+		"Resource Compliance", "NetworkAttachmentDefinition Validation", "Kyverno Policies",
+	} {
 		if s, ok := validatorSection(res.ValidatorResult, name); ok {
 			sections = append(sections, s)
 		}

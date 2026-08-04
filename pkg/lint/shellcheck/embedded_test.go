@@ -21,7 +21,7 @@ func TestExtractEmbedded_JobBash(t *testing.T) {
 func TestExtractEmbedded_CronJobBash(t *testing.T) {
 	// The trickiest case: CronJob nests its pod spec three levels deeper
 	// (spec.jobTemplate.spec.template.spec).
-	scripts, err := ExtractEmbedded("testdata/cronjob-bash.yaml")
+	scripts, err := ExtractEmbedded("testdata/invalid/cronjob-bash.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestRunEmbedded_EndToEnd(t *testing.T) {
 	if !hasShellcheckBinary() {
 		t.Skip("shellcheck not installed; skipping end-to-end test")
 	}
-	results, err := RunEmbedded([]string{"testdata/cronjob-bash.yaml"})
+	results, err := RunEmbedded([]string{"testdata/invalid/cronjob-bash.yaml"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestRunEmbedded_EndToEnd(t *testing.T) {
 	if len(results[0].Violations) == 0 {
 		t.Fatal("expected at least 1 violation for the known-bad embedded script")
 	}
-	if results[0].Violations[0].File != "testdata/cronjob-bash.yaml" {
+	if results[0].Violations[0].File != "testdata/invalid/cronjob-bash.yaml" {
 		t.Errorf("expected the violation's File to be the original YAML file, got: %q", results[0].Violations[0].File)
 	}
 }

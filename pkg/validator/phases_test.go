@@ -501,3 +501,69 @@ func TestFilterYAML_ExcludesScaffoldTemplates(t *testing.T) {
 		t.Errorf("expected manifest + config (2), got %v", got)
 	}
 }
+
+func TestIsInvalidTestdata(t *testing.T) {
+	cases := map[string]bool{
+		"testdata/invalid/bad.yaml":                      true,
+		"pkg/lint/shellcheck/testdata/invalid/c.yaml":    true,
+		"a/b/testdata/invalid/bad.yaml":                  true,
+		"testdata/good.yaml":                             false,
+		"pkg/lint/shellcheck/testdata/cronjob-bash.yaml": false,
+		"app/overlays/dev/kustomization.yaml":            false,
+		"my-invalid/x.yaml":                              false,
+	}
+	for in, want := range cases {
+		if got := isInvalidTestdata(in); got != want {
+			t.Errorf("isInvalidTestdata(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestExcludeInvalidTestdata(t *testing.T) {
+	in := []string{
+		"pkg/overlay/overlay.go",
+		"pkg/lint/shellcheck/testdata/invalid/cronjob-bash.yaml",
+		"pkg/validator/syncopts/testdata/malformed.yaml", // good/top-level fixture, kept
+		"app/overlays/dev/kustomization.yaml",
+	}
+	got := excludeInvalidTestdata(in)
+	want := []string{
+		"pkg/overlay/overlay.go",
+		"pkg/validator/syncopts/testdata/malformed.yaml",
+		"app/overlays/dev/kustomization.yaml",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("excludeInvalidTestdata = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestFilterYAML_ExcludesInvalidTestdata(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "app", "overlays", "dev", "kustomization.yaml")
+	good := filepath.Join(dir, "pkg", "lint", "shellcheck", "testdata", "job-bash.yaml")
+	bad := filepath.Join(dir, "pkg", "lint", "shellcheck", "testdata", "invalid", "cronjob-bash.yaml")
+	for _, p := range []string{manifest, good, bad} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("resources: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := filterYAML([]string{manifest, good, bad})
+	// Only the testdata/invalid/ fixture is dropped; the top-level "good"
+	// fixture is kept.
+	if len(got) != 2 {
+		t.Errorf("filterYAML must drop only testdata/invalid/ fixtures, got %v", got)
+	}
+	for _, f := range got {
+		if isInvalidTestdata(f) {
+			t.Errorf("filterYAML leaked an invalid fixture: %q", f)
+		}
+	}
+}

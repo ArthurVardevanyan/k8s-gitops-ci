@@ -907,4 +907,12 @@ listing every affected file (`dedupFindingsForTable` in
 `compose_sections.go`) instead of repeating an otherwise-identical row
 per location. A check id with no registered `TableSpec` still falls back
 to the original generic two-column File/Message table.
+
+Under `--lint-only`, only PR Checks, Linting, Static Checks, and CI Notes
+appear - Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
+and Resource Compliance are omitted entirely (not rendered as an empty
+"No results." pass), since `--lint-only` never runs the Build YAML/
+Post-Build Validation phases those sections come from; showing them as a
+passing empty stub would misleadingly read as "checked, found nothing"
+rather than "not run for this request" (`pkg/pipeline.composeSections`).
 </content>
