@@ -160,6 +160,17 @@ build`/`install`'s scratch work dirs (`os.TempDir()`, default `/tmp`)
 
 ## Known limitations
 
+- **`lint` dogfoods via the last release, not this PR's own source.** It
+  execs the toolbox image's pinned, Renovate-updated `k8s-gitops-ci`
+  install - never the code `build` is compiling from source this same
+  run. Any PR that both (a) relies on `lint` to assess it and (b) needs
+  validator/lint behavior newer than that pinned release (e.g. a PR fixing
+  a false positive in a `testdata/invalid/` exclusion, or adding a new
+  check) will see `lint` fail against its own not-yet-released fix -
+  self-resolving once merged and the toolbox image's pin catches up, but
+  a real, visible false failure on that PR in the meantime. Not something
+  more code in this repo can close: it's inherent to validating via a
+  pre-built binary rather than the sources `build` is compiling.
 - **The Clair image-vulnerability scan is planned, not enabled.** The
   `pipelinesascode.tekton.dev/task-1` annotation pulls in an external
   Task definition, and a `clair-action` task block referencing it exists
