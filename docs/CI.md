@@ -194,6 +194,15 @@ sequence-item indentation instead of indenting list items under their
 parent key), so without the prettier pass a freshly "fixed" file would
 immediately be re-flagged as needing a fix again.
 
+`kustomize edit fix`'s own writer also unconditionally drops a leading
+`---` YAML document-start marker, even though it's valid, optional YAML
+and prettier's own `--write` pass neither strips nor restores it.
+`runFixPipeline` (the same helper both `CheckFix` and `Fix` funnel
+through) restores it after the `kustomize edit fix` call when the
+original file had one, so `kustomize-fix` never silently strips a `---`
+an operator had in their file - and never adds one to a file that never
+had it either.
+
 To actually apply the fix, use the standalone `kustomize-fix` CLI
 subcommand, which does write the normalized file(s) back to disk (running
 the same `kustomize edit fix --vars` + `prettier --write` pipeline):
