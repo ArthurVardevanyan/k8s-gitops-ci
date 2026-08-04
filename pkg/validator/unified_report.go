@@ -171,6 +171,13 @@ func LegacyMarkers() []string {
 // resolves the base ref from the PR itself (see resolveBaseRef in
 // pkg/pipeline), so re-passing the original run's resolved BaseRef here would
 // just be redundant noise, not something needed to reproduce the failure.
+//
+// LintOnly is the same kind of gap as AssumeOpenShift above: it skips the
+// entire Build YAML/Post-Build Validation phase (see RunAll), so a caller
+// that always passes --lint-only (e.g. this repo's own self-lint Tekton
+// Task) whose run isn't reflected here would get a reproduce command that
+// additionally runs (and can additionally fail on) checks the original run
+// never even attempted.
 func ReproduceCommand(opts Options) string {
 	cmd := fmt.Sprintf("%s pipeline --url=%q --pr=%s", opts.Providers.BinaryName(), opts.RepoURL, opts.PR)
 	if len(opts.Dirs) > 0 {
@@ -178,6 +185,9 @@ func ReproduceCommand(opts Options) string {
 	}
 	if opts.AssumeOpenShift {
 		cmd += " --assume-openshift"
+	}
+	if opts.LintOnly {
+		cmd += " --lint-only"
 	}
 	if len(opts.DisabledChecks) > 0 {
 		cmd += fmt.Sprintf(" --disable-checks=%q", strings.Join(opts.DisabledChecks, ","))

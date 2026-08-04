@@ -221,12 +221,21 @@ per step:
 
 - `Options.DisabledChecks []string` — turn off a step that defaults to
   **enabled** (most steps: `sync-options`, `markdownlint`, `prettier`,
-  `shellcheck`, `golangci`, `avp`, `kustomize-fix`, ...). For
+  `shellcheck`, `golangci`, `kubeconform`, `avp`, `kustomize-fix`, ...). For
   `markdownlint`/`prettier`/`shellcheck`/`golangci`/`kustomize-fix`,
   `DisabledChecks` doesn't mean "org-specific opt-out" so much as "no
   `<tool>` binary available" - see [`CI.md`](CI.md#kustomize-fix) for why
   a missing CLI is a hard failure rather than a graceful skip for these
-  five steps.
+  five steps. `kubeconform` is different: it has no external CLI
+  dependency (schema validation runs in-process against the embedded/
+  extracted schema set - see [`SCHEMAS.md`](SCHEMAS.md)), so
+  `--disable-checks kubeconform` is a genuine wholesale opt-out - e.g. a
+  `--lint-only` invocation over a repo whose changeset can include
+  non-Kubernetes root config files (`Taskfile.yml`, `.golangci.yml`, ...)
+  that would otherwise trip kubeconform's "missing 'kind' key" error. For
+  finer-grained, per-file exemptions instead of disabling the whole step,
+  see `check=kubeconform` selectors in
+  [`EXCEPTIONS.md`](EXCEPTIONS.md#exemptable-check-ids).
 - `Options.EnabledChecks []string` — turn on a step that defaults to
   **disabled**: `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md) for why) and
   `scaffold-readme` (see [`CI.md`](CI.md#scaffold-validation) for why).

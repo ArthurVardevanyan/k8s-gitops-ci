@@ -264,10 +264,15 @@ output, not just the raw source.
   phases, so a changed scaffold config no longer trips a
   "missing 'kind' key" error.
 - **Implementation:** a Go library, not a CLI wrapper — unlike the three
-  checks above, there's no missing-binary case to gate, and it is **not**
-  part of the `Options.DisabledChecks`/`EnabledChecks` mechanism (it
-  always runs).
-- **Exemptions:** individual files can still be skipped via
+  checks above, there's no missing-binary case to gate.
+- **Default:** on. **Disable:** `--disable-checks kubeconform` — a genuine
+  wholesale opt-out (unlike the CLI-wrapper checks above, there's no
+  "binary not installed" reason to disable it; the reason here is usually
+  "this changeset/repo can contain non-Kubernetes YAML the step can't
+  meaningfully validate at all", e.g. a `--lint-only` run over a repo root
+  that includes `Taskfile.yml`/`.golangci.yml`/etc.).
+- **Exemptions:** for finer granularity than disabling the whole step,
+  individual files can be skipped via
   `check=kubeconform,file=...`/`check=kubeconform,dir=...` selectors in a
   `test.sh` `EXEMPTIONS=(...)` block — see
   [EXCEPTIONS.md](EXCEPTIONS.md) — intended for non-Kubernetes YAML (no
