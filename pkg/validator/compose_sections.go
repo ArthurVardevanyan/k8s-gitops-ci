@@ -438,11 +438,11 @@ func renderAcceptedExceptions(b *strings.Builder, exemptions []exempt.Applied) {
 // the *worst* child status: a non-blocking-only Ghost Patches finding rolls
 // the parent up to ⚠️, not plain ✅ (which would hide it) or ❌ (which would
 // overstate it) - see docs/CI.md's "Ghost Patch Detection".
-func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, hookFailed bool, fixNeeded []string, ghostTable string, ghostBlockingCount int) ReportSection {
+func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, hookFailed bool, fixNeeded []string, fixCheckErr error, fixCheckEnabled bool, ghostTable string, ghostBlockingCount int) ReportSection {
 	children := []ReportSection{
 		composeOverlayBuildChild(overlayCount, buildErrs),
 		composeHooksChild(hookTable, hookFailed),
-		composeKustomizeFixChild(fixNeeded),
+		composeKustomizeFixChild(fixNeeded, fixCheckErr, fixCheckEnabled),
 		composeGhostPatchesChild(ghostTable, ghostBlockingCount),
 	}
 	return composeParentFromChildren("Kustomize Build", children)
@@ -491,19 +491,37 @@ func composeHooksChild(hookTable string, hookFailed bool) ReportSection {
 
 // composeKustomizeFixChild builds the "Kustomize Fix" sub-check from the
 // list of kustomization.yaml files kustomize.CheckFix found needing
-// `kustomize edit fix`, plus an actionable fix command per affected
+// `kustomize edit fix --vars`, plus an actionable fix command per affected
 // directory (`k8s-gitops-ci kustomize-fix -dir <dir>` - see
 // cmd/k8s-gitops-ci/main.go's runKustomizeFix, which actually applies
 // kustomize.Fix and writes the file(s) back, unlike this read-only check)
 // - matching the "Fix command:" convention composeCheckChild's fixHints
 // already use for Linting/Static Checks findings, so a reviewer never has
 // to go find the right command themselves.
-func composeKustomizeFixChild(fixNeeded []string) ReportSection {
+//
+// checkErr is non-nil when CheckFix itself couldn't run (most commonly
+// kustomize.ErrCLINotFound - see pkg/kustomize's package doc comment for
+// why that's a hard failure here, not a graceful skip): this renders as
+// its own StatusError body distinct from "no fix needed", since silently
+// reporting a clean bill of health for a check that never actually ran
+// would be worse than surfacing the failure. enabled is false when the
+// "kustomize-fix" step itself was disabled (--disable-checks
+// kustomize-fix - see stepKustomizeFix in phases.go), rendering a
+// "Disabled." summary matching the same convention golangci/scaffold
+// table use, rather than a misleading "up to date" nothing actually
+// checked.
+func composeKustomizeFixChild(fixNeeded []string, checkErr error, enabled bool) ReportSection {
+	if !enabled {
+		return ReportSection{Name: "Kustomize Fix", Status: StatusPassed, Summary: "Disabled."}
+	}
+	if checkErr != nil {
+		return ReportSection{Name: "Kustomize Fix", Status: StatusError, Body: fmt.Sprintf("Could not check kustomization.yaml files: %s", checkErr)}
+	}
 	if len(fixNeeded) == 0 {
 		return ReportSection{Name: "Kustomize Fix", Status: StatusPassed, Summary: "All kustomization.yaml files are up to date."}
 	}
 	var b strings.Builder
-	b.WriteString("The following files need `kustomize edit fix`:\n\n")
+	b.WriteString("The following files need `kustomize edit fix --vars`:\n\n")
 	for _, f := range fixNeeded {
 		fmt.Fprintf(&b, "- `%s`\n", f)
 	}

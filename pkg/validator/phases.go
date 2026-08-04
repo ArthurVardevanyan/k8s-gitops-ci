@@ -36,6 +36,7 @@ const (
 	stepAVP            = "avp"
 	stepKyverno        = "kyverno"
 	stepScaffoldReadme = "scaffold-readme"
+	stepKustomizeFix   = "kustomize-fix"
 )
 
 // defaultOffSteps lists step/check IDs that are disabled unless explicitly
@@ -560,13 +561,39 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		}
 	}
 
-	fixNeeded, _ := kustomize.CheckFix(changed)
-	if len(fixNeeded) > 0 {
-		// composeKustomizeFixChild renders this as a StatusError
-		// sub-dropdown - it must also be logged as a real failure here,
-		// otherwise a run with nothing else wrong exits 0/green despite
-		// the report showing a hard ❌ (see Result.Failed's doc comment).
-		log.ErrorInSection("KustomizeBuild", "%d file(s) need `kustomize edit fix`", len(fixNeeded))
+	// kustomize.CheckFix shells out to the real `kustomize` CLI (see
+	// pkg/kustomize's package doc comment for why) - unlike every
+	// pkg/lint/* wrapper's own missing-binary handling (skip gracefully),
+	// a missing kustomize binary is treated as a hard failure here: it's
+	// a core, expected dependency for this pipeline, not an optional
+	// best-effort tool, and a run that couldn't actually check
+	// kustomization.yaml files should never silently report a clean bill
+	// of health it never verified. composeKustomizeFixChild renders
+	// either outcome (findings, or the check itself failing) as a
+	// StatusError sub-dropdown, so it must also be logged as a real
+	// failure here, otherwise a run with nothing else wrong exits
+	// 0/green despite the report showing a hard ❌ (see Result.Failed's
+	// doc comment).
+	//
+	// Gated behind stepKustomizeFix (default-on, like every check with no
+	// org-specific compatibility concern - unlike kyverno/scaffold-readme)
+	// purely so tests exercising unrelated behavior with a deliberately
+	// minimal/non-canonical kustomization.yaml fixture (this repo has
+	// many) can opt out via --disable-checks kustomize-fix instead of
+	// needing every such fixture to exactly match the real kustomize
+	// binary's canonical output - production runs are unaffected, since
+	// nothing disables it by default.
+	var fixNeeded []string
+	var fixCheckErr error
+	kustomizeFixEnabled := stepEnabled(stepKustomizeFix, disabled, enabled)
+	if kustomizeFixEnabled {
+		fixNeeded, fixCheckErr = kustomize.CheckFix(changed)
+		switch {
+		case fixCheckErr != nil:
+			log.ErrorInSection("KustomizeBuild", "kustomize fix check: %v", fixCheckErr)
+		case len(fixNeeded) > 0:
+			log.ErrorInSection("KustomizeBuild", "%d file(s) need `kustomize edit fix --vars`", len(fixNeeded))
+		}
 	}
 	hookTable := buildHookTable(apps, hookCfgs, hookResults)
 	hookFailed := anyHookFailed(hookResults)
@@ -575,10 +602,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// overlay is a warning, not this PR's fault to have introduced against
 	// existing history) - an error resolving it (e.g. no git history
 	// available) degrades to "no added files", matching this phase's
-	// existing tolerant-of-git-failure pattern (kustomize.CheckFix above).
+	// existing tolerant-of-git-failure pattern for changeset-resolution
+	// errors specifically (unlike kustomize.CheckFix above, which is a
+	// hard failure, not tolerated).
 	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
 	ghostTable, ghostBlockingCount := buildGhostTable(apps, addedFiles)
-	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, ghostTable, ghostBlockingCount))
+	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, fixCheckErr, kustomizeFixEnabled, ghostTable, ghostBlockingCount))
 	if ghostBlockingCount > 0 {
 		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
 	}

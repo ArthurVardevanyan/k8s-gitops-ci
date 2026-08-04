@@ -2,6 +2,7 @@ package validator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -433,14 +434,34 @@ func TestRunAll_FailingPostBuildHookBlocks(t *testing.T) {
 // same section - Overlay Build errors, blocking Ghost Patches), so
 // res.Logger.HasFailures() (and thus "pipeline"'s exit code) stayed false
 // even with a real, visibly-❌ finding in the report - see Result.Failed.
+// kustomize.CheckFix shells out to the real kustomize CLI (see
+// pkg/kustomize's package doc comment), so this needs the real binaries
+// installed - matching the exec.LookPath+t.Skip pattern already used
+// elsewhere in this repo for CLI-wrapping tests.
 func TestRunAll_KustomizeFixFindingBlocks(t *testing.T) {
+	if _, err := exec.LookPath("kustomize"); err != nil {
+		t.Skip("kustomize not installed")
+	}
+	if _, err := exec.LookPath("prettier"); err != nil {
+		t.Skip("prettier not installed")
+	}
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
-	// Not normalized: "resources" (alphabetically last of the three keys,
-	// but written first here) sorts after apiVersion/kind once
-	// kustomize.NormalizeYAML runs, so kustomize.CheckFix flags this file.
-	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"),
-		"resources:\n  - resource.yaml\nkind: Kustomization\napiVersion: kustomize.config.k8s.io/v1beta1\n")
+	// A deprecated `vars:` block: kustomize edit fix --vars converts it
+	// to `replacements:`, so kustomize.CheckFix flags this file.
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - resource.yaml
+vars:
+  - name: FOO
+    objref:
+      kind: ConfigMap
+      name: my-configmap
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.foo
+`)
 	mustWrite(t, filepath.Join(app, "overlays", "prod", "resource.yaml"),
 		"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\n  namespace: default\n")
 	hookBuildRoot = filepath.Join(t.TempDir(), "builds")

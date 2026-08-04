@@ -184,7 +184,11 @@ one shared enable/disable mechanism instead of a dedicated boolean flag
 per step:
 
 - `Options.DisabledChecks []string` — turn off a step that defaults to
-  **enabled** (most steps: `sync-options`, `golangci`, `avp`, ...).
+  **enabled** (most steps: `sync-options`, `golangci`, `avp`,
+  `kustomize-fix`, ...). `kustomize-fix` is the one step where
+  `DisabledChecks` doesn't mean "org-specific opt-out" so much as "no
+  `kustomize` binary available" - see [`CI.md`](CI.md#kustomize-fix) for
+  why a missing binary is a hard failure rather than a graceful skip.
 - `Options.EnabledChecks []string` — turn on a step that defaults to
   **disabled**: `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md) for why) and
   `scaffold-readme` (see [`CI.md`](CI.md#scaffold-validation) for why).
@@ -459,9 +463,14 @@ count:
   `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` table (✅ ran /
   ❌ failed / — not defined — hooks are actually executed, not just
   detected; see [`HOOKS.md`](HOOKS.md)) with `StatusError` when any hook
-  actually failed (`anyHookFailed`); Kustomize Fix lists files needing
-  `kustomize edit fix`, plus a `k8s-gitops-ci kustomize-fix -dir <dir>`
-  fix command per affected directory (real and working, unlike the
+  actually failed (`anyHookFailed`); Kustomize Fix (`kustomize.CheckFix`,
+  which shells out to the real `kustomize edit fix --vars` - see
+  `pkg/kustomize`'s package doc comment for why, and its `StatusError` on
+  a `CheckFix` failure itself, e.g. a missing `kustomize` binary, which
+  this repo treats as a hard failure rather than the graceful skip every
+  `pkg/lint/*` wrapper's own missing-CLI handling uses) lists files
+  needing a fix, plus a `k8s-gitops-ci kustomize-fix -dir <dir>` fix
+  command per affected directory (real and working, unlike the
   never-actually-reachable `hintByCheck["kustomize fix"]` entry in
   `comments.go` - nothing produces a `LintFinding` with that check name);
   and Ghost Patches renders a

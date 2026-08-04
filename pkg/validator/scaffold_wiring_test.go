@@ -22,7 +22,11 @@ func TestRunAll_ScaffoldSkippedWithoutConfig(t *testing.T) {
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), "resources: []\n")
 
-	res, err := RunAll(Options{Dirs: []string{d}})
+	// kustomize-fix is unrelated to what this test exercises, and this
+	// minimal fixture isn't in kustomize's real canonical form, which
+	// would otherwise always flag a spurious Kustomize Fix finding and
+	// fail the HasFailures() assertion below.
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
@@ -105,7 +109,11 @@ func TestRunAll_ScaffoldReadmeCheckDisabledByDefault(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origWD) }()
 
-	res, err := RunAll(Options{Dirs: []string{"myapp"}})
+	// kustomize-fix is unrelated to what this test exercises, and this
+	// minimal fixture isn't in kustomize's real canonical form, which
+	// would otherwise always flag a spurious Kustomize Fix finding and
+	// fail the HasFailures() assertion below.
+	res, err := RunAll(Options{Dirs: []string{"myapp"}, DisabledChecks: []string{"kustomize-fix"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}

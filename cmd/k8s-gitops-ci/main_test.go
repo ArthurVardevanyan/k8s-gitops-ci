@@ -4,6 +4,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -330,15 +331,36 @@ func TestRunKustomizeFix_DirAndAllAreMutuallyExclusive(t *testing.T) {
 // TestRunKustomizeFix_DirActuallyWritesFixedFiles guards the core fix:
 // unlike the old positional-args-only, read-only "check" behavior,
 // "kustomize-fix -dir <path>" must actually rewrite a non-normalized
-// kustomization.yaml under that path (recursively).
+// kustomization.yaml under that path (recursively) - via the real
+// `kustomize edit fix --vars` (see pkg/kustomize's package doc comment
+// for why this shells out rather than reimplementing kustomize's own
+// logic), converting a deprecated `vars:` block to `replacements:` too.
 func TestRunKustomizeFix_DirActuallyWritesFixedFiles(t *testing.T) {
+	if _, err := exec.LookPath("kustomize"); err != nil {
+		t.Skip("kustomize not installed")
+	}
+	if _, err := exec.LookPath("prettier"); err != nil {
+		t.Skip("prettier not installed")
+	}
 	root := t.TempDir()
 	nested := filepath.Join(root, "overlays", "sandbox", "kustomization.yaml")
-	unsorted := "resources:\n  - resource.yaml\nkind: Kustomization\napiVersion: kustomize.config.k8s.io/v1beta1\n"
+	unfixed := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - resource.yaml
+vars:
+  - name: FOO
+    objref:
+      kind: ConfigMap
+      name: my-configmap
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.foo
+`
 	if err := os.MkdirAll(filepath.Dir(nested), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(nested, []byte(unsorted), 0o644); err != nil {
+	if err := os.WriteFile(nested, []byte(unfixed), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -356,16 +378,19 @@ func TestRunKustomizeFix_DirActuallyWritesFixedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(after) == unsorted {
+	if string(after) == unfixed {
 		t.Error("expected the file to actually be rewritten on disk")
 	}
-	if !strings.HasPrefix(string(after), "apiVersion:") {
-		t.Errorf("expected apiVersion first after normalization, got: %s", after)
+	if !strings.Contains(string(after), "replacements:") || strings.Contains(string(after), "vars:") {
+		t.Errorf("expected vars: to actually be converted to replacements: (--vars), got: %s", after)
 	}
 }
 
 // TestRunKustomizeFix_NoFilesNeedFixing guards the clean-tree message.
 func TestRunKustomizeFix_NoFilesNeedFixing(t *testing.T) {
+	if _, err := exec.LookPath("kustomize"); err != nil {
+		t.Skip("kustomize not installed")
+	}
 	root := t.TempDir()
 	out := captureStdout(t, func() {
 		if err := runKustomizeFix([]string{"-dir", root}); err != nil {
