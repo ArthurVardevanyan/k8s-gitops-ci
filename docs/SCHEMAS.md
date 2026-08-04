@@ -8,6 +8,13 @@ embed that data into the compiled binary via `//go:embed`, populated by a
 specifically, how an org supplies schemas/policies for its own
 CRDs/policies that have no generic public source.
 
+## Table of Contents
+
+- [The pattern](#the-pattern)
+- [Kubeconform schemas](#kubeconform-schemas)
+  - [Org-specific CRDs with no public schema](#org-specific-crds-with-no-public-schema)
+- [Kyverno policies](#kyverno-policies)
+
 ## The pattern
 
 ```text

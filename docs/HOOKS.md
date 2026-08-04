@@ -6,6 +6,15 @@ of directives. This document describes `pkg/hook`'s actual, current
 behavior, and exactly how each directive is wired into the pipeline (see
 **Current Limitations** for anything not yet connected end-to-end).
 
+## Table of Contents
+
+- [The `test.sh` contract](#the-testsh-contract)
+  - [`EXEMPTIONS=(...)` selector syntax](#exemptions-selector-syntax)
+  - [`EXEMPTIONS=(...)` wiring](#exemptions-wiring)
+- [Hook execution](#hook-execution)
+- [`hook.Source` / `ResolveSource`](#hooksource--resolvesource)
+- [Current Limitations](#current-limitations)
+
 ## The `test.sh` contract
 
 `test.sh` is a convention shared with other tooling in the GitOps repo,
