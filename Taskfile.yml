@@ -280,6 +280,7 @@ tasks:
       - mkdir -p {{.DIST}}
       - >
         go build
+        -tags embedschemas
         -ldflags '-w {{.LDFLAGS}}'
         -trimpath
         -o {{.DIST}}/{{.NAME}}
@@ -307,6 +308,7 @@ tasks:
   test:
     desc: Run test suite
     aliases: [t]
+    deps: [update:schemas, update:policies]
     env:
       GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
       GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
@@ -315,7 +317,7 @@ tasks:
       - go.mod
       - go.sum
     cmds:
-      - go test $GOTESTFLAGS -timeout 10m ./...
+      - go test -tags embedschemas $GOTESTFLAGS -timeout 10m ./...
 
   test:cover:
     desc: Run tests with coverage profile + race detector
@@ -332,7 +334,7 @@ tasks:
       - mkdir -p {{.COVER}}
       # CGO_ENABLED=1 set inline — the global CGO_ENABLED=0 is exported into
       # subprocesses and task-level env won't override it there.
-      - CGO_ENABLED=1 go test $GOTESTFLAGS -race -covermode=atomic -coverprofile={{.COVER}}/cover.out -timeout 10m ./...
+      - CGO_ENABLED=1 go test -tags embedschemas $GOTESTFLAGS -race -covermode=atomic -coverprofile={{.COVER}}/cover.out -timeout 10m ./...
 
   test:race:
     desc: Alias for test:cover (race detector runs there)

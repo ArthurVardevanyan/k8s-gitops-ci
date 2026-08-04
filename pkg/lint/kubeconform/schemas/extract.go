@@ -1,10 +1,22 @@
+// Package schemas provides access to the kubeconform JSON schema archive.
+//
+// The embedded archive (schemas.tar.gz) is OPTIONAL and gated behind the
+// `embedschemas` build tag. This keeps the package importable as a library
+// module without requiring the (gitignored, build-time) archive to be present:
+//
+//   - Built WITHOUT `-tags embedschemas` (the default, and how downstream
+//     consumers import this package): no archive is compiled in. Callers must
+//     provide a pre-extracted schema directory via kubeconform.Options.SchemaDir
+//     (see the package docs / docs/UPSTREAM.md). Extract returns ErrNoEmbeddedArchive.
+//   - Built WITH `-tags embedschemas` (this project's own binary, after
+//     scripts/pull-schemas.sh has produced schemas.tar.gz): the archive is
+//     compiled in and Extract unpacks it to a temp directory.
 package schemas
 
 import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"embed"
 	"errors"
 	"fmt"
 	"io"
@@ -12,17 +24,25 @@ import (
 	"path/filepath"
 )
 
-//go:embed schemas.tar.gz
-var schemasArchive embed.FS
+// ErrNoEmbeddedArchive is returned by Extract/EnsureArchive when the binary was
+// built without the `embedschemas` build tag (so no archive is compiled in) and
+// therefore cannot self-provision schemas. Consumers should supply a schema
+// directory explicitly (kubeconform.Options.SchemaDir) instead.
+var ErrNoEmbeddedArchive = errors.New(
+	"no embedded kubeconform schema archive: build with -tags embedschemas " +
+		"after running scripts/pull-schemas.sh, or provide a pre-extracted " +
+		"schema directory via SchemaDir",
+)
 
 // maxExtractedFileSize bounds how much data is written per archive entry,
 // as defense-in-depth against decompression-bomb style resource exhaustion
 // even though the archive is embedded (trusted, build-time) content.
 const maxExtractedFileSize = 512 << 20 // 512MiB
 
-// Extract extracts the embedded schema archive to a temp directory.
+// Extract extracts the embedded schema archive to a temp directory. It returns
+// ErrNoEmbeddedArchive when built without the `embedschemas` build tag.
 func Extract() (dir string, cleanup func(), err error) {
-	data, err := schemasArchive.ReadFile("schemas.tar.gz")
+	data, err := archiveBytes()
 	if err != nil {
 		return "", nil, err
 	}
@@ -77,12 +97,13 @@ func Extract() (dir string, cleanup func(), err error) {
 	return dir, cleanup, nil
 }
 
-// EnsureArchive writes the embedded archive to path if it does not exist.
+// EnsureArchive writes the embedded archive to path if it does not exist. It
+// returns ErrNoEmbeddedArchive when built without the `embedschemas` build tag.
 func EnsureArchive(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	data, err := schemasArchive.ReadFile("schemas.tar.gz")
+	data, err := archiveBytes()
 	if err != nil {
 		return err
 	}

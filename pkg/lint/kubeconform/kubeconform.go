@@ -169,7 +169,16 @@ func (r *Result) Summary() string {
 // folder (i.e. the direct parent of custom-standalone-strict,
 // master-standalone-strict, and master-local), ready to be used as
 // Options.SchemaDir / passed to SchemaLocations.
-func ExtractSchemas() (dir string, cleanup func(), err error) {
+//
+// ExtractSchemas is a package var so an org/consumer layer can override the
+// schema source at startup - e.g. to supply schemas from an OCI-pulled tar or
+// a pre-populated directory - without the binary needing the `embedschemas`
+// build tag. The default reads the (optionally-embedded) archive; when built
+// without `embedschemas` it returns schemas.ErrNoEmbeddedArchive, and callers
+// (pipeline Setup, phases) fall back gracefully.
+var ExtractSchemas = defaultExtractSchemas
+
+func defaultExtractSchemas() (dir string, cleanup func(), err error) {
 	extracted, cleanup, err := schemas.Extract()
 	if err != nil {
 		return "", nil, err

@@ -1,10 +1,22 @@
+// Package policies provides access to the Kyverno policy archive.
+//
+// The embedded archive (policies.tar.gz) is OPTIONAL and gated behind the
+// `embedschemas` build tag, mirroring pkg/lint/kubeconform/schemas. This keeps
+// the package importable as a library module without the (gitignored,
+// build-time) archive:
+//
+//   - Built WITHOUT `-tags embedschemas` (default; how downstream consumers
+//     import this package): no archive is compiled in. Callers must provide a
+//     pre-prepared policy path via kubeconform/validator Options.PolicyPath.
+//     Extract returns ErrNoEmbeddedArchive.
+//   - Built WITH `-tags embedschemas` (this project's own binary, after
+//     scripts/pull-policies.sh): the archive is compiled in and Extract unpacks it.
 package policies
 
 import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"embed"
 	"errors"
 	"fmt"
 	"io"
@@ -13,17 +25,24 @@ import (
 	"strings"
 )
 
-//go:embed policies.tar.gz
-var policiesArchive embed.FS
+// ErrNoEmbeddedArchive is returned by Extract when the binary was built without
+// the `embedschemas` build tag (so no archive is compiled in). Consumers should
+// supply a policy path explicitly (Options.PolicyPath) instead.
+var ErrNoEmbeddedArchive = errors.New(
+	"no embedded kyverno policy archive: build with -tags embedschemas " +
+		"after running scripts/pull-policies.sh, or provide a pre-prepared " +
+		"policy path via PolicyPath",
+)
 
 // maxExtractedFileSize bounds how much data is written per archive entry,
 // as defense-in-depth against decompression-bomb style resource exhaustion
 // even though the archive is embedded (trusted, build-time) content.
 const maxExtractedFileSize = 512 << 20 // 512MiB
 
-// Extract extracts the embedded policy archive to a temp directory.
+// Extract extracts the embedded policy archive to a temp directory. It returns
+// ErrNoEmbeddedArchive when built without the `embedschemas` build tag.
 func Extract() (dir string, cleanup func(), err error) {
-	data, err := policiesArchive.ReadFile("policies.tar.gz")
+	data, err := archiveBytes()
 	if err != nil {
 		return "", nil, err
 	}
@@ -78,14 +97,13 @@ func Extract() (dir string, cleanup func(), err error) {
 	return dir, cleanup, nil
 }
 
-// EnsureArchive creates a placeholder archive if none exists. The tar and
-// gzip writers must be closed in that order (tar first, to flush its
-// end-of-archive padding into the gzip stream; gzip second, to flush its
-// own trailer) *before* the buffer's bytes are read - closing gzip first
-// (or relying on deferred closes that run after the buffer is already read)
-// silently produces a truncated/empty-looking archive, since gzip.Close
-// finalizes the compressed stream and any tar data written afterward never
-// reaches the buffer.
+// EnsureArchive creates a placeholder archive if none exists. It is
+// independent of the embedded archive (and the `embedschemas` build tag): it
+// only writes a well-formed empty tar.gz so //go:embed directives compiling
+// the source tree have a file to embed. The tar and gzip writers must be
+// closed in that order (tar first, to flush its end-of-archive padding into
+// the gzip stream; gzip second, to flush its own trailer) *before* the
+// buffer's bytes are read.
 func EnsureArchive(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil

@@ -57,7 +57,14 @@ func isExcludedRule(policy, rule string) bool {
 // NamespaceSelectorLabelKeys, and writes the result to a temp file. Returns
 // the path to the rendered policy file and a cleanup function the caller
 // must invoke once done.
-func PreparePolicies() (policyPath string, cleanup func(), err error) {
+// PreparePolicies is a package var so an org/consumer layer can override the
+// policy source at startup (e.g. from an OCI-pulled tar) without needing the
+// `embedschemas` build tag. The default extracts the (optionally-embedded)
+// archive; when built without `embedschemas` policies.Extract returns
+// policies.ErrNoEmbeddedArchive and callers fall back gracefully.
+var PreparePolicies = defaultPreparePolicies
+
+func defaultPreparePolicies() (policyPath string, cleanup func(), err error) {
 	dir, dirCleanup, err := policies.Extract()
 	if err != nil {
 		return "", func() {}, err
@@ -67,6 +74,15 @@ func PreparePolicies() (policyPath string, cleanup func(), err error) {
 		return "", dirCleanup, err
 	}
 	return policyPath, dirCleanup, nil
+}
+
+// PreparePoliciesFrom renders the Kyverno policies found under an
+// already-extracted policy directory (dir/kyverno-policies/...) into a single
+// temp file and returns its path. It is the exported entry point for org
+// layers that supply their own policy archive source (see the overridable
+// PreparePolicies seam) but want the standard render/strip behavior.
+func PreparePoliciesFrom(dir string) (policyPath string, err error) {
+	return preparePoliciesFrom(dir)
 }
 
 // preparePoliciesFrom does PreparePolicies's actual render/strip/write work
