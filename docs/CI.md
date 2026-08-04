@@ -254,6 +254,15 @@ Schema-validates changed YAML plus every affected overlay's _rendered_
 output, not just the raw source.
 
 - **Package:** `pkg/lint/kubeconform`
+- **Scaffold artifacts excluded:** files under `<ScaffoldDir>/configs/` and
+  `<ScaffoldDir>/templates/` (see `convention.IsScaffoldArtifact`, where
+  `ScaffoldDir` is `.scafctl` by default or an org override such as
+  `.cldctl`) are the scaffolding CLI's own inputs — configs are not
+  Kubernetes manifests (no `kind`/`apiVersion`) and templates are
+  Go-templated source (often not valid standalone YAML). Both are skipped
+  automatically by the kubeconform, doc-check, Kyverno, and YAML-syntax
+  phases, so a changed scaffold config no longer trips a
+  "missing 'kind' key" error.
 - **Implementation:** a Go library, not a CLI wrapper — unlike the three
   checks above, there's no missing-binary case to gate, and it is **not**
   part of the `Options.DisabledChecks`/`EnabledChecks` mechanism (it
