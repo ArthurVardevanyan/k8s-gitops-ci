@@ -8,6 +8,13 @@ model rather than a tool-specific findings-triage log. If a scanner is
 adopted later, add a triage-table section to this same file at that time
 rather than creating a second security doc.
 
+## Table of Contents
+
+- [Trust model](#trust-model)
+- [`exec.Command`/`exec.CommandContext` audit](#execcommandexeccommandcontext-audit)
+- [File-permission rationale](#file-permission-rationale)
+- [Decompression-bomb guard](#decompression-bomb-guard)
+
 ## Trust model
 
 `k8s-gitops-ci` is a CLI/Tekton-task tool operated by a trusted CI

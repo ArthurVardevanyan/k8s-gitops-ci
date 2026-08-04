@@ -6,6 +6,14 @@ the design conventions that keep this a generic, org-agnostic core; this
 document covers the runtime shape: what actually happens when you run a
 pipeline, and where to look for each piece.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Why "app-aware" overlay detection matters](#why-app-aware-overlay-detection-matters)
+- [Package map](#package-map)
+- [Design conventions (link, not duplicate)](#design-conventions-link-not-duplicate)
+- [Where do I find X?](#where-do-i-find-x)
+
 ## Overview
 
 `k8s-gitops-ci` is a single Go binary that replaces a multi-task Tekton

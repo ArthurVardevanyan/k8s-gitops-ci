@@ -5,7 +5,47 @@ standalone subcommands) actually do today. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the one-paragraph overview and
 package map; this is the detailed, step-by-step reference.
 
-## Pipeline flow
+## Table of Contents
+
+- [Pipeline Flow](#pipeline-flow)
+- [Modes](#modes)
+- [Build Strategies](#build-strategies)
+- [Validation Steps](#validation-steps)
+  - [Linting phase (all steps run concurrently)](#linting-phase-all-steps-run-concurrently)
+    - [`markdownlint`](#markdownlint)
+    - [`prettier`](#prettier)
+    - [`golangci`](#golangci)
+    - [`kubeconform`](#kubeconform)
+    - [`shellcheck`](#shellcheck)
+  - [Static Checks phase (all steps run concurrently)](#static-checks-phase-all-steps-run-concurrently)
+    - [`large-file`](#large-file)
+    - [`YAML-syntax`](#yaml-syntax)
+    - [`config-sort`](#config-sort)
+    - [`startingCSV`](#startingcsv)
+    - [`scaffold-readme`](#scaffold-readme)
+  - [Kustomize Fix](#kustomize-fix)
+  - [Ghost Patch Detection](#ghost-patch-detection)
+  - [Scaffold Validation](#scaffold-validation)
+  - [Registered checks](#registered-checks)
+    - [`namespace`](#namespace)
+    - [`psa-labels`](#psa-labels)
+    - [`rbac-readonly`](#rbac-readonly)
+    - [`rbac-wildcards`](#rbac-wildcards)
+    - [`crb`](#crb)
+    - [`sync-options`](#sync-options)
+    - [`image-checksum`](#image-checksum)
+    - [`named-ports`](#named-ports)
+    - [`podspec-defaults`](#podspec-defaults)
+    - [`placeholder`](#placeholder)
+    - [`cluster-identity`](#cluster-identity)
+    - [`avp`](#avp)
+    - [`kyverno`](#kyverno)
+  - [NetworkAttachmentDefinition (NAD) validation](#networkattachmentdefinition-nad-validation)
+- [Direct vs. external findings](#direct-vs-external-findings)
+- [Concurrency](#concurrency)
+- [Report structure](#report-structure)
+
+## Pipeline Flow
 
 `pkg/validator/phases.go`'s `RunAll` runs four or six phases, in order:
 
@@ -42,7 +82,7 @@ flowchart TD
   per-overlay worker pool, plus a per-app "Building: `<name>`" console
   summary banner printed once all of that app's overlays finish building).
   Post-Build Validation then runs the doc-scoped and overlay-scoped checks
-  (see [Registered Checks](#registered-checks) below - the overlay-scoped
+  (see [Registered checks](#registered-checks) below - the overlay-scoped
   pass itself actually executes inside Build YAML's worker-pool loop,
   alongside the build, since neither depends on the other's result within
   one overlay's iteration), Kyverno, and NAD validation, and classifies
@@ -132,7 +172,8 @@ mechanism as every other step - see `Options.DisabledChecks`'s doc
 comment) gates this entirely: `--disable-checks avp` forces every app's
 Strategy back to plain Kustomize/Helm regardless of any AVP indicator
 found, for an operator running without the `argocd-vault-plugin` binary
-or a configured secret backend.
+or a configured secret backend. See [`avp`](#avp) below for its own
+subsection under Validation Steps.
 
 Every real caller that needs a fully-rendered overlay - this phase's
 build-error detection (`pkg/validator/hook_wiring.go`'s
@@ -150,7 +191,177 @@ anything - it only _detects_ unresolved AVP tokens in
 already-rendered/committed YAML, independent of the build-time
 resolution described above.
 
-## Kustomize Fix
+## Validation Steps
+
+Every step below is listed in the order its owning phase runs (see
+[Pipeline Flow](#pipeline-flow) above): Linting, then Static Checks, then
+Build YAML (Kustomize Fix, Ghost Patch Detection, Scaffold Validation),
+then Post-Build Validation (Registered checks, NAD validation). Most
+steps are gated by a stable string **check ID** via
+`Options.DisabledChecks`/`EnabledChecks` (see `docs/DEVELOPMENT.md`'s
+[Generic check-enablement
+mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)) — each
+such step is headed by that ID in backticks below. A few steps (Ghost
+Patch Detection, Scaffold Validation's drift triggers, NAD validation)
+have no check ID at all and always run.
+
+### Linting phase (all steps run concurrently)
+
+#### `markdownlint`
+
+Lints changed `.md` files.
+
+- **Package:** `pkg/lint/markdownlint`
+- **Scope:** Only changed markdown files; skips cleanly (`Skipped: true`,
+  `StatusPassed`) when there are none.
+- **Default:** on. Like every CLI wrapper in this phase, a **missing
+  `markdownlint-cli2` binary is a hard failure** (`StatusError`,
+  blocking), not a graceful skip — a missing lint tool means the
+  pipeline didn't actually check what it claims to have checked.
+- **Disable:** `--disable-checks markdownlint` (for an environment that
+  genuinely can't provision the tool).
+
+#### `prettier`
+
+Validates YAML formatting.
+
+- **Package:** `pkg/lint/prettier`
+- **Scope:** Only changed YAML files; skips cleanly when there are none.
+- **Default:** on, same hard-fail-on-missing-CLI policy as
+  [`markdownlint`](#markdownlint) above.
+- **Disable:** `--disable-checks prettier`.
+
+#### `golangci`
+
+Checks Go file formatting and runs golangci-lint.
+
+- **Package:** `pkg/lint/golangci`
+- **Scope:** Only changed Go files; skips cleanly when there are none.
+- **Default:** on, same hard-fail-on-missing-CLI policy as
+  [`markdownlint`](#markdownlint) above.
+- **Disable:** `--disable-checks golangci` (useful when linted separately
+  in an image-build pipeline).
+
+#### `kubeconform`
+
+Schema-validates changed YAML plus every affected overlay's _rendered_
+output, not just the raw source.
+
+- **Package:** `pkg/lint/kubeconform`
+- **Implementation:** a Go library, not a CLI wrapper — unlike the three
+  checks above, there's no missing-binary case to gate, and it is **not**
+  part of the `Options.DisabledChecks`/`EnabledChecks` mechanism (it
+  always runs).
+- **Exemptions:** individual files can still be skipped via
+  `check=kubeconform,file=...`/`check=kubeconform,dir=...` selectors in a
+  `test.sh` `EXEMPTIONS=(...)` block — see
+  [EXCEPTIONS.md](EXCEPTIONS.md) — intended for non-Kubernetes YAML (no
+  `kind`/`apiVersion`) that legitimately lives in the repository.
+
+#### `shellcheck`
+
+Wraps the raw `shellcheck` CLI over changed `.sh`/`.bash` files (or any
+file whose shebang matches), **plus** extracts and lints:
+
+- Bash steps embedded in Tekton `Task` manifests
+  (`spec.steps[].script`, `pkg/lint/shellcheck/tekton.go`).
+- Bash embedded in workload container/initContainer `command` fields
+  (`[bash|sh, -c, <script>]` form) and ConfigMap `.sh`/`.bash` data
+  keys (`pkg/lint/shellcheck/embedded.go`), across
+  `Pod`/`Job`/`CronJob`/`Deployment`/`DaemonSet`/`StatefulSet`/
+  `ReplicaSet` (`CronJob`'s pod spec is nested three levels deeper than
+  every other kind, handled the same way `namedport`/`podspec` handle
+  it). Non-bash scripts (python, plain `sh`, no shebang) are silently
+  skipped — shellcheck only understands bash/sh/dash/ksh.
+
+Extracted-script findings are classified **direct/blocking** (the
+script's source YAML file was itself changed in this diff) vs.
+**external/warning-only** (the file was only pulled into scope because
+the overlay it lives in was affected by an unrelated base/component
+change elsewhere), reusing the exact same file-set logic
+(`externalOverlayYAMLFiles`, a directory walk over every overlay
+`detectOverlaysForChanges` resolves, excluding files already in the
+diff) as the identical direct/indirect split `finalizeCompliance`
+applies to Resource Compliance findings (see
+[Direct vs. external findings](#direct-vs-external-findings)). Raw `.sh`
+file findings are always direct — they're literally files in the diff.
+
+- **Package:** `pkg/lint/shellcheck`
+- **Default:** on. A missing `shellcheck` binary is a hard failure
+  (`StatusError`, blocking) — but only once relevance is established:
+  the "any shell-related file at all changed" short-circuit (no `.sh`
+  files, no changed YAML at all) still runs first, so a changeset with
+  nothing for shellcheck to check skips cleanly even with the CLI
+  missing, rather than failing every unrelated PR in an environment
+  that lacks it.
+- **Disable:** `--disable-checks shellcheck`.
+
+### Static Checks phase (all steps run concurrently)
+
+#### `large-file`
+
+Flags files over a size threshold, or that look binary.
+
+- **Package:** `pkg/largefile`
+- **Default max size:** `pkg/largefile.DefaultMaxSize`
+- **Ignore patterns:** a generic ignore-glob allowlist
+  (`pkg/largefile.DefaultIgnorePatterns` — compressed archives, web
+  fonts, images/icons, and `customresourcedefinition*.yaml`, whose
+  embedded OpenAPI schemas legitimately run large) is applied by
+  default; override the var to add/replace entries.
+- **Enablement:** always runs — not part of the
+  `DisabledChecks`/`EnabledChecks` mechanism.
+
+#### `YAML-syntax`
+
+Parse-level YAML validity, independent of and cheaper than schema
+validation.
+
+- **Package:** `pkg/lint/yamlsyntax`
+- **Enablement:** always runs — not gateable.
+
+#### `config-sort`
+
+Repo config files are alphabetically sorted.
+
+- **Package:** `pkg/config` (`config.CheckSortOrder`)
+- **Fix:** `k8s-gitops-ci sort-configs`
+- **Enablement:** always runs — not gateable.
+
+#### `startingCSV`
+
+An OLM `ClusterServiceVersion`'s folder name matches its `startingCSV`
+reference.
+
+- **Package:** `pkg/csv`
+- **Enablement:** always runs — not gateable.
+
+#### `scaffold-readme`
+
+A cheap, structural, per-PR check of the README's
+`<!-- scaffold-status -->` table: does it list exactly the (app,
+overlay) pairs that exist on disk today, with no missing or stale rows?
+
+- **Package:** `pkg/scaffold` (`scaffold.CheckReadmeStatus`)
+- **Report name:** renders as the **"scaffold table"** sub-check in the
+  Static Checks section (not folded into
+  [Scaffold Validation](#scaffold-validation)'s drift summary) — named
+  to match `hintByCheck`'s key in `comments.go`, so a failure
+  automatically gets an actionable fix-command hint the same way
+  `config-sort`/`prettier`/`markdownlint` do.
+- **Default: off.** Unlike every other step, this is opt-in
+  (`--enable-checks scaffold-readme`) because this generic core can't
+  know whether a given repo's table actually matches the
+  one-row-per-app-per-overlay shape the check expects.
+- **Fix:** `k8s-gitops-ci update-scaffold-status` — a full-repo-scan
+  regeneration (`scaffold.UpdateReadmeStatus`) meant to be run
+  deliberately, not on every PR. This check does **not** recompute
+  actual drift itself (that would mean scaffolding every app in the
+  repo on every PR) — the three real drift triggers live under
+  [Scaffold Validation](#scaffold-validation) below and run
+  independently of this check's enablement.
+
+### Kustomize Fix
 
 The "Kustomize Fix" sub-check in the Kustomize Build report section
 (`kustomize.CheckFix`, wired via `runBuildAndPostBuild` in
@@ -167,6 +378,9 @@ behavior at all. `CheckFix` never mutates the file it's checking - each
 candidate is copied to a scratch temp directory and run through the real
 fix pipeline there for comparison.
 
+- **Package:** `pkg/kustomize`
+- **Check ID:** `kustomize-fix`
+
 **This is a hard dependency, not a graceful-degrade one**: a missing
 `kustomize` or `prettier` binary fails the check outright rather than
 silently skipping it - `kustomize` is a core, expected part of this
@@ -182,7 +396,7 @@ It's gated behind the **`kustomize-fix`** step ID (default **on**, unlike
 `kustomize` binary available can opt out via `--disable-checks
 kustomize-fix` instead of always hard-failing. Every `pkg/lint/*`
 CLI-wrapping check in the [Linting phase](#linting-phase-all-steps-run-concurrently)
-below (`markdownlint`, `prettier`, `shellcheck`, `golangci`) follows this
+above (`markdownlint`, `prettier`, `shellcheck`, `golangci`) follows this
 same hard-fail-not-graceful-skip philosophy and the same
 gated-step-ID-for-opt-out pattern - `kustomize-fix` isn't a special case
 here, it's the same convention applied to a check that isn't itself under
@@ -224,7 +438,7 @@ kustomize's own `edit fix --vars` help text, which recommends only doing
 this in a clean git repository since it's a bigger, semantic
 transformation than pure formatting.
 
-## Ghost Patch Detection
+### Ghost Patch Detection
 
 Part of the Kustomize Build report section, `pkg/ghostpatch` detects a
 "ghost patch" - a `kustomization.yaml` `patches` entry whose `target`
@@ -235,6 +449,9 @@ the patch. Every detected ghost is always shown in the report's Ghost
 Patches table, but only some are **blocking**
 (`ghostpatch.ClassifyOverlay`/`ClassifyApp`, wired via
 `buildGhostTable` in `pkg/validator/build_wiring.go`):
+
+- **Package:** `pkg/ghostpatch`
+- **Enablement:** always runs — no check ID, not gateable.
 
 - **Blocking** - the `kustomization.yaml`'s `patches:` section itself
   changed relative to `main`/`origin/main` (via a real `git show` diff,
@@ -264,16 +481,25 @@ always-shown children - Overlay Build, Hooks, Kustomize Fix, Ghost Patches
   ghost patch rolls the whole section up to ⚠️ - never a misleading ✅ that
   would hide it, and never an overstated ❌.
 
-## Scaffold Validation
+### Scaffold Validation
 
 Apps that opt into `scafctl`-based scaffolding (a `.scafctl/configs/<app>.yaml`
 config exists - unrelated apps are skipped entirely, not treated as an
 error) are re-validated against their scaffold template/config whenever a
 change could affect their generated content
 (`pkg/validator/scaffold_wiring.go`'s `runScaffoldValidation`, called from
-the Build YAML phase). Three independent triggers, each skipping
-any app an earlier one already tested, cover every way a change can
-require this:
+the Build YAML phase).
+
+- **Package:** `pkg/scaffold`
+- **Enablement:** opt-out per app (`test.sh`'s `SCAFFOLD=false` — see
+  [HOOKS.md](HOOKS.md)), not gated by a check ID. Apps without scaffold
+  templates/config are never scaffold-tested regardless. The related,
+  ID-gated README-table structural check is
+  [`scaffold-readme`](#scaffold-readme) above — a separate, off-by-default
+  check, not one of the three triggers below.
+
+Three independent triggers, each skipping any app an earlier one already
+tested, cover every way a change can require this:
 
 1. **Template changes** (`configdiff.DetectTemplateChanges`) - a shared
    template changed, so every overlay of every app using it is
@@ -346,24 +572,7 @@ there would otherwise go completely unreported. This renders as its own
 (⚠️ StatusWarning - a coverage gap warning, not a drift finding - never
 ❌ StatusError, per `ComposeDriftProtectionSection`).
 
-Separately, `scaffold.CheckReadmeStatus` is a cheap, structural,
-per-PR check of the README's `<!-- scaffold-status -->` table: does it
-list exactly the (app, overlay) pairs that exist on disk today, with no
-missing or stale rows? It does **not** recompute actual drift (that
-would mean scaffolding every app in the repo on every PR, not just the
-ones it touched) - that's `scaffold.UpdateReadmeStatus`'s job instead,
-a full-repo-scan regeneration meant to be run deliberately (the
-`update-scaffold-status` CLI command), not on every PR. Unlike the
-three drift triggers above, this check is gated behind the
-**`scaffold-readme`** step ID, default **off** - see the standalone
-steps list below for why. It runs as its own **"scaffold table"**
-sub-check in the **Static Checks** section (not folded into Scaffold
-Validation's drift summary), so a failure automatically gets an
-actionable `k8s-gitops-ci update-scaffold-status` fix-command hint the
-same way `config-sort`/`prettier`/`markdownlint` do (`hintByCheck` in
-`comments.go`).
-
-## Registered checks
+### Registered checks
 
 Every check below is registered via `check.Register` in
 `pkg/validator/register_checks.go` and, by that registration alone,
@@ -384,19 +593,9 @@ automatically exemptable via its own check ID (see
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens, or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML                                                                                                                                                                                                                                                                                                   |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID)                                                                                                                                                                    |
 
-`cluster-identity` is disabled entirely (produces no findings at all,
-including its infraID-mismatch/invalid-JSON structural findings, which
-don't otherwise depend on any configured metadata) unless an org supplies
-a `provider.Providers.ClusterMetadata` implementation whose
-`ProjectIdentity()` reports itself enabled - `RunAll` bridges it into
-`validator.ClusterIndexProvider` once per run
-(`configureClusterIdentityFromProviders`, `pkg/validator/register_checks.go`).
-A generic run with no such provider wired never sees a cluster-identity
-finding.
-
 A handful of documents/directories are excluded from the doc-check pass
 above entirely (not merely exempted — they never generate a finding to
-begin with):
+begin with), regardless of which specific check would otherwise fire:
 
 - Every Kyverno `ClusterPolicy`/`Policy` document (`isKyvernoPolicyDoc`,
   `pkg/validator/dispatch.go`) is excluded from every registered doc
@@ -410,69 +609,167 @@ begin with):
   required field, to exercise a policy's "should fail" case) and aren't
   real workloads. This doesn't affect kubeconform/Kyverno validation
   themselves, which run over the changeset independently.
-- `placeholder` skips `CustomResourceDefinition` documents
-  (`placeholderCheck.SkipDoc`, `pkg/validator/register_checks.go`) — a
-  CRD's embedded OpenAPI schema can legitimately contain
-  angle-bracket/sentinel-shaped tokens (defaults, examples, pattern
-  strings) that aren't unresolved secrets.
-- `psa-labels` findings are suppressed when every one of that finding's
-  missing labels is present, commented out, in the app's `base/`
-  (`filterCommentedPSAFindings`, `pkg/validator/psa_wiring.go`) — e.g. an
-  operator temporarily commented a label out while troubleshooting. A
-  label that's present with an _invalid_ value is never suppressed this
-  way, only one that's genuinely absent.
 
-Eight standalone (non-registry) steps participate in the same
-enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
-[Generic check-enablement mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)):
+#### `namespace`
 
-- **`markdownlint`**, **`prettier`**, **`shellcheck`** — each wraps its
-  underlying CLI (`pkg/lint/markdownlint`/`prettier`/`shellcheck`),
-  default **on**. Like `kustomize-fix` above, a missing CLI is a hard
-  failure, not a graceful skip - each is gated purely so a repo (or test)
-  with a given tool genuinely unavailable can opt out via
-  `--disable-checks <name>` instead of always hard-failing.
-- **`golangci`** — Go linting via `pkg/lint/golangci`, default **on**.
-  Same missing-CLI hard-fail/opt-out behavior as the three above.
-- **`avp`** — per-app AVP strategy auto-detection (see
-  [Build Strategies](#build-strategies) above), default **on**.
-- **`kustomize-fix`** — the "Kustomize Fix" sub-check (see
-  [Kustomize Fix](#kustomize-fix) above), default **on**. Unlike
-  `kyverno`/`scaffold-readme` below, this isn't opt-in for compatibility
-  reasons - it's gated purely so a repo (or test) with no `kustomize`
-  binary available can opt out via `--disable-checks kustomize-fix`
-  instead of the check always hard-failing.
-- **`scaffold-readme`** — the README scaffold-status table structural
-  check (see [Scaffold Validation](#scaffold-validation) above), default
-  **off**. Like `kyverno` below, this generic core can't know whether a
-  given repo's table actually matches the one-row-per-app-per-overlay
-  shape the check expects, so it's opt-in
-  (`--enable-checks scaffold-readme`) until an org confirms
-  compatibility - the other three scaffold-drift triggers
-  (template/config/overlay changes) are unaffected and always run.
-- **`kyverno`** — policy validation via `pkg/lint/kyverno`, default
-  **off** (an org must opt in and supply its own policies — see
-  [SCHEMAS.md](SCHEMAS.md)). Once enabled (`--enable-checks kyverno`),
-  every successfully-built overlay from this phase's build loop (see
-  [Build Strategies](#build-strategies) above) **plus every raw changed
-  YAML source file** (excluding `kustomization.yaml`/`.yml`/
-  `Kustomization` files, which aren't real resources) is batched into one
-  `kyverno apply` invocation
-  (`pkg/validator/kyverno_wiring.go`'s `runKyvernoValidation`) against the
-  prepared policy bundle. The raw-source pass exists because a brand new
-  component not yet referenced by any overlay's `kustomization.yaml`
-  never appears in any rendered overlay output at all, so relying on
-  rendered output alone would let a policy violation in it go completely
-  unnoticed until it's actually wired up; some overlap between the two
-  passes is expected and harmless. Results render as a non-blocking
-  "Kyverno Policies" advisory section (`kyverno.FormatComment`'s own doc
-  comment: findings never contribute to `res.Blocking`, regardless of
-  which pass found them). A missing `kyverno`/`kustomize` CLI,
-  unpreparable policies, or a write failure all degrade to an empty
-  section rather than failing the run - Kyverno support is
-  opt-in and best-effort once enabled, not a hard CI dependency.
+Namespace-scoped resources declare `metadata.namespace`; cluster-scoped
+resources don't (except build-time-only Kustomize control objects).
 
-## NetworkAttachmentDefinition (NAD) validation
+- **Package:** `pkg/validator/namespace`
+- **Scope:** Doc
+
+#### `psa-labels`
+
+Pod Security Admission namespace labels.
+
+- **Package:** `pkg/validator/psa`
+- **Scope:** Doc
+
+`psa-labels` findings are suppressed when every one of that finding's
+missing labels is present, commented out, in the app's `base/`
+(`filterCommentedPSAFindings`, `pkg/validator/psa_wiring.go`) — e.g. an
+operator temporarily commented a label out while troubleshooting. A
+label that's present with an _invalid_ value is never suppressed this
+way, only one that's genuinely absent.
+
+#### `rbac-readonly`
+
+A `ClusterRole` carrying an aggregate-to-view/cluster-reader label only
+grants read-only verbs (with a narrow, exact-match allowlist for a
+handful of known exceptions).
+
+- **Package:** `pkg/validator/rbac`
+- **Scope:** Doc
+
+#### `rbac-wildcards`
+
+No `"*"` in `verbs`/`resources`/`apiGroups` on `Role`/`ClusterRole`.
+
+- **Package:** `pkg/validator/rbac`
+- **Scope:** Doc
+
+#### `crb`
+
+`ClusterRoleBinding` subject namespace sanity.
+
+- **Package:** `pkg/validator/crb`
+- **Scope:** Doc
+
+#### `sync-options`
+
+Non-builtin API-group resources carry the ArgoCD
+`SkipDryRunOnMissingResource=true` sync-options annotation.
+
+- **Package:** `pkg/validator/syncopts`
+- **Scope:** Doc
+- **Exemptions:** builtin/core groups and OpenShift/OKD-exclusive API
+  groups (e.g. `route.openshift.io`, `config.openshift.io`) are always
+  exempt; OpenShift-_default_-but-portable groups that also ship on
+  non-OpenShift clusters (e.g. Prometheus Operator, OLM, Gateway API,
+  Multus/OVN-Kubernetes CNI) are only exempt with `--assume-openshift`
+  — the same flag [NAD validation](#networkattachmentdefinition-nad-validation)
+  below shares for its own OVN-aware tier.
+
+#### `image-checksum`
+
+Every OCI image reference is pinned to a `sha256:` digest, not just a
+tag.
+
+- **Package:** `pkg/validator/image`
+- **Scope:** Doc
+
+#### `named-ports`
+
+Container/Service ports are named, not numeric, everywhere they're
+referenced.
+
+- **Package:** `pkg/validator/namedport`
+- **Scope:** Doc
+
+#### `podspec-defaults`
+
+Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...)
+and container `securityContext`/`resources.requests`/`resources.limits`
+are all set.
+
+- **Package:** `pkg/validator/podspec`
+- **Scope:** Doc
+
+#### `placeholder`
+
+No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens,
+or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed
+YAML.
+
+- **Package:** `pkg/validator/placeholder`
+- **Scope:** Doc
+
+`placeholder` skips `CustomResourceDefinition` documents
+(`placeholderCheck.SkipDoc`, `pkg/validator/register_checks.go`) — a
+CRD's embedded OpenAPI schema can legitimately contain
+angle-bracket/sentinel-shaped tokens (defaults, examples, pattern
+strings) that aren't unresolved secrets.
+
+#### `cluster-identity`
+
+No copy/paste of another cluster's identity (cluster name, project ref)
+into this overlay.
+
+- **Package:** `pkg/validator/clusterid`
+- **Scope:** Overlay
+- **Exemptions:** see `exempt.IDClusterName`/`IDProjectRef` (exemptable)
+  vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable
+  structural bucket for findings that don't set a more specific ID).
+
+`cluster-identity` is disabled entirely (produces no findings at all,
+including its infraID-mismatch/invalid-JSON structural findings, which
+don't otherwise depend on any configured metadata) unless an org supplies
+a `provider.Providers.ClusterMetadata` implementation whose
+`ProjectIdentity()` reports itself enabled - `RunAll` bridges it into
+`validator.ClusterIndexProvider` once per run
+(`configureClusterIdentityFromProviders`, `pkg/validator/register_checks.go`).
+A generic run with no such provider wired never sees a cluster-identity
+finding.
+
+#### `avp`
+
+Per-app AVP (`argocd-vault-plugin`) strategy auto-detection — see
+[Build Strategies](#build-strategies) above for the full mechanism.
+
+- **Package:** `pkg/overlay`
+- **Default:** on.
+- **Disable:** `--disable-checks avp` forces every app's build strategy
+  back to plain Kustomize/Helm.
+
+#### `kyverno`
+
+Policy validation via `pkg/lint/kyverno`.
+
+- **Package:** `pkg/lint/kyverno`
+- **Default: off** — an org must opt in and supply its own policies (see
+  [SCHEMAS.md](SCHEMAS.md)).
+- **Enable:** `--enable-checks kyverno`.
+
+Once enabled, every successfully-built overlay from the Build YAML
+phase's build loop (see [Build Strategies](#build-strategies) above)
+**plus every raw changed YAML source file** (excluding
+`kustomization.yaml`/`.yml`/`Kustomization` files, which aren't real
+resources) is batched into one `kyverno apply` invocation
+(`pkg/validator/kyverno_wiring.go`'s `runKyvernoValidation`) against the
+prepared policy bundle. The raw-source pass exists because a brand new
+component not yet referenced by any overlay's `kustomization.yaml` never
+appears in any rendered overlay output at all, so relying on rendered
+output alone would let a policy violation in it go completely unnoticed
+until it's actually wired up; some overlap between the two passes is
+expected and harmless. Results render as a non-blocking "Kyverno
+Policies" advisory section (`kyverno.FormatComment`'s own doc comment:
+findings never contribute to `res.Blocking`, regardless of which pass
+found them). A missing `kyverno`/`kustomize` CLI, unpreparable policies,
+or a write failure all degrade to an empty section rather than failing
+the run - Kyverno support is opt-in and best-effort once enabled, not a
+hard CI dependency.
+
+### NetworkAttachmentDefinition (NAD) validation
 
 `pkg/validator/nad` validates every successfully-rendered overlay's
 `NetworkAttachmentDefinition` resources (`runNADValidation` in
@@ -513,77 +810,6 @@ the full pipeline, for validating a directory or explicit file list
 (`k8s-gitops-ci validate-nad [--assume-openshift] --dir <path>` or
 `... <file.yaml> ...`).
 
-## Linting phase (all steps run concurrently)
-
-- **markdownlint**, **prettier**, **golangci** (Go files only) — each
-  wraps its underlying CLI (`pkg/lint/markdownlint`/`prettier`/`golangci`)
-  and, when there are no applicable changed files, skips cleanly
-  (`Skipped: true`, `StatusPassed`) — but a missing CLI is a **hard
-  failure** (`StatusError`, blocking), not a graceful skip: a missing
-  lint tool means the pipeline didn't actually check what it claims to
-  have checked. Each is individually gated behind its own step ID
-  (`markdownlint`/`prettier`/`golangci`) so an environment that genuinely
-  can't provision a given tool can opt out via `--disable-checks <name>`
-  instead of always failing (see [Kustomize Fix](#kustomize-fix)'s note
-  on this same hard-fail-not-graceful-skip convention).
-- **kubeconform** — schema-validates changed YAML plus every affected
-  overlay's _rendered_ output, not just the raw source. Unlike the three
-  above, this is a Go library, not a CLI wrapper, so there's no
-  missing-binary case to gate.
-- **shellcheck** — wraps the raw `shellcheck` CLI over changed `.sh`/
-  `.bash` files (or any file whose shebang matches), **plus** extracts
-  and lints:
-
-  - Bash steps embedded in Tekton `Task` manifests
-    (`spec.steps[].script`, `pkg/lint/shellcheck/tekton.go`).
-  - Bash embedded in workload container/initContainer `command` fields
-    (`[bash|sh, -c, <script>]` form) and ConfigMap `.sh`/`.bash` data
-    keys (`pkg/lint/shellcheck/embedded.go`), across
-    `Pod`/`Job`/`CronJob`/`Deployment`/`DaemonSet`/`StatefulSet`/
-    `ReplicaSet` (`CronJob`'s pod spec is nested three levels deeper than
-    every other kind, handled the same way `namedport`/`podspec` handle
-    it). Non-bash scripts (python, plain `sh`, no shebang) are silently
-    skipped — shellcheck only understands bash/sh/dash/ksh.
-
-  Extracted-script findings are classified **direct/blocking** (the
-  script's source YAML file was itself changed in this diff) vs.
-  **external/warning-only** (the file was only pulled into scope because
-  the overlay it lives in was affected by an unrelated base/component
-  change elsewhere), reusing the exact same file-set logic
-  (`externalOverlayYAMLFiles`, a directory walk over every overlay
-  `detectOverlaysForChanges` resolves, excluding files already in the
-  diff) as the identical direct/indirect split `finalizeCompliance`
-  applies to Resource Compliance findings. Raw `.sh` file findings are
-  always direct — they're literally files in the diff.
-
-  Like the three CLI wrappers above, a missing `shellcheck` binary is a
-  hard failure (`StatusError`, blocking), gated behind its own
-  `shellcheck` step ID — but only once relevance is established: the
-  "any shell-related file at all changed" short-circuit (no `.sh` files,
-  no changed YAML at all) still runs first, so a changeset with nothing
-  for shellcheck to check skips cleanly even with the CLI missing,
-  rather than failing every unrelated PR in an environment that lacks
-  it.
-
-## Static Checks phase (all steps run concurrently)
-
-- **large-file** — flags files over a size threshold
-  (`pkg/largefile.DefaultMaxSize`), or that look binary. A generic
-  ignore-glob allowlist (`pkg/largefile.DefaultIgnorePatterns` — compressed
-  archives, web fonts, images/icons, and `customresourcedefinition*.yaml`,
-  whose embedded OpenAPI schemas legitimately run large) is applied by
-  default; override the var to add/replace entries.
-- **YAML-syntax** — parse-level YAML validity (`pkg/lint/yamlsyntax`),
-  independent of and cheaper than schema validation.
-- **config-sort** — repo config files are alphabetically sorted
-  (`pkg/config.CheckSortOrder`).
-- **startingCSV** — an OLM `ClusterServiceVersion`'s folder name matches
-  its `startingCSV` reference (`pkg/csv`).
-- **scaffold table** — the README's `<!-- scaffold-status -->` table
-  structural check (`scaffold.CheckReadmeStatus`; see
-  [Scaffold Validation](#scaffold-validation) above). Gated behind the
-  **`scaffold-readme`** step ID, default **off**.
-
 ## Direct vs. external findings
 
 Every Resource Compliance finding (and, as of the shellcheck extraction
@@ -610,7 +836,7 @@ introduce and shouldn't be blocked by fixing right now.
 `pkg/validator/timing.go`'s `TimingCollector` records both a
 parallelism-efficiency ratio and the resolved concurrency in the final
 timing table — see `docs/DEVELOPMENT.md`'s
-[Timing table](DEVELOPMENT.md#timing-table-pkgvalidatortimingg) section
+[Timing table](DEVELOPMENT.md#timing-table-pkgvalidatortiminggo) section
 for the exact rendering. (This repo has no per-document content-dedup/
 hashing layer to describe here — every changed/affected file is checked
 independently, once.)
@@ -626,7 +852,7 @@ Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
 Resource Compliance, and CI Notes, plus NetworkAttachmentDefinition
 Validation when a NAD is present in the rendered-overlay chain and Kyverno
 Policies when the opt-in `kyverno` step is enabled (see
-[Registered checks](#registered-checks) below). Resource Compliance
+[Registered checks](#registered-checks) above). Resource Compliance
 additionally groups findings by check ID with an "Accepted Exceptions"
 audit sub-block.
 
@@ -640,3 +866,4 @@ listing every affected file (`dedupFindingsForTable` in
 `compose_sections.go`) instead of repeating an otherwise-identical row
 per location. A check id with no registered `TableSpec` still falls back
 to the original generic two-column File/Message table.
+</content>

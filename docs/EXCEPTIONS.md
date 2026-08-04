@@ -5,6 +5,20 @@ registered check's findings pass through. There are two modes, both wired
 into evaluation today — see [Which one do I use?](#which-one-do-i-use)
 for the tradeoffs between them.
 
+## Table of Contents
+
+- [The two modes](#the-two-modes)
+  - [1. Annotation exemption](#1-annotation-exemption)
+  - [2. `EXEMPTIONS=(...)` selector](#2-exemptions-selector)
+  - [The built-in Tekton-PaC exemption](#the-built-in-tekton-pac-exemption)
+- [Which one do I use?](#which-one-do-i-use)
+- [Exemptable check IDs](#exemptable-check-ids)
+- [Non-app `test.sh` scoping](#non-app-testsh-scoping)
+- [Value vs. Token](#value-vs-token)
+- [Adding exemption support to a new check](#adding-exemption-support-to-a-new-check)
+- [How exceptions surface in the PR comment](#how-exceptions-surface-in-the-pr-comment)
+- [Selector reference](#selector-reference)
+
 ## The two modes
 
 ### 1. Annotation exemption

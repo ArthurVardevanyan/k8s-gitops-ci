@@ -6,6 +6,14 @@ pipeline, since `k8s-gitops-ci` itself is the thing that would otherwise
 be a pile of separate lint/test/build Tasks. This document describes
 that actual footprint, not a general Tekton architecture.
 
+## Table of Contents
+
+- [Directory layout](#directory-layout)
+- [PaC trigger](#pac-trigger)
+- [The build step](#the-build-step)
+- [Caching](#caching)
+- [Known limitations](#known-limitations)
+
 ## Directory layout
 
 - **`.tekton/k8s-gitops-ci.yaml`** — the Pipelines-as-Code (PaC)

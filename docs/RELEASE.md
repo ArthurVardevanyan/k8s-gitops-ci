@@ -4,6 +4,13 @@ This describes what's actually configured in `.goreleaser.yaml`,
 `cliff.toml`, and `.tekton/k8s-gitops-ci.yaml` today — see
 [TEKTON.md](TEKTON.md) for the pipeline infrastructure this all runs on.
 
+## Table of Contents
+
+- [Versioning](#versioning)
+- [Published artifacts](#published-artifacts)
+- [Release flow](#release-flow)
+- [Dry-run locally](#dry-run-locally)
+
 ## Versioning
 
 Semantic versioning, driven entirely by
