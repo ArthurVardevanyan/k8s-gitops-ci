@@ -215,7 +215,8 @@ func makeGitRepoOverlay(t *testing.T, relOverlayDir, mainContent, workingContent
 	runGit := func(args ...string) {
 		t.Helper()
 		cmd := exec.CommandContext(t.Context(), "git", args...)
-		cmd.Env = append(os.Environ(),
+		cmd.Env = append(
+			os.Environ(),
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.com",
 			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.com",
 		)
@@ -241,7 +242,8 @@ func makeGitRepoOverlay(t *testing.T, relOverlayDir, mainContent, workingContent
 }
 
 func TestPatchesSectionChanged_DetectsRealDiff(t *testing.T) {
-	makeGitRepoOverlay(t, ".",
+	makeGitRepoOverlay(
+		t, ".",
 		"patches:\n- target:\n    kind: Deployment\n    name: missing\n  patch: |-\n    []\n",
 		"patches:\n- target:\n    kind: Deployment\n    name: missing-renamed\n  patch: |-\n    []\n",
 	)
