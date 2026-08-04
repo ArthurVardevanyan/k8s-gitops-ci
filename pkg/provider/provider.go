@@ -7,6 +7,11 @@ type Branding interface {
 	ReportMarker() string
 	ReportTitle() string
 	PipelineHeader() string
+	// BinaryName is the invoked executable name used in user-facing
+	// "reproduce locally" hints (console log + PR comment). Consumers that
+	// ship the tool under a different binary name override this so the hint
+	// is copy-pasteable; an empty string falls back to the generic default.
+	BinaryName() string
 }
 
 // CommentPolicy controls pruning of foreign comments.
@@ -37,6 +42,7 @@ const (
 	defaultReportMarker   = "<!-- gitops-ci-report -->"
 	defaultReportTitle    = "GitOps CI Results"
 	defaultPipelineHeader = "GitOps CI Pipeline"
+	defaultBinaryName     = "k8s-gitops-ci"
 )
 
 // ReportMarker returns the marker string used to identify the unified PR comment.
@@ -61,6 +67,14 @@ func (p Providers) PipelineHeader() string {
 		return p.Branding.PipelineHeader()
 	}
 	return defaultPipelineHeader
+}
+
+// BinaryName returns the executable name used in "reproduce locally" hints.
+func (p Providers) BinaryName() string {
+	if p.Branding != nil && p.Branding.BinaryName() != "" {
+		return p.Branding.BinaryName()
+	}
+	return defaultBinaryName
 }
 
 // ForeignMarkers returns markers for comments that should be pruned.

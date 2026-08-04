@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 )
 
 func TestReportRender(t *testing.T) {
@@ -121,6 +123,30 @@ func TestReproduceCommand_UsesRealBinaryPath(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, "k8s-gitops-ci pipeline") {
 		t.Errorf("ReproduceCommand = %q, want it to invoke the k8s-gitops-ci binary", got)
+	}
+}
+
+// stubBranding overrides only the binary name; the other branding methods
+// return "" so Providers falls back to their generic defaults.
+type stubBranding struct{ bin string }
+
+func (s stubBranding) ReportMarker() string   { return "" }
+func (s stubBranding) ReportTitle() string    { return "" }
+func (s stubBranding) PipelineHeader() string { return "" }
+func (s stubBranding) BinaryName() string     { return s.bin }
+
+// TestReproduceCommand_UsesProviderBinaryName verifies the reproduce hint
+// honors the org-injected binary name (provider.Branding.BinaryName) so
+// downstream distributions (e.g. an org's own forked/renamed binary) emit a
+// copy-pasteable command instead of the generic default.
+func TestReproduceCommand_UsesProviderBinaryName(t *testing.T) {
+	got := ReproduceCommand(Options{
+		RepoURL:   "https://example.com/repo.git",
+		PR:        "42",
+		Providers: provider.Providers{Branding: stubBranding{bin: "acme-gitops-ci"}},
+	})
+	if !strings.HasPrefix(got, "acme-gitops-ci pipeline") {
+		t.Errorf("ReproduceCommand = %q, want it to use the provider binary name", got)
 	}
 }
 

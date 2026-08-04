@@ -506,6 +506,7 @@ type fakeBranding struct{}
 func (fakeBranding) ReportMarker() string   { return "<!-- custom-marker -->" }
 func (fakeBranding) ReportTitle() string    { return "CUSTOM TITLE" }
 func (fakeBranding) PipelineHeader() string { return "CUSTOM HEADER" }
+func (fakeBranding) BinaryName() string     { return "custom-ci" }
 
 type fakeCommentPolicy struct{ markers []string }
 

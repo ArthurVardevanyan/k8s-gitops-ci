@@ -169,7 +169,7 @@ func LegacyMarkers() []string {
 // pkg/pipeline), so re-passing the original run's resolved BaseRef here would
 // just be redundant noise, not something needed to reproduce the failure.
 func ReproduceCommand(opts Options) string {
-	cmd := fmt.Sprintf("k8s-gitops-ci pipeline --url=%q --pr=%s", opts.RepoURL, opts.PR)
+	cmd := fmt.Sprintf("%s pipeline --url=%q --pr=%s", opts.Providers.BinaryName(), opts.RepoURL, opts.PR)
 	if len(opts.Dirs) > 0 {
 		cmd += fmt.Sprintf(" --dirs=%q", strings.Join(opts.Dirs, ","))
 	}
