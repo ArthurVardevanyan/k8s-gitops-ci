@@ -48,8 +48,9 @@ pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
 Fires on both `pull_request` and `push` events targeting `main` — the
 `build` task's step branches on `event` internally (see
 [The build task](#the-build-task) below) rather than having two separate
-trigger definitions (`lint` ignores `event` entirely — it always runs the
-same `--lint-only` pass regardless). `max-concurrency: "1"` (per-event-source
+trigger definitions (`lint` instead uses a task-level `when` expression
+to skip itself entirely on `push` — see [The lint
+task](#the-lint-task)). `max-concurrency: "1"` (per-event-source
 concurrency) plus the `Repository` CR's `concurrency_limit: 1`
 (repo-wide) together mean **only one `PipelineRun` executes at a time**
 for this repo, regardless of how many PRs/pushes arrive — a second event
@@ -96,7 +97,15 @@ own, much lighter `taskSpec` — it doesn't build anything, so it needs
 neither the `go-cache` workspace nor the Go-cache env/volume setup `build`
 has:
 
-1. **No separate clone step** — unlike `build`'s own manual `git
+1. **`when` gates it to `pull_request` only** — a task-level `when: -
+input: "$(params.event)" operator: in values: ["pull_request"]`, so a
+   `push` event (a merge to `main`) skips `lint` entirely: Tekton marks it
+   "Skipped" and never spins up a pod for it, rather than the step's own
+   script running and no-op'ing. A push has no PR left to comment on, and
+   everything `--lint-only` would check was already checked on the PR
+   that merged it. `build` has no such gate - it still runs (and
+   branches internally on `event`) for both triggers.
+2. **No separate clone step** — unlike `build`'s own manual `git
 init`/`fetch`/`checkout`, this task invokes the `k8s-gitops-ci` binary
    directly (the toolbox image's own pinned, Renovate-updated install at
    `/usr/local/bin/k8s-gitops-ci` — not the one `build` is compiling from
@@ -108,7 +117,7 @@ auth login --with-token` + `gh auth setup-git` first (same rationale
    internal clone) and mounts a small `emptyDir` at `/tmp` (the pod's root
    filesystem is read-only, and that internal clone's temp dir defaults to
    `/tmp`).
-2. **`k8s-gitops-ci pipeline --lint-only --disable-checks golangci
+3. **`k8s-gitops-ci pipeline --lint-only --disable-checks golangci
 --comment`** — dogfoods this repo's own tiny Kubernetes-manifest
    footprint (`.tekton/`, `tekton/`) through the CI engine's Linting +
    Static Checks phases (see [CI.md](CI.md#modes)'s `--lint-only`
