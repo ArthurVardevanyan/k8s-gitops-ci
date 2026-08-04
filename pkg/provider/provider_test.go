@@ -30,8 +30,15 @@ func TestOverrides(t *testing.T) {
 	p := Providers{
 		Branding: testBranding{},
 	}
-	if p.ReportMarker() != "MARK" || p.ReportTitle() != "TITLE" || p.PipelineHeader() != "HEADER" {
+	if p.ReportMarker() != "MARK" || p.ReportTitle() != "TITLE" || p.PipelineHeader() != "HEADER" || p.BinaryName() != "BIN" {
 		t.Errorf("override branding failed: %+v", p)
+	}
+}
+
+// TestBinaryNameDefault verifies the generic fallback when Branding is nil.
+func TestBinaryNameDefault(t *testing.T) {
+	if got := (Providers{}).BinaryName(); got != defaultBinaryName {
+		t.Errorf("BinaryName() = %q, want %q", got, defaultBinaryName)
 	}
 }
 
@@ -40,6 +47,7 @@ type testBranding struct{}
 func (testBranding) ReportMarker() string   { return "MARK" }
 func (testBranding) ReportTitle() string    { return "TITLE" }
 func (testBranding) PipelineHeader() string { return "HEADER" }
+func (testBranding) BinaryName() string     { return "BIN" }
 
 type testClusterMetadata struct{}
 

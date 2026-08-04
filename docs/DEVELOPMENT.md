@@ -122,7 +122,7 @@ metadata:
 
 ```go
 type Providers struct {
-    Branding        Branding        // report marker/title/header
+    Branding        Branding        // report marker/title/header/binary name
     CommentPolicy   CommentPolicy   // foreign comment markers to prune
     Secrets         SecretBackend   // auth-error hint text
     ClusterMetadata ClusterMetadata // project/cluster identity + change groups
