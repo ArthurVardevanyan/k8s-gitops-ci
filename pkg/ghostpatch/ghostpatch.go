@@ -322,7 +322,12 @@ func exists(resources []Resource, kind, name, namespace string) bool {
 		if namespace != "" && r.Metadata.Namespace != namespace {
 			continue
 		}
-		if name != "" && r.Metadata.Name == name {
+		// A name-less target (e.g. `target: {kind: CustomResourceDefinition}`,
+		// typically paired with a label/annotation selector) matches every
+		// resource of that kind - it is NOT a ghost patch as long as at least
+		// one such resource was rendered. Only require an exact name match
+		// when the target actually specifies one.
+		if name == "" || r.Metadata.Name == name {
 			return true
 		}
 	}

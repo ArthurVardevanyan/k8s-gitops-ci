@@ -72,6 +72,63 @@ spec: {}
 	}
 }
 
+// TestCheckOverlay_NameLessKindTargetNotGhost is a regression guard: a patch
+// that targets by kind only (no name - e.g. `target: {kind:
+// CustomResourceDefinition}`, typically paired with a label/annotation
+// selector to patch every resource of that kind) must NOT be reported as a
+// ghost patch as long as at least one resource of that kind was rendered.
+// The bug: exists() only returned true inside `if name != "" && ...`, so a
+// name-less target never matched and every such patch was a false positive.
+func TestCheckOverlay_NameLessKindTargetNotGhost(t *testing.T) {
+	ov := makeOverlay(t, `patches:
+- target:
+    kind: CustomResourceDefinition
+  patch: |-
+    - op: add
+      path: /metadata/labels/foo
+      value: bar
+`)
+	rendered := `apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: widgets.example.com
+spec: {}
+`
+	ghosts, err := CheckOverlay(ov, rendered)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ghosts) != 0 {
+		t.Errorf("name-less kind target should match any rendered CRD, not be a ghost: %v", ghosts)
+	}
+}
+
+// TestCheckOverlay_NameLessKindTargetGhostWhenAbsent confirms the name-less
+// case is still flagged when NO resource of that kind exists in the render.
+func TestCheckOverlay_NameLessKindTargetGhostWhenAbsent(t *testing.T) {
+	ov := makeOverlay(t, `patches:
+- target:
+    kind: CustomResourceDefinition
+  patch: |-
+    - op: add
+      path: /metadata/labels/foo
+      value: bar
+`)
+	rendered := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec: {}
+`
+	ghosts, err := CheckOverlay(ov, rendered)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ghosts) != 1 {
+		t.Errorf("expected 1 ghost when no CRD is rendered, got %v", ghosts)
+	}
+}
+
 func TestCheckOverlay_RenameViaYAMLPatchNotGhost(t *testing.T) {
 	// Regression: a rename patch written in real YAML list syntax (the
 	// form kustomize overlays actually use) must be recognized as a
