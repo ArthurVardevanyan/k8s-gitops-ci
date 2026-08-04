@@ -48,6 +48,16 @@ func TestStepEnabled_DefaultOnStepDisabledViaDisabledChecks(t *testing.T) {
 	}
 }
 
+func TestStepEnabled_KubeconformDefaultOnDisableableViaDisabledChecks(t *testing.T) {
+	if !stepEnabled(stepKubeconform, nil, nil) {
+		t.Errorf("kubeconform should default to enabled")
+	}
+	disabled := toIDSet([]string{stepKubeconform})
+	if stepEnabled(stepKubeconform, disabled, nil) {
+		t.Errorf("expected kubeconform disabled via DisabledChecks")
+	}
+}
+
 func TestStepEnabled_DefaultOffStepDisabledByDefault(t *testing.T) {
 	if stepEnabled(stepKyverno, nil, nil) {
 		t.Errorf("kyverno should default to disabled")
@@ -283,6 +293,59 @@ func TestRunAll_MarkdownlintDisabledSkipsCheck(t *testing.T) {
 	}
 	if !strings.Contains(lint.Body, "Disabled.") {
 		t.Errorf("expected the Linting section to show markdownlint as Disabled, got:\n%s", lint.Body)
+	}
+}
+
+// TestRunAll_KubeconformDisabledSkipsCheck guards that kubeconform, like
+// every other lint step, actually honors --disable-checks kubeconform.
+// kubeconform previously had no stepEnabled gate at all in phases.go - the
+// step ran unconditionally regardless of DisabledChecks/EnabledChecks,
+// silently making "kubeconform" (despite being a documented, exemptable
+// step ID - see exempt.RegisterExemptable("kubeconform")) impossible to
+// turn off wholesale, only per-file via EXEMPTIONS=(check=kubeconform,...).
+func TestRunAll_KubeconformDisabledSkipsCheck(t *testing.T) {
+	d := t.TempDir()
+	// A non-Kubernetes YAML file (no kind/apiVersion) - kubeconform would
+	// report this as an error ("missing 'kind' key") if the step ran at
+	// all; disabling the check must mean it never runs.
+	mustWrite(t, filepath.Join(d, "config.yaml"), "foo: bar\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "prettier", "shellcheck", "golangci", "kubeconform"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger != nil && res.Logger.HasFailures() {
+		t.Error("expected --disable-checks kubeconform to skip the check entirely, not fail")
+	}
+	var lint ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Linting" {
+			lint = s
+		}
+	}
+	if !strings.Contains(lint.Body, "Disabled.") {
+		t.Errorf("expected the Linting section to show kubeconform as Disabled, got:\n%s", lint.Body)
+	}
+}
+
+// TestRunAll_KubeconformSkipsKnownNonManifestFiles guards that well-known
+// non-Kubernetes tooling config files (Taskfile.yml, .golangci.yml, ...)
+// never trip kubeconform's "missing 'kind' key" error, even though
+// kubeconform itself remains enabled and still validates a real
+// Kubernetes manifest changed in the same run.
+func TestRunAll_KubeconformSkipsKnownNonManifestFiles(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "Taskfile.yml"), "version: '3'\n")
+	mustWrite(t, filepath.Join(d, ".golangci.yml"), "run:\n  timeout: 5m\n")
+	mustWrite(t, filepath.Join(d, ".goreleaser.yaml"), "version: 2\n")
+	mustWrite(t, filepath.Join(d, ".pre-commit-config.yaml"), "repos: []\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "prettier", "shellcheck", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger != nil && res.Logger.HasFailures() {
+		t.Errorf("expected known non-manifest tooling config files to be skipped by kubeconform, not fail")
 	}
 }
 

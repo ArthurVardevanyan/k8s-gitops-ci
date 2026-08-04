@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
-version: '3'
+version: "3"
 
 vars:
   NAME: k8s-gitops-ci
@@ -70,7 +70,7 @@ tasks:
         echo "  GIT_SHA:       {{.GIT_SHA}}"
         echo "------------------------------------------------------------"
 
-# ── Modules ───────────────────────────────────────────────────────────────────
+  # ── Modules ───────────────────────────────────────────────────────────────────
   mod:
     desc: Download and tidy Go modules
     silent: true
@@ -113,7 +113,7 @@ tasks:
     cmds:
       - go mod verify
 
-# ── Tool installation ─────────────────────────────────────────────────────────
+  # ── Tool installation ─────────────────────────────────────────────────────────
   install-tools:
     desc: Install all Go development tools to .tool/
     silent: true
@@ -150,7 +150,7 @@ tasks:
         install_tool gofumpt       "mvdan.cc/gofumpt" "{{.GOFUMPT_VERSION}}"
         install_tool goimports     "golang.org/x/tools/cmd/goimports" "{{.GOIMPORTS_VERSION}}"
 
-# ── Formatting ────────────────────────────────────────────────────────────────
+  # ── Formatting ────────────────────────────────────────────────────────────────
   format:
     desc: Auto-format Go code (goimports + gofumpt) and tidy modules
     deps: [install-tools]
@@ -216,7 +216,7 @@ tasks:
         fi
         echo "✅ Code formatting is correct"
 
-# ── Lint & static analysis ────────────────────────────────────────────────────
+  # ── Lint & static analysis ────────────────────────────────────────────────────
   lint:
     desc: Run golangci-lint
     aliases: [l]
@@ -244,7 +244,7 @@ tasks:
     cmds:
       - go vet ./...
 
-# ── Security ──────────────────────────────────────────────────────────────────
+  # ── Security ──────────────────────────────────────────────────────────────────
   vulncheck:
     desc: Check for known vulnerabilities (only fails on fixable findings)
     silent: true
@@ -265,7 +265,7 @@ tasks:
           echo "✅ No vulnerabilities found"
         fi
 
-# ── Build ─────────────────────────────────────────────────────────────────────
+  # ── Build ─────────────────────────────────────────────────────────────────────
   build:
     desc: Build bin/{{.NAME}}
     silent: true
@@ -274,6 +274,13 @@ tasks:
       - "**/*.go"
       - go.mod
       - go.sum
+      # update:schemas/update:policies have no `sources:` of their own (they
+      # always re-run to keep the pinned-SHA fetch honest), so without these
+      # two lines Task's up-to-date check never notices a freshly-regenerated
+      # archive - the go:embed'd content silently changes underneath a build
+      # Task still considers "up to date" from the go-file fingerprint alone.
+      - pkg/lint/kubeconform/schemas/schemas.tar.gz
+      - pkg/lint/kyverno/policies/policies.tar.gz
     generates:
       - "{{.DIST}}/{{.NAME}}"
     cmds:
@@ -304,7 +311,7 @@ tasks:
   #     - |
   #       ... (see upstream image:publish for full logic)
 
-# ── Testing ───────────────────────────────────────────────────────────────────
+  # ── Testing ───────────────────────────────────────────────────────────────────
   test:
     desc: Run test suite
     aliases: [t]
@@ -316,6 +323,10 @@ tasks:
       - "**/*.go"
       - go.mod
       - go.sum
+      # See build's matching comment: without these, a regenerated archive
+      # (e.g. after bumping SCHEMA_REPO_SHA) won't re-trigger `go test`.
+      - pkg/lint/kubeconform/schemas/schemas.tar.gz
+      - pkg/lint/kyverno/policies/policies.tar.gz
     cmds:
       - go test -tags embedschemas $GOTESTFLAGS -timeout 10m ./...
 
@@ -330,6 +341,10 @@ tasks:
       - "**/*.go"
       - go.mod
       - go.sum
+      # See build's matching comment: without these, a regenerated archive
+      # (e.g. after bumping SCHEMA_REPO_SHA) won't re-trigger `go test`.
+      - pkg/lint/kubeconform/schemas/schemas.tar.gz
+      - pkg/lint/kyverno/policies/policies.tar.gz
     cmds:
       - mkdir -p {{.COVER}}
       # CGO_ENABLED=1 set inline — the global CGO_ENABLED=0 is exported into
@@ -359,7 +374,7 @@ tasks:
         if command -v xdg-open >/dev/null 2>&1; then xdg-open {{.COVER}}/coverage.html
         elif command -v open >/dev/null 2>&1; then open {{.COVER}}/coverage.html; fi
 
-# ── Full CI pipeline ──────────────────────────────────────────────────────────
+  # ── Full CI pipeline ──────────────────────────────────────────────────────────
   ci:
     desc: Full CI pipeline — mod check, format, schemas, lint, vulncheck, test, build
     silent: true
@@ -369,7 +384,7 @@ tasks:
       # never truncate or interleave-write into the same timing file.
       CI_TIMEFILE_DEFAULT:
         sh: echo "{{.ROOT_DIR | toSlash}}/.task/ci-timings.$$"
-      TIMEFILE: '{{.TIMEFILE | default .CI_TIMEFILE_DEFAULT}}'
+      TIMEFILE: "{{.TIMEFILE | default .CI_TIMEFILE_DEFAULT}}"
     cmds:
       # Native `- task:` references preserve the Taskfile env (CGO_ENABLED, etc.)
       # across steps. Timing markers are appended to TIMEFILE and diffed at the end.
@@ -424,7 +439,7 @@ tasks:
         echo "=========================================="
         rm -f "{{.TIMEFILE}}"
 
-# ── Clean ─────────────────────────────────────────────────────────────────────
+  # ── Clean ─────────────────────────────────────────────────────────────────────
   clean:
     desc: Remove build artifacts, caches, and temp files
     silent: true
@@ -436,7 +451,7 @@ tasks:
         find . -name ".DS_Store" -type f -delete
         echo "✅ Clean complete"
 
-# ── Dependencies ──────────────────────────────────────────────────────────────
+  # ── Dependencies ──────────────────────────────────────────────────────────────
   update:deps:
     desc: Upgrade all Go dependencies and tidy go.mod/go.sum
     silent: true

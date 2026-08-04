@@ -179,7 +179,7 @@ func TestReproduceCommand_IncludesScopingFlags(t *testing.T) {
 // empty flags.
 func TestReproduceCommand_NoScopingFlagsWhenUnset(t *testing.T) {
 	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "main"})
-	for _, unwanted := range []string{"--dirs=", "--disable-checks=", "--enable-checks=", "--assume-openshift"} {
+	for _, unwanted := range []string{"--dirs=", "--disable-checks=", "--enable-checks=", "--assume-openshift", "--lint-only"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("ReproduceCommand() = %q, unexpectedly contains %q", got, unwanted)
 		}
@@ -199,6 +199,23 @@ func TestReproduceCommand_IncludesAssumeOpenShift(t *testing.T) {
 	})
 	if !strings.Contains(got, "--assume-openshift") {
 		t.Errorf("ReproduceCommand() = %q, want it to contain --assume-openshift", got)
+	}
+}
+
+// TestReproduceCommand_IncludesLintOnly guards against the reproduce
+// command silently dropping --lint-only, which would make a local
+// reproduction additionally run (and potentially fail on) the entire Build
+// YAML/Post-Build Validation phase that a --lint-only caller (e.g. this
+// repo's own self-lint Tekton Task) never even attempted.
+func TestReproduceCommand_IncludesLintOnly(t *testing.T) {
+	got := ReproduceCommand(Options{
+		RepoURL:  "https://example.com/repo.git",
+		PR:       "42",
+		BaseRef:  "main",
+		LintOnly: true,
+	})
+	if !strings.Contains(got, "--lint-only") {
+		t.Errorf("ReproduceCommand() = %q, want it to contain --lint-only", got)
 	}
 }
 

@@ -37,6 +37,7 @@ const (
 	stepPrettier       = "prettier"
 	stepShellcheck     = "shellcheck"
 	stepGolangci       = "golangci"
+	stepKubeconform    = "kubeconform"
 	stepAVP            = "avp"
 	stepKyverno        = "kyverno"
 	stepScaffoldReadme = "scaffold-readme"
@@ -354,36 +355,43 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		lintMu.Unlock()
 	}
 
-	runLintStep("kubeconform", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
-		yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
-		// Scaffold configs/templates are the scaffolding CLI's own input
-		// files, not Kubernetes manifests (no apiVersion/kind), so exclude
-		// them from schema validation - otherwise every changed
-		// <ScaffoldDir>/configs/*.yaml trips a "missing 'kind' key" error.
-		yamlFiles = excludeScaffoldArtifacts(yamlFiles)
-		yamlFiles = excludeInvalidTestdata(yamlFiles)
-		yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
-		kcOpts := kubeconform.DefaultOptions()
-		if opts.SchemaDir != "" {
-			// Already extracted once, up front, by pkg/pipeline's Setup
-			// phase (see validator.Options.SchemaDir's doc comment) -
-			// callers that don't prefetch (test-all/build-yaml/scan-all)
-			// leave this empty and fall through to the lazy extraction
-			// below, exactly as before this field existed.
-			kcOpts.SchemaDir = opts.SchemaDir
-		} else if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
-			kcOpts.SchemaDir = schemaDir
-			defer cleanup()
-		}
-		if kcRes, err := validateWithRenderedOverlays(yamlFiles, kcOpts); err == nil && kcRes != nil {
-			if kcRes.Invalid > 0 || kcRes.Errors > 0 {
-				sl.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
-				return lintStepResult{report: kcRes.Summary(), status: StatusError}
+	if stepEnabled(stepKubeconform, disabled, enabled) {
+		runLintStep("kubeconform", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
+			yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
+			// Scaffold configs/templates are the scaffolding CLI's own input
+			// files, not Kubernetes manifests (no apiVersion/kind), so exclude
+			// them from schema validation - otherwise every changed
+			// <ScaffoldDir>/configs/*.yaml trips a "missing 'kind' key" error.
+			yamlFiles = excludeScaffoldArtifacts(yamlFiles)
+			yamlFiles = excludeInvalidTestdata(yamlFiles)
+			yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
+			yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
+			kcOpts := kubeconform.DefaultOptions()
+			if opts.SchemaDir != "" {
+				// Already extracted once, up front, by pkg/pipeline's Setup
+				// phase (see validator.Options.SchemaDir's doc comment) -
+				// callers that don't prefetch (test-all/build-yaml/scan-all)
+				// leave this empty and fall through to the lazy extraction
+				// below, exactly as before this field existed.
+				kcOpts.SchemaDir = opts.SchemaDir
+			} else if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
+				kcOpts.SchemaDir = schemaDir
+				defer cleanup()
 			}
-			sl.Info("kubeconform: passed (%s)", elapsed().Round(time.Millisecond))
-		}
-		return lintStepResult{status: StatusPassed}
-	})
+			if kcRes, err := validateWithRenderedOverlays(yamlFiles, kcOpts); err == nil && kcRes != nil {
+				if kcRes.Invalid > 0 || kcRes.Errors > 0 {
+					sl.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
+					return lintStepResult{report: kcRes.Summary(), status: StatusError}
+				}
+				sl.Info("kubeconform: passed (%s)", elapsed().Round(time.Millisecond))
+			}
+			return lintStepResult{status: StatusPassed}
+		})
+	} else {
+		lintMu.Lock()
+		lintOutcomes = append(lintOutcomes, CheckOutcome{Name: "kubeconform", Status: StatusPassed, Skipped: true, Note: "Disabled."})
+		lintMu.Unlock()
+	}
 
 	lintWg.Wait()
 
@@ -800,6 +808,22 @@ func excludeInvalidTestdata(files []string) []string {
 	var out []string
 	for _, f := range files {
 		if isInvalidTestdata(f) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// excludeKnownNonManifestFiles drops well-known non-Kubernetes tooling
+// config files (Taskfile.yml, .golangci.yml, ...) from kubeconform's input
+// set - see kubeconform.KnownNonManifestFiles's doc comment for why this
+// is a permanent, structural exclusion rather than a per-file
+// EXEMPTIONS=(...) entry.
+func excludeKnownNonManifestFiles(files []string) []string {
+	var out []string
+	for _, f := range files {
+		if kubeconform.IsKnownNonManifestFile(f) {
 			continue
 		}
 		out = append(out, f)
