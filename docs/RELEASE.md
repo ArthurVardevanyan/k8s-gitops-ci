@@ -19,6 +19,17 @@ commits into changelog sections: `feat` → Features, `fix` → Bug Fixes,
 → Security (in addition to whatever group its subject line already put
 it in).
 
+Tags are always `v`-prefixed (`vMAJOR.MINOR.PATCH`, e.g. `v0.39.0`) — this
+is required for the module to be resolvable as a Go dependency (`go get`/
+`go install` only recognize `v`-prefixed tags as module versions).
+`cliff.toml`'s `[git] tag_pattern = "v[0-9]*"` keeps `git-cliff`'s bump/
+changelog math anchored to that tag set, and the release step in
+`.tekton/k8s-gitops-ci.yaml` forces the `v` prefix explicitly on whatever
+`git-cliff --bumped-version` returns. Releases up through `0.38.0` were
+originally tagged without the `v` prefix (invisible to Go's module
+resolver); those have since been mirrored as `v`-prefixed tags (same
+commits, same release notes) and the bare originals removed.
+
 ## Published artifacts
 
 Only what's actually active in `.goreleaser.yaml` today:

@@ -18,6 +18,12 @@ footer = ""
 [git]
 conventional_commits = true
 filter_unconventional = true
+# Only "v"-prefixed tags are valid Go module versions; releases before this
+# were tagged bare (e.g. "0.38.0") and have since been mirrored as
+# "v"-prefixed tags (see docs/RELEASE.md). Restricting to "v[0-9]*" keeps
+# bump/changelog math anchored to that canonical tag set instead of also
+# matching the legacy bare tags.
+tag_pattern = "v[0-9]*"
 commit_preprocessors = []
 commit_parsers = [
   { message = "^feat", group = "Features" },

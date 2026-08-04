@@ -230,7 +230,14 @@ spec:
 
                 # Push event - run Goreleaser with semantic version
                 if [ "${PARAM_EVENT}" = "push" ]; then
-                  NEW_SEMVER=$(git-cliff --bumped-version)
+                  # git-cliff's --bumped-version preserves whatever prefix
+                  # style the latest matching tag already has; force a "v"
+                  # prefix explicitly here (idempotent if it's already
+                  # there) so every tag Go modules see is a valid semver
+                  # tag (`vMAJOR.MINOR.PATCH`) — Go's module resolver
+                  # silently ignores non-"v"-prefixed tags entirely.
+                  RAW_SEMVER=$(git-cliff --bumped-version)
+                  NEW_SEMVER="v${RAW_SEMVER#v}"
                   echo "Releasing ${NEW_SEMVER}..."
 
                   # GoReleaser only validates that GORELEASER_CURRENT_TAG
@@ -256,7 +263,7 @@ spec:
                 else
                   # PR event - run Goreleaser with snapshot tag using short SHA
                   SHORT_SHA="${PARAM_REVISION:0:7}"
-                  TAG="$(date -u +%Y%m%d%H%M%S)-pr-${PARAM_PR_NUMBER}-${SHORT_SHA}"
+                  TAG="v$(date -u +%Y%m%d%H%M%S)-pr-${PARAM_PR_NUMBER}-${SHORT_SHA}"
                   echo "Creating snapshot release: ${TAG}"
                   GORELEASER_CURRENT_TAG="${TAG}" goreleaser release --snapshot --skip=ko --clean
                 fi
