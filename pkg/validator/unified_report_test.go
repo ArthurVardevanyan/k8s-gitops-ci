@@ -179,10 +179,26 @@ func TestReproduceCommand_IncludesScopingFlags(t *testing.T) {
 // empty flags.
 func TestReproduceCommand_NoScopingFlagsWhenUnset(t *testing.T) {
 	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "main"})
-	for _, unwanted := range []string{"--dirs=", "--disable-checks=", "--enable-checks="} {
+	for _, unwanted := range []string{"--dirs=", "--disable-checks=", "--enable-checks=", "--assume-openshift"} {
 		if strings.Contains(got, unwanted) {
 			t.Errorf("ReproduceCommand() = %q, unexpectedly contains %q", got, unwanted)
 		}
+	}
+}
+
+// TestReproduceCommand_IncludesAssumeOpenShift guards against the reproduce
+// command silently dropping --assume-openshift, which would make a local
+// reproduction see different sync-options findings than a run made by a
+// caller (e.g. a Tekton Task) that always passes --assume-openshift.
+func TestReproduceCommand_IncludesAssumeOpenShift(t *testing.T) {
+	got := ReproduceCommand(Options{
+		RepoURL:         "https://example.com/repo.git",
+		PR:              "42",
+		BaseRef:         "main",
+		AssumeOpenShift: true,
+	})
+	if !strings.Contains(got, "--assume-openshift") {
+		t.Errorf("ReproduceCommand() = %q, want it to contain --assume-openshift", got)
 	}
 }
 

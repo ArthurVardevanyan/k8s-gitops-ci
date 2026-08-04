@@ -68,6 +68,38 @@ SCHEMA_REPO=https://github.com/<your-org>/kubernetes-json-schema \
 task build
 ```
 
+### Pinning (`SCHEMA_REPO_SHA`/`SCHEMA_REPO_BRANCH`)
+
+By default `scripts/pull-schemas.sh` doesn't float to `SCHEMA_REPO`'s
+branch tip on every run - it fetches and checks out an explicit,
+tracked commit, **`SCHEMA_REPO_SHA`** (pinned in the script itself, next
+to a `# renovate: datasource=git-refs depName=...` marker comment), so
+`task update:schemas`/`task build` produce the exact same
+`schemas.tar.gz` every time for a given commit of this repo, instead of
+silently picking up whatever the upstream schema repo happens to
+contain at build time. Renovate tracks `SCHEMA_REPO_BRANCH`'s tip (see
+`renovate.json`'s `customManagers`) and opens a PR bumping
+`SCHEMA_REPO_SHA` whenever that branch advances - upgrading the schema
+set is then an explicit, reviewable diff instead of untracked drift.
+
+`SCHEMA_REPO_BRANCH` (default `main`) is only consulted as the ref to
+fetch when `SCHEMA_REPO_SHA` is explicitly set to empty - the "floating"
+fallback, for an org overriding `SCHEMA_REPO` to a different fork that
+doesn't share the default pin's commit history and doesn't have a
+known-good SHA to pin to yet:
+
+```sh
+SCHEMA_REPO=https://github.com/<your-org>/kubernetes-json-schema \
+SCHEMA_REPO_BRANCH=main \
+SCHEMA_REPO_SHA= \
+  task update:schemas
+```
+
+Once you have a commit you're happy with, pin it by setting
+`SCHEMA_REPO_SHA` back to that commit's SHA (either as an env var
+override, or by editing the default in `scripts/pull-schemas.sh` if
+you've forked this repo too).
+
 ### Org-specific CRDs with no public schema
 
 If your org has internal CRDs that will never appear in any public

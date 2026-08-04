@@ -13,6 +13,17 @@
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Za-z0-9_]+:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Pinned SCHEMA_REPO_SHA (embedded kubeconform schemas) in scripts/pull-schemas.sh - tracks the SCHEMA_REPO_BRANCH branch's tip commit",
+      "managerFilePatterns": ["/^scripts/pull-schemas\\.sh$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=git-refs\\s+depName=(?<depName>\\S+)\\s*\\n\\s*:\\s*\"\\$\\{SCHEMA_REPO_SHA:=(?<currentDigest>[0-9a-f]{40})\\}\""
+      ],
+      "datasourceTemplate": "git-refs",
+      "packageNameTemplate": "https://github.com/{{depName}}",
+      "currentValueTemplate": "main"
     }
   ],
   "packageRules": [
