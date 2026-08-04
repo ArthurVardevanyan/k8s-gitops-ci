@@ -2,6 +2,7 @@ package validator
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -423,6 +424,66 @@ func TestRunAll_FailingPostBuildHookBlocks(t *testing.T) {
 	}
 	if kb.Status != StatusError || !strings.Contains(kb.Body, "post-build hook") {
 		t.Errorf("expected the Kustomize Build section to report the post-build hook failure, got:\n%s", kb.Body)
+	}
+}
+
+// TestRunAll_KustomizeFixFindingBlocks guards the real bug reported
+// against this: composeKustomizeFixChild rendered a Kustomize Fix finding
+// as a StatusError ("❌") sub-dropdown, but runBuildAndPostBuild never
+// called log.ErrorInSection for it (unlike every sibling check in this
+// same section - Overlay Build errors, blocking Ghost Patches), so
+// res.Logger.HasFailures() (and thus "pipeline"'s exit code) stayed false
+// even with a real, visibly-❌ finding in the report - see Result.Failed.
+// kustomize.CheckFix shells out to the real kustomize CLI (see
+// pkg/kustomize's package doc comment), so this needs the real binaries
+// installed - matching the exec.LookPath+t.Skip pattern already used
+// elsewhere in this repo for CLI-wrapping tests.
+func TestRunAll_KustomizeFixFindingBlocks(t *testing.T) {
+	if _, err := exec.LookPath("kustomize"); err != nil {
+		t.Skip("kustomize not installed")
+	}
+	if _, err := exec.LookPath("prettier"); err != nil {
+		t.Skip("prettier not installed")
+	}
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	// A deprecated `vars:` block: kustomize edit fix --vars converts it
+	// to `replacements:`, so kustomize.CheckFix flags this file.
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - resource.yaml
+vars:
+  - name: FOO
+    objref:
+      kind: ConfigMap
+      name: my-configmap
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.foo
+`)
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "resource.yaml"),
+		"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\n  namespace: default\n")
+	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
+
+	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local"})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger == nil || !res.Logger.HasFailures() {
+		t.Error("expected a Kustomize Fix finding to be surfaced as a logger failure")
+	}
+	if !res.Failed() {
+		t.Error("expected a Kustomize Fix finding to make Result.Failed() report true")
+	}
+	var kb ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Kustomize Build" {
+			kb = s
+		}
+	}
+	if kb.Status != StatusError || !strings.Contains(kb.Body, "kustomize edit fix") {
+		t.Errorf("expected the Kustomize Build section to report the fix finding, got:\n%s", kb.Body)
 	}
 }
 

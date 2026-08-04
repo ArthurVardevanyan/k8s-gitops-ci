@@ -134,7 +134,7 @@ func TestFixHints(t *testing.T) {
 		{
 			name:     "kustomize fix with files",
 			findings: []LintFinding{{Check: "kustomize fix", Files: []string{"app1/base/kustomization.yaml", "app2/overlays/cluster/kustomization.yaml"}}},
-			want:     []string{"k8s-gitops-ci kustomize-fix app1/base/kustomization.yaml app2/overlays/cluster/kustomization.yaml"},
+			want:     []string{"k8s-gitops-ci kustomize-fix -dir app1/base/kustomization.yaml app2/overlays/cluster/kustomization.yaml"},
 		},
 		{
 			name:     "prettier with files",

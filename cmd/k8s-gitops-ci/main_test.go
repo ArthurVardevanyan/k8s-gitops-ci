@@ -4,6 +4,8 @@ import (
 	"flag"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -302,5 +304,100 @@ func TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *tes
 	}
 	if !strings.Contains(out, "--- Failing ---") {
 		t.Errorf("printFailedSectionsConsole output missing %q, got: %s", "--- Failing ---", out)
+	}
+}
+
+// ── kustomize-fix ─────────────────────────────────────────────────────────────
+
+// TestRunKustomizeFix_RequiresDirOrAll guards against silently doing
+// nothing (or picking an arbitrary default) when invoked with neither
+// -dir nor -all - the exact "the help is kind of useless" complaint this
+// command's rewrite addresses: previously it took bare positional file
+// args and only ever checked, never actually fixed, anything.
+func TestRunKustomizeFix_RequiresDirOrAll(t *testing.T) {
+	if err := runKustomizeFix(nil); err == nil {
+		t.Error("expected an error when neither -dir nor -all is given")
+	}
+}
+
+// TestRunKustomizeFix_DirAndAllAreMutuallyExclusive guards against
+// silently preferring one flag over the other when both are given.
+func TestRunKustomizeFix_DirAndAllAreMutuallyExclusive(t *testing.T) {
+	if err := runKustomizeFix([]string{"-dir", ".", "-all"}); err == nil {
+		t.Error("expected an error when both -dir and -all are given")
+	}
+}
+
+// TestRunKustomizeFix_DirActuallyWritesFixedFiles guards the core fix:
+// unlike the old positional-args-only, read-only "check" behavior,
+// "kustomize-fix -dir <path>" must actually rewrite a non-normalized
+// kustomization.yaml under that path (recursively) - via the real
+// `kustomize edit fix --vars` (see pkg/kustomize's package doc comment
+// for why this shells out rather than reimplementing kustomize's own
+// logic), converting a deprecated `vars:` block to `replacements:` too.
+func TestRunKustomizeFix_DirActuallyWritesFixedFiles(t *testing.T) {
+	if _, err := exec.LookPath("kustomize"); err != nil {
+		t.Skip("kustomize not installed")
+	}
+	if _, err := exec.LookPath("prettier"); err != nil {
+		t.Skip("prettier not installed")
+	}
+	root := t.TempDir()
+	nested := filepath.Join(root, "overlays", "sandbox", "kustomization.yaml")
+	unfixed := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - resource.yaml
+vars:
+  - name: FOO
+    objref:
+      kind: ConfigMap
+      name: my-configmap
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.foo
+`
+	if err := os.MkdirAll(filepath.Dir(nested), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nested, []byte(unfixed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out string
+	var err error
+	out = captureStdout(t, func() { err = runKustomizeFix([]string{"-dir", root}) })
+	if err != nil {
+		t.Fatalf("runKustomizeFix: %v", err)
+	}
+	if !strings.Contains(out, "Fixed 1 kustomization.yaml file") {
+		t.Errorf("expected a 'Fixed 1 ...' summary, got: %s", out)
+	}
+
+	after, err := os.ReadFile(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) == unfixed {
+		t.Error("expected the file to actually be rewritten on disk")
+	}
+	if !strings.Contains(string(after), "replacements:") || strings.Contains(string(after), "vars:") {
+		t.Errorf("expected vars: to actually be converted to replacements: (--vars), got: %s", after)
+	}
+}
+
+// TestRunKustomizeFix_NoFilesNeedFixing guards the clean-tree message.
+func TestRunKustomizeFix_NoFilesNeedFixing(t *testing.T) {
+	if _, err := exec.LookPath("kustomize"); err != nil {
+		t.Skip("kustomize not installed")
+	}
+	root := t.TempDir()
+	out := captureStdout(t, func() {
+		if err := runKustomizeFix([]string{"-dir", root}); err != nil {
+			t.Errorf("runKustomizeFix: %v", err)
+		}
+	})
+	if !strings.Contains(out, "All kustomization.yaml files are up to date.") {
+		t.Errorf("expected the up-to-date message, got: %s", out)
 	}
 }

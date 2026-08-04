@@ -149,6 +149,66 @@ anything - it only _detects_ unresolved AVP tokens in
 already-rendered/committed YAML, independent of the build-time
 resolution described above.
 
+## Kustomize Fix
+
+The "Kustomize Fix" sub-check in the Kustomize Build report section
+(`kustomize.CheckFix`, wired via `runBuildAndPostBuild` in
+`pkg/validator/phases.go`) detects `kustomization.yaml` files the real
+`kustomize edit fix --vars` command would change. `pkg/kustomize` shells
+out to the actual `kustomize` CLI rather than reimplementing its
+field-ordering/deprecated-field-migration logic in Go: that logic
+(preserve existing top-level field order; only append brand-new or
+migrated fields - e.g. `vars:` -> `replacements:` - in one specific
+order; never touch nested map ordering at all) is intricate and not a
+stable public contract, and an earlier from-scratch reimplementation here
+(a blanket alphabetical key sort) didn't actually match real kustomize
+behavior at all. `CheckFix` never mutates the file it's checking - each
+candidate is copied to a scratch temp directory and run through the real
+fix pipeline there for comparison.
+
+**This is a hard dependency, not a graceful-degrade one** (unlike every
+`pkg/lint/*` wrapper's own missing-CLI handling): a missing `kustomize` or
+`prettier` binary fails the check outright rather than silently skipping
+it - `kustomize` is a core, expected part of this pipeline's toolchain,
+not an optional best-effort tool, so a run that couldn't actually verify
+kustomization.yaml files must not report a clean bill of health it never
+checked. A finding (or a check failure) is blocking - `log.ErrorInSection`
+is called either way, so this is treated exactly like any other hard
+failure (a run with only this finding still exits non-zero from
+`pipeline`/`test-all`; see
+[DEVELOPMENT.md](DEVELOPMENT.md#pipeline-exit-code-pipelinerun-resultfailed)).
+It's gated behind the **`kustomize-fix`** step ID (default **on**, unlike
+`kyverno`/`scaffold-readme`) purely so a repo (or a test) with no
+`kustomize` binary available can opt out via `--disable-checks
+kustomize-fix` instead of always hard-failing.
+
+A follow-up `prettier --write` pass always runs after `kustomize edit fix`
+on any file it actually changes: kustomize's own YAML writer doesn't
+match this repo's prettier conventions (most visibly, it flattens
+sequence-item indentation instead of indenting list items under their
+parent key), so without the prettier pass a freshly "fixed" file would
+immediately be re-flagged as needing a fix again.
+
+To actually apply the fix, use the standalone `kustomize-fix` CLI
+subcommand, which does write the normalized file(s) back to disk (running
+the same `kustomize edit fix --vars` + `prettier --write` pipeline):
+
+```sh
+k8s-gitops-ci kustomize-fix -dir <path>   # fix every kustomization.yaml under <path>, recursively
+k8s-gitops-ci kustomize-fix -all          # fix every kustomization.yaml under the current directory, recursively
+```
+
+`-dir` and `-all` are mutually exclusive, and one of them is required -
+running `kustomize-fix` with neither prints usage and exits non-zero
+rather than silently doing nothing. The report's own "Kustomize Fix"
+sub-dropdown includes a ready-to-run `kustomize-fix -dir` command per
+affected directory, so a reviewer never has to construct one by hand.
+`--vars` is always passed, so a deprecated `vars:` block is converted to
+`replacements:` too - not just field/format normalization - matching
+kustomize's own `edit fix --vars` help text, which recommends only doing
+this in a clean git repository since it's a bigger, semantic
+transformation than pure formatting.
+
 ## Ghost Patch Detection
 
 Part of the Kustomize Build report section, `pkg/ghostpatch` detects a
@@ -347,13 +407,21 @@ begin with):
   label that's present with an _invalid_ value is never suppressed this
   way, only one that's genuinely absent.
 
-Four standalone (non-registry) steps participate in the same
+Five standalone (non-registry) steps participate in the same
 enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
 [Generic check-enablement mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)):
 
 - **`golangci`** — Go linting via `pkg/lint/golangci`, default **on**.
 - **`avp`** — per-app AVP strategy auto-detection (see
   [Build Strategies](#build-strategies) above), default **on**.
+- **`kustomize-fix`** — the "Kustomize Fix" sub-check (see
+  [Kustomize Fix](#kustomize-fix) above), default **on**. Unlike
+  `kyverno`/`scaffold-readme` below, this isn't opt-in for compatibility
+  reasons - it's gated purely so a repo (or test) with no `kustomize`
+  binary available can opt out via `--disable-checks kustomize-fix`
+  instead of the check always hard-failing (see
+  [Kustomize Fix](#kustomize-fix)'s note on why a missing binary is a
+  hard failure here, unlike every other CLI-wrapping check in this repo).
 - **`scaffold-readme`** — the README scaffold-status table structural
   check (see [Scaffold Validation](#scaffold-validation) above), default
   **off**. Like `kyverno` below, this generic core can't know whether a

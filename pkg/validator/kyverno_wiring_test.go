@@ -103,7 +103,11 @@ func TestRunAll_KyvernoSectionPresentWhenEnabled(t *testing.T) {
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), "resources: []\n")
 
-	res, err := RunAll(Options{Dirs: []string{d}, EnabledChecks: []string{"kyverno"}})
+	// kustomize-fix is unrelated to what this test exercises (Kyverno
+	// section presence), and this minimal fixture isn't in kustomize's
+	// real canonical form, which would otherwise always flag a spurious
+	// Kustomize Fix finding and fail the HasFailures() assertion below.
+	res, err := RunAll(Options{Dirs: []string{d}, EnabledChecks: []string{"kyverno"}, DisabledChecks: []string{"kustomize-fix"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}

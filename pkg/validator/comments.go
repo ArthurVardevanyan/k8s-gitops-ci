@@ -109,7 +109,7 @@ type lintFixHint struct {
 // wraps - no hint is added for a command that doesn't exist.
 var hintByCheck = map[string]lintFixHint{
 	"config-sort":    {command: "k8s-gitops-ci sort-configs"},
-	"kustomize fix":  {command: "k8s-gitops-ci kustomize-fix %s"},
+	"kustomize fix":  {command: "k8s-gitops-ci kustomize-fix -dir %s"},
 	"prettier":       {command: "prettier --write %s"},
 	"markdownlint":   {command: "markdownlint %s"},
 	"scaffold table": {command: "k8s-gitops-ci update-scaffold-status"},

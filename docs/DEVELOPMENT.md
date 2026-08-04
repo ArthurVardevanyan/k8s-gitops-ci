@@ -184,7 +184,11 @@ one shared enable/disable mechanism instead of a dedicated boolean flag
 per step:
 
 - `Options.DisabledChecks []string` — turn off a step that defaults to
-  **enabled** (most steps: `sync-options`, `golangci`, `avp`, ...).
+  **enabled** (most steps: `sync-options`, `golangci`, `avp`,
+  `kustomize-fix`, ...). `kustomize-fix` is the one step where
+  `DisabledChecks` doesn't mean "org-specific opt-out" so much as "no
+  `kustomize` binary available" - see [`CI.md`](CI.md#kustomize-fix) for
+  why a missing binary is a hard failure rather than a graceful skip.
 - `Options.EnabledChecks []string` — turn on a step that defaults to
   **disabled**: `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md) for why) and
   `scaffold-readme` (see [`CI.md`](CI.md#scaffold-validation) for why).
@@ -339,18 +343,30 @@ to a plain `X:` label and stripping the rest — and prints the result via
 `Logger.Raw` rather than `Info`, since it's a pre-formatted block, not a
 single structured log line.
 
-### Pipeline exit code (`pipeline.Run`)
+### Pipeline exit code (`pipeline.Run`, `Result.Failed`)
 
 `validator.RunAll`'s returned `error` is only ever non-nil for a hard setup
 failure (e.g. failing to resolve the changeset) — a run that completes but
 finds blocking/error-level findings still returns a nil error, signaling
-that instead via `ValidatorResult.Blocking` (set from Resource Compliance
-direct findings) and the validator's own `Logger.HasFailures()` (sees any
-`Error`/`ErrorInSection` call across every phase — Linting, Static Checks,
-Kustomize Build, ...). `pipeline.Run`'s `validatorResultFailed` helper
-checks both, and `Run` returns a non-nil error (and the CLI exits non-zero)
-whenever either is true, in addition to the PR-validation error fields
-(`TitleErr`/`UnsignedErr`) it already checked.
+that instead via `Result.Failed()` (`pkg/validator/types.go`): `Blocking`
+(set from Resource Compliance direct findings, or a blocking ghost patch)
+OR the run's own `Logger.HasFailures()` (sees any `Error`/`ErrorInSection`
+call across every phase — Linting, Static Checks, Kustomize Build, ...).
+`pipeline.Run`'s `validatorResultFailed` helper (and `test-all`'s own exit
+check in `cmd/k8s-gitops-ci/main.go`) both delegate to `Result.Failed()`
+rather than keeping their own copies of this OR, so they can't drift apart
+the way they once did: `Result.Failed()` was added specifically because
+Kustomize Fix findings rendered as a `StatusError` ("❌") sub-dropdown in
+the report (`composeKustomizeFixChild`) but `runBuildAndPostBuild` never
+called `log.ErrorInSection` for them — unlike every sibling check in that
+same section (Overlay Build errors, blocking Ghost Patches) — so neither
+`Blocking` nor `Logger.HasFailures()` ever saw them, and both `pipeline`
+and `test-all` reported success despite a real ❌ in the printed report.
+`Run` returns a non-nil error (and the CLI exits non-zero) whenever
+`Result.Failed()` is true, in addition to the PR-validation error fields
+(`TitleErr`/`UnsignedErr`) it already checked. `scan-all` is deliberately
+exempt from all of this — it's a pure reporting tool (prints only failing
+sections, never returns a failing exit code).
 
 ### Unified PR-comment report (`pkg/validator/unified_report.go`, `compose_sections.go`)
 
@@ -447,8 +463,17 @@ count:
   `| App | PRE_BUILD | POST_BUILD | POST_VALIDATE |` table (✅ ran /
   ❌ failed / — not defined — hooks are actually executed, not just
   detected; see [`HOOKS.md`](HOOKS.md)) with `StatusError` when any hook
-  actually failed (`anyHookFailed`); Kustomize Fix lists files needing
-  `kustomize edit fix`; and Ghost Patches renders a
+  actually failed (`anyHookFailed`); Kustomize Fix (`kustomize.CheckFix`,
+  which shells out to the real `kustomize edit fix --vars` - see
+  `pkg/kustomize`'s package doc comment for why, and its `StatusError` on
+  a `CheckFix` failure itself, e.g. a missing `kustomize` binary, which
+  this repo treats as a hard failure rather than the graceful skip every
+  `pkg/lint/*` wrapper's own missing-CLI handling uses) lists files
+  needing a fix, plus a `k8s-gitops-ci kustomize-fix -dir <dir>` fix
+  command per affected directory (real and working, unlike the
+  never-actually-reachable `hintByCheck["kustomize fix"]` entry in
+  `comments.go` - nothing produces a `LintFinding` with that check name);
+  and Ghost Patches renders a
   `| Overlay | Target |` table (`pkg/ghostpatch.CheckApp`, which renders
   overlays via the krusty SDK directly — no runtime dependency on a
   `kustomize` binary being present) with `StatusError` only when at least

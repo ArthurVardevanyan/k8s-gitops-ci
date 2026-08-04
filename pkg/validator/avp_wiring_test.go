@@ -79,7 +79,11 @@ func TestRunAll_AVPStrategyAutoDetectedAndExcludeRespected(t *testing.T) {
 	mustWrite(t, filepath.Join(app, "overlays", "dev", "kustomization.yaml"), "resources:\n  - ../../base\n")
 	mustWrite(t, filepath.Join(app, "test.sh"), "AVP_EXCLUDE=\"dev\"\n")
 
-	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local"})
+	// kustomize-fix is unrelated to what this test exercises (AVP
+	// strategy/exclude), and these minimal fixtures aren't in kustomize's
+	// real canonical form, which would otherwise always flag a spurious
+	// Kustomize Fix finding and fail this test's "built cleanly" check.
+	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local", DisabledChecks: []string{"kustomize-fix"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
@@ -140,7 +144,10 @@ func TestRunAll_AVPDisabledViaDisabledChecks(t *testing.T) {
 		"apiVersion: v1\nkind: Secret\nmetadata:\n  name: foo\n  namespace: bar\nstringData:\n  password: <path:secret#field>\n")
 	mustWrite(t, filepath.Join(app, "overlays", "dev", "kustomization.yaml"), "resources:\n  - ../../base\n")
 
-	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local", DisabledChecks: []string{"avp"}})
+	// kustomize-fix is unrelated to what this test exercises; see the
+	// comment on the same option in
+	// TestRunAll_AVPStrategyAutoDetectedAndExcludeRespected above.
+	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local", DisabledChecks: []string{"avp", "kustomize-fix"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}

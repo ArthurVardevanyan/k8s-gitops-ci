@@ -238,17 +238,20 @@ func Run(opts Options) error {
 // a hard setup failure inside validator.RunAll (e.g. failing to resolve the
 // changeset) - RunAll always returns a nil error for a run that completed
 // but found blocking/error-level findings, communicating that instead via
-// vr.Blocking (Resource Compliance direct findings) and vr.Logger's
-// recorded errors/failed sections (see vr.Logger.Summary()'s
+// vr.Failed() (vr.Blocking - Resource Compliance direct findings - or
+// vr.Logger's recorded errors/failed sections, see vr.Logger.Summary()'s
 // "Errors"/"Failed sections", the same counters HasFailures() reads).
 // Previously Run's failure check only looked at res.ValidationErr, so a PR
 // with blocking Resource Compliance findings, or any failed Linting/Static
 // Checks/Build section, still exited 0 and printed "All checks passed!".
+// Kept as its own named function (rather than inlining vr.Failed() at the
+// one call site) purely for the doc comment/historical-context anchor;
+// test-all's exit code (cmd/k8s-gitops-ci/main.go) calls vr.Failed()
+// directly for the same reason, so both entry points share one
+// implementation instead of two copies that could drift apart the way
+// Kustomize Fix findings did before Result.Failed existed.
 func validatorResultFailed(vr *validator.Result) bool {
-	if vr == nil {
-		return false
-	}
-	return vr.Blocking || (vr.Logger != nil && vr.Logger.HasFailures())
+	return vr.Failed()
 }
 
 // printFailedSectionDetail logs the full Body of every errored section in

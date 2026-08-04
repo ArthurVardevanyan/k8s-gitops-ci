@@ -49,3 +49,33 @@ func Run(files, extraArgs []string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// WriteArgs are passed to prettier when actually rewriting files in place
+// (as opposed to Run's --check-only mode).
+var WriteArgs = []string{"--write", "--ignore-unknown"}
+
+// Write runs prettier --write on files, rewriting them in place. Used by
+// pkg/kustomize.Fix as a follow-up formatting pass after `kustomize edit
+// fix`: kustomize's own YAML writer doesn't match this repo's prettier
+// conventions (e.g. it flattens sequence-item indentation instead of
+// indenting list items under their parent key), so without this pass a
+// "fixed" kustomization.yaml would immediately be re-flagged as needing a
+// fix again - see pkg/kustomize's own doc comments for why CheckFix/Fix's
+// consistency depends on this actually running.
+func Write(files []string) (string, error) {
+	files = Filter(files)
+	if len(files) == 0 {
+		return "", nil
+	}
+	if _, err := exec.LookPath("prettier"); err != nil {
+		return "", ErrCLINotFound
+	}
+	args := append([]string{}, WriteArgs...)
+	args = append(args, files...)
+	cmd := exec.CommandContext(context.Background(), "prettier", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("prettier write failed: %w", err)
+	}
+	return string(out), nil
+}

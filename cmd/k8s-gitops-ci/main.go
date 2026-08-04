@@ -351,7 +351,13 @@ func runTestAll(args []string) error {
 	}
 	printAllSectionsConsole(res.Logger, res.Sections)
 	printRunFooter(res, start)
-	if res.Blocking {
+	// res.Failed() (not just res.Blocking) - test-all used to only check
+	// res.Blocking (Resource Compliance direct findings), so any failed
+	// Linting/Static Checks/Kustomize Build section - anything that only
+	// ever recorded itself via res.Logger.ErrorInSection, the same gap
+	// "pipeline"'s validatorResultFailed exists to close - still exited 0
+	// here even with a real ❌ in the printed sections above.
+	if res.Failed() {
 		return fmt.Errorf("test-all: validation failed")
 	}
 	return nil
@@ -499,22 +505,48 @@ func runKubeconform(args []string) error {
 
 // ── kustomize-fix ─────────────────────────────────────────────────────────────
 
+// runKustomizeFix actually applies kustomize.Fix (writes every non-
+// normalized kustomization.yaml under -dir/-all back to disk), unlike the
+// read-only Kustomize Fix check the "pipeline"/"test-all"/"scan-all"
+// commands already run as part of the Kustomize Build section - this is
+// the fix hintByCheck's "kustomize fix" entry (comments.go) actually
+// points a reviewer at. -dir and -all are mutually exclusive; passing
+// neither (or both) is a usage error rather than silently doing nothing or
+// picking one arbitrarily.
 func runKustomizeFix(args []string) error {
-	files := args
-	if len(files) == 0 {
-		return fmt.Errorf("kustomize-fix: no files specified")
-	}
-	apps := kustomize.AppsFromFiles(files)
-	needsFix, err := kustomize.CheckFix(apps)
-	if err != nil {
+	fs := flag.NewFlagSet("kustomize-fix", flag.ExitOnError)
+	dir := fs.String("dir", "", "Directory to fix, recursively (mutually exclusive with -all)")
+	all := fs.Bool("all", false, "Fix every kustomization.yaml under the current directory, recursively")
+	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if len(needsFix) == 0 {
+
+	var target string
+	switch {
+	case *all && *dir != "":
+		return fmt.Errorf("kustomize-fix: -dir and -all are mutually exclusive")
+	case *all:
+		target = "."
+	case *dir != "":
+		target = *dir
+	default:
+		fs.Usage()
+		return fmt.Errorf("kustomize-fix: -dir <path> or -all is required")
+	}
+
+	fixed, err := kustomize.Fix(target)
+	if err != nil {
+		return fmt.Errorf("kustomize-fix: %w", err)
+	}
+	if len(fixed) == 0 {
 		fmt.Println("All kustomization.yaml files are up to date.")
 		return nil
 	}
-	fmt.Println(kustomize.FormatFixNeeded(needsFix))
-	return fmt.Errorf("kustomize-fix: %d file(s) need fixing", len(needsFix))
+	fmt.Printf("Fixed %d kustomization.yaml file(s):\n", len(fixed))
+	for _, f := range fixed {
+		fmt.Println("  " + f)
+	}
+	return nil
 }
 
 // ── check-starting-csv ────────────────────────────────────────────────────────
@@ -648,7 +680,11 @@ Linters:
   yaml-syntax       Check YAML syntax
 
 Static Checks:
-  kustomize-fix     Detect kustomization.yaml files needing edit fix
+  kustomize-fix     Normalize (write) kustomization.yaml field ordering;
+                    -dir <path> (recursive) or -all (whole working tree) -
+                    the "pipeline"/"test-all"/"scan-all" commands already
+                    report which files need this via the Kustomize Build
+                    section, without writing anything themselves
   check-starting-csv Validate startingCSV folder version matches
   ghost-patches     Detect kustomize patches that match no resource
   sort-configs      Sort repo config files

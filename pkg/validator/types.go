@@ -102,6 +102,27 @@ func (r *Result) FailedSectionCount() int {
 	return n
 }
 
+// Failed reports whether this run should be treated as a failure: either
+// Blocking is set (Resource Compliance direct findings, or a blocking
+// ghost patch - see phases.go), or the run's own Logger recorded any
+// Error/ErrorInSection call across any phase (Linting, Static Checks,
+// Kustomize Build, ...). This is the single source of truth every CLI
+// entry point's exit-code decision should be based on - a check that
+// renders ❌ in the report but never calls log.ErrorInSection (a real bug
+// found in Kustomize Fix findings: they rendered as StatusError yet never
+// set Blocking or logged an error, so "pipeline" returned success despite
+// the report showing a hard failure) would otherwise silently never fail
+// the run. nil-safe so callers don't need their own nil check first (a
+// nil Result - e.g. RunAll itself hard-failed before producing one - is
+// never itself a reason to report failure; the caller's own error return
+// already covers that case).
+func (r *Result) Failed() bool {
+	if r == nil {
+		return false
+	}
+	return r.Blocking || (r.Logger != nil && r.Logger.HasFailures())
+}
+
 // Workers returns concurrency.
 func (o *Options) Workers() int {
 	// import in engine.go
