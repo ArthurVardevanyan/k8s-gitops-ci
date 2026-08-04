@@ -21,7 +21,7 @@ pointing to every other doc (`CI.md`, `HOOKS.md`, `EXCEPTIONS.md`,
 - [CLI Output & PR Comment Format](#cli-output--pr-comment-format)
   - [Logger banner and section headers (`pkg/logger`)](#logger-banner-and-section-headers-pkglogger)
   - [Timing table (`pkg/validator/timing.go`)](#timing-table-pkgvalidatortiminggo)
-  - [`--verbose` console detail without `--comment` (`pkg/pipeline/pipeline.go`)](#--verbose-console-detail-without---comment-pkgpipelinepipelinego)
+  - [Failed-section console detail without `--comment` (`pkg/pipeline/pipeline.go`)](#failed-section-console-detail-without---comment-pkgpipelinepipelinego)
   - [Pipeline exit code (`pipeline.Run`, `Result.Failed`)](#pipeline-exit-code-pipelinerun-resultfailed)
   - [Unified PR-comment report (`pkg/validator/unified_report.go`, `compose_sections.go`)](#unified-pr-comment-report-pkgvalidatorunified_reportgo-compose_sectionsgo)
 - [Building](#building)
@@ -351,21 +351,23 @@ when the opt-in `kyverno` step is actually enabled (preparing them shells
 out to `kustomize build`, not worth paying for on every run - see
 `validator.Options.PolicyPath`).
 
-### `--verbose` console detail without `--comment` (`pkg/pipeline/pipeline.go`)
+### Failed-section console detail without `--comment` (`pkg/pipeline/pipeline.go`)
 
 Every phase composes a detail-bearing `ReportSection` (the actual
 file/message list behind a step's summary "N violation(s)" log line) onto
 `ValidatorResult.Sections`, but that has historically only ever been
 rendered into the PR comment body via `composeSections`/`postComment` —
 which is skipped whenever `--comment` isn't passed (e.g. a local/CLI-only
-run). `pipeline.Run` calls `printFailedSectionDetail` under `--verbose`
-(independent of whether a comment is posted) to print every
-`StatusError` section's full `Body` to the console too (`StatusWarning`/
-`StatusInfo` sections are worth a look in the PR comment but aren't
-printed here — this mirrors `FailedSectionCount`/`HasErrorSection`'s same
-StatusError-only distinction), so `--verbose` alone is enough to see e.g.
-exactly which file/check produced a Resource Compliance finding, not just
-the count.
+run). `pipeline.Run` unconditionally calls `printFailedSectionDetail`
+(independent of `--verbose` and of whether a comment is posted) to print
+every `StatusError` section's full `Body` to the console too
+(`StatusWarning`/`StatusInfo` sections are worth a look in the PR comment
+but aren't printed here — this mirrors `FailedSectionCount`/
+`HasErrorSection`'s same StatusError-only distinction), so a failed run
+always shows e.g. exactly which file/check produced a Resource Compliance
+finding, not just the count — without requiring `--verbose` or
+`--comment`. A clean run has no `StatusError` sections, so
+`printFailedSectionDetail` prints nothing extra in that case.
 
 `ReportSection.Body` is always GitHub-flavored markdown built for the PR
 comment's `<details>`/`<summary>` dropdown renderer (literal HTML tags,
