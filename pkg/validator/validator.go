@@ -19,8 +19,25 @@ func RunAll(opts Options) (*Result, error) {
 	tc.SetConcurrency(runtime.NumCPU(), Workers(opts))
 	res := &Result{Logger: log, Timing: tc}
 
+	// Apply the org-level OpenShift default when the invocation didn't set
+	// it (see DefaultAssumeOpenShift).
+	opts.AssumeOpenShift = opts.AssumeOpenShift || DefaultAssumeOpenShift
 	syncopts.AssumeOpenShift = opts.AssumeOpenShift
 	configureClusterIdentityFromProviders(opts)
+
+	// Thread pre-validation results/errors (from the pipeline layer) into
+	// the unified report. When a PRValidationResult is supplied, prepend a
+	// PR Checks section built from it; PreErrors are surfaced as a blocking
+	// signal so the run fails even if every in-validator phase passed.
+	if opts.PRValidation != nil {
+		res.Sections = append(res.Sections, composePRChecksSectionFromResult(opts.PRValidation))
+	}
+	if len(opts.PreErrors) > 0 {
+		for _, e := range opts.PreErrors {
+			log.ErrorInSection("PreValidation", "%s", e)
+		}
+		res.Blocking = true
+	}
 
 	changed, err := resolveChangeset(opts)
 	if err != nil {
@@ -65,6 +82,10 @@ func resolveChangeset(opts Options) ([]string, error) {
 		// neither scopes nor filters targeted overlays).
 		files, err = resolveTargetOverlays(opts)
 		return files, err
+	case opts.ScanAll:
+		// Scan-all mode validates every file in the repo, not just changed
+		// files.
+		files, err = changeset.GetAllFiles()
 	case len(opts.Dirs) > 0:
 		files, err = changeset.GetFilesUnderDirs(opts.Dirs)
 	default:

@@ -73,6 +73,48 @@ func TestStepEnabled_EnabledChecksHasNoEffectOnDefaultOnSteps(t *testing.T) {
 	}
 }
 
+// TestResolveEnabledChecks_ExplicitTakesPrecedence guards that a
+// caller-supplied Options.EnabledChecks is always used as-is, even when
+// DefaultEnabledChecks is also set - the explicit, per-run value must never
+// be silently merged with or overridden by the package-level default.
+func TestResolveEnabledChecks_ExplicitTakesPrecedence(t *testing.T) {
+	old := DefaultEnabledChecks
+	DefaultEnabledChecks = []string{"kyverno"}
+	defer func() { DefaultEnabledChecks = old }()
+
+	got := resolveEnabledChecks([]string{"other-check"})
+	if len(got) != 1 || got[0] != "other-check" {
+		t.Errorf("expected explicit EnabledChecks to win, got %v", got)
+	}
+}
+
+// TestResolveEnabledChecks_FallsBackToDefault guards that an empty
+// Options.EnabledChecks falls back to the DefaultEnabledChecks enablement
+// seam (the org-injectable override point), rather than always being empty.
+func TestResolveEnabledChecks_FallsBackToDefault(t *testing.T) {
+	old := DefaultEnabledChecks
+	DefaultEnabledChecks = []string{"kyverno"}
+	defer func() { DefaultEnabledChecks = old }()
+
+	got := resolveEnabledChecks(nil)
+	if len(got) != 1 || got[0] != "kyverno" {
+		t.Errorf("expected DefaultEnabledChecks fallback, got %v", got)
+	}
+}
+
+// TestResolveEnabledChecks_NilDefault guards the zero-value/no-op case: with
+// no explicit EnabledChecks and no DefaultEnabledChecks set, the result is
+// nil - no behavior change for callers that never touch the seam.
+func TestResolveEnabledChecks_NilDefault(t *testing.T) {
+	old := DefaultEnabledChecks
+	DefaultEnabledChecks = nil
+	defer func() { DefaultEnabledChecks = old }()
+
+	if got := resolveEnabledChecks(nil); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
 // --- lint-tool missing-CLI hard failure -------------------------------------
 //
 // markdownlint, prettier, shellcheck, and golangci all hard-fail (rather

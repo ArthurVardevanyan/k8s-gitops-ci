@@ -78,6 +78,108 @@ func TestComposePRChecksSection_TitleErrSuppressesSuggestion(t *testing.T) {
 	}
 }
 
+// TestComposePRChecksSectionFromResult_AllPassed guards the PRValidationResult
+// struct-based path (validator.Options.PRValidation) renders the same
+// all-passed shape as the error-based ComposePRChecksSection.
+func TestComposePRChecksSectionFromResult_AllPassed(t *testing.T) {
+	s := composePRChecksSectionFromResult(&PRValidationResult{
+		TitlePassed:     true,
+		CommitsPassed:   true,
+		ChecklistPassed: true,
+	})
+	if s.Status != StatusPassed {
+		t.Errorf("expected StatusPassed, got %v:\n%s", s.Status, s.Body)
+	}
+	if strings.Count(s.Body, "Passed.") != 3 {
+		t.Errorf("expected all 3 checks to report Passed., got:\n%s", s.Body)
+	}
+}
+
+// TestComposePRChecksSectionFromResult_TitleBlockingVsWarning guards that a
+// failed title check only escalates to StatusError when TitleBlocking is
+// set - otherwise it's a non-blocking StatusWarning (matching the
+// error-based path's non-blocking title-suggestion behavior).
+func TestComposePRChecksSectionFromResult_TitleBlockingVsWarning(t *testing.T) {
+	warn := composePRChecksSectionFromResult(&PRValidationResult{
+		TitlePassed:     false,
+		TitleMsg:        "missing conventional prefix",
+		CommitsPassed:   true,
+		ChecklistPassed: true,
+	})
+	if warn.Status != StatusWarning {
+		t.Errorf("expected StatusWarning for a non-blocking title failure, got %v", warn.Status)
+	}
+	if !strings.Contains(warn.Body, "missing conventional prefix") {
+		t.Errorf("expected the title message in the body, got:\n%s", warn.Body)
+	}
+
+	blocking := composePRChecksSectionFromResult(&PRValidationResult{
+		TitlePassed:     false,
+		TitleBlocking:   true,
+		TitleMsg:        "missing conventional prefix",
+		CommitsPassed:   true,
+		ChecklistPassed: true,
+	})
+	if blocking.Status != StatusError {
+		t.Errorf("expected StatusError for a blocking title failure, got %v", blocking.Status)
+	}
+}
+
+// TestComposePRChecksSectionFromResult_UnsignedCommits guards the Signed
+// Commits child renders the unsigned/total count and always errors (never
+// just a warning) when CommitsPassed is false.
+func TestComposePRChecksSectionFromResult_UnsignedCommits(t *testing.T) {
+	s := composePRChecksSectionFromResult(&PRValidationResult{
+		TitlePassed:     true,
+		ChecklistPassed: true,
+		CommitsPassed:   false,
+		UnsignedCount:   2,
+		TotalCommits:    5,
+	})
+	if s.Status != StatusError {
+		t.Errorf("expected StatusError for unsigned commits, got %v", s.Status)
+	}
+	if !strings.Contains(s.Body, "2 of 5 commit(s) unsigned.") {
+		t.Errorf("expected the unsigned commit count in the body, got:\n%s", s.Body)
+	}
+}
+
+// TestComposePRChecksSectionFromResult_ChecklistIncomplete guards the PR
+// Checklist child renders as a non-blocking StatusWarning (never
+// StatusError) with the checklist message, matching the error-based path's
+// treatment of checklist failures as warnings.
+func TestComposePRChecksSectionFromResult_ChecklistIncomplete(t *testing.T) {
+	s := composePRChecksSectionFromResult(&PRValidationResult{
+		TitlePassed:     true,
+		CommitsPassed:   true,
+		ChecklistPassed: false,
+		ChecklistMsg:    "missing required checkbox",
+	})
+	if s.Status != StatusWarning {
+		t.Errorf("expected StatusWarning for an incomplete checklist, got %v", s.Status)
+	}
+	if !strings.Contains(s.Body, "missing required checkbox") {
+		t.Errorf("expected the checklist message in the body, got:\n%s", s.Body)
+	}
+}
+
+// TestComposePRChecksSectionFromResult_DefaultMessages guards that empty
+// TitleMsg/ChecklistMsg fields fall back to a generic message rather than
+// rendering an empty body.
+func TestComposePRChecksSectionFromResult_DefaultMessages(t *testing.T) {
+	s := composePRChecksSectionFromResult(&PRValidationResult{
+		TitlePassed:     false,
+		ChecklistPassed: false,
+		CommitsPassed:   true,
+	})
+	if !strings.Contains(s.Body, "PR title check failed.") {
+		t.Errorf("expected the default title message, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "PR checklist incomplete.") {
+		t.Errorf("expected the default checklist message, got:\n%s", s.Body)
+	}
+}
+
 func TestComposeLintingSection(t *testing.T) {
 	outcomes := []CheckOutcome{{Name: "golangci", Status: StatusError}}
 	s := ComposeLintingSection(outcomes, map[string]string{"golangci": "issues"})

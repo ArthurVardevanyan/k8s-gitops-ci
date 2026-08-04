@@ -42,6 +42,15 @@ const (
 	stepKustomizeFix   = "kustomize-fix"
 )
 
+// StepKyverno is the exported alias for the internal kyverno step ID, so
+// external callers can reference validator.StepKyverno.
+const StepKyverno = stepKyverno
+
+// DefaultEnabledChecks is an enablement seam: when Options.EnabledChecks is
+// empty, this slice is used as the default enabled set in the
+// phase-enablement logic. Defaults to nil (no behavior change unless set).
+var DefaultEnabledChecks []string
+
 // defaultOffSteps lists step/check IDs that are disabled unless explicitly
 // present in Options.EnabledChecks. Every other ID defaults to enabled and
 // is only turned off via Options.DisabledChecks.
@@ -68,6 +77,16 @@ var defaultOffSteps = map[string]bool{
 // resolved disabled/enabled ID sets (see toIDSet). Steps not present in
 // defaultOffSteps run unless explicitly disabled; steps present in
 // defaultOffSteps only run when explicitly enabled.
+// resolveEnabledChecks returns the effective enabled-check ID list: the
+// caller-supplied Options.EnabledChecks when non-empty, otherwise the
+// DefaultEnabledChecks enablement seam (nil by default).
+func resolveEnabledChecks(enabled []string) []string {
+	if len(enabled) == 0 {
+		return DefaultEnabledChecks
+	}
+	return enabled
+}
+
 func stepEnabled(id string, disabled, enabled map[string]bool) bool {
 	if defaultOffSteps[id] {
 		return enabled[id]
@@ -81,7 +100,7 @@ func stepEnabled(id string, disabled, enabled map[string]bool) bool {
 // below), populating sections and per-step timing.
 func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector, earlySelectors []exempt.Selector) {
 	disabled := toIDSet(opts.DisabledChecks)
-	enabled := toIDSet(opts.EnabledChecks)
+	enabled := toIDSet(resolveEnabledChecks(opts.EnabledChecks))
 
 	// lintStepResult is what each linter/static-check closure returns: a
 	// failure report (empty when it passed/was skipped) plus enough to
@@ -453,7 +472,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	apps := uniqueApps(overlays)
 
 	disabled := toIDSet(opts.DisabledChecks)
-	enabled := toIDSet(opts.EnabledChecks)
+	enabled := toIDSet(resolveEnabledChecks(opts.EnabledChecks))
 
 	hookSource := resolveHookSource(opts)
 	hookCfgs := resolveAppHookConfigs(apps, hookSource)
