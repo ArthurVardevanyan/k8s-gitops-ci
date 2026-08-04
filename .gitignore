@@ -6,7 +6,7 @@ coverage.out
 vendor/
 .idea/
 .DS_Store
-pkg/lint/kubeconform/schemas/schemas.tar.gz
-pkg/lint/kyverno/policies/policies.tar.gz
+schemas.tar.gz
+policies.tar.gz
 .task
 .tool

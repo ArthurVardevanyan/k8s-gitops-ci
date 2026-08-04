@@ -159,6 +159,15 @@ default for `Options.EnabledChecks`, used whenever a given run's own
 The contract is always **"empty/nil is a true no-op"** — never assume a
 default value that changes behavior when unset.
 
+A closely related variant swaps out a whole function rather than a data
+value: `kubeconform.ExtractSchemas` and `kyverno.PreparePolicies` are
+themselves plain package vars (defaulting to the `embedschemas`
+build-tag-gated archive extraction - see
+[`docs/SCHEMAS.md`](SCHEMAS.md)), so an org/consumer layer can replace
+either with a function pulling schemas/policies from an entirely
+different source (e.g. an OCI artifact fetched at process startup)
+without needing that build tag at all.
+
 ### The "core data + org-injectable override" pattern
 
 Worked example: `pkg/validator/namespace/resource_scope.go` (generated

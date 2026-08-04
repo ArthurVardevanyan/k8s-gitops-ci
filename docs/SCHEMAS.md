@@ -2,7 +2,7 @@
 
 `pkg/lint/kubeconform` and `pkg/lint/kyverno` both need external data
 (JSON schemas, Kyverno policy manifests) that's too large and too
-slow-changing to fetch at runtime on every invocation. Both packages
+slow-changing to fetch at runtime on every invocation. Both packages can
 embed that data into the compiled binary via `//go:embed`, populated by a
 `scripts/pull-*.sh` helper. This doc explains that mechanism and,
 specifically, how an org supplies schemas/policies for its own
@@ -15,14 +15,34 @@ scripts/pull-schemas.sh    ──writes──> pkg/lint/kubeconform/schemas/sche
 scripts/pull-policies.sh   ──writes──> pkg/lint/kyverno/policies/policies.tar.gz
 ```
 
-Both archives are committed to the repo and embedded via `//go:embed` in
-their package's `embed.go`. **This is a compile-time mechanism.** There
-is no runtime schema/policy-loading seam, no directory the binary scans
-at startup, and no plan to add one — this is intentional, and consistent
-with the other compile-time-only injection pattern in this repo (see
-`docs/DEVELOPMENT.md`'s "core data + org-injectable override" section):
-if you need different embedded data, you regenerate the archive and
-rebuild the binary.
+Both archives are gitignored, generated, build-time artifacts (`task
+update:schemas`/`update:policies` regenerate them, and `task build`/
+`task test`/`task lint` depend on those tasks so they're always present
+before anything that needs them runs) and embedded via `//go:embed`, but
+**only when built with the `embedschemas` build tag**
+(`go build -tags embedschemas`, which is what `task build`/`task test`
+always pass for this repo's own binary). Without the tag - the default,
+and how downstream Go module consumers import these packages - no
+archive is compiled in at all, keeping the package importable as a
+library without needing the (large, gitignored) archive to be present.
+`Extract()`/`EnsureArchive()` return `ErrNoEmbeddedArchive` in that case,
+and callers (`kubeconform.ExtractSchemas`, `kyverno.PreparePolicies`,
+`pkg/pipeline`'s Setup phase, `pkg/validator/phases.go`) fall back
+gracefully rather than failing the run - kubeconform/Kyverno then rely on
+an explicitly-supplied `Options.SchemaDir`/`Options.PolicyPath` instead.
+
+`kubeconform.ExtractSchemas` and `kyverno.PreparePolicies` are themselves
+plain overridable package vars (the same exported-override-var pattern
+`docs/DEVELOPMENT.md` documents elsewhere), defaulting to the
+archive-extracting implementation above. An org/consumer layer that wants
+a different schema/policy source entirely (e.g. pulled from an OCI
+artifact at process startup instead of `//go:embed`) can replace either
+var with its own function from its own `main()`/`Configure()` equivalent,
+without needing the `embedschemas` build tag at all -
+`kyverno.PreparePoliciesFrom(dir)` exposes the standard render/strip
+behavior against an already-extracted directory for exactly this case,
+so a custom source only has to provide the raw directory, not
+reimplement policy rendering.
 
 ## Kubeconform schemas
 
@@ -48,11 +68,11 @@ schema catalog, the supported path is: maintain your own fork/mirror of
 the schema repository that includes **both** the public upstream set
 _and_ your org's CRD schemas (in the same directory layout
 `kubeconform`/this repo's `SchemaLocations()` expects), point
-`SCHEMA_REPO` at it, and rebuild. There is intentionally no separate
-"extra schema directory" runtime seam for this — it would duplicate the
-one mechanism that already exists (swap the source, regenerate the
-archive, recompile) for no real benefit, and would introduce a second,
-inconsistent way to inject the same kind of data.
+`SCHEMA_REPO` at it, and rebuild with `-tags embedschemas`. Prefer this
+over overriding `kubeconform.ExtractSchemas` for this specific case: it
+keeps the public and org-specific schema sets as one archive behind one
+`SchemaLocations()` lookup, rather than needing a second directory /
+override function kept in sync alongside it.
 
 ## Kyverno policies
 

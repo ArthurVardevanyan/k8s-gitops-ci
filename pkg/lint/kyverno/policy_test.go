@@ -247,6 +247,67 @@ func TestPreparePoliciesFrom_HardFailsWhenNoBasePoliciesExistEither(t *testing.T
 	}
 }
 
+// TestPreparePoliciesFrom_ExportedWrapperDelegatesToInternalHelper guards
+// that the exported PreparePoliciesFrom (the entry point for an org layer
+// supplying its own policy archive source via the overridable
+// PreparePolicies seam - see docs/SCHEMAS.md) actually calls through to
+// preparePoliciesFrom's render/strip behavior, rather than the two ever
+// silently drifting apart.
+func TestPreparePoliciesFrom_ExportedWrapperDelegatesToInternalHelper(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "kyverno-policies", "base")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately omit base/kustomization.yaml so `kustomize build` fails
+	// and preparePoliciesFrom falls back to the base policies directory -
+	// exercising the exact same code path TestPreparePoliciesFrom_
+	// FallsBackToBasePoliciesWhenKustomizeBuildFails guards for the
+	// unexported helper.
+	policy := "apiVersion: kyverno.io/v1\nkind: ClusterPolicy\nmetadata:\n  name: base-policy\nspec:\n  rules: []\n"
+	if err := os.WriteFile(filepath.Join(base, "policy.yaml"), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	policyPath, err := PreparePoliciesFrom(dir)
+	if err != nil {
+		t.Fatalf("PreparePoliciesFrom: %v", err)
+	}
+	if policyPath != base {
+		t.Errorf("policyPath = %q, want the base dir %q", policyPath, base)
+	}
+}
+
+// TestPreparePolicies_IsOverridable guards the exported-override-var seam
+// (see docs/SCHEMAS.md/docs/DEVELOPMENT.md): an org/consumer layer must be
+// able to replace PreparePolicies wholesale with its own function - e.g. one
+// backed by an OCI-pulled archive instead of the embedded/embedschemas-gated
+// one - and have every caller (pipeline Setup, kyverno_wiring.go) pick it up
+// automatically since they all call the var, never defaultPreparePolicies
+// directly.
+func TestPreparePolicies_IsOverridable(t *testing.T) {
+	orig := PreparePolicies
+	defer func() { PreparePolicies = orig }()
+
+	called := false
+	PreparePolicies = func() (string, func(), error) {
+		called = true
+		return "/custom/policy/path", func() {}, nil
+	}
+
+	path, cleanup, err := PreparePolicies()
+	defer cleanup()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("expected the overridden PreparePolicies to be invoked")
+	}
+	if path != "/custom/policy/path" {
+		t.Errorf("path = %q, want the overridden path", path)
+	}
+}
+
 func TestCollectPolicies_MissingDir(t *testing.T) {
 	if _, err := collectPolicies(filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
 		t.Error("expected an error for a missing directory")
