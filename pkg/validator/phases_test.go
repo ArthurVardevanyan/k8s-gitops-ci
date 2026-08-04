@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 )
 
@@ -448,5 +449,55 @@ func TestRunLintAndStaticChecks_LogsDurationSuffix(t *testing.T) {
 	durationSuffixRe := regexp.MustCompile(`config-sort check: passed \([0-9µm.a-zµ]*s\)`)
 	if !durationSuffixRe.MatchString(got) {
 		t.Errorf("expected a '(<duration>)' suffix on the config-sort check line, got:\n%s", got)
+	}
+}
+
+func TestExcludeScaffoldArtifacts(t *testing.T) {
+	in := []string{
+		"myapp/overlays/dev/kustomization.yaml",
+		".scafctl/configs/myapp.yaml",
+		".scafctl/templates/myapp/overlays/kustomization.yaml",
+		"other/deployment.yaml",
+	}
+	got := excludeScaffoldArtifacts(in)
+	want := []string{
+		"myapp/overlays/dev/kustomization.yaml",
+		"other/deployment.yaml",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("excludeScaffoldArtifacts = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("index %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestFilterYAML_ExcludesScaffoldTemplates(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "app", "overlays", "dev", "kustomization.yaml")
+	tpl := filepath.Join(dir, ".scafctl", "templates", "app", "overlays", "k.yaml")
+	cfg := filepath.Join(dir, ".scafctl", "configs", "app.yaml")
+	for _, p := range []string{manifest, tpl, cfg} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("resources: []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := filterYAML([]string{manifest, tpl, cfg})
+	// Templates are excluded; configs are valid YAML so filterYAML keeps
+	// them (manifest validators exclude configs separately via
+	// excludeScaffoldArtifacts).
+	for _, f := range got {
+		if convention.IsScaffoldTemplate(f) {
+			t.Errorf("filterYAML must exclude scaffold templates, got %q", f)
+		}
+	}
+	if len(got) != 2 {
+		t.Errorf("expected manifest + config (2), got %v", got)
 	}
 }

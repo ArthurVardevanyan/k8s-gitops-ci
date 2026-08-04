@@ -13,6 +13,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/config"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/csv"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/kustomize"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/largefile"
@@ -150,7 +151,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	yamlSyntaxStart := time.Now()
 	log.Header("YAML Syntax")
 	log.Info("checking %d YAML file(s) for syntax errors...", len(filterYAML(changed)))
-	if yvs, _ := yamlsyntax.CheckFiles(changed); len(yvs) > 0 {
+	if yvs, _ := yamlsyntax.CheckFiles(filterYAML(changed)); len(yvs) > 0 {
 		var sb strings.Builder
 		for _, v := range yvs {
 			fmt.Fprintf(&sb, "%s: %s\n", v.File, v.Message)
@@ -342,6 +343,11 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 
 	runLintStep("kubeconform", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 		yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
+		// Scaffold configs/templates are the scaffolding CLI's own input
+		// files, not Kubernetes manifests (no apiVersion/kind), so exclude
+		// them from schema validation - otherwise every changed
+		// <ScaffoldDir>/configs/*.yaml trips a "missing 'kind' key" error.
+		yamlFiles = excludeScaffoldArtifacts(yamlFiles)
 		yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
 		kcOpts := kubeconform.DefaultOptions()
 		if opts.SchemaDir != "" {
@@ -676,7 +682,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// resources are deliberately non-compliant CLI test data, not real
 	// workloads) - this doesn't affect kubeconform/Kyverno validation,
 	// which run over `changed`/rendered overlays through their own paths.
-	yamlFiles := filterKyvernoTestFixtureDirs(filterYAML(changed))
+	yamlFiles := filterKyvernoTestFixtureDirs(excludeScaffoldArtifacts(filterYAML(changed)))
 	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
 	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
 	// Drop psa-labels findings whose missing labels are commented out
@@ -747,14 +753,35 @@ func toIDSet(ids []string) map[string]bool {
 	return out
 }
 
+// excludeScaffoldArtifacts drops scaffold-tool config/template files (see
+// convention.IsScaffoldArtifact) from a file list - they are not Kubernetes
+// manifests, so manifest validators must not attempt to schema-check them.
+func excludeScaffoldArtifacts(files []string) []string {
+	var out []string
+	for _, f := range files {
+		if convention.IsScaffoldArtifact(f) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 func filterYAML(files []string) []string {
 	var out []string
 	for _, f := range files {
 		ext := strings.ToLower(filepath.Ext(f))
-		if ext == ".yaml" || ext == ".yml" {
-			if _, err := os.Stat(f); err == nil {
-				out = append(out, f)
-			}
+		if ext != ".yaml" && ext != ".yml" {
+			continue
+		}
+		// Scaffold templates are Go-templated source, frequently not valid
+		// standalone YAML (unresolved {{ ... }}); never syntax/manifest-check
+		// them as raw files.
+		if convention.IsScaffoldTemplate(f) {
+			continue
+		}
+		if _, err := os.Stat(f); err == nil {
+			out = append(out, f)
 		}
 	}
 	return out
