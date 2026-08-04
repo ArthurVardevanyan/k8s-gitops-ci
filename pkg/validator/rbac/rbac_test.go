@@ -69,6 +69,55 @@ rules:
 	}
 }
 
+func TestValidateWildcards_CarriesResourceAnnotations(t *testing.T) {
+	data := `kind: ClusterRole
+metadata:
+  name: admin
+  annotations:
+    gitops-ci.k8s.io/exempt-rbac-wildcards: "resources"
+    other: "value"
+rules:
+- verbs: ["get"]
+  resources: ["*"]
+`
+	errs := ValidateWildcardsReader(strings.NewReader(data), "cr.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %v", len(errs), errs)
+	}
+	want := map[string]string{
+		"gitops-ci.k8s.io/exempt-rbac-wildcards": "resources",
+		"other":                                  "value",
+	}
+	if len(errs[0].Annotations) != len(want) {
+		t.Fatalf("Annotations = %v, want %v", errs[0].Annotations, want)
+	}
+	for k, v := range want {
+		if errs[0].Annotations[k] != v {
+			t.Errorf("Annotations[%q] = %q, want %q", k, errs[0].Annotations[k], v)
+		}
+	}
+}
+
+func TestValidateWildcards_NoAnnotationsIsEmptyNotNil(t *testing.T) {
+	data := `kind: ClusterRole
+metadata:
+  name: admin
+rules:
+- verbs: ["get"]
+  resources: ["*"]
+`
+	errs := ValidateWildcardsReader(strings.NewReader(data), "cr.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Annotations == nil {
+		t.Error("Annotations should be an empty map, not nil, when the resource has none")
+	}
+	if len(errs[0].Annotations) != 0 {
+		t.Errorf("Annotations = %v, want empty", errs[0].Annotations)
+	}
+}
+
 func TestFormatWildcardComment(t *testing.T) {
 	s := FormatWildcardComment([]WildcardError{{Kind: "ClusterRole", Resource: "admin", RuleIndex: 0, Field: "verbs"}})
 	if !strings.Contains(s, WildcardMarker) {

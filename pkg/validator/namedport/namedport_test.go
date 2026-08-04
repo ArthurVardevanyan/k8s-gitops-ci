@@ -113,6 +113,30 @@ spec:
 	}
 }
 
+func TestValidateReader_ServiceTargetPort_CarriesValueAndAnnotations(t *testing.T) {
+	data := `kind: Service
+metadata:
+  name: svc
+  annotations:
+    gitops-ci.k8s.io/exempt-named-ports: "8080"
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+`
+	errs := ValidateReader(strings.NewReader(data), "x.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error: %v", errs)
+	}
+	if errs[0].Value != "8080" {
+		t.Errorf("Value = %q, want %q", errs[0].Value, "8080")
+	}
+	if errs[0].Annotations["gitops-ci.k8s.io/exempt-named-ports"] != "8080" {
+		t.Errorf("Annotations not carried through: %v", errs[0].Annotations)
+	}
+}
+
 func TestValidateReader_IngressNumericPort(t *testing.T) {
 	data := `kind: Ingress
 metadata:

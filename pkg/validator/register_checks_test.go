@@ -192,3 +192,113 @@ func TestPsaCheck_CarriesMissingLabelsInExtra(t *testing.T) {
 		t.Errorf("expected the enforce label in Extra, got: %s", extra)
 	}
 }
+
+// The following three tests are regressions for a gap where rbac-wildcards,
+// named-ports, and podspec-defaults never populated check.Finding.Value/
+// Annotations, so a gitops-ci.k8s.io/exempt-<check-id> annotation on the
+// resource itself silently never matched anything (exempt.Accepts fails
+// closed whenever value == "") - only an EXEMPTIONS=(...) test.sh selector
+// could exempt these three checks. See docs/EXCEPTIONS.md's "Adding
+// exemption support to a new check".
+
+func TestRbacWildcardCheck_AnnotationExemptionEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	data := `kind: ClusterRole
+metadata:
+  name: admin
+  annotations:
+    gitops-ci.k8s.io/exempt-rbac-wildcards: "resources"
+rules:
+  - apiGroups: [""]
+    resources: ["*"]
+    verbs: ["get"]
+`
+	f := filepath.Join(dir, "clusterrole.yaml")
+	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, 1, nil)
+	for _, finding := range res.Findings {
+		if finding.CheckID == "rbac-wildcards" {
+			t.Errorf("expected the rbac-wildcards finding to be excluded by its own annotation, got %+v", finding)
+		}
+	}
+	found := false
+	for _, ex := range res.Exempted {
+		if ex.CheckID == "rbac-wildcards" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an audit-trail entry for the exempted rbac-wildcards finding, got %+v", res.Exempted)
+	}
+}
+
+func TestNamedportCheck_AnnotationExemptionEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	data := `kind: Service
+metadata:
+  name: svc
+  annotations:
+    gitops-ci.k8s.io/exempt-named-ports: "8080"
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+`
+	f := filepath.Join(dir, "service.yaml")
+	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, 1, nil)
+	for _, finding := range res.Findings {
+		if finding.CheckID == "named-ports" {
+			t.Errorf("expected the named-ports finding to be excluded by its own annotation, got %+v", finding)
+		}
+	}
+	found := false
+	for _, ex := range res.Exempted {
+		if ex.CheckID == "named-ports" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an audit-trail entry for the exempted named-ports finding, got %+v", res.Exempted)
+	}
+}
+
+func TestPodspecCheck_AnnotationExemptionEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	data := `kind: Deployment
+metadata:
+  name: bad
+  annotations:
+    gitops-ci.k8s.io/exempt-podspec-defaults: "enableServiceLinks, restartPolicy, schedulerName, dnsPolicy, automountServiceAccountToken"
+spec:
+  template:
+    spec:
+      containers:
+        - name: c
+          image: x
+`
+	f := filepath.Join(dir, "deployment.yaml")
+	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, 1, nil)
+	for _, finding := range res.Findings {
+		if finding.CheckID == "podspec-defaults" && finding.Container == "" {
+			t.Errorf("expected the pod-level podspec-defaults finding to be excluded by its own annotation, got %+v", finding)
+		}
+	}
+	found := false
+	for _, ex := range res.Exempted {
+		if ex.CheckID == "podspec-defaults" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an audit-trail entry for the exempted podspec-defaults finding, got %+v", res.Exempted)
+	}
+}
