@@ -107,7 +107,9 @@ func TestRunAll_KyvernoSectionPresentWhenEnabled(t *testing.T) {
 	// section presence), and this minimal fixture isn't in kustomize's
 	// real canonical form, which would otherwise always flag a spurious
 	// Kustomize Fix finding and fail the HasFailures() assertion below.
-	res, err := RunAll(Options{Dirs: []string{d}, EnabledChecks: []string{"kyverno"}, DisabledChecks: []string{"kustomize-fix"}})
+	// shellcheck is disabled for the same reason: it now hard-fails when
+	// the CLI isn't installed, and this dev/CI image doesn't have it.
+	res, err := RunAll(Options{Dirs: []string{d}, EnabledChecks: []string{"kyverno"}, DisabledChecks: []string{"kustomize-fix", "shellcheck"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}

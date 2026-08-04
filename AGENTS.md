@@ -83,9 +83,19 @@ Run `task --list` for the full, authoritative list — see
 - **`testdata/`** for fixtures, with `testdata/invalid/` for
   deliberately-malformed inputs, where a package has them — not every
   existing package does yet, but new/rewritten validators should.
-- **Every `pkg/lint/*` CLI wrapper degrades gracefully** when its
-  underlying tool isn't installed (a typed `ErrCLINotFound`, never a
-  panic) — match this when adding a new wrapper.
+- **Every `pkg/lint/*` CLI wrapper returns a typed `ErrCLINotFound`**
+  (never a panic) when its underlying tool isn't installed — match this
+  when adding a new wrapper. What a _caller_ does with that error varies
+  by call site: `cmd/k8s-gitops-ci`'s standalone lint subcommands still
+  no-op on it, but the Linting phase (`pkg/validator/phases.go`) treats a
+  missing markdownlint/prettier/shellcheck/golangci-lint/kustomize CLI as
+  a hard failure, not a graceful skip — a missing lint tool means the
+  pipeline didn't actually check what it claims to have checked, and
+  should never be indistinguishable from a clean run. Each of those is
+  individually gated behind its own step ID
+  (`Options.DisabledChecks`/`EnabledChecks`) so an environment that
+  genuinely can't provision a given tool can opt out explicitly instead
+  of always failing.
 - **Generic check-enablement, not one-off flags:** if you need a new
   gateable step, give it a string ID and use the existing
   `Options.DisabledChecks`/`EnabledChecks` + `stepEnabled` mechanism

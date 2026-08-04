@@ -25,9 +25,16 @@ pointing to every other doc (`CI.md`, `HOOKS.md`, `EXCEPTIONS.md`,
   through `task`, not raw `go` commands (see [Building](#building) for why)
 
 Optional, used by individual `pkg/lint/*` wrappers when present on `PATH`.
-Every wrapper degrades gracefully (skips or reports a clear "CLI not
-found" error, never panics) when its tool is missing, so none of these are
-required just to build or run the unit test suite:
+Every wrapper itself returns a typed "CLI not found" error rather than
+panicking when its tool is missing, so none of these are required just to
+build or run the unit test suite (missing-CLI tests either skip
+themselves or assert that typed error directly) — but note that's a
+different question from what a _caller_ of that wrapper does with the
+error: the Linting phase (`pkg/validator/phases.go`) treats a missing
+`markdownlint`/`prettier`/`shellcheck`/`golangci-lint` as a **hard
+failure** in an actual pipeline run, not a graceful skip (see
+[`CI.md`](CI.md#kustomize-fix)) — these tools just aren't required to
+build or exercise this repo's own test suite:
 
 - `kustomize` — real `kustomize edit fix --vars` wrapping (`pkg/kustomize`)
 - `kubeconform` — schema validation (`pkg/lint/kubeconform`) — the schema
@@ -184,11 +191,13 @@ one shared enable/disable mechanism instead of a dedicated boolean flag
 per step:
 
 - `Options.DisabledChecks []string` — turn off a step that defaults to
-  **enabled** (most steps: `sync-options`, `golangci`, `avp`,
-  `kustomize-fix`, ...). `kustomize-fix` is the one step where
+  **enabled** (most steps: `sync-options`, `markdownlint`, `prettier`,
+  `shellcheck`, `golangci`, `avp`, `kustomize-fix`, ...). For
+  `markdownlint`/`prettier`/`shellcheck`/`golangci`/`kustomize-fix`,
   `DisabledChecks` doesn't mean "org-specific opt-out" so much as "no
-  `kustomize` binary available" - see [`CI.md`](CI.md#kustomize-fix) for
-  why a missing binary is a hard failure rather than a graceful skip.
+  `<tool>` binary available" - see [`CI.md`](CI.md#kustomize-fix) for why
+  a missing CLI is a hard failure rather than a graceful skip for these
+  five steps.
 - `Options.EnabledChecks []string` — turn on a step that defaults to
   **disabled**: `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md) for why) and
   `scaffold-readme` (see [`CI.md`](CI.md#scaffold-validation) for why).
