@@ -101,7 +101,7 @@ var checkTableSpecs = map[string]check.TableSpec{
 	},
 	"placeholder": {
 		Title:    "Unresolved Placeholders",
-		Preamble: "Files containing angle-bracket, sentinel or AVP-scheme placeholder tokens.",
+		Preamble: "Files containing angle-bracket or sentinel placeholder tokens (e.g. <UPPER>, <a-b-c>, CHANGEME). AVP-scheme references (<path:...>, <vault:...>) are resolved at deploy time and are not flagged.",
 		Columns: []check.Column{
 			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Placeholder", Cell: func(f check.Finding) string { return f.Value }},

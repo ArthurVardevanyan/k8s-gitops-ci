@@ -289,11 +289,19 @@ func (placeholderCheck) Section() string    { return "resource-compliance" }
 func (placeholderCheck) Blocking() bool     { return true }
 func (placeholderCheck) Scope() check.Scope { return check.ScopeDoc }
 func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
-	// CheckAVP: true - AVP-scheme placeholder tokens (<path:...#...>,
-	// argocd-vault-plugin's substitution syntax) are a real, documented
-	// placeholder form this check's own table advertises scanning for;
-	// leaving this false (as before) silently never scanned them.
-	errs := placeholder.ValidateReaderWithOptions(bytes.NewReader(data), source, placeholder.Options{CheckAVP: true})
+	// CheckAVP: false - this check runs over the RAW changed source files
+	// (see phases.go: yamlFiles = filterYAML(changed)), NOT the AVP-rendered
+	// output. In an argocd-vault-plugin repo, AVP-scheme references
+	// (<path:...#...>, <vault:...>, etc.) are the intended, committed state:
+	// they are resolved by AVP at deploy time (and by this pipeline's own
+	// overlay build via `argocd-vault-plugin generate`), not by the author.
+	// Flagging them here would make every AVP-managed secret a blocking
+	// "unresolved placeholder" false positive. Only genuine unresolved
+	// template placeholders (angle-bracket UPPER/<a-b-c> tokens and CHANGEME
+	// sentinels) are flagged. The AVP-scanning capability remains available
+	// via placeholder.Options.CheckAVP for callers that validate already-
+	// rendered output (where a surviving <path:...> IS a real failure).
+	errs := placeholder.ValidateReaderWithOptions(bytes.NewReader(data), source, placeholder.Options{CheckAVP: false})
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
 		out = append(out, check.Finding{

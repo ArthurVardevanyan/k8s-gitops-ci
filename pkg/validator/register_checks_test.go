@@ -72,15 +72,27 @@ func TestClusterIdentityAdapter_ProjectRefFindingIsExemptableEndToEnd(t *testing
 	}
 }
 
-// TestPlaceholderCheck_ScansAVPPlaceholders is a regression test: the
-// placeholder check used to pass placeholder.Options{} (CheckAVP defaults
-// false), so argocd-vault-plugin-scheme placeholders were never actually
-// scanned despite the check's own table description advertising it.
-func TestPlaceholderCheck_ScansAVPPlaceholders(t *testing.T) {
+// TestPlaceholderCheck_DoesNotFlagAVPReferences guards that the placeholder
+// check does NOT flag argocd-vault-plugin-scheme references (<path:...>,
+// <vault:...>, etc.). The check runs over RAW changed source, where AVP
+// references are the intended committed state (resolved by AVP at deploy
+// time / by the overlay build), not unresolved template placeholders.
+// Flagging them made every AVP-managed secret a blocking false positive.
+func TestPlaceholderCheck_DoesNotFlagAVPReferences(t *testing.T) {
 	data := []byte("apiVersion: v1\nkind: Secret\nmetadata:\n  name: x\nstringData:\n  password: <path:secret/data/foo#password>\n")
 	findings := (placeholderCheck{}).CheckDoc(data, "secret.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 AVP placeholder finding, got %d: %+v", len(findings), findings)
+	if len(findings) != 0 {
+		t.Fatalf("expected AVP references to NOT be flagged, got %d: %+v", len(findings), findings)
+	}
+}
+
+// TestPlaceholderCheck_FlagsGenuinePlaceholders guards that real unresolved
+// template placeholders (sentinels, angle-bracket tokens) ARE still flagged.
+func TestPlaceholderCheck_FlagsGenuinePlaceholders(t *testing.T) {
+	data := []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\ndata:\n  a: CHANGEME\n  b: <NAMESPACE>\n")
+	findings := (placeholderCheck{}).CheckDoc(data, "cm.yaml")
+	if len(findings) != 2 {
+		t.Fatalf("expected 2 genuine placeholder findings (CHANGEME, <NAMESPACE>), got %d: %+v", len(findings), findings)
 	}
 }
 
