@@ -4,12 +4,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
 
 // ErrCLINotFound returned when markdownlint is not available.
 var ErrCLINotFound = errors.New("markdownlint not found in PATH")
+
+// FilterMarkdown filters a file list to only .md files that exist on disk,
+// skipping GitHub issue/PR templates (which intentionally violate heading
+// rules). Ported from the reference core implementation.
+func FilterMarkdown(files []string) []string {
+	var result []string
+	for _, f := range files {
+		if strings.HasSuffix(f, ".md") {
+			base := strings.ToLower(f)
+			if strings.HasSuffix(base, "issue_template.md") || strings.HasSuffix(base, "pull_request_template.md") {
+				continue
+			}
+			if strings.Contains(base, ".github/issue_template/") {
+				continue
+			}
+			if _, err := os.Stat(f); err == nil {
+				result = append(result, f)
+			}
+		}
+	}
+	return result
+}
 
 // Filter returns markdown files.
 func Filter(files []string) []string {
