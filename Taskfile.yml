@@ -216,7 +216,7 @@ tasks:
     desc: Run golangci-lint
     aliases: [l]
     silent: true
-    deps: [install-tools]
+    deps: [install-tools, update:schemas, update:policies]
     sources:
       - "./**/*.go"
       - .golangci.yml
@@ -243,7 +243,7 @@ tasks:
   vulncheck:
     desc: Check for known vulnerabilities (only fails on fixable findings)
     silent: true
-    deps: [install-tools]
+    deps: [install-tools, update:schemas, update:policies]
     cmds:
       - |
         export PATH="{{.TOOLS_PATH}}:$PATH"
@@ -315,6 +315,7 @@ tasks:
   test:cover:
     desc: Run tests with coverage profile + race detector
     silent: true
+    deps: [update:schemas, update:policies]
     env:
       GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
       GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
@@ -369,25 +370,28 @@ tasks:
         echo "🚀 Starting CI Pipeline"
         echo "=========================================="
         echo ""
-        echo "▶ Step 1/6  Module Dependencies Check"
+        echo "▶ Step 1/7  Module Dependencies Check"
       - task: mod:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/6  Module Dependencies Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 2/6  Code Formatting Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/7  Module Dependencies Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 2/7  Code Formatting Check"
       - task: format:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/6  Code Formatting Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 3/6  Schemas & Policies"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/7  Code Formatting Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 3/7  Schemas & Policies"
       - task: update:schemas
       - task: update:policies
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/6  Schemas & Policies" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 4/6  Linting"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/7  Schemas & Policies" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 4/7  Linting"
       - task: lint
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/6  Linting" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 5/6  Tests (coverage + race)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/7  Linting" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 5/7  Vulnerability Check"
+      - task: vulncheck
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/7  Vulnerability Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 6/7  Tests (coverage + race)"
       - task: test:cover
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/6  Tests (coverage + race)" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 6/6  Build"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/7  Tests (coverage + race)" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 7/7  Build"
       - task: build
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/6  Build" >> "{{.TIMEFILE}}"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/7  Build" >> "{{.TIMEFILE}}"
       - |
         set -euo pipefail
         echo ""
