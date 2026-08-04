@@ -1,8 +1,11 @@
-// Package scaffold wraps the scafctl CLI (a config-scaffolding tool the
-// wider GitOps repo convention uses to generate overlay boilerplate from a
-// per-app template + config) to detect scaffold drift: overlays whose
-// committed content no longer matches what scafctl would generate from the
-// current template/config.
+// Package scaffold wraps a config-scaffolding CLI (scafctl by default, or
+// an org-provided equivalent such as a vendored cldctl) to detect scaffold
+// drift: overlays whose committed content no longer matches what the tool
+// would generate from the current template/config. Two drift-detection
+// strategies are supported (see DriftMode): DiffDirs (generate-to-tmp +
+// directory diff, the scafctl contract) and DryRunParse (parse the tool's
+// dry-run "would create" output), selectable because different scaffolding
+// CLIs expose fundamentally different invocation and output contracts.
 package scaffold
 
 import (
@@ -33,6 +36,42 @@ var (
 	Binary       = "scafctl"
 	ConfigSource = "repo-config"
 )
+
+// DriftDetectionMode selects how Run detects scaffold drift for one app.
+type DriftDetectionMode int
+
+const (
+	// DiffDirs (the generic default) generates every overlay into a temp
+	// directory (Binary scaffold --config <ConfigSource>=<path> --output
+	// <dir>) and compares each committed overlay against it. This is the
+	// scafctl contract.
+	DiffDirs DriftDetectionMode = iota
+	// DryRunParse runs the scaffold tool in dry-run mode and parses its
+	// "would create" output (see CreatedFileMarkers) to find overlays that
+	// would be regenerated - i.e. drifted. This is for tools (e.g. a
+	// vendored cldctl) whose dry-run output enumerates the files it would
+	// write, rather than supporting the --output-to-dir contract DiffDirs
+	// assumes. The per-run command is built by ScaffoldArgs.
+	DryRunParse
+)
+
+// DriftMode selects Run's drift-detection strategy. Defaults to DiffDirs
+// (the scafctl contract); an org layer whose scaffolding CLI behaves
+// differently (see DryRunParse) overrides it via a Configure()-style seam,
+// alongside ScaffoldArgs and CreatedFileMarkers.
+var DriftMode = DiffDirs
+
+// ScaffoldArgs builds the argument slice (after Binary) for a single
+// DryRunParse invocation. fullTest selects the "all overlays in one shot"
+// form (cluster is ""); otherwise it's a single-cluster run. Required when
+// DriftMode is DryRunParse; ignored under DiffDirs. Org-injected.
+var ScaffoldArgs func(app, cluster string, fullTest bool) []string
+
+// CreatedFileMarkers are the substrings a DryRunParse tool prints before a
+// path it would create; ExtractCreatedFiles treats the text after the
+// marker as the created-file path. Defaults to the generic "created "
+// prefix; an org layer sets its tool's own marker(s).
+var CreatedFileMarkers = []string{"created "}
 
 // HookKeyword names the test.sh hook function this package's build wiring
 // looks for (see pkg/hook) - not an org-configurable seam, so it stays const.
@@ -76,6 +115,11 @@ type RunOptions struct {
 	// treated as opted out of scaffold validation (IsChangeGroupDisabled).
 	// nil/empty disables this filter entirely (the generic default).
 	ChangeGroups map[string]int
+	// FullTest requests the "all overlays in one shot" form under the
+	// DryRunParse drift mode (see ScaffoldArgs' fullTest param) - set by the
+	// caller for template/change-group fan-out triggers where every overlay
+	// of the app is re-checked at once. Ignored under DiffDirs.
+	FullTest bool
 }
 
 // Summary aggregates one app's Run outcome across every overlay checked.
@@ -258,11 +302,24 @@ func Run(opts RunOptions) *Summary {
 		return summary
 	}
 
+	switch DriftMode {
+	case DryRunParse:
+		runDryRunParse(opts, toRun, summary)
+	default:
+		runDiffDirs(opts, configPath, toRun, summary)
+	}
+	return summary
+}
+
+// runDiffDirs is the generic (scafctl) drift-detection body: generate every
+// overlay in toRun into a temp directory in one shot, then compare each
+// committed overlay against the freshly-generated content, bounded-parallel.
+func runDiffDirs(opts RunOptions, configPath string, toRun []string, summary *Summary) {
 	tmp, err := os.MkdirTemp("", "scaffold-*")
 	if err != nil {
 		summary.Errors = append(summary.Errors, err.Error())
 		summary.Failed += len(toRun)
-		return summary
+		return
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 
@@ -271,7 +328,7 @@ func Run(opts RunOptions) *Summary {
 	if err := runScafctl(ctx, configPath, tmp); err != nil {
 		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", err))
 		summary.Failed += len(toRun)
-		return summary
+		return
 	}
 
 	workers := runtime.NumCPU() * 2
@@ -307,8 +364,152 @@ func Run(opts RunOptions) *Summary {
 	}
 	close(jobs)
 	wg.Wait()
+}
 
-	return summary
+// runDryRunParse is the dry-run/parse drift-detection body: it invokes the
+// scaffold tool in dry-run mode (args from ScaffoldArgs) and treats every
+// file the tool reports it would create (ExtractCreatedFiles, per
+// CreatedFileMarkers) as evidence its overlay drifted from the committed
+// content. It classifies each such overlay as a mismatch (the overlay
+// exists on disk, or was deleted by this PR) or a skip (a cluster not yet
+// rolled out). opts.FullTest selects the single "all overlays at once"
+// invocation (the tool enumerates drift across every cluster) vs. a
+// per-cluster invocation for each overlay in toRun (bounded-parallel).
+func runDryRunParse(opts RunOptions, toRun []string, summary *Summary) {
+	if ScaffoldArgs == nil {
+		summary.Errors = append(summary.Errors, "scaffold DryRunParse mode requires ScaffoldArgs to be set")
+		summary.Failed += len(toRun)
+		return
+	}
+
+	if opts.FullTest {
+		runDryRunFull(opts, toRun, summary)
+		return
+	}
+
+	workers := runtime.NumCPU() * 2
+	if workers > len(toRun) {
+		workers = len(toRun)
+	}
+	jobs := make(chan string, len(toRun))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for cluster := range jobs {
+				status, files, errMsg := dryRunOneCluster(opts.App, cluster, opts.ChangedFiles)
+				mu.Lock()
+				switch status {
+				case "passed":
+					summary.Passed++
+				case "skipped":
+					summary.Skipped++
+					summary.SkippedClusters = append(summary.SkippedClusters, cluster)
+				default: // "error"
+					summary.Failed++
+					summary.MismatchFiles = append(summary.MismatchFiles, files...)
+					if errMsg != "" {
+						summary.Errors = append(summary.Errors, errMsg)
+					}
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, cluster := range toRun {
+		jobs <- cluster
+	}
+	close(jobs)
+	wg.Wait()
+}
+
+// runDryRunFull runs a single "all overlays" dry-run for the whole app and
+// maps each would-create file back to its overlay, classifying it as a
+// mismatch (overlay exists / deleted by this PR) or a skip (new cluster not
+// yet rolled out). A tool execution failure fails every toRun overlay.
+func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	args := ScaffoldArgs(opts.App, "", true)
+	cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	output := stripANSI(string(out))
+	if err != nil {
+		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed for %s: %s", opts.App, output))
+		summary.Failed += len(toRun)
+		return
+	}
+
+	created := ExtractCreatedFiles(output)
+	if len(created) == 0 {
+		summary.Passed += len(toRun)
+		return
+	}
+
+	var mismatches []string
+	skipped := map[string]bool{}
+	for _, f := range created {
+		cluster := ExtractOverlayDir(f)
+		switch {
+		case cluster == "":
+			mismatches = append(mismatches, f)
+		case overlayExists(opts.App, cluster), IsInChangedFiles(cluster, opts.ChangedFiles):
+			mismatches = append(mismatches, f)
+		default:
+			if !skipped[cluster] {
+				skipped[cluster] = true
+				summary.Skipped++
+				summary.SkippedClusters = append(summary.SkippedClusters, cluster)
+			}
+		}
+	}
+
+	if len(mismatches) > 0 {
+		summary.Failed += len(mismatches)
+		summary.MismatchFiles = append(summary.MismatchFiles, mismatches...)
+		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffolding created new files for %s", opts.App))
+	} else {
+		summary.Passed += len(toRun)
+	}
+}
+
+// dryRunOneCluster runs a single-cluster dry-run and classifies the result.
+// Returns ("passed"|"skipped"|"error", mismatchFiles, errMsg).
+func dryRunOneCluster(app, cluster string, changedFiles []string) (status string, mismatchFiles []string, errMsg string) {
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+	args := ScaffoldArgs(app, cluster, false)
+	cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	output := stripANSI(string(out))
+
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "error", nil, fmt.Sprintf("scaffold timed out for %s (%s)", cluster, runTimeout)
+		}
+		// If the overlay was deleted by this PR, a scaffold failure for it
+		// is the expected outcome of that removal, not real drift.
+		if !overlayExists(app, cluster) {
+			return "passed", nil, ""
+		}
+		return "error", nil, fmt.Sprintf("scaffold command failed for %s: %s", cluster, output)
+	}
+
+	created := ExtractCreatedFiles(output)
+	if len(created) == 0 {
+		return "passed", nil, ""
+	}
+
+	// A new cluster not yet rolled out (no on-disk overlay, not touched by
+	// this PR) is a skip, not drift.
+	if !overlayExists(app, cluster) && !IsInChangedFiles(cluster, changedFiles) {
+		return "skipped", nil, ""
+	}
+	return "error", created, fmt.Sprintf("scaffolding created new files for %s", cluster)
 }
 
 func diffDirs(generated, committed string) (string, error) {
@@ -327,16 +528,25 @@ var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
 
 func stripANSI(s string) string { return ansiRe.ReplaceAllString(s, "") }
 
-// ExtractCreatedFiles parses scafctl output for "created <path>" lines - for
-// callers whose scafctl build supports a dry-run/text-report mode instead
-// of (or in addition to) Run's directory-diff approach.
+// ExtractCreatedFiles parses a scaffold tool's dry-run output for the paths
+// it would create, one per line: a line is a match when it contains any of
+// CreatedFileMarkers, and the created-file path is the (trimmed) text after
+// that marker. The default marker ("created ") matches the generic scafctl
+// text-report form; org layers with a differently-worded dry-run output
+// (e.g. cldctl's "Created File:") set CreatedFileMarkers accordingly. Used
+// by Run's DryRunParse mode.
 func ExtractCreatedFiles(output string) []string {
 	var out []string
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "created ") {
-			out = append(out, strings.TrimSpace(strings.TrimPrefix(line, "created")))
+		for _, marker := range CreatedFileMarkers {
+			if idx := strings.Index(line, marker); idx >= 0 {
+				if p := strings.TrimSpace(line[idx+len(marker):]); p != "" {
+					out = append(out, p)
+				}
+				break
+			}
 		}
 	}
 	return out

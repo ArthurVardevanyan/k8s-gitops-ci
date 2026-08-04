@@ -140,7 +140,7 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 			continue
 		}
 		if overlays := scaffold.FindOverlays(app); len(overlays) > 0 {
-			jobs1 = append(jobs1, scaffoldJob{app: app, trigger: "fan-out", overlays: overlays})
+			jobs1 = append(jobs1, scaffoldJob{app: app, trigger: "fan-out", overlays: overlays, fullTest: true})
 		}
 	}
 	runScaffoldApps(jobs1, changed, changeGroups, workers, record)
@@ -158,7 +158,7 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 			overlays = scaffold.FindOverlays(aff.App)
 		}
 		if len(overlays) > 0 {
-			jobs2 = append(jobs2, scaffoldJob{app: aff.App, trigger: trigger, overlays: overlays})
+			jobs2 = append(jobs2, scaffoldJob{app: aff.App, trigger: trigger, overlays: overlays, fullTest: aff.FullTest})
 		}
 	}
 	runScaffoldApps(jobs2, changed, changeGroups, workers, record)
@@ -178,7 +178,7 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 			overlays = scaffold.FindOverlays(app)
 		}
 		if len(overlays) > 0 {
-			jobs3 = append(jobs3, scaffoldJob{app: app, trigger: trigger, overlays: overlays})
+			jobs3 = append(jobs3, scaffoldJob{app: app, trigger: trigger, overlays: overlays, fullTest: isFullTest})
 		}
 	}
 	runScaffoldApps(jobs3, changed, changeGroups, workers, record)
@@ -192,6 +192,7 @@ type scaffoldJob struct {
 	app      string
 	trigger  string
 	overlays []string
+	fullTest bool
 }
 
 // runScaffoldApps runs scaffold.Run for each job bounded-parallel (up to
@@ -221,6 +222,7 @@ func runScaffoldApps(jobs []scaffoldJob, changed []string, changeGroups map[stri
 					Overlays:     j.overlays,
 					ChangedFiles: changed,
 					ChangeGroups: changeGroups,
+					FullTest:     j.fullTest,
 				})
 				record(j.app, summary)
 			}
@@ -372,6 +374,7 @@ func computeBaselineMismatches(opts Options, app string, log *logger.Logger) map
 		App:      app,
 		Trigger:  "baseline",
 		Overlays: scaffold.FindOverlays(app),
+		FullTest: true,
 	})
 	for _, ov := range summary.MismatchFiles {
 		baseline[ov] = true
