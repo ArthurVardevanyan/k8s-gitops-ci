@@ -61,9 +61,10 @@ flowchart TD
 
 `test-all` and `scan-all` accept the same changeset-scoping and
 check-enablement flags as `pipeline` — `--url`/`--pr`/`--target-branch`
-(PR/diff source), `--dirs` (restricts the resolved changeset to path
-prefixes — a filter, distinct from `test-all`'s positional `[dirs...]`,
-which instead _replaces_ the changeset source with a full-tree walk),
+(PR/diff source), `--dirs` (a full-tree walk of exactly the given path
+prefixes, replacing the diff/PR-derived changeset entirely — the same
+underlying behavior as `test-all`'s positional `[dirs...]`; when
+`test-all` is given both, the positional args take precedence),
 `--disable-checks`/`--enable-checks`, `--hook-source`, `--concurrency`,
 `--assume-openshift`, and `--app`/`--cluster` (below). This lets a
 failing `pipeline --url ... --pr ...` run be reproduced locally with

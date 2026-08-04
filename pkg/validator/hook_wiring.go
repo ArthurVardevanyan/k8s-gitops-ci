@@ -20,7 +20,7 @@ import (
 // hook.ResolveSource's fail-closed SourceMain default, preventing a PR
 // from smuggling in a weakened test.sh.
 func resolveHookSource(opts Options) hook.Source {
-	signal := hook.Source(opts.HookSource)
+	signal := opts.HookSource
 	if signal == "" && opts.PR == "" {
 		signal = hook.SourceLocal
 	}

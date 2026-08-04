@@ -11,6 +11,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kyverno"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
@@ -29,7 +30,7 @@ type Options struct {
 	PR             string
 	Revision       string
 	TargetBranch   string
-	HookSource     string
+	HookSource     hook.Source
 	TriggerComment string
 	LintOnly       bool
 	// PostComment controls whether a PR-comment summary is posted after the
@@ -45,7 +46,7 @@ type Options struct {
 	Concurrency     int
 	Apps            []string
 	Clusters        []string
-	IncludePrefixes []string // restrict the changeset to files under these path prefixes (e.g. "kubernetes/", "tekton/"); empty means no restriction
+	Dirs            []string // restrict the changeset to files under these path prefixes (e.g. "kubernetes/", "tekton/"); empty means no restriction
 	Providers       provider.Providers
 }
 
@@ -393,7 +394,7 @@ func toValidatorOptions(opts Options) validator.Options {
 		Concurrency:     opts.Workers(),
 		Apps:            opts.Apps,
 		Clusters:        opts.Clusters,
-		IncludePrefixes: opts.IncludePrefixes,
+		Dirs:            opts.Dirs,
 		Providers:       opts.Providers,
 	}
 }

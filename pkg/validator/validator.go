@@ -61,8 +61,10 @@ func resolveChangeset(opts Options) ([]string, error) {
 	case len(opts.Apps) > 0 || len(opts.Clusters) > 0:
 		// Targeted ad-hoc validation (build-yaml --app/--cluster) takes
 		// priority over Dirs/diff-based resolution - see
-		// resolveTargetOverlays.
+		// resolveTargetOverlays. Dirs is intentionally ignored here (it
+		// neither scopes nor filters targeted overlays).
 		files, err = resolveTargetOverlays(opts)
+		return files, err
 	case len(opts.Dirs) > 0:
 		files, err = changeset.GetFilesUnderDirs(opts.Dirs)
 	default:
@@ -76,5 +78,5 @@ func resolveChangeset(opts Options) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return changeset.FilterByPrefixes(files, opts.IncludePrefixes), nil
+	return changeset.FilterByPrefixes(files, opts.Dirs), nil
 }

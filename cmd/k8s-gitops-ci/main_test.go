@@ -99,8 +99,8 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 		t.Errorf("BaseRef = %q", opts.BaseRef)
 	case opts.HookSource != "pr":
 		t.Errorf("HookSource = %q", opts.HookSource)
-	case len(opts.IncludePrefixes) != 2 || opts.IncludePrefixes[0] != "kubernetes/" || opts.IncludePrefixes[1] != "tekton/":
-		t.Errorf("IncludePrefixes = %v", opts.IncludePrefixes)
+	case len(opts.Dirs) != 2 || opts.Dirs[0] != "kubernetes/" || opts.Dirs[1] != "tekton/":
+		t.Errorf("Dirs = %v", opts.Dirs)
 	case len(opts.DisabledChecks) != 2 || opts.DisabledChecks[0] != "sync-options" || opts.DisabledChecks[1] != "golangci":
 		t.Errorf("DisabledChecks = %v", opts.DisabledChecks)
 	case len(opts.EnabledChecks) != 1 || opts.EnabledChecks[0] != "kyverno":
@@ -120,7 +120,7 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 
 // TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue ensures no flag being
 // passed doesn't grow spurious non-nil-but-empty slices/strings that would
-// change behavior (e.g. an empty-but-non-nil IncludePrefixes would still be
+// change behavior (e.g. an empty-but-non-nil Dirs would still be
 // fine since FilterByPrefixes treats empty as "no restriction", but this
 // guards the split helpers stay nil on empty input).
 func TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue(t *testing.T) {
@@ -136,8 +136,8 @@ func TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue(t *testing.T) {
 	if opts.RepoURL != "" || opts.PR != "" || opts.BaseRef != "" || opts.HookSource != "" {
 		t.Errorf("expected empty strings, got RepoURL=%q PR=%q BaseRef=%q HookSource=%q", opts.RepoURL, opts.PR, opts.BaseRef, opts.HookSource)
 	}
-	if opts.IncludePrefixes != nil || opts.DisabledChecks != nil || opts.EnabledChecks != nil {
-		t.Errorf("expected nil slices, got IncludePrefixes=%v DisabledChecks=%v EnabledChecks=%v", opts.IncludePrefixes, opts.DisabledChecks, opts.EnabledChecks)
+	if opts.Dirs != nil || opts.DisabledChecks != nil || opts.EnabledChecks != nil {
+		t.Errorf("expected nil slices, got Dirs=%v DisabledChecks=%v EnabledChecks=%v", opts.Dirs, opts.DisabledChecks, opts.EnabledChecks)
 	}
 	if opts.Concurrency != 0 || opts.AssumeOpenShift || opts.Verbose {
 		t.Errorf("expected zero values, got Concurrency=%d AssumeOpenShift=%v Verbose=%v", opts.Concurrency, opts.AssumeOpenShift, opts.Verbose)
@@ -147,21 +147,16 @@ func TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue(t *testing.T) {
 	}
 }
 
-// TestParseTestAllOptions_PositionalDirsAndFlagDirsCoexist guards the
-// distinction between positional [dirs...] (opts.Dirs, a full-tree walk that
-// bypasses git diff) and the --dirs flag (opts.IncludePrefixes, which
-// instead filters a git-diff/PR changeset) - test-all must keep supporting
-// both simultaneously without one clobbering the other.
+// TestParseTestAllOptions_PositionalDirsAndFlagDirsCoexist guards that
+// positional [dirs...] take precedence over the --dirs flag now that both
+// map to the single opts.Dirs field.
 func TestParseTestAllOptions_PositionalDirsAndFlagDirsCoexist(t *testing.T) {
 	opts, err := parseTestAllOptions([]string{"--dirs=kubernetes/,tekton/", "appA", "appB"})
 	if err != nil {
 		t.Fatalf("parseTestAllOptions: %v", err)
 	}
 	if len(opts.Dirs) != 2 || opts.Dirs[0] != "appA" || opts.Dirs[1] != "appB" {
-		t.Errorf("Dirs = %v, want [appA appB]", opts.Dirs)
-	}
-	if len(opts.IncludePrefixes) != 2 || opts.IncludePrefixes[0] != "kubernetes/" || opts.IncludePrefixes[1] != "tekton/" {
-		t.Errorf("IncludePrefixes = %v, want [kubernetes/ tekton/]", opts.IncludePrefixes)
+		t.Errorf("Dirs = %v, want [appA appB] (positional precedence)", opts.Dirs)
 	}
 }
 
@@ -198,8 +193,8 @@ func TestParseScanAllOptions_SupportsPipelineScopingFlags(t *testing.T) {
 	if opts.RepoURL != "https://example.com/org/repo" || opts.PR != "7" {
 		t.Errorf("RepoURL/PR = %q/%q", opts.RepoURL, opts.PR)
 	}
-	if len(opts.IncludePrefixes) != 1 || opts.IncludePrefixes[0] != "kubernetes/" {
-		t.Errorf("IncludePrefixes = %v", opts.IncludePrefixes)
+	if len(opts.Dirs) != 1 || opts.Dirs[0] != "kubernetes/" {
+		t.Errorf("Dirs = %v", opts.Dirs)
 	}
 	if len(opts.DisabledChecks) != 1 || opts.DisabledChecks[0] != "avp" {
 		t.Errorf("DisabledChecks = %v", opts.DisabledChecks)

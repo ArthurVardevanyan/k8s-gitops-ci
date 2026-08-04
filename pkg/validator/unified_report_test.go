@@ -130,12 +130,12 @@ func TestReproduceCommand_UsesRealBinaryPath(t *testing.T) {
 // that actually failed.
 func TestReproduceCommand_IncludesScopingFlags(t *testing.T) {
 	got := ReproduceCommand(Options{
-		RepoURL:         "https://example.com/repo.git",
-		PR:              "42",
-		BaseRef:         "main",
-		IncludePrefixes: []string{"kubernetes/", "tekton/", ".tekton/", "okd/"},
-		DisabledChecks:  []string{"sync-options"},
-		EnabledChecks:   []string{"kyverno"},
+		RepoURL:        "https://example.com/repo.git",
+		PR:             "42",
+		BaseRef:        "main",
+		Dirs:           []string{"kubernetes/", "tekton/", ".tekton/", "okd/"},
+		DisabledChecks: []string{"sync-options"},
+		EnabledChecks:  []string{"kyverno"},
 	})
 	for _, want := range []string{
 		`--dirs="kubernetes/,tekton/,.tekton/,okd/"`,
