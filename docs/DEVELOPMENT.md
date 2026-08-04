@@ -150,9 +150,14 @@ that `detectAppRoots` must never treat as an app root), and
 PR-title convention check - e.g. an org's ticket-reference suffix -
 layered on top of the required Conventional Commits prefix; see
 `PRTitleSuggestion` and `ComposePRChecksSection`'s rendering of it as a
-warning, never a failure). The contract is always **"empty/nil is a
-true no-op"** — never assume a default value that changes behavior when
-unset.
+warning, never a failure), `pkg/validator`'s `DefaultAssumeOpenShift`
+(sets `Options.AssumeOpenShift`'s effective default for every `RunAll`
+call that doesn't set it explicitly, for an org whose fleet is
+exclusively OpenShift/OKD) and `DefaultEnabledChecks` (an org-wide
+default for `Options.EnabledChecks`, used whenever a given run's own
+`EnabledChecks` is empty - see `resolveEnabledChecks` in `phases.go`).
+The contract is always **"empty/nil is a true no-op"** — never assume a
+default value that changes behavior when unset.
 
 ### The "core data + org-injectable override" pattern
 

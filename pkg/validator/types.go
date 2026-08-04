@@ -7,6 +7,11 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
 
+// DefaultAssumeOpenShift is an org-level enablement seam: when a caller
+// leaves Options.AssumeOpenShift false, RunAll defaults it from this
+// package var. Defaults to false (no behavior change unless set).
+var DefaultAssumeOpenShift bool
+
 // Options configures the validator orchestration.
 //
 // Step/check enablement uses one generic ID-based mechanism instead of
@@ -47,6 +52,20 @@ type Options struct {
 	// flag when both are given).
 	Dirs      []string
 	Providers provider.Providers
+	// PostComment controls whether the validator/pipeline posts a PR
+	// comment summarizing the run. Contract field threaded through to the
+	// comment-posting guard.
+	PostComment bool
+	// RepoDir is the repository directory path (cloned repo working dir).
+	RepoDir string
+	// ScanAll validates all files in the repo, not just changed files.
+	ScanAll bool
+	// PRValidation carries results from pre-validation PR checks (title,
+	// signing, checklist) so they can be included in the unified report.
+	PRValidation *PRValidationResult
+	// PreErrors are blocking errors from pre-validation phases (e.g. PR
+	// title, checklist) that should be surfaced in the report/error summary.
+	PreErrors []string
 	// Timing allows an external TimingCollector to be passed in (e.g. from
 	// pkg/pipeline, which needs to record its own setup/PR-validation phases
 	// alongside the validator's). When nil, RunAll constructs its own.

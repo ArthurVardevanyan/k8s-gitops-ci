@@ -146,3 +146,21 @@ func TestResolveChangeset_TargetModeTakesPriorityOverDirs(t *testing.T) {
 		t.Fatalf("expected only the targeted app's file, got %d: %v", len(files), files)
 	}
 }
+
+// TestResolveChangeset_TargetModeTakesPriorityOverScanAll guards that
+// Apps/Clusters (build-yaml --app/--cluster) still takes priority over
+// ScanAll, matching the existing Apps/Clusters-over-Dirs priority - scan-all
+// mode must never override an explicit targeted build.
+func TestResolveChangeset_TargetModeTakesPriorityOverScanAll(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	mustWrite(t, filepath.Join(app, "base", "deployment.yaml"), "kind: Deployment\n")
+
+	files, err := resolveChangeset(Options{Apps: []string{app}, ScanAll: true})
+	if err != nil {
+		t.Fatalf("resolveChangeset: %v", err)
+	}
+	if len(files) != 1 || filepath.Base(files[0]) != "deployment.yaml" {
+		t.Fatalf("expected only the targeted app's file (ScanAll ignored), got %d: %v", len(files), files)
+	}
+}

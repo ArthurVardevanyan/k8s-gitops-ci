@@ -44,6 +44,50 @@ func ComposePRChecksSection(titleErr, signErr, checklistErr error, titleSuggesti
 	return composeParentFromChildren("PR Checks", children)
 }
 
+// composePRChecksSectionFromResult builds the "PR Checks" section from a
+// PRValidationResult (the struct form threaded through validator.Options),
+// mirroring ComposePRChecksSection's error-based rendering.
+func composePRChecksSectionFromResult(r *PRValidationResult) ReportSection {
+	titleStatus := StatusPassed
+	titleBody := "Passed."
+	if !r.TitlePassed {
+		titleStatus = StatusWarning
+		if r.TitleBlocking {
+			titleStatus = StatusError
+		}
+		if r.TitleMsg != "" {
+			titleBody = r.TitleMsg
+		} else {
+			titleBody = "PR title check failed."
+		}
+	}
+
+	signStatus := StatusPassed
+	signBody := "Passed."
+	if !r.CommitsPassed {
+		signStatus = StatusError
+		signBody = fmt.Sprintf("%d of %d commit(s) unsigned.", r.UnsignedCount, r.TotalCommits)
+	}
+
+	checklistStatus := StatusPassed
+	checklistBody := "Passed."
+	if !r.ChecklistPassed {
+		checklistStatus = StatusWarning
+		if r.ChecklistMsg != "" {
+			checklistBody = r.ChecklistMsg
+		} else {
+			checklistBody = "PR checklist incomplete."
+		}
+	}
+
+	children := []ReportSection{
+		{Name: "PR Title", Status: titleStatus, Body: titleBody},
+		{Name: "Signed Commits", Status: signStatus, Body: signBody},
+		{Name: "PR Checklist", Status: checklistStatus, Body: checklistBody},
+	}
+	return composeParentFromChildren("PR Checks", children)
+}
+
 // prCheckChild renders one PR-level check's outcome as a ReportSection: a
 // passed check gets a plain "Passed." summary, a failed one carries err's
 // message as its expandable body.

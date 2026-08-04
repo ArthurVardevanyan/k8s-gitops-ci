@@ -6,6 +6,30 @@ import (
 	"time"
 )
 
+// PRValidationResult carries the outcomes of PR-level checks (title, signing,
+// checklist) from the pipeline layer into validator.RunAll so they appear in
+// the unified report.
+type PRValidationResult struct {
+	// TitlePassed is true if PR title follows conventions.
+	TitlePassed bool
+	// TitleMsg is a brief description when there's a title issue.
+	TitleMsg string
+	// TitleBlocking is true when the title error should fail the pipeline.
+	TitleBlocking bool
+
+	// CommitsPassed is true if all commits are signed.
+	CommitsPassed bool
+	// UnsignedCount is the number of unsigned commits.
+	UnsignedCount int
+	// TotalCommits is the total number of commits in the PR.
+	TotalCommits int
+
+	// ChecklistPassed is true if the PR checklist is valid.
+	ChecklistPassed bool
+	// ChecklistMsg is the checklist error message if any.
+	ChecklistMsg string
+}
+
 // Report renders the unified PR comment.
 type Report struct {
 	Marker    string

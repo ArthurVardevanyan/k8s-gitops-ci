@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/syncopts"
 )
 
 func TestResolveChangeset_DirsWithDirs(t *testing.T) {
@@ -41,6 +43,147 @@ func TestResolveChangeset_NoDirs(t *testing.T) {
 	}
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file, got %d: %v", len(files), files)
+	}
+}
+
+// TestResolveChangeset_ScanAll guards that Options.ScanAll takes the
+// changeset.GetAllFiles path - every git-tracked file, not just changed
+// ones - matching changeset.GetAllFiles's own output exactly.
+func TestResolveChangeset_ScanAll(t *testing.T) {
+	want, err := changeset.GetAllFiles()
+	if err != nil {
+		t.Fatalf("changeset.GetAllFiles: %v", err)
+	}
+	got, err := resolveChangeset(Options{ScanAll: true})
+	if err != nil {
+		t.Fatalf("resolveChangeset: %v", err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected resolveChangeset(ScanAll) to match changeset.GetAllFiles(), got %d files, want %d", len(got), len(want))
+	}
+}
+
+// TestResolveChangeset_ScanAllCombinesWithDirsAsAFilter guards the
+// switch-case ordering (ScanAll's changeset.GetAllFiles path wins over
+// Dirs's changeset.GetFilesUnderDirs path when both are set) while also
+// confirming the shared post-switch filter still applies: since Dirs is the
+// same field used to restrict a diff-derived changeset, combining
+// ScanAll+Dirs means "every git-tracked file, restricted to these path
+// prefixes" - not an unfiltered full-repo walk that ignores Dirs outright.
+func TestResolveChangeset_ScanAllCombinesWithDirsAsAFilter(t *testing.T) {
+	all, err := changeset.GetAllFiles()
+	if err != nil {
+		t.Fatalf("changeset.GetAllFiles: %v", err)
+	}
+	if len(all) == 0 {
+		t.Fatal("expected at least one git-tracked file under pkg/validator")
+	}
+
+	got, err := resolveChangeset(Options{ScanAll: true, Dirs: []string{"check/"}})
+	if err != nil {
+		t.Fatalf("resolveChangeset: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("expected at least one file under check/")
+	}
+	if len(got) >= len(all) {
+		t.Fatalf("expected Dirs to filter down GetAllFiles's result, got %d of %d total files", len(got), len(all))
+	}
+	for _, f := range got {
+		if !strings.HasPrefix(f, "check/") {
+			t.Errorf("expected every file to be under check/ (GetFilesUnderDirs must not have run instead), got: %s", f)
+		}
+	}
+}
+
+// TestRunAll_DefaultAssumeOpenShiftAppliesWhenOptionUnset guards the
+// org-level enablement seam: when a caller leaves Options.AssumeOpenShift
+// false, RunAll must still apply DefaultAssumeOpenShift, ending up wired
+// through to syncopts.AssumeOpenShift exactly as if the caller had set
+// AssumeOpenShift directly.
+func TestRunAll_DefaultAssumeOpenShiftAppliesWhenOptionUnset(t *testing.T) {
+	old := DefaultAssumeOpenShift
+	DefaultAssumeOpenShift = true
+	defer func() { DefaultAssumeOpenShift = old }()
+
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	if _, err := RunAll(Options{Dirs: []string{d}, LintOnly: true}); err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if !syncopts.AssumeOpenShift {
+		t.Error("expected DefaultAssumeOpenShift to apply when Options.AssumeOpenShift is unset")
+	}
+}
+
+// TestRunAll_DefaultAssumeOpenShiftNoOpWhenOptionSet guards that
+// DefaultAssumeOpenShift never overrides/disables an explicit
+// Options.AssumeOpenShift=true - it only ever fills in a false value, never
+// forces one.
+func TestRunAll_DefaultAssumeOpenShiftNoOpWhenUnset(t *testing.T) {
+	old := DefaultAssumeOpenShift
+	DefaultAssumeOpenShift = false
+	defer func() { DefaultAssumeOpenShift = old }()
+
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	if _, err := RunAll(Options{Dirs: []string{d}, LintOnly: true, AssumeOpenShift: true}); err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if !syncopts.AssumeOpenShift {
+		t.Error("expected an explicit Options.AssumeOpenShift=true to still apply when DefaultAssumeOpenShift is false")
+	}
+}
+
+// TestRunAll_PreErrorsSetBlocking guards that Options.PreErrors (blocking
+// errors from pipeline-layer pre-validation phases like PR title/checklist)
+// are surfaced as a hard failure - logged (so Logger.HasFailures() is true)
+// and Result.Blocking is set - even when every in-validator phase passes
+// cleanly, so a pre-validation failure can never be silently swallowed.
+func TestRunAll_PreErrorsSetBlocking(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, LintOnly: true, PreErrors: []string{"PR title is invalid"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if !res.Blocking {
+		t.Error("expected PreErrors to set Result.Blocking")
+	}
+	if !res.Logger.HasFailures() {
+		t.Error("expected PreErrors to be logged as a failure")
+	}
+	if !res.Failed() {
+		t.Error("expected Result.Failed() to report true when PreErrors are set")
+	}
+}
+
+// TestRunAll_PRValidationPrependsSection guards that a supplied
+// Options.PRValidation is composed into a "PR Checks" report section before
+// any other phase runs, so the unified report always surfaces pre-validation
+// PR-level results (title/signing/checklist) alongside the in-validator
+// findings.
+func TestRunAll_PRValidationPrependsSection(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
+
+	res, err := RunAll(Options{
+		Dirs:     []string{d},
+		LintOnly: true,
+		PRValidation: &PRValidationResult{
+			TitlePassed:     true,
+			CommitsPassed:   true,
+			ChecklistPassed: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if len(res.Sections) == 0 || res.Sections[0].Name != "PR Checks" {
+		t.Fatalf("expected the first report section to be \"PR Checks\", got: %+v", res.Sections)
 	}
 }
 
