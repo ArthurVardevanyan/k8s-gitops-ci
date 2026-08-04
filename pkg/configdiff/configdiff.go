@@ -175,7 +175,7 @@ func parseTopLevel(data []byte) (overrides, envs, groups map[string]*yaml.Node) 
 	groups = make(map[string]*yaml.Node)
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil || len(root.Content) == 0 {
-		return
+		return overrides, envs, groups
 	}
 	doc := root.Content[0]
 	if od := findKey(doc, "overlayDefinitions"); od != nil {
@@ -195,7 +195,7 @@ func parseTopLevel(data []byte) (overrides, envs, groups map[string]*yaml.Node) 
 			groups[g.Content[i].Value] = g.Content[i+1]
 		}
 	}
-	return
+	return overrides, envs, groups
 }
 
 func findKey(node *yaml.Node, key string) *yaml.Node {

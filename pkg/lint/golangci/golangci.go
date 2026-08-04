@@ -1,6 +1,7 @@
 package golangci
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"go/format"
@@ -72,7 +73,7 @@ func Run(files []string) (string, error) {
 	for _, g := range groups {
 		relDirs := dirsForGroup(g)
 		for _, d := range relDirs {
-			cmd := exec.Command(golangciPath, "run", "./"+d+"/...")
+			cmd := exec.CommandContext(context.Background(), golangciPath, "run", "./"+d+"/...")
 			cmd.Dir = g.Root
 			out, err := cmd.CombinedOutput()
 			if err != nil {

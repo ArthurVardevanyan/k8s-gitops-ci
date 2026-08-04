@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -312,7 +313,7 @@ func assembleManifests(rendered map[string]string) []byte {
 // (rather than an imported library) since embedding it would pull in every
 // supported secret-backend SDK (AWS, GCP, Vault, Azure) unconditionally.
 func runAVP(in []byte) ([]byte, error) {
-	cmd := exec.Command("argocd-vault-plugin", "generate", "-")
+	cmd := exec.CommandContext(context.Background(), "argocd-vault-plugin", "generate", "-")
 	cmd.Stdin = bytes.NewReader(in)
 	out, err := cmd.Output()
 	if err != nil {

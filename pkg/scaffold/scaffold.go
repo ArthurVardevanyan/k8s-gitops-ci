@@ -318,7 +318,7 @@ func diffDirs(generated, committed string) (string, error) {
 	if _, err := os.Stat(committed); err != nil {
 		return "", err
 	}
-	cmd := exec.Command("diff", "-rq", generated, committed) //nolint:gosec // both paths are derived from this package's own temp dir + convention-based overlay layout, not user input
+	cmd := exec.CommandContext(context.Background(), "diff", "-rq", generated, committed) //nolint:gosec // both paths are derived from this package's own temp dir + convention-based overlay layout, not user input
 	out, _ := cmd.Output()
 	return stripANSI(string(out)), nil
 }

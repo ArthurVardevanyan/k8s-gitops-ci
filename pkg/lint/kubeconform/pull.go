@@ -1,6 +1,7 @@
 package kubeconform
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,14 +18,14 @@ func PullSchemas(outDir string) error {
 		outDir = filepath.Join(os.TempDir(), "kubernetes-json-schema")
 	}
 	if _, err := os.Stat(filepath.Join(outDir, ".git")); err == nil {
-		cmd := exec.Command("git", "-C", outDir, "pull", "origin", "master")
+		cmd := exec.CommandContext(context.Background(), "git", "-C", outDir, "pull", "origin", "master")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("git pull schemas: %w\n%s", err, out)
 		}
 		return nil
 	}
 	_ = os.RemoveAll(outDir)
-	cmd := exec.Command("git", "clone", "--depth=1", DefaultSchemaRepo, outDir)
+	cmd := exec.CommandContext(context.Background(), "git", "clone", "--depth=1", DefaultSchemaRepo, outDir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git clone schemas: %w\n%s", err, out)
 	}

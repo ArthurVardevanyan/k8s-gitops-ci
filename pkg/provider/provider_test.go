@@ -46,6 +46,7 @@ type testClusterMetadata struct{}
 func (testClusterMetadata) ProjectIdentity() (idx cluster.ProjectIndex, idToCluster map[string]bool, ok bool, err error) {
 	return cluster.ProjectIndex{IDToCluster: map[string]string{"x": "y"}}, nil, true, nil
 }
+
 func (testClusterMetadata) ChangeGroups() (map[string]int, bool) { return map[string]int{"a": 1}, true }
 
 func TestClusterMetadata(t *testing.T) {
