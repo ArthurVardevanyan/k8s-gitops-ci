@@ -166,21 +166,26 @@ behavior at all. `CheckFix` never mutates the file it's checking - each
 candidate is copied to a scratch temp directory and run through the real
 fix pipeline there for comparison.
 
-**This is a hard dependency, not a graceful-degrade one** (unlike every
-`pkg/lint/*` wrapper's own missing-CLI handling): a missing `kustomize` or
-`prettier` binary fails the check outright rather than silently skipping
-it - `kustomize` is a core, expected part of this pipeline's toolchain,
-not an optional best-effort tool, so a run that couldn't actually verify
-kustomization.yaml files must not report a clean bill of health it never
-checked. A finding (or a check failure) is blocking - `log.ErrorInSection`
-is called either way, so this is treated exactly like any other hard
-failure (a run with only this finding still exits non-zero from
-`pipeline`/`test-all`; see
+**This is a hard dependency, not a graceful-degrade one**: a missing
+`kustomize` or `prettier` binary fails the check outright rather than
+silently skipping it - `kustomize` is a core, expected part of this
+pipeline's toolchain, not an optional best-effort tool, so a run that
+couldn't actually verify kustomization.yaml files must not report a
+clean bill of health it never checked. A finding (or a check failure) is
+blocking - `log.ErrorInSection` is called either way, so this is treated
+exactly like any other hard failure (a run with only this finding still
+exits non-zero from `pipeline`/`test-all`; see
 [DEVELOPMENT.md](DEVELOPMENT.md#pipeline-exit-code-pipelinerun-resultfailed)).
 It's gated behind the **`kustomize-fix`** step ID (default **on**, unlike
 `kyverno`/`scaffold-readme`) purely so a repo (or a test) with no
 `kustomize` binary available can opt out via `--disable-checks
-kustomize-fix` instead of always hard-failing.
+kustomize-fix` instead of always hard-failing. Every `pkg/lint/*`
+CLI-wrapping check in the [Linting phase](#linting-phase-all-steps-run-concurrently)
+below (`markdownlint`, `prettier`, `shellcheck`, `golangci`) follows this
+same hard-fail-not-graceful-skip philosophy and the same
+gated-step-ID-for-opt-out pattern - `kustomize-fix` isn't a special case
+here, it's the same convention applied to a check that isn't itself under
+`pkg/lint/*`.
 
 A follow-up `prettier --write` pass always runs after `kustomize edit fix`
 on any file it actually changes: kustomize's own YAML writer doesn't
@@ -407,11 +412,18 @@ begin with):
   label that's present with an _invalid_ value is never suppressed this
   way, only one that's genuinely absent.
 
-Five standalone (non-registry) steps participate in the same
+Eight standalone (non-registry) steps participate in the same
 enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
 [Generic check-enablement mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)):
 
+- **`markdownlint`**, **`prettier`**, **`shellcheck`** — each wraps its
+  underlying CLI (`pkg/lint/markdownlint`/`prettier`/`shellcheck`),
+  default **on**. Like `kustomize-fix` above, a missing CLI is a hard
+  failure, not a graceful skip - each is gated purely so a repo (or test)
+  with a given tool genuinely unavailable can opt out via
+  `--disable-checks <name>` instead of always hard-failing.
 - **`golangci`** — Go linting via `pkg/lint/golangci`, default **on**.
+  Same missing-CLI hard-fail/opt-out behavior as the three above.
 - **`avp`** — per-app AVP strategy auto-detection (see
   [Build Strategies](#build-strategies) above), default **on**.
 - **`kustomize-fix`** — the "Kustomize Fix" sub-check (see
@@ -419,9 +431,7 @@ enable/disable ID mechanism (see `docs/DEVELOPMENT.md`'s
   `kyverno`/`scaffold-readme` below, this isn't opt-in for compatibility
   reasons - it's gated purely so a repo (or test) with no `kustomize`
   binary available can opt out via `--disable-checks kustomize-fix`
-  instead of the check always hard-failing (see
-  [Kustomize Fix](#kustomize-fix)'s note on why a missing binary is a
-  hard failure here, unlike every other CLI-wrapping check in this repo).
+  instead of the check always hard-failing.
 - **`scaffold-readme`** — the README scaffold-status table structural
   check (see [Scaffold Validation](#scaffold-validation) above), default
   **off**. Like `kyverno` below, this generic core can't know whether a
@@ -495,11 +505,21 @@ the full pipeline, for validating a directory or explicit file list
 
 ## Linting phase (all steps run concurrently)
 
-- **markdownlint**, **prettier**, **golangci** (Go files only),
-  **kubeconform** (schema-validates changed YAML plus every affected
-  overlay's _rendered_ output, not just the raw source) — each wraps its
-  underlying CLI/library and degrades gracefully (skips, doesn't fail)
-  when the tool isn't installed.
+- **markdownlint**, **prettier**, **golangci** (Go files only) — each
+  wraps its underlying CLI (`pkg/lint/markdownlint`/`prettier`/`golangci`)
+  and, when there are no applicable changed files, skips cleanly
+  (`Skipped: true`, `StatusPassed`) — but a missing CLI is a **hard
+  failure** (`StatusError`, blocking), not a graceful skip: a missing
+  lint tool means the pipeline didn't actually check what it claims to
+  have checked. Each is individually gated behind its own step ID
+  (`markdownlint`/`prettier`/`golangci`) so an environment that genuinely
+  can't provision a given tool can opt out via `--disable-checks <name>`
+  instead of always failing (see [Kustomize Fix](#kustomize-fix)'s note
+  on this same hard-fail-not-graceful-skip convention).
+- **kubeconform** — schema-validates changed YAML plus every affected
+  overlay's _rendered_ output, not just the raw source. Unlike the three
+  above, this is a Go library, not a CLI wrapper, so there's no
+  missing-binary case to gate.
 - **shellcheck** — wraps the raw `shellcheck` CLI over changed `.sh`/
   `.bash` files (or any file whose shebang matches), **plus** extracts
   and lints:
@@ -525,6 +545,15 @@ the full pipeline, for validating a directory or explicit file list
   diff) as the identical direct/indirect split `finalizeCompliance`
   applies to Resource Compliance findings. Raw `.sh` file findings are
   always direct — they're literally files in the diff.
+
+  Like the three CLI wrappers above, a missing `shellcheck` binary is a
+  hard failure (`StatusError`, blocking), gated behind its own
+  `shellcheck` step ID — but only once relevance is established: the
+  "any shell-related file at all changed" short-circuit (no `.sh` files,
+  no changed YAML at all) still runs first, so a changeset with nothing
+  for shellcheck to check skips cleanly even with the CLI missing,
+  rather than failing every unrelated PR in an environment that lacks
+  it.
 
 ## Static Checks phase (all steps run concurrently)
 

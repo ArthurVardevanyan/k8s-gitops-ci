@@ -25,8 +25,10 @@ func TestRunAll_ScaffoldSkippedWithoutConfig(t *testing.T) {
 	// kustomize-fix is unrelated to what this test exercises, and this
 	// minimal fixture isn't in kustomize's real canonical form, which
 	// would otherwise always flag a spurious Kustomize Fix finding and
-	// fail the HasFailures() assertion below.
-	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix"}})
+	// fail the HasFailures() assertion below. shellcheck is disabled for
+	// the same reason: it now hard-fails when the CLI isn't installed,
+	// and this dev/CI image doesn't have it.
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "shellcheck"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
@@ -112,8 +114,10 @@ func TestRunAll_ScaffoldReadmeCheckDisabledByDefault(t *testing.T) {
 	// kustomize-fix is unrelated to what this test exercises, and this
 	// minimal fixture isn't in kustomize's real canonical form, which
 	// would otherwise always flag a spurious Kustomize Fix finding and
-	// fail the HasFailures() assertion below.
-	res, err := RunAll(Options{Dirs: []string{"myapp"}, DisabledChecks: []string{"kustomize-fix"}})
+	// fail the HasFailures() assertion below. shellcheck is disabled for
+	// the same reason: it now hard-fails when the CLI isn't installed,
+	// and this dev/CI image doesn't have it.
+	res, err := RunAll(Options{Dirs: []string{"myapp"}, DisabledChecks: []string{"kustomize-fix", "shellcheck"}})
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}

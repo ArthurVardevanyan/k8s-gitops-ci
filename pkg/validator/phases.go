@@ -32,6 +32,9 @@ import (
 // participate in the same generic enable/disable ID mechanism as
 // check-registry checks. See stepEnabled and the Options doc comment.
 const (
+	stepMarkdownlint   = "markdownlint"
+	stepPrettier       = "prettier"
+	stepShellcheck     = "shellcheck"
 	stepGolangci       = "golangci"
 	stepAVP            = "avp"
 	stepKyverno        = "kyverno"
@@ -170,101 +173,137 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		}()
 	}
 
-	runLintStep("markdownlint", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
-		if len(markdownlint.Filter(changed)) == 0 {
-			sl.Info("markdownlint: no markdown files changed")
-			return lintStepResult{status: StatusPassed, skipped: true, note: "No markdown files changed."}
-		}
-		if mdOut, err := markdownlint.Run(changed); err == nil {
-			sl.Info("markdownlint: passed (%s)", elapsed().Round(time.Millisecond))
+	// markdownlint, prettier, shellcheck, and golangci all hard-fail (a
+	// blocking StatusError, not a graceful skip) when their underlying CLI
+	// isn't installed - a missing lint tool is a broken toolchain, not a
+	// "nothing to check" outcome, and silently passing CI in that state
+	// hides real findings a properly-provisioned run would have caught
+	// (see docs/CI.md's Linting phase section). Each is individually
+	// gated behind its own step ID so an environment that genuinely can't
+	// provision a given tool can opt out explicitly via
+	// --disable-checks <name> instead of always failing.
+	//
+	// runCLILintOutcome is shared by every step below whose only two
+	// failure modes are "the CLI errored" and "the CLI is missing" (i.e.
+	// every wrapper here except shellcheck, whose relevance-check/PATH-
+	// check ordering and multi-source (raw + extracted) reporting don't
+	// fit this shape) - it turns run's result into a lintStepResult,
+	// treating a missing CLI (errors.Is(err, notFoundErr)) as a
+	// StatusError carrying notFoundNote rather than the raw ErrCLINotFound
+	// text.
+	runCLILintOutcome := func(sl *logger.ScopedLogger, elapsed func() time.Duration, displayName, passLabel string, run func() (string, error), notFoundErr error, notFoundNote string) lintStepResult {
+		out, err := run()
+		if err == nil {
+			sl.Info("%s: passed (%s)", passLabel, elapsed().Round(time.Millisecond))
 			return lintStepResult{status: StatusPassed}
-		} else if !errors.Is(err, markdownlint.ErrCLINotFound) {
-			sl.ErrorInSection("Markdownlint", "markdownlint: %s", err)
-			detail := mdOut
-			if detail == "" {
-				detail = err.Error()
+		}
+		sl.ErrorInSection(displayName, "%s: %s", passLabel, err)
+		if errors.Is(err, notFoundErr) {
+			return lintStepResult{status: StatusError, note: notFoundNote}
+		}
+		detail := out
+		if detail == "" {
+			detail = err.Error()
+		}
+		return lintStepResult{report: detail, status: StatusError}
+	}
+
+	if stepEnabled(stepMarkdownlint, disabled, enabled) {
+		runLintStep("markdownlint", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
+			if len(markdownlint.Filter(changed)) == 0 {
+				sl.Info("markdownlint: no markdown files changed")
+				return lintStepResult{status: StatusPassed, skipped: true, note: "No markdown files changed."}
 			}
-			return lintStepResult{report: detail, status: StatusError}
-		}
-		sl.Debug("markdownlint: not found in PATH, skipping")
-		return lintStepResult{status: StatusPassed, skipped: true, note: "markdownlint not found in PATH."}
-	})
+			return runCLILintOutcome(sl, elapsed, "Markdownlint", "markdownlint", func() (string, error) {
+				return markdownlint.Run(changed)
+			}, markdownlint.ErrCLINotFound, "markdownlint not found in PATH.")
+		})
+	} else {
+		lintMu.Lock()
+		lintOutcomes = append(lintOutcomes, CheckOutcome{Name: "markdownlint", Status: StatusPassed, Skipped: true, Note: "Disabled."})
+		lintMu.Unlock()
+	}
 
-	runLintStep("prettier", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
-		if pOut, err := prettier.Run(changed, nil); err == nil {
-			sl.Info("prettier: passed (%s)", elapsed().Round(time.Millisecond))
-			return lintStepResult{status: StatusPassed}
-		} else if !errors.Is(err, prettier.ErrCLINotFound) {
-			sl.ErrorInSection("Prettier", "prettier: %s", err)
-			detail := pOut
-			if detail == "" {
-				detail = err.Error()
+	if stepEnabled(stepPrettier, disabled, enabled) {
+		runLintStep("prettier", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
+			return runCLILintOutcome(sl, elapsed, "Prettier", "prettier", func() (string, error) {
+				return prettier.Run(changed, nil)
+			}, prettier.ErrCLINotFound, "prettier not found in PATH.")
+		})
+	} else {
+		lintMu.Lock()
+		lintOutcomes = append(lintOutcomes, CheckOutcome{Name: "prettier", Status: StatusPassed, Skipped: true, Note: "Disabled."})
+		lintMu.Unlock()
+	}
+
+	if stepEnabled(stepShellcheck, disabled, enabled) {
+		runLintStep("shellcheck", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
+			// yamlChanged feeds both the "any relevant files at all" short-
+			// circuit below and the direct/blocking Tekton+embedded-script
+			// extraction pass further down - computed once and reused
+			// rather than calling filterYAML(changed) twice. The relevance
+			// check runs before the PATH check (unlike a naive ordering)
+			// so a changeset with no shell-related content at all still
+			// skips cleanly even when shellcheck isn't installed.
+			yamlChanged := filterYAML(changed)
+			if len(shellcheck.FilterShellScripts(changed)) == 0 && len(yamlChanged) == 0 {
+				sl.Info("shellcheck: no shell files changed")
+				return lintStepResult{status: StatusPassed, skipped: true, note: "No shell files changed."}
 			}
-			return lintStepResult{report: detail, status: StatusError}
-		}
-		sl.Debug("prettier: not found in PATH, skipping")
-		return lintStepResult{status: StatusPassed, skipped: true, note: "prettier not found in PATH."}
-	})
 
-	runLintStep("shellcheck", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
-		if _, err := exec.LookPath("shellcheck"); err != nil {
-			sl.Debug("shellcheck: not found in PATH, skipping")
-			return lintStepResult{status: StatusPassed, skipped: true, note: "shellcheck not found in PATH."}
-		}
+			if _, err := exec.LookPath("shellcheck"); err != nil {
+				sl.ErrorInSection("Shellcheck", "shellcheck: %s", err)
+				return lintStepResult{status: StatusError, note: "shellcheck not found in PATH."}
+			}
 
-		// yamlChanged feeds both the "any relevant files at all" short-
-		// circuit below and the direct/blocking Tekton+embedded-script
-		// extraction pass further down - computed once and reused rather
-		// than calling filterYAML(changed) twice.
-		yamlChanged := filterYAML(changed)
-		if len(shellcheck.FilterShellScripts(changed)) == 0 && len(yamlChanged) == 0 {
-			sl.Info("shellcheck: no shell files changed")
-			return lintStepResult{status: StatusPassed, skipped: true, note: "No shell files changed."}
-		}
+			var sb strings.Builder
+			blocking, warning := 0, 0
 
-		var sb strings.Builder
-		blocking, warning := 0, 0
-
-		// Raw shell script files: always direct/blocking - they're
-		// literally files in this changeset's diff, so any finding here
-		// is the author's own responsibility to fix.
-		if scViolations, _, scErr := shellcheck.Run(changed); scErr == nil {
+			// Raw shell script files: always direct/blocking - they're
+			// literally files in this changeset's diff, so any finding here
+			// is the author's own responsibility to fix.
+			scViolations, _, scErr := shellcheck.Run(changed)
+			if scErr != nil {
+				sl.ErrorInSection("Shellcheck", "shellcheck: %s", scErr)
+				return lintStepResult{report: scErr.Error(), status: StatusError}
+			}
 			for _, v := range scViolations {
 				fmt.Fprintf(&sb, "%s:%d: %s\n", v.File, v.Line, v.Message)
 			}
 			blocking += len(scViolations)
-		} else if !errors.Is(scErr, shellcheck.ErrCLINotFound) {
-			sl.ErrorInSection("Shellcheck", "shellcheck: %s", scErr)
-			return lintStepResult{report: scErr.Error(), status: StatusError}
-		}
 
-		// Tekton Task step scripts and embedded container-command/
-		// ConfigMap scripts: classified direct (blocking) vs. external
-		// (warning-only) by whether the script's source YAML file was
-		// itself changed in this diff, or only pulled in because the
-		// overlay it lives in was affected by an unrelated base/
-		// component change elsewhere - the same distinction
-		// finalizeCompliance already draws for doc/overlay check
-		// findings in the Post-Build Validation phase (a base/component
-		// change ripples to every overlay that depends on it, and an
-		// issue in a file the author never touched shouldn't block
-		// their PR).
-		blocking += writeShellcheckExtractionReport(&sb, "", yamlChanged)
+			// Tekton Task step scripts and embedded container-command/
+			// ConfigMap scripts: classified direct (blocking) vs. external
+			// (warning-only) by whether the script's source YAML file was
+			// itself changed in this diff, or only pulled in because the
+			// overlay it lives in was affected by an unrelated base/
+			// component change elsewhere - the same distinction
+			// finalizeCompliance already draws for doc/overlay check
+			// findings in the Post-Build Validation phase (a base/component
+			// change ripples to every overlay that depends on it, and an
+			// issue in a file the author never touched shouldn't block
+			// their PR).
+			blocking += writeShellcheckExtractionReport(&sb, "", yamlChanged)
 
-		external := externalOverlayYAMLFiles(changed)
-		warning += writeShellcheckExtractionReport(&sb, " (external)", external)
+			external := externalOverlayYAMLFiles(changed)
+			warning += writeShellcheckExtractionReport(&sb, " (external)", external)
 
-		if blocking > 0 {
-			sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", blocking)
-			return lintStepResult{report: sb.String(), status: StatusError}
-		}
-		if warning > 0 {
-			sl.Info("shellcheck: passed (%d external/non-blocking warning(s)) (%s)", warning, elapsed().Round(time.Millisecond))
-			return lintStepResult{report: sb.String(), status: StatusPassed, note: fmt.Sprintf("%d external warning(s) in overlay files not directly changed (non-blocking).", warning)}
-		}
-		sl.Info("shellcheck: passed (%s)", elapsed().Round(time.Millisecond))
-		return lintStepResult{status: StatusPassed}
-	})
+			if blocking > 0 {
+				sl.ErrorInSection("Shellcheck", "%d shellcheck violation(s)", blocking)
+				return lintStepResult{report: sb.String(), status: StatusError}
+			}
+			if warning > 0 {
+				sl.Info("shellcheck: passed (%d external/non-blocking warning(s)) (%s)", warning, elapsed().Round(time.Millisecond))
+				return lintStepResult{report: sb.String(), status: StatusPassed, note: fmt.Sprintf("%d external warning(s) in overlay files not directly changed (non-blocking).", warning)}
+			}
+			sl.Info("shellcheck: passed (%s)", elapsed().Round(time.Millisecond))
+			return lintStepResult{status: StatusPassed}
+		})
+	} else {
+		lintMu.Lock()
+		lintOutcomes = append(lintOutcomes, CheckOutcome{Name: "shellcheck", Status: StatusPassed, Skipped: true, Note: "Disabled."})
+		lintMu.Unlock()
+	}
 
 	if stepEnabled(stepGolangci, disabled, enabled) {
 		runLintStep("golangci", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
@@ -272,21 +311,9 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 				sl.Info("golangci: no Go files changed")
 				return lintStepResult{status: StatusPassed, skipped: true, note: "No Go files changed."}
 			}
-			glOut, err := golangci.Run(changed)
-			if err != nil && !errors.Is(err, golangci.ErrCLINotFound) {
-				sl.ErrorInSection("Golangci", "golangci: %s", err)
-				detail := glOut
-				if detail == "" {
-					detail = err.Error()
-				}
-				return lintStepResult{report: detail, status: StatusError}
-			}
-			if err != nil {
-				sl.Debug("golangci: not found in PATH, skipping")
-				return lintStepResult{status: StatusPassed, skipped: true, note: "golangci-lint not found in PATH."}
-			}
-			sl.Info("golangci-lint: passed (%s)", elapsed().Round(time.Millisecond))
-			return lintStepResult{status: StatusPassed}
+			return runCLILintOutcome(sl, elapsed, "Golangci", "golangci-lint", func() (string, error) {
+				return golangci.Run(changed)
+			}, golangci.ErrCLINotFound, "golangci-lint not found in PATH.")
 		})
 	} else {
 		lintMu.Lock()

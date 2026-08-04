@@ -73,6 +73,176 @@ func TestStepEnabled_EnabledChecksHasNoEffectOnDefaultOnSteps(t *testing.T) {
 	}
 }
 
+// --- lint-tool missing-CLI hard failure -------------------------------------
+//
+// markdownlint, prettier, shellcheck, and golangci all hard-fail (rather
+// than gracefully skip) when their underlying CLI isn't installed - see
+// the comment above their runLintStep wiring in phases.go. Each test below
+// mirrors the exec.LookPath+t.Skip pattern already used for CLI-wrapping
+// tests elsewhere in this repo (e.g. pkg/kustomize/kustomize_test.go's
+// TestCheckFix_MissingBinaryIsAHardError): it only runs for real in an
+// environment where the tool genuinely isn't installed, skipping itself
+// otherwise, since there's no supported way to force exec.LookPath to
+// fail for an installed binary without editing PATH process-wide.
+
+func TestRunAll_MarkdownlintMissingCLIBlocks(t *testing.T) {
+	if _, err := exec.LookPath("markdownlint"); err == nil {
+		t.Skip("markdownlint is installed in this environment; can't exercise the missing-binary path")
+	}
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "README.md"), "# Title\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "prettier", "shellcheck", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger == nil || !res.Logger.HasFailures() {
+		t.Error("expected a missing markdownlint CLI to be surfaced as a logger failure")
+	}
+	if !res.Failed() {
+		t.Error("expected a missing markdownlint CLI to make Result.Failed() report true")
+	}
+	var lint ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Linting" {
+			lint = s
+		}
+	}
+	if lint.Status != StatusError || !strings.Contains(lint.Body, "markdownlint not found in PATH") {
+		t.Errorf("expected the Linting section to report the missing markdownlint CLI, got:\n%s", lint.Body)
+	}
+}
+
+func TestRunAll_PrettierMissingCLIBlocks(t *testing.T) {
+	if _, err := exec.LookPath("prettier"); err == nil {
+		t.Skip("prettier is installed in this environment; can't exercise the missing-binary path")
+	}
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "shellcheck", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger == nil || !res.Logger.HasFailures() {
+		t.Error("expected a missing prettier CLI to be surfaced as a logger failure")
+	}
+	if !res.Failed() {
+		t.Error("expected a missing prettier CLI to make Result.Failed() report true")
+	}
+	var lint ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Linting" {
+			lint = s
+		}
+	}
+	if lint.Status != StatusError || !strings.Contains(lint.Body, "prettier not found in PATH") {
+		t.Errorf("expected the Linting section to report the missing prettier CLI, got:\n%s", lint.Body)
+	}
+}
+
+func TestRunAll_ShellcheckMissingCLIBlocks(t *testing.T) {
+	if _, err := exec.LookPath("shellcheck"); err == nil {
+		t.Skip("shellcheck is installed in this environment; can't exercise the missing-binary path")
+	}
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "prettier", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger == nil || !res.Logger.HasFailures() {
+		t.Error("expected a missing shellcheck CLI to be surfaced as a logger failure")
+	}
+	if !res.Failed() {
+		t.Error("expected a missing shellcheck CLI to make Result.Failed() report true")
+	}
+	var lint ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Linting" {
+			lint = s
+		}
+	}
+	if lint.Status != StatusError || !strings.Contains(lint.Body, "shellcheck not found in PATH") {
+		t.Errorf("expected the Linting section to report the missing shellcheck CLI, got:\n%s", lint.Body)
+	}
+}
+
+func TestRunAll_ShellcheckMissingCLISkipsWhenNoRelevantFiles(t *testing.T) {
+	if _, err := exec.LookPath("shellcheck"); err == nil {
+		t.Skip("shellcheck is installed in this environment; can't exercise the missing-binary path")
+	}
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "README.md"), "# Title\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "prettier", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger != nil && res.Logger.HasFailures() {
+		t.Error("expected a changeset with no shell-related files to skip shellcheck cleanly, even with the CLI missing")
+	}
+}
+
+func TestRunAll_GolangciMissingCLIBlocks(t *testing.T) {
+	if _, err := exec.LookPath("golangci-lint"); err == nil {
+		t.Skip("golangci-lint is installed in this environment; can't exercise the missing-binary path")
+	}
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "main.go"), "package main\n\nfunc main() {}\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "prettier", "shellcheck"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger == nil || !res.Logger.HasFailures() {
+		t.Error("expected a missing golangci-lint CLI to be surfaced as a logger failure")
+	}
+	if !res.Failed() {
+		t.Error("expected a missing golangci-lint CLI to make Result.Failed() report true")
+	}
+	var lint ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Linting" {
+			lint = s
+		}
+	}
+	if lint.Status != StatusError || !strings.Contains(lint.Body, "golangci-lint not found in PATH") {
+		t.Errorf("expected the Linting section to report the missing golangci-lint CLI, got:\n%s", lint.Body)
+	}
+}
+
+// TestRunAll_MarkdownlintDisabledSkipsCheck guards the opt-out half of the
+// hard-fail change above: --disable-checks markdownlint must still work as
+// an explicit escape hatch, rendering a "Disabled." child instead of
+// running the check at all (and never contributing a failure), exactly
+// like kustomize-fix's own disable path.
+func TestRunAll_MarkdownlintDisabledSkipsCheck(t *testing.T) {
+	d := t.TempDir()
+	// Deliberately malformed markdown (a bare URL, which markdownlint's
+	// default ruleset flags) - if this ran, it would fail; disabling the
+	// check must mean it never runs at all.
+	mustWrite(t, filepath.Join(d, "README.md"), "# Title\n\nhttps://example.com\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "prettier", "shellcheck", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger != nil && res.Logger.HasFailures() {
+		t.Error("expected --disable-checks markdownlint to skip the check entirely, not fail")
+	}
+	var lint ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Linting" {
+			lint = s
+		}
+	}
+	if !strings.Contains(lint.Body, "Disabled.") {
+		t.Errorf("expected the Linting section to show markdownlint as Disabled, got:\n%s", lint.Body)
+	}
+}
+
 // --- shellcheck extraction wiring (PR-7) -----------------------------------
 
 func hasShellcheckBinary() bool {

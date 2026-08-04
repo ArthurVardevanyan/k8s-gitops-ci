@@ -14,5 +14,5 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: "25Gi"
+      storage: "50i"
   storageClassName: rook-ceph-block-ci
