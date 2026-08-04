@@ -185,14 +185,13 @@ func Run(opts Options) error {
 	// actual file/message list behind a step's summary "N violation(s)" log
 	// line), but res.Sections is otherwise only ever rendered into the PR
 	// comment body - which is skipped whenever --comment isn't passed
-	// (e.g. local/CLI-only runs). Print the failing sections' full detail
-	// to the console here so
-	// --verbose is self-sufficient without requiring --comment; this
+	// (e.g. local/CLI-only runs). Always print the FAILING sections' full
+	// detail to the console so a failed run shows *why* it failed without
+	// requiring --verbose or --comment. printFailedSectionDetail only emits
+	// StatusError sections, so a clean run prints nothing extra here; this
 	// applies uniformly to every section (linting, static checks, build,
 	// scaffold, resource compliance), not just one of them.
-	if opts.Verbose {
-		printFailedSectionDetail(vr, log)
-	}
+	printFailedSectionDetail(vr, log)
 
 	if vr != nil && vr.Logger != nil {
 		if summary := tc.Summary(time.Since(start)); summary != "" {

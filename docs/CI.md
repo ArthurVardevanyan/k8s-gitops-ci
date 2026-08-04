@@ -184,12 +184,16 @@ Kustomize-only, unconditionally, via `overlay.RenderKustomize` directly:
 overlays (runs during the earlier Linting phase, before any app's
 `test.sh`/strategy is resolved) and `pkg/ghostpatch/ghostpatch.go`'s
 patch-vs-base drift detection (structural, unaffected by secret
-placeholders either way). Don't be misled by the `placeholder` check's
-AVP-pattern recognition (`<path:...>` etc. are real regexes in
-`pkg/validator/placeholder`) into assuming _that_ check resolves
-anything - it only _detects_ unresolved AVP tokens in
-already-rendered/committed YAML, independent of the build-time
-resolution described above.
+placeholders either way). The `placeholder` check (registered with
+`placeholder.Options{CheckAVP: false}`) deliberately does **not** flag
+AVP-scheme tokens (`<path:...>`, `<vault:...>`, `<aws:...>`, `<gcp:...>`)
+at all: it runs over the raw committed/changed source, where those
+tokens are the intended, checked-in state — resolved at deploy time by
+the real AVP plugin (or by this pipeline's own `overlay.RenderWithStrategy`
+build described above), not by the author. `placeholder.Options.CheckAVP`
+remains available for a caller that instead validates already-rendered
+output, where a surviving AVP token _would_ be a real, unresolved
+failure — this pipeline just isn't such a caller today.
 
 ## Validation Steps
 
@@ -590,7 +594,7 @@ automatically exemptable via its own check ID (see
 | `image-checksum`   | `pkg/validator/image`       | Doc     | Every OCI image reference is pinned to a `sha256:` digest, not just a tag                                                                                                                                                                                                                                                                                                                                                                             |
 | `named-ports`      | `pkg/validator/namedport`   | Doc     | Container/Service ports are named, not numeric, everywhere they're referenced                                                                                                                                                                                                                                                                                                                                                                         |
 | `podspec-defaults` | `pkg/validator/podspec`     | Doc     | Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...) and container `securityContext`/`resources.requests`/`resources.limits` are all set                                                                                                                                                                                                                                                                                            |
-| `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens, or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML                                                                                                                                                                                                                                                                                                   |
+| `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML (AVP-scheme secret-reference tokens like `<path:...>` are deliberately not flagged — see below)                                                                                                                                                                                                                                 |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID)                                                                                                                                                                    |
 
 A handful of documents/directories are excluded from the doc-check pass
@@ -697,9 +701,8 @@ are all set.
 
 #### `placeholder`
 
-No unresolved `<PLACEHOLDER>`-style tokens, AVP secret-reference tokens,
-or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed
-YAML.
+No unresolved `<PLACEHOLDER>`-style tokens or sentinel words
+(`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML.
 
 - **Package:** `pkg/validator/placeholder`
 - **Scope:** Doc
@@ -709,6 +712,16 @@ YAML.
 CRD's embedded OpenAPI schema can legitimately contain
 angle-bracket/sentinel-shaped tokens (defaults, examples, pattern
 strings) that aren't unresolved secrets.
+
+`placeholder` is registered with `placeholder.Options{CheckAVP: false}`
+(`pkg/validator/register_checks.go`), so AVP-scheme secret-reference
+tokens (`<path:...>`, `<vault:...>`, `<aws:...>`, `<gcp:...>`) are
+deliberately **not** flagged: this check runs over raw committed/changed
+source, where those tokens are the intended checked-in state, resolved
+at deploy time (see [Build Strategies](#build-strategies) above) rather
+than by the author. `placeholder.Options.CheckAVP` remains available for
+a caller validating already-rendered output instead, where a surviving
+AVP token would be a genuine unresolved-placeholder failure.
 
 #### `cluster-identity`
 
