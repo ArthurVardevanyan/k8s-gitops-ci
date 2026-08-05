@@ -884,24 +884,39 @@ func ComposeCINotesSection(body string) ReportSection {
 }
 
 // ComposeNADSection renders NetworkAttachmentDefinition validation results.
-// tier reflects which rule set actually ran: "structural" (the always-on
-// default) or "OVN-aware" (Options.AssumeOpenShift's additional semantic
-// tier - see pkg/validator/nad's package doc comment).
-func ComposeNADSection(nadErrors []nad.ValidationError, assumeOpenshift bool) ReportSection {
-	tier := "structural"
-	if assumeOpenshift {
-		tier = "OVN-aware"
-	}
-	if len(nadErrors) == 0 {
-		return ReportSection{Name: "NetworkAttachmentDefinition Validation", Status: StatusPassed, Body: fmt.Sprintf("All NetworkAttachmentDefinition resources passed %s validation.", tier)}
+// Hard errors (nadErrors) gate the run and render ❌; advisory warnings
+// (nadWarnings, e.g. an unrecognized CNI/IPAM type on a non-OVN NAD) are
+// surfaced for visibility and render ⚠️ but never gate. The section rolls up
+// to the worst present severity: StatusError if any hard error, else
+// StatusWarning if any advisory, else StatusPassed.
+func ComposeNADSection(nadErrors, nadWarnings []nad.ValidationError) ReportSection {
+	const name = "NetworkAttachmentDefinition Validation"
+	if len(nadErrors) == 0 && len(nadWarnings) == 0 {
+		return ReportSection{Name: name, Status: StatusPassed, Body: "All NetworkAttachmentDefinition resources passed validation."}
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "**%d invalid NetworkAttachmentDefinition(s)** (%s validation):\n\n", len(nadErrors), tier)
-	b.WriteString("| File | Error |\n| --- | --- |\n")
-	for _, e := range nadErrors {
-		fmt.Fprintf(&b, "| %s | %s |\n", e.File, strings.ReplaceAll(e.Message, "|", "\\|"))
+	if len(nadErrors) > 0 {
+		fmt.Fprintf(&b, "**%d invalid NetworkAttachmentDefinition(s):**\n\n", len(nadErrors))
+		b.WriteString("| File | Error |\n| --- | --- |\n")
+		for _, e := range nadErrors {
+			fmt.Fprintf(&b, "| %s | %s |\n", e.File, strings.ReplaceAll(e.Message, "|", "\\|"))
+		}
+	}
+	if len(nadWarnings) > 0 {
+		if len(nadErrors) > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "**%d NetworkAttachmentDefinition advisory warning(s)** (non-blocking):\n\n", len(nadWarnings))
+		b.WriteString("| File | Warning |\n| --- | --- |\n")
+		for _, w := range nadWarnings {
+			fmt.Fprintf(&b, "| %s | %s |\n", w.File, strings.ReplaceAll(w.Message, "|", "\\|"))
+		}
 	}
 
-	return ReportSection{Name: "NetworkAttachmentDefinition Validation", Status: StatusError, Body: b.String()}
+	status := StatusWarning
+	if len(nadErrors) > 0 {
+		status = StatusError
+	}
+	return ReportSection{Name: name, Status: status, Body: b.String()}
 }

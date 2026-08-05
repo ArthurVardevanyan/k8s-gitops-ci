@@ -625,28 +625,35 @@ func runYAMLSyntax(args []string) error {
 
 // runValidateNAD validates NetworkAttachmentDefinition files directly (bypassing
 // the full pipeline) - either every YAML file under --dir or the explicit file
-// paths given as positional args. --assume-openshift applies the additional
-// OVN-Kubernetes-aware semantic tier (see pkg/validator/nad's package doc
-// comment); the always-on structural tier runs regardless.
+// paths given as positional args. Validation dispatches on the CNI type declared
+// in each NAD's spec.config (OVN NADs get OVN-aware checks automatically); see
+// pkg/validator/nad's package doc comment.
 func runValidateNAD(args []string) error {
 	fs := flag.NewFlagSet("validate-nad", flag.ExitOnError)
 	dir := fs.String("dir", "", "directory to validate")
-	assumeOpenshift := fs.Bool("assume-openshift", false, "apply OVN-aware validation (assumes the target CNI is OVN-Kubernetes)")
+	// Deprecated/no-op: NAD validation now dispatches on the CNI type declared
+	// in each NAD's spec.config, so this flag no longer affects it. Kept for
+	// back-compat with callers/scripts that still pass it.
+	assumeOpenshift := fs.Bool("assume-openshift", false, "deprecated/ignored: NAD validation now auto-detects OVN NADs by spec.config type")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	_ = *assumeOpenshift // accepted for back-compat; no longer consumed here
 
 	if *dir == "" && fs.NArg() == 0 {
-		return fmt.Errorf("validate-nad: usage: validate-nad [--assume-openshift] --dir <path> or <file.yaml> [<file.yaml>...]")
+		return fmt.Errorf("validate-nad: usage: validate-nad --dir <path> or <file.yaml> [<file.yaml>...]")
 	}
 
-	var errs []nad.ValidationError
+	var errs, warns []nad.ValidationError
 	if *dir != "" {
-		errs = nad.ValidateDir(*dir, *assumeOpenshift)
+		errs, warns = nad.ValidateDir(*dir)
 	} else {
-		errs = nad.ValidateFiles(fs.Args(), *assumeOpenshift)
+		errs, warns = nad.ValidateFiles(fs.Args())
 	}
 
+	for _, w := range warns {
+		fmt.Fprintf(os.Stderr, "warning: %s: %s\n", w.File, w.Message)
+	}
 	for _, e := range errs {
 		fmt.Fprintf(os.Stderr, "invalid NetworkAttachmentDefinition %s: %s\n", e.File, e.Message)
 	}
@@ -692,7 +699,7 @@ Static Checks:
   ghost-patches     Detect kustomize patches that match no resource
   sort-configs      Sort repo config files
   update-scaffold-status Update scaffold README status table
-  validate-nad      Validate NetworkAttachmentDefinition files (structural + optional OVN-aware)
+  validate-nad      Validate NetworkAttachmentDefinition files (auto-dispatches on CNI type)
 
 Version:
   version           Show version information

@@ -1,26 +1,36 @@
 // Package nad provides NetworkAttachmentDefinition (NAD) validation.
 //
-// It offers two tiers of validation:
+// Validation dispatches on the CNI plugin type declared in each NAD's
+// spec.config (a stringified CNI netconf), rather than on a global platform
+// assumption:
 //
-//   - Structural (default): lightweight YAML checks — the resource is a
-//     NetworkAttachmentDefinition and its spec.config field is present and
-//     non-empty. These checks are org/CNI-neutral.
-//   - OVN-aware (opt-in via assumeOpenshift): parses spec.config as an
-//     OVN-Kubernetes CNI netconf and applies OVN's semantic rules (topology,
-//     role, subnet, and transport constraints). This assumes NADs target the
-//     OVN-Kubernetes CNI, which is the CNI on OpenShift clusters - the same
-//     assumption already made by Options.AssumeOpenShift for the
-//     sync-options check (see pkg/validator/syncopts.AssumeOpenShift), so
-//     this tier reuses that flag rather than introducing a second one.
+//   - Structural (always, org/CNI-neutral): spec.config must be a non-empty
+//     JSON string, must parse as valid JSON (a single CNI config object or a
+//     conflist), and must declare a non-empty plugin "type".
+//   - OVN-Kubernetes NADs (type "ovn-k8s-cni-overlay"): OVN's semantic rules
+//     (topology, role, subnet, and transport constraints) are additionally
+//     applied. These run wherever such a NAD is authored - the type field is
+//     self-describing, so no "assume OpenShift" flag is needed.
+//   - Non-OVN NADs (macvlan, bridge, ipvlan, host-device, SR-IOV, ...): their
+//     config is owned by the respective CNI plugin, so no hard semantic checks
+//     are applied. Only non-gating advisories are surfaced for likely
+//     authoring mistakes (unrecognized CNI/IPAM type, missing cniVersion).
 //
-// The OVN-aware tier imports only the lightweight ovn-kubernetes netconf
-// parsing packages (pkg/config, pkg/types); the semantic rule set is
-// ported from ovn-kubernetes' util.ValidateNetConf so the heavyweight
-// pkg/util dependency tree (netlink, nftables, frr-k8s, ...) is avoided.
+// Dispatching on the type field fixes an earlier design that gated the OVN
+// tier behind an assumeOpenshift flag and treated every
+// non-ovn-k8s-cni-overlay NAD as invalid ("net-attach-def not managed by
+// OVN"). That false-failed valid secondary networks such as ODF's macvlan
+// NADs. Upstream ovn-kubernetes itself treats a non-OVN NAD as a skip, never a
+// failure (see pkg/util/multi_network.go's ParseNetConf and its callers) -
+// this package mirrors that by only applying OVN rules to OVN NADs.
+//
+// The OVN tier imports only the lightweight ovn-kubernetes netconf parsing
+// packages (pkg/config, pkg/types); the semantic rule set is ported from
+// ovn-kubernetes' util.ValidateNetConf so the heavyweight pkg/util dependency
+// tree (netlink, nftables, frr-k8s, ...) is avoided.
 package nad
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -36,10 +46,43 @@ import (
 	kyaml "k8s.io/apimachinery/pkg/util/yaml"
 )
 
-// ValidationError represents a NAD validation failure.
+// ovnCNIType is the CNI plugin type of an OVN-Kubernetes-managed NAD. Only
+// NADs declaring this type are subjected to OVN semantic validation.
+const ovnCNIType = "ovn-k8s-cni-overlay"
+
+// knownCNITypes are the CNI plugin types shipped/supported on OpenShift for
+// additional networks. An unrecognized type is surfaced as a non-gating
+// advisory (a likely typo) rather than an error: CNI plugin types are
+// open-ended (any binary on the CNI path, including third-party plugins), so
+// hard-failing an unlisted type would reintroduce false positives.
+var knownCNITypes = map[string]bool{
+	ovnCNIType:    true,
+	"macvlan":     true,
+	"bridge":      true,
+	"ipvlan":      true,
+	"host-device": true,
+	"tap":         true,
+	"vlan":        true,
+	"sriov":       true,
+}
+
+// knownIPAMTypes are the IPAM plugin types commonly used on OpenShift. As with
+// knownCNITypes, an unrecognized value is advisory-only.
+var knownIPAMTypes = map[string]bool{
+	"host-local":  true,
+	"static":      true,
+	"dhcp":        true,
+	"whereabouts": true,
+}
+
+// ValidationError represents a NAD validation finding. A finding with Warning
+// set is advisory (a likely authoring mistake) and must not gate the pipeline;
+// only non-warning findings are hard failures. ValidateFiles/ValidateDir
+// return the two severities separately.
 type ValidationError struct {
 	File    string
 	Message string
+	Warning bool
 }
 
 func (e ValidationError) String() string { return fmt.Sprintf("%s: %s", e.File, e.Message) }
@@ -49,13 +92,12 @@ func (e ValidationError) String() string { return fmt.Sprintf("%s: %s", e.File, 
 //
 // Spec.Config is captured as json.RawMessage rather than a string so that
 // decoding never fails on non-NAD documents that legitimately carry an object
-// under spec.config (for example an OLM Subscription's spec.config). The
-// OVN-aware validator decodes every document in a rendered overlay file
-// through nadDoc before checking Kind, so a plain string field here would
-// abort validation of the whole file - including the actual NAD - the moment
-// a sibling document's spec.config happened to be an object. The kind is
-// checked before the config is interpreted; only genuine NAD documents have
-// their config asserted to be a string (see configString).
+// under spec.config (for example an OLM Subscription's spec.config). Every
+// document in a rendered overlay file is decoded through nadDoc before Kind is
+// checked, so a plain string field here would abort validation of the whole
+// file - including the actual NAD - the moment a sibling document's spec.config
+// happened to be an object. Only genuine NAD documents have their config
+// asserted to be a string (see configString).
 type nadDoc struct {
 	Kind     string `json:"kind"`
 	Metadata struct {
@@ -67,9 +109,45 @@ type nadDoc struct {
 	} `json:"spec"`
 }
 
-// configString asserts that the NAD's spec.config is a JSON string and
-// returns its decoded value. A NetworkAttachmentDefinition's spec.config must
-// be a stringified CNI netconf; anything else is a malformed NAD.
+// ipamProbe extracts an IPAM plugin's type without asserting the rest of its
+// (plugin-specific) shape.
+type ipamProbe struct {
+	Type string `json:"type"`
+}
+
+// pluginProbe is one entry of a CNI conflist's plugins array. IPAM is kept raw
+// so a plugin-specific IPAM block never breaks decoding.
+type pluginProbe struct {
+	Type string          `json:"type"`
+	IPAM json.RawMessage `json:"ipam"`
+}
+
+// cniProbe is the subset of a (stringified) CNI netconf needed to dispatch
+// validation by plugin type. It accepts both a single plugin config (top-level
+// type/ipam) and a conflist (plugins[]).
+type cniProbe struct {
+	CNIVersion string          `json:"cniVersion"`
+	Type       string          `json:"type"`
+	IPAM       json.RawMessage `json:"ipam"`
+	Plugins    []pluginProbe   `json:"plugins"`
+}
+
+// ipamTypeOf best-effort extracts an ipam.type from a raw IPAM block. A
+// non-object or absent block yields "".
+func ipamTypeOf(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var i ipamProbe
+	if err := json.Unmarshal(raw, &i); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(i.Type)
+}
+
+// configString asserts that the NAD's spec.config is a JSON string and returns
+// its decoded value. A NetworkAttachmentDefinition's spec.config must be a
+// stringified CNI netconf; anything else (e.g. an object) is a malformed NAD.
 func configString(doc nadDoc) (string, error) {
 	if len(doc.Spec.Config) == 0 {
 		return "", nil
@@ -81,24 +159,23 @@ func configString(doc nadDoc) (string, error) {
 	return s, nil
 }
 
-// ValidateFiles validates all NAD YAML files in the given list. When
-// assumeOpenshift is true, OVN-aware netconf validation is applied in
-// addition to the always-on structural checks.
-func ValidateFiles(files []string, assumeOpenshift bool) []ValidationError {
-	var errs []ValidationError
+// ValidateFiles validates all NAD YAML files in the given list, returning hard
+// errors and advisory warnings separately. Files that do not declare a
+// NetworkAttachmentDefinition are skipped.
+func ValidateFiles(files []string) (errs, warns []ValidationError) {
 	for _, f := range files {
 		if !IsNADFile(f) {
 			continue
 		}
-		if e := validateNADFile(f, assumeOpenshift); len(e) > 0 {
-			errs = append(errs, e...)
-		}
+		fe, fw := validateNADFile(f)
+		errs = append(errs, fe...)
+		warns = append(warns, fw...)
 	}
-	return errs
+	return errs, warns
 }
 
 // ValidateDir validates all NAD files in a directory tree.
-func ValidateDir(dir string, assumeOpenshift bool) []ValidationError {
+func ValidateDir(dir string) (errs, warns []ValidationError) {
 	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -110,9 +187,9 @@ func ValidateDir(dir string, assumeOpenshift bool) []ValidationError {
 		return nil
 	})
 	if err != nil {
-		return []ValidationError{{File: dir, Message: fmt.Sprintf("walking directory: %v", err)}}
+		return []ValidationError{{File: dir, Message: fmt.Sprintf("walking directory: %v", err)}}, nil
 	}
-	return ValidateFiles(files, assumeOpenshift)
+	return ValidateFiles(files)
 }
 
 // nadKindRE matches a YAML `kind: NetworkAttachmentDefinition` mapping entry,
@@ -148,23 +225,16 @@ func ContainsNAD(data []byte) bool {
 	return nadKindRE.Match(data)
 }
 
-// validateNADFile dispatches to the OVN-aware or structural validator.
-func validateNADFile(path string, assumeOpenshift bool) []ValidationError {
-	if assumeOpenshift {
-		return validateNADFileOVN(path)
-	}
-	return validateNADFileStructural(path)
-}
-
-// validateNADFileOVN parses every NetworkAttachmentDefinition document in the
-// file as an OVN-Kubernetes netconf and applies OVN's semantic validation.
-func validateNADFileOVN(path string) []ValidationError {
+// validateNADFile decodes every document in the file and validates each
+// NetworkAttachmentDefinition, dispatching on the CNI plugin type declared in
+// spec.config. Non-NAD documents (e.g. an OLM Subscription whose spec.config
+// is an object) are skipped by kind and never break decoding.
+func validateNADFile(path string) (errs, warns []ValidationError) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return []ValidationError{{File: path, Message: fmt.Sprintf("read error: %v", err)}}
+		return []ValidationError{{File: path, Message: fmt.Sprintf("read error: %v", err)}}, nil
 	}
 
-	var errs []ValidationError
 	dec := kyaml.NewYAMLToJSONDecoder(bytes.NewReader(data))
 	for {
 		var doc nadDoc
@@ -173,42 +243,114 @@ func validateNADFileOVN(path string) []ValidationError {
 				break
 			}
 			errs = append(errs, ValidationError{File: path, Message: fmt.Sprintf("decoding YAML: %v", decErr)})
-			return errs
+			return errs, warns
 		}
 		if doc.Kind != "NetworkAttachmentDefinition" {
 			continue
 		}
-		if e := validateNetConf(path, doc); e != nil {
-			errs = append(errs, *e)
-		}
+		e, w := validateNAD(path, doc)
+		errs = append(errs, e...)
+		warns = append(warns, w...)
 	}
-	return errs
+	return errs, warns
 }
 
-// validateNetConf parses the NAD's spec.config as an OVN netconf and applies
-// OVN-Kubernetes' semantic rules. The rule set is ported from
-// ovn-kubernetes/go-controller/pkg/util.ValidateNetConf (keep in sync when the
-// pinned ovn-kubernetes version changes). Runtime-only checks that depend on
-// live cluster state (uplink gateway mode, dynamic transit-subnet defaulting)
-// are intentionally omitted as they are not statically knowable.
-func validateNetConf(path string, doc nadDoc) *ValidationError {
-	fail := func(msg string) *ValidationError {
-		return &ValidationError{File: path, Message: msg}
+// validateNAD applies the structural gates common to every NAD and then
+// dispatches on the CNI plugin type: OVN NADs get OVN's semantic rules,
+// everything else gets advisory-only checks.
+func validateNAD(path string, doc nadDoc) (errs, warns []ValidationError) {
+	id := doc.Metadata.Namespace + "/" + doc.Metadata.Name
+	hardf := func(msg string) {
+		errs = append(errs, ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg)})
+	}
+	warnf := func(msg string) {
+		warns = append(warns, ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg), Warning: true})
 	}
 
 	cfg, err := configString(doc)
 	if err != nil {
-		return fail(fmt.Sprintf("invalid NetworkAttachmentDefinition %s/%s: %v", doc.Metadata.Namespace, doc.Metadata.Name, err))
+		hardf(err.Error())
+		return errs, warns
+	}
+	if strings.TrimSpace(cfg) == "" {
+		hardf("spec.config is empty")
+		return errs, warns
+	}
+
+	// spec.config must be valid JSON (a single CNI config object or a
+	// conflist). This org/CNI-neutral gate catches malformed configs for every
+	// plugin type, not just OVN - previously only OVN NADs were JSON-checked.
+	if !json.Valid([]byte(cfg)) {
+		hardf("spec.config is not valid JSON")
+		return errs, warns
+	}
+	var probe cniProbe
+	if err := json.Unmarshal([]byte(cfg), &probe); err != nil {
+		hardf(fmt.Sprintf("spec.config is not a valid CNI configuration: %v", err))
+		return errs, warns
+	}
+
+	// Resolve the effective plugin type and ipam from either shape (a conflist
+	// dispatches on its first plugin, like ovn-kubernetes' own parser).
+	cniType := strings.TrimSpace(probe.Type)
+	ipam := ipamTypeOf(probe.IPAM)
+	if len(probe.Plugins) > 0 {
+		cniType = strings.TrimSpace(probe.Plugins[0].Type)
+		ipam = ipamTypeOf(probe.Plugins[0].IPAM)
+		for i, p := range probe.Plugins {
+			if strings.TrimSpace(p.Type) == "" {
+				hardf(fmt.Sprintf("spec.config plugins[%d] is missing a CNI \"type\"", i))
+				return errs, warns
+			}
+		}
+	}
+	if cniType == "" {
+		hardf("spec.config is missing a CNI \"type\"")
+		return errs, warns
+	}
+
+	// OVN-Kubernetes NADs get OVN's semantic validation. Everything else is
+	// owned by its CNI plugin; only surface non-gating advisories.
+	if cniType == ovnCNIType {
+		if e := validateOVNNetConf(path, id, cfg); e != nil {
+			errs = append(errs, *e)
+		}
+		return errs, warns
+	}
+
+	if !knownCNITypes[cniType] {
+		warnf(fmt.Sprintf("unrecognized CNI type %q (typo? not gating)", cniType))
+	}
+	if ipam != "" && !knownIPAMTypes[ipam] {
+		warnf(fmt.Sprintf("unrecognized IPAM type %q (typo? not gating)", ipam))
+	}
+	if strings.TrimSpace(probe.CNIVersion) == "" {
+		warnf("spec.config is missing the recommended \"cniVersion\" field (not gating)")
+	}
+	return errs, warns
+}
+
+// validateOVNNetConf parses an ovn-k8s-cni-overlay NAD's spec.config and
+// applies OVN-Kubernetes' semantic rules. The rule set is ported from
+// ovn-kubernetes/go-controller/pkg/util.ValidateNetConf (keep in sync when the
+// pinned ovn-kubernetes version changes). Runtime-only checks that depend on
+// live cluster state (uplink gateway mode, dynamic transit-subnet defaulting)
+// are intentionally omitted as they are not statically knowable.
+func validateOVNNetConf(path, id, cfg string) *ValidationError {
+	// Every failure is scoped to this NAD's namespace/name so a finding stays
+	// unambiguous when a rendered file carries multiple NAD documents (the
+	// common case). Individual messages therefore omit the id themselves.
+	fail := func(msg string) *ValidationError {
+		return &ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg)}
 	}
 
 	netconf, err := ovnconfig.ParseNetConf([]byte(cfg))
 	if err != nil {
-		return fail(fmt.Sprintf("invalid NetworkAttachmentDefinition %s/%s: %v", doc.Metadata.Namespace, doc.Metadata.Name, err))
+		return fail(fmt.Sprintf("invalid OVN netconf: %v", err))
 	}
 
-	nadName := fmt.Sprintf("%s/%s", doc.Metadata.Namespace, doc.Metadata.Name)
-	if netconf.Name != ovntypes.DefaultNetworkName && netconf.NADName != nadName {
-		return fail(fmt.Sprintf("net-attach-def name (%s) is inconsistent with config (%s)", nadName, netconf.NADName))
+	if netconf.Name != ovntypes.DefaultNetworkName && netconf.NADName != id {
+		return fail(fmt.Sprintf("netAttachDefName in config (%s) does not match the NAD's namespace/name", netconf.NADName))
 	}
 
 	if err := ovnconfig.ValidateNetConfNameFields(netconf); err != nil {
@@ -229,7 +371,7 @@ func validateNetConf(path string, doc nadDoc) *ValidationError {
 	}
 
 	if netconf.IPAM.Type != "" {
-		return fail(fmt.Sprintf("error parsing Network Attachment Definition %s: unsupported ipam key", nadName))
+		return fail("unsupported ipam key")
 	}
 
 	if netconf.Transport != "" &&
@@ -271,50 +413,4 @@ func validateNetConf(path string, doc nadDoc) *ValidationError {
 	}
 
 	return nil
-}
-
-// validateNADFileStructural performs lightweight structural checks: the
-// spec.config field must be present and non-empty. This tier is CNI-neutral.
-func validateNADFileStructural(path string) []ValidationError {
-	f, err := os.Open(path)
-	if err != nil {
-		return []ValidationError{{File: path, Message: fmt.Sprintf("read error: %v", err)}}
-	}
-	defer f.Close() //nolint:errcheck // Best-effort close on read-only file
-
-	var errs []ValidationError
-	scanner := bufio.NewScanner(f)
-	hasConfig := false
-	lineNum := 0
-
-	for scanner.Scan() {
-		lineNum++
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "config:") {
-			hasConfig = true
-			value := strings.TrimSpace(strings.TrimPrefix(line, "config:"))
-			if value == "" || value == "''" || value == `""` {
-				errs = append(errs, ValidationError{
-					File:    path,
-					Message: fmt.Sprintf("line %d: spec.config is empty", lineNum),
-				})
-			}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		errs = append(errs, ValidationError{
-			File:    path,
-			Message: fmt.Sprintf("scan error: %v", err),
-		})
-	}
-
-	if !hasConfig {
-		errs = append(errs, ValidationError{
-			File:    path,
-			Message: "spec.config field not found in NetworkAttachmentDefinition",
-		})
-	}
-
-	return errs
 }

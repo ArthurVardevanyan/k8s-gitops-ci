@@ -745,9 +745,9 @@ Non-builtin API-group resources carry the ArgoCD
   groups (e.g. `route.openshift.io`, `config.openshift.io`) are always
   exempt; OpenShift-_default_-but-portable groups that also ship on
   non-OpenShift clusters (e.g. Prometheus Operator, OLM, Gateway API,
-  Multus/OVN-Kubernetes CNI) are only exempt with `--assume-openshift`
-  — the same flag [NAD validation](#networkattachmentdefinition-nad-validation)
-  below shares for its own OVN-aware tier.
+  Multus/OVN-Kubernetes CNI) are only exempt with `--assume-openshift`.
+  ([NAD validation](#networkattachmentdefinition-nad-validation) below no
+  longer uses this flag — it dispatches on each NAD's CNI type.)
 
 #### `image-checksum`
 
@@ -876,7 +876,8 @@ are **not** exemptable via `EXEMPTIONS=(...)` or the
 `gitops-ci.k8s.io/exempt-<check-id>` annotation (see
 [EXEMPTIONS.md](EXEMPTIONS.md)). It renders as its own
 "NetworkAttachmentDefinition Validation" report section, blocking on any
-finding. The section is **omit-when-absent** (like the opt-in Kyverno
+hard error (advisory warnings render ⚠️ and never block). The section is
+**omit-when-absent** (like the opt-in Kyverno
 section): it's rendered only when at least one
 `NetworkAttachmentDefinition` is actually present in the rendered-overlay
 chain, showing the result whether it passed or failed — a changeset that
@@ -884,24 +885,36 @@ touches no NAD gets no section rather than an empty "0 NADs, all good"
 stub. The validator itself still always runs; only the (empty) section is
 suppressed.
 
-It has two tiers:
+Validation dispatches on the CNI plugin `type` declared in each NAD's
+`spec.config` (a stringified CNI netconf), rather than on a global
+platform flag — the `type` field is self-describing:
 
-- **Structural** (always on): the resource is a
-  `NetworkAttachmentDefinition` and its `spec.config` field is present
-  and non-empty. CNI-neutral — no assumption about which CNI the config
-  targets.
-- **OVN-Kubernetes-aware** (opt-in via `--assume-openshift`, i.e.
-  `Options.AssumeOpenShift` — the same flag that exempts OpenShift-only
-  API groups from `sync-options` above, since an OpenShift/OKD cluster's
-  default CNI is OVN-Kubernetes): parses `spec.config` as an OVN netconf
-  and applies OVN's semantic rules (topology/role/subnet/transport
-  constraints, ported from `ovn-kubernetes/util.ValidateNetConf` — see
-  `pkg/validator/nad`'s package doc comment for what's intentionally
-  omitted: runtime-only checks that depend on live cluster state).
+- **Structural gates** (always, org/CNI-neutral, blocking): `spec.config`
+  must be a non-empty JSON **string**, must parse as **valid JSON** (a
+  single config object or a `plugins` conflist), and must declare a
+  non-empty plugin `type`.
+- **OVN-Kubernetes NADs** (`type: ovn-k8s-cni-overlay`, blocking): OVN's
+  semantic rules (topology/role/subnet/transport constraints, ported from
+  `ovn-kubernetes/util.ValidateNetConf` — see `pkg/validator/nad`'s
+  package doc comment for what's intentionally omitted: runtime-only
+  checks that depend on live cluster state) are additionally applied.
+  These run wherever such a NAD is authored.
+- **Non-OVN NADs** (`macvlan`, `bridge`, `ipvlan`, `host-device`,
+  SR-IOV, …): their config is owned by the respective CNI plugin, so no
+  hard semantic checks are applied — only **non-blocking advisories**
+  (⚠️) for likely authoring mistakes (unrecognized CNI/IPAM `type`,
+  missing `cniVersion`). CNI types are open-ended, so an unrecognized
+  type is a warning, never a hard failure.
+
+Dispatching on the type field is what keeps OVN validation from
+false-failing valid non-OVN secondary networks (upstream ovn-kubernetes
+itself skips a non-OVN NAD rather than failing it). NAD validation does
+**not** depend on `--assume-openshift` (that flag still governs the
+`sync-options` exemption above).
 
 `validate-nad` also exposes this directly as a CLI subcommand, bypassing
 the full pipeline, for validating a directory or explicit file list
-(`k8s-gitops-ci validate-nad [--assume-openshift] --dir <path>` or
+(`k8s-gitops-ci validate-nad --dir <path>` or
 `... <file.yaml> ...`).
 
 ## Direct vs. external findings
