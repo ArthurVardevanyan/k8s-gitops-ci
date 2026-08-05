@@ -45,7 +45,15 @@ Only what's actually active in `.goreleaser.yaml` today:
   `builds[].goos`/`goarch` cartesian product is `{linux,darwin} ×
 {amd64,arm64}`, but the `ignore` list removes `darwin/amd64`,
   `linux/arm64`, and `windows/arm64` (`windows` is fully commented out of
-  `goos` besides), leaving exactly those two platforms.
+  `goos` besides), leaving exactly those two platforms. `builds[].flags`
+  passes `-tags=embedschemas` (matching `task build` — see
+  [SCHEMAS.md](SCHEMAS.md)), so every published binary has the
+  kubeconform schema archive/Kyverno policy archive baked in and works
+  standalone out of the box; `before.hooks` runs `task update:schemas`/
+  `task update:policies` first so those archives exist on disk for
+  `//go:embed` to pick up (a no-op in the real Tekton pipeline, where
+  `task ci` already generated them moments earlier in the same step —
+  see [Dry-run locally](#dry-run-locally) for why it matters standalone).
 - **GitHub Releases** (`release.github: {owner: ArthurVardevanyan, name:
 k8s-gitops-ci}`), with the git-cliff-generated changelog as the release
   body.
@@ -104,3 +112,12 @@ goreleaser build --single-target --snapshot --clean
 Both require `GORELEASER_CURRENT_TAG` to be unset or to point at an
 existing local tag — `goreleaser build` doesn't need one, but `release`
 without `--snapshot` does.
+
+Unlike `task build`/`task test` (which depend on the `update:schemas`/
+`update:policies` Task targets directly), a standalone `goreleaser build`/
+`release` doesn't go through `Taskfile.yml` at all by default — that's
+why `before.hooks` explicitly runs `task update:schemas`/
+`task update:policies` itself (see [Published artifacts](#published-artifacts)),
+so `schemas.tar.gz`/`policies.tar.gz` are always present on disk before
+the `-tags=embedschemas` build's `//go:embed` needs them, even when
+dry-running `goreleaser` directly like this.

@@ -27,16 +27,30 @@ update:schemas`/`update:policies` regenerate them, and `task build`/
 `task test`/`task lint` depend on those tasks so they're always present
 before anything that needs them runs) and embedded via `//go:embed`, but
 **only when built with the `embedschemas` build tag**
-(`go build -tags embedschemas`, which is what `task build`/`task test`
-always pass for this repo's own binary). Without the tag - the default,
-and how downstream Go module consumers import these packages - no
-archive is compiled in at all, keeping the package importable as a
-library without needing the (large, gitignored) archive to be present.
+(`go build -tags embedschemas`). This repo's own binary is always built
+this way: `task build`/`task test` pass `-tags embedschemas` directly,
+and `.goreleaser.yaml`'s `builds[].flags` passes the same tag (with its
+`before.hooks` running `task update:schemas`/`task update:policies`
+first so the archives exist on disk) for every published GitHub Release
+binary - so the standalone CLI works out of the box with no extra
+configuration, matching a local `task build`. Without the tag - the
+default for a bare `go build ./cmd/k8s-gitops-ci`, and how downstream Go
+module consumers import these packages as a library - no archive is
+compiled in at all, keeping the package importable without needing the
+(large, gitignored) archive to be present.
 `Extract()`/`EnsureArchive()` return `ErrNoEmbeddedArchive` in that case,
 and callers (`kubeconform.ExtractSchemas`, `kyverno.PreparePolicies`,
 `pkg/pipeline`'s Setup phase, `pkg/validator/phases.go`) fall back
 gracefully rather than failing the run - kubeconform/Kyverno then rely on
 an explicitly-supplied `Options.SchemaDir`/`Options.PolicyPath` instead.
+A binary missing the tag doesn't fail loudly: kubeconform still
+validates built-in Kubernetes kinds fine (via its own default schema
+location) and only errors with "could not find schema for X" for kinds
+that need the embedded archive (CRDs, and `CustomResourceDefinition`
+itself) - if you see that error against a binary you expected to have
+schemas embedded, verify it was actually built with `-tags embedschemas`
+(e.g. compare its size against one you know has the tag; the archive
+adds roughly its own compressed size to the binary).
 
 `kubeconform.ExtractSchemas` and `kyverno.PreparePolicies` are themselves
 plain overridable package vars (the same exported-override-var pattern
