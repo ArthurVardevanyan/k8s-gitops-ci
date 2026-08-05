@@ -73,6 +73,42 @@ type DocCheck interface {
 	CheckDoc(data []byte, source string) []Finding
 }
 
+// RenderSensitive is implemented by a DocCheck whose verdict depends on the
+// kustomize/AVP-rendered output rather than the raw committed source. A
+// check that returns true is evaluated against the rendered overlay stream
+// (the source of truth), and its raw-source pass is suppressed for any file
+// that participates in at least one successfully-rendered overlay - so a
+// placeholder/image/podspec value injected or replaced by a base+overlay+
+// component merge (e.g. `image: <PATCHED_BY_KUSTOMIZE>` replaced by an
+// overlay `images:`/JSON-patch) is judged on the final rendered result, not
+// the intermediate raw fragment. Files that never appear in any rendered
+// overlay (e.g. a brand-new component not yet referenced by any
+// kustomization.yaml) still fall back to the raw-source pass, so violations
+// in not-yet-wired-up manifests are never silently skipped. A DocCheck that
+// doesn't implement this interface runs only on raw source, exactly as
+// before.
+type RenderSensitive interface {
+	RenderSensitive() bool
+}
+
+// RenderedDocCheck is implemented by a RenderSensitive DocCheck that needs
+// to behave differently when validating already-rendered output vs. raw
+// source - e.g. the placeholder check enables AVP-scheme scanning
+// (<path:...>, <vault:...>) only on rendered input, where a surviving AVP
+// reference is a genuine unresolved-secret failure rather than the intended
+// committed state. When a check implements this interface the rendered pass
+// calls CheckRenderedDoc; the raw pass always calls CheckDoc. A
+// RenderSensitive DocCheck that doesn't implement it uses CheckDoc for both.
+type RenderedDocCheck interface {
+	CheckRenderedDoc(data []byte, source string) []Finding
+}
+
+// IsRenderSensitive reports whether c opts into rendered-output evaluation.
+func IsRenderSensitive(c Check) bool {
+	rs, ok := c.(RenderSensitive)
+	return ok && rs.RenderSensitive()
+}
+
 // DocSkipper is implemented by a DocCheck that wants to opt certain
 // documents out of validation based on their kind - e.g. a placeholder
 // check skipping CustomResourceDefinition documents, whose embedded
@@ -177,4 +213,18 @@ func ByScope(s Scope) []Check {
 	})
 	sort.Slice(out, func(i, j int) bool { return out[i].ID() < out[j].ID() })
 	return out
+}
+
+// PartitionByRenderSensitivity splits checks into those that opt into
+// rendered-output evaluation (see RenderSensitive) and those that run only
+// on raw source. Both slices preserve the input order.
+func PartitionByRenderSensitivity(checks []Check) (rendered, raw []Check) {
+	for _, c := range checks {
+		if IsRenderSensitive(c) {
+			rendered = append(rendered, c)
+		} else {
+			raw = append(raw, c)
+		}
+	}
+	return rendered, raw
 }

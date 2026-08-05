@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -480,13 +481,15 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 // scaffold validation) and "Post-Build Validation" (doc/overlay compliance
 // checks, Kyverno, NAD) - matching a downstream fork's equivalent phase
 // breakdown. The split is safe because neither phase's work depends on the
-// other's *findings* as input: the doc engine (runDocChecks) only reads raw
-// changed YAML files, not build output, and the overlay-check pass
-// (runOverlayChecks) is run in the same worker-pool loop as the actual
-// build (buildOverlayWithHooks) since both need the same per-overlay
-// worker-pool parallelism and neither result feeds the other within a
-// single iteration - see runOverlayChecks/buildOverlayWithHooks's
-// respective doc comments.
+// other's *findings* as input: the doc engine's raw pass (runDocChecks)
+// reads raw changed YAML files, its rendered pass (runDocChecksRendered)
+// consumes the same rendered overlays already collected by the build loop
+// (renderedOverlays) - so it must run after Build YAML, but takes no build
+// *findings* as input - and the overlay-check pass (runOverlayChecks) is run
+// in the same worker-pool loop as the actual build (buildOverlayWithHooks)
+// since both need the same per-overlay worker-pool parallelism and neither
+// result feeds the other within a single iteration - see runOverlayChecks/
+// buildOverlayWithHooks's respective doc comments.
 func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector) {
 	w := Workers(opts)
 
@@ -706,7 +709,23 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// which run over `changed`/rendered overlays through their own paths.
 	yamlFiles := filterKyvernoTestFixtureDirs(excludeScaffoldArtifacts(filterYAML(changed)))
 	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
-	docResult := runDocChecks(yamlFiles, selectors, w, disabled)
+
+	// Dual-pass compliance (raw + rendered). Render-sensitive checks (see
+	// check.RenderSensitive) are authoritative on the kustomize/AVP-rendered
+	// overlay stream, so a value injected/replaced by a base+overlay+component
+	// merge (e.g. `image: <PATCHED_BY_KUSTOMIZE>` replaced by an overlay
+	// `images:`/JSON-patch) is judged on its final rendered result rather
+	// than the intermediate raw fragment. renderedFiles is the set of raw
+	// source files that participate in at least one successfully-rendered
+	// overlay: runDocChecks skips render-sensitive checks for those (they're
+	// covered by the rendered pass) but still runs them over any file NOT in
+	// a rendered overlay (a brand-new component not yet wired into any
+	// kustomization.yaml), so nothing is silently skipped.
+	renderedFiles := filesCoveredByRenderedOverlays(renderedOverlays, yamlFiles)
+	docResult := runDocChecks(yamlFiles, renderedFiles, selectors, w, disabled)
+	renderedResult := runDocChecksRendered(renderedOverlays, selectors, w, disabled)
+	docResult.Findings = append(docResult.Findings, renderedResult.Findings...)
+	docResult.Exempted = append(docResult.Exempted, renderedResult.Exempted...)
 	// Drop psa-labels findings whose missing labels are commented out
 	// (rather than genuinely absent) in the app's base/ - see
 	// filterCommentedPSAFindings for why this is scoped to exact,
@@ -734,8 +753,42 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	allFindings := make([]check.Finding, 0, len(docResult.Findings)+len(overlayResult.Findings))
 	allFindings = append(allFindings, docResult.Findings...)
 	allFindings = append(allFindings, overlayResult.Findings...)
+
+	// Resource-level blocking/warning classification. Uses the attribution
+	// context (built from the PR's changed files) so a finding is blocking
+	// only when its specific resource (Kind/Name) was directly modified in a
+	// source file that feeds this overlay - not when an entirely unrelated
+	// overlay kustomization.yaml was touched (see compliance_attribution.go).
+	attrCtx := buildAttributionCtx(changed, apps)
+	blockingByCheck, nonblockingByCheck := classifyResourceCompliance(allFindings, attrCtx)
+
+	var directTotal, indirectTotal int
+	combinedBlocking := make([]check.Finding, 0, len(allFindings))
+	combinedNonblocking := make([]check.Finding, 0, len(allFindings))
+	for _, id := range complianceCheckOrder {
+		if d, ok := blockingByCheck[id]; ok {
+			combinedBlocking = append(combinedBlocking, d...)
+			directTotal += len(d)
+		}
+		if nd, ok := nonblockingByCheck[id]; ok {
+			combinedNonblocking = append(combinedNonblocking, nd...)
+			indirectTotal += len(nd)
+		}
+	}
+	// Any findings without a registered TableSpec (e.g. a new check without
+	// a table) or from non-compliance checks still use the old finalizeCompliance.
 	changedSet := detectSourceFiles(changed)
-	direct, indirect := finalizeCompliance(allFindings, changedSet)
+	direct, indirect := finalizeCompliance(combinedBlocking, changedSet)
+	d2, i2 := finalizeCompliance(combinedNonblocking, changedSet)
+	direct = append(direct, d2...)
+	indirect = append(indirect, i2...)
+	// Re-sort by complianceCheckOrder.
+	sort.SliceStable(direct, func(i, j int) bool {
+		return indexOfComplianceCheck(direct[i].CheckID) < indexOfComplianceCheck(direct[j].CheckID)
+	})
+	sort.SliceStable(indirect, func(i, j int) bool {
+		return indexOfComplianceCheck(indirect[i].CheckID) < indexOfComplianceCheck(indirect[j].CheckID)
+	})
 
 	combinedCheck := check.Result{
 		Findings: append(direct, indirect...),
@@ -745,13 +798,37 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	res.Blocking = len(direct) > 0 || ghostBlockingCount > 0
 
-	if len(direct) > 0 {
-		log.ErrorInSection("ResourceCompliance", "%d blocking finding(s)", len(direct))
-	} else {
+	// Per-check console lines: blocking
+	// sub-checks log an error (fail the run), non-blocking sub-checks log a
+	// warning (surfaced inline and counted in the summary's "Warnings: N"
+	// line, but non-blocking). Counts are DEDUPED to match the PR-comment
+	// sub-section headings - a base/component resource flagged across many
+	// overlays is one finding, not one per overlay.
+	unionByCheck := make(map[string][]check.Finding, len(blockingByCheck)+len(nonblockingByCheck))
+	for id, fs := range blockingByCheck {
+		unionByCheck[id] = append(unionByCheck[id], fs...)
+	}
+	for id, fs := range nonblockingByCheck {
+		unionByCheck[id] = append(unionByCheck[id], fs...)
+	}
+	anyFinding := false
+	for _, id := range orderedComplianceIDs(unionByCheck) {
+		if b := blockingByCheck[id]; len(b) > 0 {
+			anyFinding = true
+			log.ErrorInSection("ResourceCompliance", "%s: %d finding(s) in directly changed file(s)",
+				complianceTitle(id), complianceRowCount(id, b))
+		}
+		if w := nonblockingByCheck[id]; len(w) > 0 {
+			anyFinding = true
+			log.Warn("%s: %d finding(s) (non-blocking, pre-existing)",
+				complianceTitle(id), complianceRowCount(id, w))
+		}
+	}
+	if !anyFinding {
 		log.Info("resource compliance: passed")
 	}
 
-	res.Sections = append(res.Sections, ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted))
+	res.Sections = append(res.Sections, ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted, attrCtx.changedKeys))
 	tc.Record("Post-Build Validation", time.Since(postBuildStart), true)
 }
 

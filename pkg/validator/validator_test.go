@@ -212,7 +212,7 @@ func TestRunAll_LogsPhasesAndRecordsTiming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAll: %v", err)
 	}
-	summaryOut := res.Logger.Summary(len(res.Sections), res.FailedSectionCount())
+	summaryOut := res.Logger.Summary(len(res.Sections), res.WarnedSectionCount(), res.FailedSectionCount())
 	if !strings.Contains(summaryOut, "RESULTS SUMMARY") {
 		t.Errorf("expected a rendered RESULTS SUMMARY banner, got:\n%s", summaryOut)
 	}
@@ -350,6 +350,26 @@ func TestResult_FailedSectionCount(t *testing.T) {
 	r2 := &Result{}
 	if got := r2.FailedSectionCount(); got != 0 {
 		t.Errorf("FailedSectionCount() on empty Result = %d, want 0", got)
+	}
+}
+
+// TestResult_WarnedSectionCount guards the count Logger.Summary's
+// "Sections: N passed, X warned, Y failed" line depends on - it must count
+// Sections with StatusWarning exactly, not StatusError/StatusInfo/StatusPassed.
+func TestResult_WarnedSectionCount(t *testing.T) {
+	t.Parallel()
+	r := &Result{Sections: []ReportSection{
+		{Name: "a", Status: StatusPassed},
+		{Name: "b", Status: StatusError},
+		{Name: "c", Status: StatusWarning},
+		{Name: "d", Status: StatusWarning},
+		{Name: "e", Status: StatusInfo},
+	}}
+	if got := r.WarnedSectionCount(); got != 2 {
+		t.Errorf("WarnedSectionCount() = %d, want 2", got)
+	}
+	if got := (&Result{}).WarnedSectionCount(); got != 0 {
+		t.Errorf("WarnedSectionCount() on empty Result = %d, want 0", got)
 	}
 }
 

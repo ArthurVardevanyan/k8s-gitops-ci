@@ -5,9 +5,103 @@ import (
 	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
+// Compliance check IDs, defined as constants once rather than comparing to
+// string literals throughout the codebase.
+const (
+	IDPodspec      = "podspec-defaults"
+	IDPSALabels    = "psa-labels"
+	IDNamespace    = "namespace"
+	IDRBACWildcard = "rbac-wildcards"
+	IDRBACReadonly = "rbac-readonly"
+	IDSyncOptions  = "sync-options"
+	IDCRB          = "crb"
+	IDNamedPorts   = "named-ports"
+	IDPlaceholder  = "placeholder"
+)
+
+// complianceCheckOrder is the fixed sub-section order for the Resource
+// Compliance section. Image SHA Pinning (exempt.IDImageChecksum) is first.
+// Ghost Patches and Kyverno are rendered separately by their own section
+// composers, not through this ordered list.
+var complianceCheckOrder = []string{
+	exempt.IDImageChecksum,
+	IDPodspec,
+	IDNamedPorts,
+	IDPSALabels,
+	IDRBACWildcard,
+	IDCRB,
+	IDRBACReadonly,
+	IDNamespace,
+	IDSyncOptions,
+}
+
+// indexOfComplianceCheck returns the sort key for id within
+// complianceCheckOrder. Unknown IDs sort to the end (large sentinel).
+func indexOfComplianceCheck(id string) int {
+	for i, cid := range complianceCheckOrder {
+		if cid == id {
+			return i
+		}
+	}
+	return 999
+}
+
+// classifyResourceCompliance splits findings by compliance check ID and
+// classifies each as blocking (the specific resource was directly modified in
+// this PR) or non-blocking (pre-existing, surfaced for visibility). Uses the
+// resource-level attribution model via complianceAttributionCtx, so a
+// finding from an overlay whose kustomization.yaml was touched but whose
+// resource definition (Kind/Name) wasn't changed is correctly a warning, not
+// blocking. This matches the behavior described in the CI docs: "If the
+// affected resource is being modified in this PR, these issues must be
+// corrected. Otherwise, these are non-blocking warnings for pre-existing
+// issues."
+func classifyResourceCompliance(findings []check.Finding, ctx *complianceAttributionCtx) (blockingByCheck, nonblockingByCheck map[string][]check.Finding) {
+	blockingByCheck = make(map[string][]check.Finding)
+	nonblockingByCheck = make(map[string][]check.Finding)
+
+	for _, f := range findings {
+		// ForcedDirect findings (from raw-source checks that override the
+		// resource-level model, or from the raw fallback pass) stay blocking.
+		if f.ForcedDirect {
+			blockingByCheck[f.CheckID] = append(blockingByCheck[f.CheckID], f)
+			continue
+		}
+
+		// Resource-level classification for render-sensitive or overlay-scope
+		// findings. A finding is blocking when its specific resource was directly
+		// modified in a source file that feeds this overlay's build chain.
+		id := f.CheckID
+		spec, ok := checkTableSpecs[id]
+		if !ok || ctx == nil {
+			// No table spec or no attribution ctx — use file-based fallback.
+			nonblockingByCheck[id] = append(nonblockingByCheck[id], f)
+			continue
+		}
+		resourceKey := ""
+		if spec.ResourceKey != nil {
+			resourceKey = spec.ResourceKey(f)
+		}
+		if resourceKey != "" && ctx.changedKeys != nil && ctx.changedKeys[resourceKey] != nil && isResourceAffected(resourceKey, ctx, f.File) {
+			blockingByCheck[id] = append(blockingByCheck[id], f)
+		} else {
+			nonblockingByCheck[id] = append(nonblockingByCheck[id], f)
+		}
+	}
+
+	return blockingByCheck, nonblockingByCheck
+}
+
 // checkTableSpecs defines TableSpec for each registered check.
+//
+// Resource-compliance checks (those with a ResourceKey) omit a raw "File"
+// column: the deduped renderer (renderResourceComplianceTable) appends an
+// "Overlays" column (count or single built-file) and, for blocking rows, a
+// "Source File(s)" column derived via SourceKey. File-based checks
+// (placeholder, cluster-identity) keep their File column and legacy rendering.
 var checkTableSpecs = map[string]check.TableSpec{
 	"namespace": {
 		Title:    "Namespace Scope",
@@ -15,18 +109,20 @@ var checkTableSpecs = map[string]check.TableSpec{
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Issue", Cell: func(f check.Finding) string { return f.Message }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"psa-labels": {
 		Title:    "PSA Namespace Labels",
 		Preamble: "Namespaces missing required Pod Security Admission labels.",
 		Columns: []check.Column{
 			{Header: "Namespace", Cell: func(f check.Finding) string { return f.Name }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Missing", Cell: func(f check.Finding) string { return f.Message }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return "Namespace", f.Name },
+		ResourceKey: func(f check.Finding) string { return "Namespace/" + f.Name },
 	},
 	"rbac-readonly": {
 		Title:    "RBAC Read-Only Aggregate",
@@ -34,9 +130,10 @@ var checkTableSpecs = map[string]check.TableSpec{
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Issue", Cell: func(f check.Finding) string { return f.Message }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"rbac-wildcards": {
 		Title:    "RBAC Wildcards",
@@ -44,9 +141,10 @@ var checkTableSpecs = map[string]check.TableSpec{
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Issue", Cell: func(f check.Finding) string { return f.Message }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"crb": {
 		Title:    "ClusterRoleBinding Subject Namespace",
@@ -54,9 +152,10 @@ var checkTableSpecs = map[string]check.TableSpec{
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Issue", Cell: func(f check.Finding) string { return f.Message }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"sync-options": {
 		Title:    "Argo CD Sync Options",
@@ -64,8 +163,9 @@ var checkTableSpecs = map[string]check.TableSpec{
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"image-checksum": {
 		Title:    "Image Digest Pinning",
@@ -74,8 +174,9 @@ var checkTableSpecs = map[string]check.TableSpec{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
 			{Header: "Image", Cell: func(f check.Finding) string { return f.Value }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"named-ports": {
 		Title:    "Named Ports",
@@ -84,9 +185,10 @@ var checkTableSpecs = map[string]check.TableSpec{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
 			{Header: "Container", Cell: func(f check.Finding) string { return f.Container }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Issue", Cell: func(f check.Finding) string { return f.Message }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"podspec-defaults": {
 		Title:    "PodSpec Defaults",
@@ -96,8 +198,9 @@ var checkTableSpecs = map[string]check.TableSpec{
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
 			{Header: "Container", Cell: func(f check.Finding) string { return f.Container }},
 			{Header: "Missing", Cell: func(f check.Finding) string { return f.Message }},
-			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
 	},
 	"placeholder": {
 		Title:    "Unresolved Placeholders",

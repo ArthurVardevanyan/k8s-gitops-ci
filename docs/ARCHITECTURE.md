@@ -65,10 +65,12 @@ flowchart LR
 - **Resource Compliance** — the registry-driven check engine
   (`pkg/validator/check`) runs every registered `check.Check` over every
   changed YAML document (`check.ScopeDoc`) or every affected overlay
-  (`check.ScopeOverlay`), then classifies findings as blocking (the
-  offending file was itself changed) vs. warning-only (the file was only
-  pulled in because a shared base/component it depends on changed
-  elsewhere) — see [CI.md](CI.md) for the full check list and the exact
+  (`check.ScopeOverlay`). Render-sensitive doc checks are judged on the
+  kustomize/AVP-**rendered** overlay output (with a raw-source fallback),
+  and findings are classified as blocking (the offending resource was
+  itself changed) vs. warning-only (pulled in only because a shared
+  base/component it depends on changed elsewhere) — see [CI.md](CI.md) for
+  the full check list, the raw-vs-rendered dual-pass model, and the exact
   classification rule, which is reused for the shellcheck extraction
   findings described there too.
 - **Unified Report** — one PR comment (or, without `--comment`, console

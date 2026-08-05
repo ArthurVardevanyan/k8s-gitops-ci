@@ -190,19 +190,20 @@ func Run(opts Options) error {
 	// actual file/message list behind a step's summary "N violation(s)" log
 	// line), but res.Sections is otherwise only ever rendered into the PR
 	// comment body - which is skipped whenever --comment isn't passed
-	// (e.g. local/CLI-only runs). Always print the FAILING sections' full
-	// detail to the console so a failed run shows *why* it failed without
-	// requiring --verbose or --comment. printFailedSectionDetail only emits
-	// StatusError sections, so a clean run prints nothing extra here; this
-	// applies uniformly to every section (linting, static checks, build,
-	// scaffold, resource compliance), not just one of them.
+	// (e.g. local/CLI-only runs). Always print the FAILING (❌) and WARNING
+	// (⚠️) sections' full detail to the console so a run shows *why* it failed
+	// or what non-blocking issues exist without requiring --verbose or
+	// --comment. printFailedSectionDetail emits StatusError and StatusWarning
+	// sections, so a clean run prints nothing extra here; this applies
+	// uniformly to every section (linting, static checks, build, scaffold,
+	// resource compliance), not just one of them.
 	printFailedSectionDetail(vr, log)
 
 	if vr != nil && vr.Logger != nil {
 		if summary := tc.Summary(time.Since(start)); summary != "" {
 			log.Raw(summary)
 		}
-		log.Raw(vr.Logger.Summary(len(vr.Sections), vr.FailedSectionCount()))
+		log.Raw(vr.Logger.Summary(len(vr.Sections), vr.WarnedSectionCount(), vr.FailedSectionCount()))
 	}
 	log.Info("pipeline completed in %s", time.Since(start).Round(time.Second))
 	if res.ReproduceCommand != "" {
@@ -259,20 +260,31 @@ func validatorResultFailed(vr *validator.Result) bool {
 	return vr.Failed()
 }
 
-// printFailedSectionDetail logs the full Body of every errored section in
-// vr.Sections to the console. This is the console-output analog of what
-// composeSections/postComment already does for the PR comment - see the
+// printFailedSectionDetail logs the full Body of every errored (❌) or warning
+// (⚠️) section in vr.Sections to the console. This is the console-output analog
+// of what composeSections/postComment already does for the PR comment - see the
 // comment at its call site in Run for why this is needed independently of
-// comment posting. Uses log.SubHeader for each section's header so this
-// shares the same "----\n Title\n----" banner family as the phase headers
-// (log.Header/log.SubHeader) and cmd/k8s-gitops-ci's test-all/scan-all/
-// build-yaml failed-section rendering, instead of inventing its own style.
+// comment posting. Warning bodies are printed too (not just errors) so a
+// local/CLI-only run surfaces the same Resource Compliance detail (per-check
+// tables) reviewers see in the comment, rather than only a terse count line.
+// Uses log.SubHeader for each section's header so this shares the same
+// "----\n Title\n----" banner family as the phase headers (log.Header/
+// log.SubHeader) and cmd/k8s-gitops-ci's test-all/scan-all/build-yaml
+// failed-section rendering, instead of inventing its own style.
 func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 	if vr == nil {
 		return
 	}
 	for _, s := range vr.Sections {
-		if s.Status != validator.StatusError || strings.TrimSpace(s.Body) == "" {
+		// Print both failing (❌ StatusError) and warning (⚠️ StatusWarning)
+		// section bodies to the console, so a local/CLI-only run shows the same
+		// Resource Compliance detail (per-check tables) the PR comment does -
+		// not just a terse count line. StatusPassed/StatusInfo sections have no
+		// actionable body worth dumping here.
+		if s.Status != validator.StatusError && s.Status != validator.StatusWarning {
+			continue
+		}
+		if strings.TrimSpace(s.Body) == "" {
 			continue
 		}
 		log.Raw("")

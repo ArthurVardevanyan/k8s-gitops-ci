@@ -34,13 +34,114 @@ func filterDisabled(checks []check.Check, disabled map[string]bool) []check.Chec
 	return out
 }
 
-// runDocChecks evaluates all ScopeDoc checks once per unique doc and fans out.
-func runDocChecks(files []string, selectors []exempt.Selector, workers int, disabled map[string]bool) check.Result {
+// runDocChecks evaluates ScopeDoc checks over raw changed source files.
+//
+// It runs in two tiers to implement the dual-pass (raw + rendered) model:
+//
+//   - Non-render-sensitive checks run over every given file, as before.
+//   - Render-sensitive checks (see check.RenderSensitive) are authoritative
+//     on the rendered overlay stream, evaluated separately by
+//     runDocChecksRendered. Here they only run over files that are NOT
+//     covered by any successfully-rendered overlay (renderedFiles) - a
+//     brand-new component not yet wired into any kustomization.yaml, or a
+//     file whose overlay failed to build - so a violation in a not-yet-
+//     wired-up manifest is never silently skipped, while a raw fragment that
+//     IS composed into a rendered overlay (e.g. a base with
+//     `image: <PATCHED_BY_KUSTOMIZE>`, patched at build time) is judged only
+//     on its rendered result and never produces a raw false positive.
+//
+// renderedFiles is the set of raw source paths that participate in at least
+// one successfully-rendered overlay (cleaned paths). When empty (no overlays
+// built, or the rendered pass is disabled), render-sensitive checks fall
+// back to running over all files - matching the pre-dual-pass behavior.
+func runDocChecks(files []string, renderedFiles map[string]bool, selectors []exempt.Selector, workers int, disabled map[string]bool) check.Result {
 	if workers <= 0 {
 		workers = runtime.NumCPU() * 2
 	}
+	all := filterDisabled(check.ByScope(check.ScopeDoc), disabled)
+	renderSensitive, rawOnly := check.PartitionByRenderSensitivity(all)
+
+	// rawOnly checks run over every file; renderSensitive checks run only
+	// over files not covered by a rendered overlay (the fallback tier).
+	uncovered := files
+	if len(renderedFiles) > 0 {
+		uncovered = make([]string, 0, len(files))
+		for _, f := range files {
+			if !renderedFiles[filepath.Clean(f)] {
+				uncovered = append(uncovered, f)
+			}
+		}
+	}
+
+	var combined check.Result
+	rawResult := runDocCheckPass(files, rawOnly, selectors, workers, false)
+	combined.Findings = append(combined.Findings, rawResult.Findings...)
+	combined.Exempted = append(combined.Exempted, rawResult.Exempted...)
+
+	if len(renderSensitive) > 0 && len(uncovered) > 0 {
+		fbResult := runDocCheckPass(uncovered, renderSensitive, selectors, workers, false)
+		combined.Findings = append(combined.Findings, fbResult.Findings...)
+		combined.Exempted = append(combined.Exempted, fbResult.Exempted...)
+	}
+	return combined
+}
+
+// runDocChecksRendered evaluates render-sensitive ScopeDoc checks over the
+// kustomize/AVP-rendered overlay stream - the authoritative source of truth
+// for those checks. Each finding carries its overlay origin in File (like
+// runKyvernoValidation's remap). Resource-level direct/indirect
+// classification is handled by classifyResourceCompliance in the section
+// composer, not by blanket ForcedDirect here.
+func runDocChecksRendered(outputs []renderedOverlay, selectors []exempt.Selector, workers int, disabled map[string]bool) check.Result {
+	if len(outputs) == 0 {
+		return check.Result{}
+	}
+	if workers <= 0 {
+		workers = runtime.NumCPU() * 2
+	}
+	all := filterDisabled(check.ByScope(check.ScopeDoc), disabled)
+	renderSensitive, _ := check.PartitionByRenderSensitivity(all)
+	if len(renderSensitive) == 0 {
+		return check.Result{}
+	}
+
+	jobs := make(chan renderedOverlay, len(outputs))
+	var mu sync.Mutex
+	var combined check.Result
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				for _, doc := range splitDocuments(j.data) {
+					if len(doc) == 0 || isKyvernoPolicyDoc(doc) {
+						continue
+					}
+					findings, exempted := evaluateRenderedDoc(doc, j.overlay, renderSensitive, selectors)
+					mu.Lock()
+					combined.Findings = append(combined.Findings, findings...)
+					combined.Exempted = append(combined.Exempted, exempted...)
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	for _, o := range outputs {
+		jobs <- o
+	}
+	close(jobs)
+	wg.Wait()
+	return combined
+}
+
+// runDocCheckPass evaluates the given checks over files, one worker per
+// unique document. Shared by the raw pass and its render-sensitive fallback.
+func runDocCheckPass(files []string, checks []check.Check, selectors []exempt.Selector, workers int, _ bool) check.Result {
+	if len(checks) == 0 || len(files) == 0 {
+		return check.Result{}
+	}
 	docs := indexDocuments(files)
-	checks := filterDisabled(check.ByScope(check.ScopeDoc), disabled)
 	type job struct {
 		hash string
 		doc  *docSource
@@ -189,7 +290,45 @@ func evaluateDoc(doc []byte, files []string, checks []check.Check, selectors []e
 	return findings, exempted
 }
 
-// fanOut expands each finding across every file it was found in, evaluating
+// evaluateRenderedDoc runs render-sensitive checks against a single rendered
+// document. Findings are attributed to the overlay path (overlay) - the
+// thing a reviewer can actually open. Resource-level direct/indirect
+// classification is handled later by isDirectFinding in the section
+// composer, not by blanket ForcedDirect here. Checks that implement
+// check.RenderedDocCheck (e.g. placeholder, which enables AVP scanning on
+// rendered input) use CheckRenderedDoc; the rest use CheckDoc.
+func evaluateRenderedDoc(doc []byte, overlay string, checks []check.Check, selectors []exempt.Selector) ([]check.Finding, []exempt.Applied) {
+	var findings []check.Finding
+	var exempted []exempt.Applied
+	var kind string
+	var kindLoaded bool
+	for _, c := range checks {
+		dc, ok := c.(check.DocCheck)
+		if !ok {
+			continue
+		}
+		if skipper, ok := c.(check.DocSkipper); ok {
+			if !kindLoaded {
+				kind = quickKind(doc)
+				kindLoaded = true
+			}
+			if skipper.SkipDoc(kind) {
+				continue
+			}
+		}
+		var res []check.Finding
+		if rdc, ok := c.(check.RenderedDocCheck); ok {
+			res = rdc.CheckRenderedDoc(doc, "")
+		} else {
+			res = dc.CheckDoc(doc, "")
+		}
+		res, ex := fanOut(res, []string{overlay}, selectors)
+		findings = append(findings, res...)
+		exempted = append(exempted, ex...)
+	}
+	return findings, exempted
+}
+
 // exemptions per (finding, file) pair. It returns both the surviving
 // (non-exempted) findings and the accepted exemptions, so callers can
 // record an audit-trail entry instead of silently discarding why a finding

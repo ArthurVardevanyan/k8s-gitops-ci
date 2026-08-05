@@ -299,7 +299,7 @@ func TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault(t *testing.T)
 
 func TestComposeResourceComplianceSection(t *testing.T) {
 	t.Parallel()
-	s := ComposeResourceComplianceSection([]check.Finding{{CheckID: "x", Message: "m"}}, nil, nil)
+	s := ComposeResourceComplianceSection([]check.Finding{{CheckID: "x", Message: "m"}}, nil, nil, nil)
 	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
@@ -307,7 +307,7 @@ func TestComposeResourceComplianceSection(t *testing.T) {
 
 func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
 	t.Parallel()
-	s := ComposeResourceComplianceSection(nil, nil, nil)
+	s := ComposeResourceComplianceSection(nil, nil, nil, nil)
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
@@ -318,12 +318,65 @@ func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
 
 func TestComposeResourceComplianceSection_WarningOnlyIsNonBlocking(t *testing.T) {
 	t.Parallel()
-	s := ComposeResourceComplianceSection(nil, []check.Finding{{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned"}}, nil)
+	s := ComposeResourceComplianceSection(nil, []check.Finding{{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned"}}, nil, nil)
 	if s.Status != StatusWarning {
 		t.Errorf("expected StatusWarning (non-blocking) for pre-existing (indirect) findings only, got %v", s.Status)
 	}
 	if !strings.Contains(s.Body, "⚠️") {
 		t.Errorf("expected the warning icon for a non-blocking check, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeResourceComplianceSection_SingleOverlayShowsBuiltFile guards that a
+// non-blocking finding seen in exactly one overlay renders the built-file label
+// (app/<cluster>.yaml) in the Overlays column, not a bare directory or a count.
+func TestComposeResourceComplianceSection_SingleOverlayShowsBuiltFile(t *testing.T) {
+	t.Parallel()
+	findings := []check.Finding{
+		{CheckID: "podspec-defaults", Kind: "Job", Name: "j", File: "app/overlays/pd1010", Message: "schedulerName"},
+	}
+	s := ComposeResourceComplianceSection(nil, findings, nil, nil)
+	if !strings.Contains(s.Body, "`app/pd1010.yaml`") {
+		t.Errorf("expected the single-overlay built-file label in the Overlays column, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "| Overlays |") {
+		t.Errorf("expected an Overlays column header, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeResourceComplianceSection_BlockingShowsSourceFile guards that a
+// blocking sub-section gains a "Source File(s)" column populated from the
+// changed-resource sources map (the file this PR changed that defines the
+// resource), while non-blocking sub-sections omit it.
+func TestComposeResourceComplianceSection_BlockingShowsSourceFile(t *testing.T) {
+	t.Parallel()
+	findings := []check.Finding{
+		{CheckID: "podspec-defaults", Kind: "Job", Name: "j", File: "app/overlays/pd1010", Message: "schedulerName"},
+	}
+	sources := map[string][]string{"Job/j": {"app/base/job.yaml"}}
+	s := ComposeResourceComplianceSection(findings, nil, nil, sources)
+	if !strings.Contains(s.Body, "Source File(s)") {
+		t.Errorf("expected a Source File(s) column for a blocking sub-section, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "`app/base/job.yaml`") {
+		t.Errorf("expected the changed source file in the Source File(s) column, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeResourceComplianceSection_OrdersByComplianceCheckOrder guards that
+// sub-sections render in the fixed complianceCheckOrder (image-checksum before
+// podspec-defaults), not alphabetically.
+func TestComposeResourceComplianceSection_OrdersByComplianceCheckOrder(t *testing.T) {
+	t.Parallel()
+	findings := []check.Finding{
+		{CheckID: "podspec-defaults", Kind: "Job", Name: "j", File: "app/overlays/pd1010", Message: "schedulerName"},
+		{CheckID: "image-checksum", Kind: "Deployment", Name: "d", Value: "nginx:latest", File: "app/overlays/pd1010"},
+	}
+	s := ComposeResourceComplianceSection(nil, findings, nil, nil)
+	img := strings.Index(s.Body, "Image Digest Pinning")
+	pod := strings.Index(s.Body, "PodSpec Defaults")
+	if img < 0 || pod < 0 || img > pod {
+		t.Errorf("expected Image Digest Pinning before PodSpec Defaults, got img=%d pod=%d in:\n%s", img, pod, s.Body)
 	}
 }
 
@@ -334,7 +387,7 @@ func TestComposeResourceComplianceSection_GroupsByCheckID(t *testing.T) {
 		{CheckID: "image-checksum", File: "b.yaml", Message: "unpinned b"},
 		{CheckID: "rbac-wildcard", File: "c.yaml", Message: "wildcard verb"},
 	}
-	s := ComposeResourceComplianceSection(findings, nil, nil)
+	s := ComposeResourceComplianceSection(findings, nil, nil, nil)
 	if strings.Count(s.Body, "<details>") != 2 {
 		t.Errorf("expected exactly 2 per-check dropdowns (one per distinct CheckID), got:\n%s", s.Body)
 	}
@@ -352,7 +405,7 @@ func TestComposeResourceComplianceSection_UsesRegisteredTableSpec(t *testing.T) 
 	findings := []check.Finding{
 		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "a.yaml", Message: "missing namespace"},
 	}
-	s := ComposeResourceComplianceSection(findings, nil, nil)
+	s := ComposeResourceComplianceSection(findings, nil, nil, nil)
 	if !strings.Contains(s.Body, "my-pod") {
 		t.Errorf("expected the Name column to render, got:\n%s", s.Body)
 	}
@@ -371,7 +424,7 @@ func TestComposeResourceComplianceSection_UsesRegisteredTableSpec(t *testing.T) 
 func TestComposeResourceComplianceSection_UnregisteredCheckFallsBack(t *testing.T) {
 	t.Parallel()
 	findings := []check.Finding{{CheckID: "brand-new-check", File: "a.yaml", Message: "some issue"}}
-	s := ComposeResourceComplianceSection(findings, nil, nil)
+	s := ComposeResourceComplianceSection(findings, nil, nil, nil)
 	if !strings.Contains(s.Body, "| File | Message |") {
 		t.Errorf("expected the generic fallback table, got:\n%s", s.Body)
 	}
@@ -381,46 +434,50 @@ func TestComposeResourceComplianceSection_UnregisteredCheckFallsBack(t *testing.
 }
 
 // TestComposeResourceComplianceSection_DedupsFanOutAcrossFiles guards the
-// core Phase 2 richness fix: the same underlying finding fanned out across
-// multiple overlays (identical Kind/Name/Message, different File - see
-// engine.go's per-unique-document fan-out) renders as ONE table row listing
-// every affected file, not one row per file, while the header count above
-// the table still reports every raw (pre-dedup) finding.
+// dedup + Overlays-count rendering: the same underlying finding fanned out
+// across multiple overlays (identical Kind/Name/Message, different File - see
+// engine.go's per-unique-document fan-out) renders as ONE table row, the header
+// count reports the DEDUPED unique-issue count (not the raw per-overlay
+// fan-out), and the spread across overlays is shown as a count in the Overlays
+// column rather than a giant path list.
 func TestComposeResourceComplianceSection_DedupsFanOutAcrossFiles(t *testing.T) {
 	t.Parallel()
 	findings := []check.Finding{
-		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "overlays/dev/a.yaml", Message: "missing namespace"},
-		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "overlays/prod/a.yaml", Message: "missing namespace"},
+		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "app/overlays/dev", Message: "missing namespace"},
+		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "app/overlays/prod", Message: "missing namespace"},
 	}
-	s := ComposeResourceComplianceSection(findings, nil, nil)
-	if !strings.Contains(s.Body, "(2 finding(s))") {
-		t.Errorf("expected the raw (pre-dedup) count of 2 in the header, got:\n%s", s.Body)
+	s := ComposeResourceComplianceSection(nil, findings, nil, nil)
+	if !strings.Contains(s.Body, "(1 finding(s))") {
+		t.Errorf("expected the deduped count of 1 in the header, got:\n%s", s.Body)
 	}
 	if got := strings.Count(s.Body, "my-pod"); got != 1 {
 		t.Errorf("expected exactly 1 deduped row for the same resource/issue, got %d occurrences in:\n%s", got, s.Body)
 	}
-	if !strings.Contains(s.Body, "`overlays/dev/a.yaml`, `overlays/prod/a.yaml`") {
-		t.Errorf("expected both files listed, backtick-quoted, in the deduped row, got:\n%s", s.Body)
+	// Overlays column shows the count of distinct overlays (2), not a file list.
+	if !strings.Contains(s.Body, "| 2 |") {
+		t.Errorf("expected the Overlays column to show a count of 2, got:\n%s", s.Body)
+	}
+	if strings.Contains(s.Body, "`app/overlays/dev`, `app/overlays/prod`") {
+		t.Errorf("expected an Overlays count, not a giant path list, got:\n%s", s.Body)
 	}
 }
 
 // TestComposeResourceComplianceSection_DoesNotOverDedup guards that findings
-// for the same resource but genuinely distinct issues (different Message)
-// are NOT collapsed together - only true fan-out duplicates are deduped.
+// for genuinely distinct resources are NOT collapsed together - only true
+// fan-out duplicates (same resource/issue across overlays) are deduped.
 func TestComposeResourceComplianceSection_DoesNotOverDedup(t *testing.T) {
 	t.Parallel()
 	findings := []check.Finding{
-		{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned a"},
-		{CheckID: "image-checksum", File: "b.yaml", Message: "unpinned b"},
+		{CheckID: "image-checksum", Kind: "Deployment", Name: "app-a", Value: "nginx:latest", File: "app/overlays/dev", Message: "unpinned"},
+		{CheckID: "image-checksum", Kind: "Deployment", Name: "app-b", Value: "redis:latest", File: "app/overlays/dev", Message: "unpinned"},
 	}
-	s := ComposeResourceComplianceSection(findings, nil, nil)
-	// Distinct Messages (part of the dedup key) must keep these as two
-	// separate rows rather than merging into one comma-joined-File row.
-	if !strings.Contains(s.Body, "`a.yaml`") || !strings.Contains(s.Body, "`b.yaml`") {
-		t.Errorf("expected both files to render, got:\n%s", s.Body)
+	s := ComposeResourceComplianceSection(nil, findings, nil, nil)
+	// Distinct resources must remain separate rows.
+	if !strings.Contains(s.Body, "app-a") || !strings.Contains(s.Body, "app-b") {
+		t.Errorf("expected both distinct resources to render as separate rows, got:\n%s", s.Body)
 	}
-	if strings.Contains(s.Body, "`a.yaml`, `b.yaml`") {
-		t.Errorf("expected two separate rows, not one deduped/merged row, got:\n%s", s.Body)
+	if !strings.Contains(s.Body, "(2 finding(s))") {
+		t.Errorf("expected 2 deduped rows (distinct resources), got:\n%s", s.Body)
 	}
 }
 
@@ -429,7 +486,7 @@ func TestComposeResourceComplianceSection_RendersAcceptedExemptions(t *testing.T
 	exempted := []exempt.Applied{
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: true},
 	}
-	s := ComposeResourceComplianceSection(nil, nil, exempted)
+	s := ComposeResourceComplianceSection(nil, nil, exempted, nil)
 	if s.Status != StatusInfo {
 		t.Errorf("expected StatusInfo (an audit trail, not a warning/error) when only exemptions are present (no findings), got %v", s.Status)
 	}
@@ -449,7 +506,7 @@ func TestComposeResourceComplianceSection_AcceptedExemptionsPreExistingLabel(t *
 	exempted := []exempt.Applied{
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: false},
 	}
-	s := ComposeResourceComplianceSection(nil, nil, exempted)
+	s := ComposeResourceComplianceSection(nil, nil, exempted, nil)
 	if !strings.Contains(s.Body, "Accepted Exemptions (pre-existing)") {
 		t.Errorf("expected the pre-existing qualifier when no exemption is direct, got:\n%s", s.Body)
 	}
