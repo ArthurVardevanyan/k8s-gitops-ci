@@ -117,6 +117,36 @@ func TestRefsMatchChangedDirs_NoMatch(t *testing.T) {
 	}
 }
 
+func TestRefsChangedDir(t *testing.T) {
+	app, overlays := makeRefsApp(t)
+	pd01, pd02 := overlays[0], overlays[1]
+
+	c1151 := app + "/components/admission-controller/1.15.1"
+	c1181 := app + "/components/admission-controller/1.18.1"
+	base := app + "/base"
+
+	cases := []struct {
+		name        string
+		overlayDir  string
+		changedDirs []string
+		want        bool
+	}{
+		{"pd01 references 1.15.1", pd01, []string{c1151}, true},
+		{"pd01 does not reference 1.18.1", pd01, []string{c1181}, false},
+		{"pd02 references 1.18.1", pd02, []string{c1181}, true},
+		{"pd01 references base", pd01, []string{base}, true},
+		{"empty changedDirs", pd01, nil, false},
+		{"unrelated dir", pd01, []string{app + "/components/other/1.0.0"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := RefsChangedDir(c.overlayDir, c.changedDirs); got != c.want {
+				t.Errorf("RefsChangedDir(%q, %v) = %v, want %v", c.overlayDir, c.changedDirs, got, c.want)
+			}
+		})
+	}
+}
+
 func TestHasOverlays(t *testing.T) {
 	app, _ := makeRefsApp(t)
 	if !HasOverlays(app) {

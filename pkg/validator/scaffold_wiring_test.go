@@ -273,6 +273,15 @@ func TestFlattenSkippedClusters_SortsAppsAndClusters(t *testing.T) {
 }
 
 func TestIsOverlayRelatedToChangedFiles(t *testing.T) {
+	// A component change only relates to an overlay whose kustomization
+	// actually references that (version-partitioned) component directory,
+	// so this test needs real on-disk overlays to resolve refs against.
+	chdirTemp(t)
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"),
+		"resources:\n  - ../../base\n  - ../../components/foo/v0.21.0\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"),
+		"resources:\n  - ../../base\n  - ../../components/foo/v0.19.1\n")
+
 	cases := []struct {
 		name    string
 		cluster string
@@ -281,7 +290,9 @@ func TestIsOverlayRelatedToChangedFiles(t *testing.T) {
 	}{
 		{"overlay itself changed", "prod", []string{"myapp/overlays/prod/kustomization.yaml"}, true},
 		{"base changed (flows into every overlay)", "prod", []string{"myapp/base/deployment.yaml"}, true},
-		{"components changed (flows into every overlay)", "prod", []string{"myapp/components/foo/patch.yaml"}, true},
+		{"referenced component version changed", "prod", []string{"myapp/components/foo/v0.21.0/patch.yaml"}, true},
+		{"different component version changed (not referenced)", "prod", []string{"myapp/components/foo/v0.19.1/patch.yaml"}, false},
+		{"referenced component version changed for dev overlay", "dev", []string{"myapp/components/foo/v0.19.1/patch.yaml"}, true},
 		{"a different overlay changed", "prod", []string{"myapp/overlays/dev/kustomization.yaml"}, false},
 		{"an unrelated app changed", "prod", []string{"otherapp/overlays/prod/kustomization.yaml"}, false},
 		{"nothing changed", "prod", nil, false},

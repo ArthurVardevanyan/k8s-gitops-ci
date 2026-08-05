@@ -69,6 +69,35 @@ func FilterOverlaysByRefs(app string, overlays, changedFiles []string) []string 
 	return filtered
 }
 
+// RefsChangedDir reports whether the overlay rooted at overlayDir has
+// a kustomization reference chain (resources/components/bases, resolved
+// transitively via kustomize.ResolveRefs) that includes at least one of
+// changedDirs. This is the single-overlay form of the scoping
+// FilterOverlaysByRefs performs across a set: it lets a caller answer "does
+// this one overlay actually consume that changed base/component directory?"
+// - notably distinguishing version-partitioned component directories (e.g.
+// components/foo/v0.21.0 vs components/foo/v0.19.1), so a change to one
+// version only relates to the overlays that reference that version.
+//
+// changedDirs entries are directories (as given, working-dir-relative);
+// non-resolvable entries are skipped. Returns false when changedDirs is
+// empty or none resolve.
+func RefsChangedDir(overlayDir string, changedDirs []string) bool {
+	if len(changedDirs) == 0 {
+		return false
+	}
+	pairs := make([]dirPair, 0, len(changedDirs))
+	for _, d := range changedDirs {
+		if abs, err := filepath.Abs(d); err == nil {
+			pairs = append(pairs, dirPair{rel: d, abs: abs})
+		}
+	}
+	if len(pairs) == 0 {
+		return false
+	}
+	return refsMatchChangedDirs(kustomize.ResolveRefs(overlayDir), pairs)
+}
+
 // appChangedDirs extracts the set of directories (not overlays/, not the
 // app root itself) that changedFiles touched within app. These are the
 // candidate "changed base/component directories" FilterOverlaysByRefs scopes
