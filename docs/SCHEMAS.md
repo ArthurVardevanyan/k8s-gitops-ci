@@ -65,6 +65,34 @@ behavior against an already-extracted directory for exactly this case,
 so a custom source only has to provide the raw directory, not
 reimplement policy rendering.
 
+### Both archives must be byte-reproducible
+
+Both `pull-schemas.sh` and `pull-policies.sh` build their archive with:
+
+```sh
+tar --sort=name --mtime="UTC 1970-01-01" --owner=0 --group=0 --numeric-owner \
+  -cf - -C "$TMP_DIR" "<top-level-dir>" | gzip -n >"$TMP_DIR/archive.tar.gz"
+```
+
+rather than a plain `tar -czf`. Without `--sort`/`--mtime`/`--owner`/
+`--group`/`--numeric-owner`, `tar` picks up non-determinism from the
+filesystem itself (directory-walk order, and the mtime/uid/gid of files
+that were just freshly checked out or generated in a temp dir); without
+`gzip -n`, gzip embeds its own header timestamp. The result: two
+back-to-back runs over logically-identical content produce **different
+bytes** every time.
+
+That matters beyond reproducibility for its own sake: both archives are
+`//go:embed`ed (see [The pattern](#the-pattern) above), so a
+byte-different archive is a content change from Go's build/test cache's
+point of view, even when nothing an operator would call "changed"
+actually did. A non-deterministic archive silently invalidates the
+build/test cache for every package that embeds it — `pkg/pipeline`,
+`pkg/lint/kyverno`, `pkg/validator`, `cmd/k8s-gitops-ci` — on every
+single CI run. If you add a third `pull-*.sh` script or otherwise
+regenerate either archive, reuse this same `tar`/`gzip` invocation
+rather than a plain `tar -czf`.
+
 ## Kubeconform schemas
 
 `scripts/pull-schemas.sh` clones a public
@@ -95,6 +123,16 @@ contain at build time. Renovate tracks `SCHEMA_REPO_BRANCH`'s tip (see
 `renovate.json`'s `customManagers`) and opens a PR bumping
 `SCHEMA_REPO_SHA` whenever that branch advances - upgrading the schema
 set is then an explicit, reviewable diff instead of untracked drift.
+
+In pinned mode the script also short-circuits when it's already up to
+date: it writes a sibling marker (`schemas.tar.gz.ref`, gitignored)
+recording the `SCHEMA_REPO_SHA` the current archive was built from, and
+skips the network `git fetch` + repack entirely when that marker already
+matches. Since `update:schemas` is a `deps:` of `test`/`build`/`lint`/
+`vulncheck` and runs on every CI invocation, this avoids a per-run
+upstream fetch whenever the pin hasn't moved. Floating mode (empty
+`SCHEMA_REPO_SHA`) always re-fetches, since a branch tip can advance
+without the marker changing.
 
 `SCHEMA_REPO_BRANCH` (default `main`) is only consulted as the ref to
 fetch when `SCHEMA_REPO_SHA` is explicitly set to empty - the "floating"
@@ -136,6 +174,18 @@ there's no generic, public Kyverno policy bundle that makes sense as a
 default for an arbitrary org, so `scripts/pull-policies.sh` currently
 just writes a placeholder archive (a `kyverno-policies/README.md`, no
 real policy YAML) rather than pulling anything real.
+
+Like `pull-schemas.sh` (see [Pinning](#pinning-schema_repo_shaschema_repo_branch)
+above), `pull-policies.sh` short-circuits via a sibling marker
+(`policies.tar.gz.ref`, gitignored) instead of always regenerating: it
+records a `PLACEHOLDER_REF` constant for the currently-generated
+placeholder content, and skips rebuilding the archive when the marker
+already matches. Since there's no upstream ref to pin against yet (the
+content is a static placeholder, not fetched from anywhere), bump
+`PLACEHOLDER_REF` in the script itself whenever you change what it
+generates - e.g. once you replace the placeholder with a real policy
+source pulled from somewhere, at which point this should gain a real
+upstream SHA pin the same way `pull-schemas.sh` has one.
 
 To use Kyverno validation:
 

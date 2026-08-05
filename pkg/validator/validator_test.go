@@ -13,6 +13,7 @@ import (
 )
 
 func TestResolveChangeset_DirsWithDirs(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "kubernetes", "app", "base.yaml"), "kind: Deployment\n")
 	mustWrite(t, filepath.Join(d, "ansible", "playbook.yaml"), "- hosts: all\n")
@@ -34,6 +35,7 @@ func TestResolveChangeset_DirsWithDirs(t *testing.T) {
 }
 
 func TestResolveChangeset_NoDirs(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
 
@@ -50,6 +52,7 @@ func TestResolveChangeset_NoDirs(t *testing.T) {
 // changeset.GetAllFiles path - every git-tracked file, not just changed
 // ones - matching changeset.GetAllFiles's own output exactly.
 func TestResolveChangeset_ScanAll(t *testing.T) {
+	t.Parallel()
 	want, err := changeset.GetAllFiles()
 	if err != nil {
 		t.Fatalf("changeset.GetAllFiles: %v", err)
@@ -71,6 +74,7 @@ func TestResolveChangeset_ScanAll(t *testing.T) {
 // ScanAll+Dirs means "every git-tracked file, restricted to these path
 // prefixes" - not an unfiltered full-repo walk that ignores Dirs outright.
 func TestResolveChangeset_ScanAllCombinesWithDirsAsAFilter(t *testing.T) {
+	t.Parallel()
 	all, err := changeset.GetAllFiles()
 	if err != nil {
 		t.Fatalf("changeset.GetAllFiles: %v", err)
@@ -309,6 +313,7 @@ func TestRunAll_BuildPhaseFansOutOverlaysInParallel(t *testing.T) {
 }
 
 func TestResult_HasErrorSection(t *testing.T) {
+	t.Parallel()
 	r := &Result{Sections: []ReportSection{{Name: "a", Status: StatusPassed}, {Name: "b", Status: StatusError}}}
 	if !r.HasErrorSection() {
 		t.Error("expected HasErrorSection to report true when a section has StatusError")
@@ -331,6 +336,7 @@ func TestResult_HasErrorSection(t *testing.T) {
 // StatusError exactly, independent of len(r.Sections) itself, and must not
 // count StatusWarning/StatusInfo sections as failed.
 func TestResult_FailedSectionCount(t *testing.T) {
+	t.Parallel()
 	r := &Result{Sections: []ReportSection{
 		{Name: "a", Status: StatusPassed},
 		{Name: "b", Status: StatusError},
@@ -356,6 +362,7 @@ func TestResult_FailedSectionCount(t *testing.T) {
 // them. Also guards the nil-Result and nil-Logger cases so callers don't
 // need to guard those themselves first.
 func TestResult_Failed(t *testing.T) {
+	t.Parallel()
 	var nilResult *Result
 	if nilResult.Failed() {
 		t.Error("expected a nil *Result to report Failed()==false")

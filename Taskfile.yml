@@ -11,7 +11,13 @@ vars:
   GOLANGCI_LINT_VERSION: v2.12.2
   # renovate: datasource=go depName=golang.org/x/vuln
   GOVULNCHECK_VERSION: v1.6.0
-  TOOLS: "{{.ROOT_DIR | toSlash}}/.tool"
+  # TOOLS defaults to the in-repo .tool/ dir, but honors a
+  # K8S_GITOPS_CI_TOOLS_DIR env override so CI can redirect the installed
+  # Go tools (golangci-lint, govulncheck, gofumpt, goimports) onto a
+  # persistent cache volume instead of the fresh-clone workspace — without
+  # it, install-tools re-links all four every run because .tool/ starts
+  # empty on each checkout.
+  TOOLS: '{{.TOOLS | default (env "K8S_GITOPS_CI_TOOLS_DIR") | default (printf "%s/.tool" (.ROOT_DIR | toSlash)) }}'
   TOOLS_BIN: "{{.TOOLS}}"
   DIST: "{{.ROOT_DIR | toSlash}}/bin"
   PATH_SEP: "{{ if eq OS `windows` }};{{ else }}:{{ end }}"
@@ -159,8 +165,8 @@ tasks:
       - "**/*.go"
       - go.mod
       - go.sum
-      - .tool/goimports
-      - .tool/gofumpt
+      - "{{.TOOLS_BIN}}/goimports"
+      - "{{.TOOLS_BIN}}/gofumpt"
     cmds:
       - |
         set -e
@@ -185,8 +191,8 @@ tasks:
     silent: true
     sources:
       - "**/*.go"
-      - .tool/goimports
-      - .tool/gofumpt
+      - "{{.TOOLS_BIN}}/goimports"
+      - "{{.TOOLS_BIN}}/gofumpt"
     cmds:
       - |
         set -e
@@ -225,7 +231,7 @@ tasks:
     sources:
       - "./**/*.go"
       - .golangci.yml
-      - .tool/golangci-lint
+      - "{{.TOOLS_BIN}}/golangci-lint"
     cmds:
       - |
         set -e
@@ -317,8 +323,19 @@ tasks:
     aliases: [t]
     deps: [update:schemas, update:policies]
     env:
-      GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
-      GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
+      # Default matches the top-level `env:` block's GOFLAGS (task-level env
+      # fully replaces it, not merges) rather than forcing `-count=1` — the
+      # latter defeated Go's own test-result cache on every run, even for
+      # packages untouched since the last pass. Still overridable, e.g.
+      # `task test GOFLAGS=-count=1` to force a full rerun.
+      GOFLAGS: '{{.GOFLAGS | default "-mod=mod"}}'
+      # No `-shuffle=on` default: it's not in `go test`'s cacheable-flag
+      # set (see `go help test`), so passing it at all disables Go's test
+      # result cache unconditionally - combined with the GOFLAGS change
+      # above, this is what actually lets unchanged packages skip re-running
+      # entirely. Still available via `task test GOTESTFLAGS=-shuffle=on`
+      # to catch inter-test order dependencies on demand.
+      GOTESTFLAGS: '{{.GOTESTFLAGS | default ""}}'
     sources:
       - "**/*.go"
       - go.mod
@@ -335,8 +352,12 @@ tasks:
     silent: true
     deps: [update:schemas, update:policies]
     env:
-      GOFLAGS: '{{.GOFLAGS | default "-count=1"}}'
-      GOTESTFLAGS: '{{.GOTESTFLAGS | default "-shuffle=on"}}'
+      # See test's matching comment: default no longer forces `-count=1`,
+      # so unchanged packages can reuse Go's cached test results.
+      GOFLAGS: '{{.GOFLAGS | default "-mod=mod"}}'
+      # See test's matching comment: no `-shuffle=on` default either, for
+      # the same test-cache reason.
+      GOTESTFLAGS: '{{.GOTESTFLAGS | default ""}}'
     sources:
       - "**/*.go"
       - go.mod

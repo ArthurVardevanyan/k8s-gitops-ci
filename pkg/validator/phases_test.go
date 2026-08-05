@@ -13,6 +13,7 @@ import (
 )
 
 func TestToIDSet_Empty(t *testing.T) {
+	t.Parallel()
 	if got := toIDSet(nil); got != nil {
 		t.Errorf("expected nil for empty input, got %v", got)
 	}
@@ -22,6 +23,7 @@ func TestToIDSet_Empty(t *testing.T) {
 }
 
 func TestToIDSet_Populated(t *testing.T) {
+	t.Parallel()
 	set := toIDSet([]string{"sync-options", "golangci"})
 	if !set["sync-options"] || !set["golangci"] {
 		t.Fatalf("expected both ids present, got %v", set)
@@ -32,12 +34,14 @@ func TestToIDSet_Populated(t *testing.T) {
 }
 
 func TestStepEnabled_DefaultOnStepEnabledByDefault(t *testing.T) {
+	t.Parallel()
 	if !stepEnabled("sync-options", nil, nil) {
 		t.Errorf("default-on step should be enabled with no lists set")
 	}
 }
 
 func TestStepEnabled_DefaultOnStepDisabledViaDisabledChecks(t *testing.T) {
+	t.Parallel()
 	disabled := toIDSet([]string{"sync-options"})
 	if stepEnabled("sync-options", disabled, nil) {
 		t.Errorf("expected sync-options disabled")
@@ -49,6 +53,7 @@ func TestStepEnabled_DefaultOnStepDisabledViaDisabledChecks(t *testing.T) {
 }
 
 func TestStepEnabled_KubeconformDefaultOnDisableableViaDisabledChecks(t *testing.T) {
+	t.Parallel()
 	if !stepEnabled(stepKubeconform, nil, nil) {
 		t.Errorf("kubeconform should default to enabled")
 	}
@@ -59,12 +64,14 @@ func TestStepEnabled_KubeconformDefaultOnDisableableViaDisabledChecks(t *testing
 }
 
 func TestStepEnabled_DefaultOffStepDisabledByDefault(t *testing.T) {
+	t.Parallel()
 	if stepEnabled(stepKyverno, nil, nil) {
 		t.Errorf("kyverno should default to disabled")
 	}
 }
 
 func TestStepEnabled_DefaultOffStepEnabledViaEnabledChecks(t *testing.T) {
+	t.Parallel()
 	enabled := toIDSet([]string{stepKyverno})
 	if !stepEnabled(stepKyverno, nil, enabled) {
 		t.Errorf("expected kyverno enabled once listed in EnabledChecks")
@@ -72,6 +79,7 @@ func TestStepEnabled_DefaultOffStepEnabledViaEnabledChecks(t *testing.T) {
 }
 
 func TestStepEnabled_EnabledChecksHasNoEffectOnDefaultOnSteps(t *testing.T) {
+	t.Parallel()
 	// Listing a default-on step in EnabledChecks is a no-op - it's already
 	// enabled, and only DisabledChecks can turn it off.
 	enabled := toIDSet([]string{stepGolangci})
@@ -357,6 +365,7 @@ func hasShellcheckBinary() bool {
 }
 
 func TestWriteShellcheckExtractionReport_TektonAndEmbedded(t *testing.T) {
+	t.Parallel()
 	if !hasShellcheckBinary() {
 		t.Skip("shellcheck not installed; skipping end-to-end test")
 	}
@@ -406,6 +415,7 @@ spec:
 }
 
 func TestWriteShellcheckExtractionReport_LabelSuffix(t *testing.T) {
+	t.Parallel()
 	if !hasShellcheckBinary() {
 		t.Skip("shellcheck not installed; skipping end-to-end test")
 	}
@@ -434,6 +444,7 @@ spec:
 }
 
 func TestWriteShellcheckExtractionReport_NoFindings(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	f := filepath.Join(d, "cm.yaml")
 	mustWrite(t, f, "kind: ConfigMap\nmetadata:\n  name: cm\n")
@@ -451,6 +462,7 @@ func TestWriteShellcheckExtractionReport_NoFindings(t *testing.T) {
 // "external" candidates - while the base file that WAS changed must be
 // excluded (it's already covered as "direct").
 func TestExternalOverlayYAMLFiles_BaseChangeExposesUnchangedOverlayFile(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources:\n  - task.yaml\n")
@@ -475,6 +487,7 @@ func TestExternalOverlayYAMLFiles_BaseChangeExposesUnchangedOverlayFile(t *testi
 }
 
 func TestExternalOverlayYAMLFiles_NoOverlaysAffected(t *testing.T) {
+	t.Parallel()
 	external := externalOverlayYAMLFiles([]string{"README.md"})
 	if len(external) != 0 {
 		t.Errorf("expected no external files for a change with no affected overlays, got: %v", external)
@@ -493,6 +506,7 @@ func TestExternalOverlayYAMLFiles_NoOverlaysAffected(t *testing.T) {
 // assert the suffix actually reaches the printed line, not just the
 // TimingCollector.
 func TestRunLintAndStaticChecks_LogsDurationSuffix(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "a.yaml"), "kind: Pod\n")
 	logPath := filepath.Join(d, "out.log")
@@ -516,6 +530,7 @@ func TestRunLintAndStaticChecks_LogsDurationSuffix(t *testing.T) {
 }
 
 func TestExcludeScaffoldArtifacts(t *testing.T) {
+	t.Parallel()
 	in := []string{
 		"myapp/overlays/dev/kustomization.yaml",
 		".scafctl/configs/myapp.yaml",
@@ -538,6 +553,7 @@ func TestExcludeScaffoldArtifacts(t *testing.T) {
 }
 
 func TestFilterYAML_ExcludesScaffoldTemplates(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	manifest := filepath.Join(dir, "app", "overlays", "dev", "kustomization.yaml")
 	tpl := filepath.Join(dir, ".scafctl", "templates", "app", "overlays", "k.yaml")
@@ -566,6 +582,7 @@ func TestFilterYAML_ExcludesScaffoldTemplates(t *testing.T) {
 }
 
 func TestIsInvalidTestdata(t *testing.T) {
+	t.Parallel()
 	cases := map[string]bool{
 		"testdata/invalid/bad.yaml":                      true,
 		"pkg/lint/shellcheck/testdata/invalid/c.yaml":    true,
@@ -583,6 +600,7 @@ func TestIsInvalidTestdata(t *testing.T) {
 }
 
 func TestExcludeInvalidTestdata(t *testing.T) {
+	t.Parallel()
 	in := []string{
 		"pkg/overlay/overlay.go",
 		"pkg/lint/shellcheck/testdata/invalid/cronjob-bash.yaml",
@@ -606,6 +624,7 @@ func TestExcludeInvalidTestdata(t *testing.T) {
 }
 
 func TestFilterYAML_ExcludesInvalidTestdata(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	manifest := filepath.Join(dir, "app", "overlays", "dev", "kustomization.yaml")
 	good := filepath.Join(dir, "pkg", "lint", "shellcheck", "testdata", "job-bash.yaml")

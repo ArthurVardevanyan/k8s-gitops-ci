@@ -99,8 +99,13 @@ func Run(opts Options) error {
 	// their extraction lazily inside the concurrent Linting/Build+
 	// Compliance phases on every run (see validator.Options.SchemaDir/
 	// PolicyPath's doc comments). Schemas are always prefetched -
-	// kubeconform always runs, and extraction is a cheap, pure
-	// embedded-archive unpack. Policies are only prefetched when the
+	// kubeconform always runs, and doing this once here (rather than
+	// once per concurrent phase/overlay that would otherwise each call
+	// kubeconform.ExtractSchemas() lazily) matters: the embedded archive
+	// is 108MB across ~3100 files (see scripts/pull-schemas.sh), so
+	// extraction is a real, measurable disk-I/O cost, not a free
+	// operation - it's a one-time-per-run cost precisely because it's
+	// paid for here exactly once. Policies are only prefetched when the
 	// opt-in "kyverno" step (default off) is actually enabled, since
 	// preparing them shells out to `kustomize build` - not worth paying
 	// for on every run that never uses it.

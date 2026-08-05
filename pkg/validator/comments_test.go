@@ -6,6 +6,7 @@ import (
 )
 
 func TestGroupBuildErrors(t *testing.T) {
+	t.Parallel()
 	errors := []string{
 		"kustomize build kyverno/overlays/pd1040: accumulating components: no such file or directory",
 		"kustomize build kyverno/overlays/pd1011: accumulating components: no such file or directory",
@@ -40,6 +41,7 @@ func TestGroupBuildErrors(t *testing.T) {
 }
 
 func TestGroupBuildErrors_NoBuildErrors(t *testing.T) {
+	t.Parallel()
 	errors := []string{"lint error", "schema validation failed"}
 	groups, other := groupBuildErrors(errors)
 	if len(groups) != 0 {
@@ -51,6 +53,7 @@ func TestGroupBuildErrors_NoBuildErrors(t *testing.T) {
 }
 
 func TestGroupBuildErrors_MalformedPrefixFallsBackToOther(t *testing.T) {
+	t.Parallel()
 	// Starts with the "kustomize build " prefix but has no ": " separator
 	// after it (e.g. a truncated/malformed message) - must not panic and
 	// must be preserved verbatim in "other" rather than silently dropped.
@@ -65,6 +68,7 @@ func TestGroupBuildErrors_MalformedPrefixFallsBackToOther(t *testing.T) {
 }
 
 func TestFormatBuildErrors(t *testing.T) {
+	t.Parallel()
 	groups := []buildErrorGroup{
 		{
 			Cause:    "accumulating components: no such file or directory",
@@ -87,6 +91,7 @@ func TestFormatBuildErrors(t *testing.T) {
 }
 
 func TestFormatBuildErrors_ManyOverlaysAreTruncated(t *testing.T) {
+	t.Parallel()
 	overlays := make([]string, 20)
 	for i := range overlays {
 		overlays[i] = "app/overlays/cluster" + strings.Repeat("0", i)
@@ -102,6 +107,7 @@ func TestFormatBuildErrors_ManyOverlaysAreTruncated(t *testing.T) {
 }
 
 func TestFormatBuildErrors_LongCauseIsTruncated(t *testing.T) {
+	t.Parallel()
 	groups := []buildErrorGroup{{Cause: strings.Repeat("x", 300), Overlays: []string{"app/overlays/a"}}}
 	var sb strings.Builder
 	formatBuildErrors(&sb, groups)
@@ -116,6 +122,7 @@ func TestFormatBuildErrors_LongCauseIsTruncated(t *testing.T) {
 }
 
 func TestFixHints(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		findings []LintFinding
@@ -177,6 +184,7 @@ func TestFixHints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := fixHints(tt.findings)
 			if len(got) != len(tt.want) {
 				t.Fatalf("fixHints() = %v, want %v", got, tt.want)
@@ -195,6 +203,7 @@ func TestFixHints(t *testing.T) {
 // third-party command name below must appear as a case in
 // cmd/k8s-gitops-ci/main.go's subcommand dispatch.
 func TestFixHints_EveryHintedCommandIsARegisteredSubcommand(t *testing.T) {
+	t.Parallel()
 	registered := map[string]bool{
 		"sort-configs":           true,
 		"kustomize-fix":          true,
@@ -232,6 +241,7 @@ func TestFixHints_EveryHintedCommandIsARegisteredSubcommand(t *testing.T) {
 }
 
 func TestTruncateDetails(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		input  string
@@ -259,6 +269,7 @@ func TestTruncateDetails(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := truncateDetails(tt.input, tt.maxLen)
 			if got != tt.want {
 				t.Errorf("truncateDetails() = %q, want %q", got, tt.want)

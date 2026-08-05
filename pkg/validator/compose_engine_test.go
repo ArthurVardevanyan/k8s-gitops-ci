@@ -9,6 +9,7 @@ import (
 )
 
 func TestTableSpecForCheck(t *testing.T) {
+	t.Parallel()
 	ts, ok := TableSpecForCheck("namespace")
 	if !ok {
 		t.Fatal("expected namespace TableSpec to be registered")
@@ -19,6 +20,7 @@ func TestTableSpecForCheck(t *testing.T) {
 }
 
 func TestRenderColumnedTable_Empty(t *testing.T) {
+	t.Parallel()
 	out := RenderColumnedTable(nil, "namespace")
 	if out != "" {
 		t.Errorf("expected empty for nil findings")
@@ -26,6 +28,7 @@ func TestRenderColumnedTable_Empty(t *testing.T) {
 }
 
 func TestRenderColumnedTable_WithFindings(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{
 		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "a.yaml", Message: "missing namespace"},
 	}
@@ -36,6 +39,7 @@ func TestRenderColumnedTable_WithFindings(t *testing.T) {
 }
 
 func TestBuildComplianceSubs(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{
 		{CheckID: "namespace", Kind: "Pod", Name: "p", File: "a.yaml", Message: "missing namespace"},
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "d", File: "b.yaml", Value: "nginx:latest", Message: "not pinned"},
@@ -50,6 +54,7 @@ func TestBuildComplianceSubs(t *testing.T) {
 }
 
 func TestSanitizeCell(t *testing.T) {
+	t.Parallel()
 	out := sanitizeCell("foo|bar\nbaz")
 	// pipe is escaped as \| for markdown; newline is replaced by space
 	if strings.Contains(out, "\n") {
@@ -61,6 +66,7 @@ func TestSanitizeCell(t *testing.T) {
 }
 
 func TestComposeKustomizeBuildSection_NoErrors(t *testing.T) {
+	t.Parallel()
 	s := ComposeKustomizeBuildSection(3, nil, "", false, nil, nil, true, "", 0)
 	if s.Status != StatusPassed {
 		t.Errorf("expected StatusPassed, got %v", s.Status)
@@ -71,6 +77,7 @@ func TestComposeKustomizeBuildSection_NoErrors(t *testing.T) {
 }
 
 func TestComposeKustomizeBuildSection_GroupsBuildErrorsByRootCause(t *testing.T) {
+	t.Parallel()
 	buildErrs := []string{
 		"kustomize build app/overlays/a: accumulating components: no such file or directory",
 		"kustomize build app/overlays/b: accumulating components: no such file or directory",
@@ -85,6 +92,7 @@ func TestComposeKustomizeBuildSection_GroupsBuildErrorsByRootCause(t *testing.T)
 }
 
 func TestComposeKustomizeBuildSection_HookTable(t *testing.T) {
+	t.Parallel()
 	hookTable := "| App | PRE_BUILD |\n| --- | --- |\n| `app` | ✅ defined |"
 
 	passed := ComposeKustomizeBuildSection(1, nil, hookTable, false, nil, nil, true, "", 0)
@@ -115,6 +123,7 @@ func TestComposeKustomizeBuildSection_HookTable(t *testing.T) {
 // comment (see cmd/k8s-gitops-ci/main.go's runKustomizeFix, which now
 // actually applies the fix given -dir/-all, unlike this read-only check).
 func TestComposeKustomizeBuildSection_KustomizeFix(t *testing.T) {
+	t.Parallel()
 	fixNeeded := []string{
 		"okd/okd-configuration/overlays/sandbox/kustomization.yaml",
 		"okd/okd-configuration/overlays/prod/kustomization.yaml",
@@ -143,6 +152,7 @@ func TestComposeKustomizeBuildSection_KustomizeFix(t *testing.T) {
 // needed" - silently reporting a clean bill of health for a check that
 // never actually ran would be worse than surfacing the failure.
 func TestComposeKustomizeBuildSection_KustomizeFixCheckError(t *testing.T) {
+	t.Parallel()
 	s := ComposeKustomizeBuildSection(1, nil, "", false, nil, errors.New("kustomize not found in PATH"), true, "", 0)
 	if s.Status != StatusError {
 		t.Error("expected a CheckFix failure to mark the section as an error")
@@ -160,6 +170,7 @@ func TestComposeKustomizeBuildSection_KustomizeFixCheckError(t *testing.T) {
 // a "Disabled." summary rather than a misleading "up to date" - the
 // check never actually ran, so it must not claim a clean bill of health.
 func TestComposeKustomizeBuildSection_KustomizeFixDisabled(t *testing.T) {
+	t.Parallel()
 	s := ComposeKustomizeBuildSection(1, nil, "", false, nil, nil, false, "", 0)
 	if s.Status == StatusError {
 		t.Error("expected a disabled check not to mark the section as an error")
@@ -180,6 +191,7 @@ func TestComposeKustomizeBuildSection_KustomizeFixDisabled(t *testing.T) {
 // status) reflects blocking vs. warning-only per docs/CI.md's "Ghost Patch
 // Detection".
 func TestComposeKustomizeBuildSection_GhostPatches(t *testing.T) {
+	t.Parallel()
 	ghostTable := "| Overlay | Target |\n| --- | --- |\n| `app/overlays/a` | Deployment/foo |"
 
 	// Non-blocking (warning-only) ghost: no blocking rows, so this must
@@ -207,6 +219,7 @@ func TestComposeKustomizeBuildSection_GhostPatches(t *testing.T) {
 }
 
 func TestComposeDriftProtectionSection_NoUnprotectedApps(t *testing.T) {
+	t.Parallel()
 	s := ComposeDriftProtectionSection(nil)
 	if s.Status != StatusPassed {
 		t.Errorf("expected StatusPassed when there are no unprotected apps, got %v", s.Status)
@@ -217,6 +230,7 @@ func TestComposeDriftProtectionSection_NoUnprotectedApps(t *testing.T) {
 }
 
 func TestComposeDriftProtectionSection_ListsUnprotectedApps(t *testing.T) {
+	t.Parallel()
 	s := ComposeDriftProtectionSection([]string{"myapp", "otherapp"})
 	// Non-blocking - a coverage gap warning, not a drift finding - but
 	// still worth a ⚠️, not a plain ✅ that would hide it.
@@ -229,6 +243,7 @@ func TestComposeDriftProtectionSection_ListsUnprotectedApps(t *testing.T) {
 }
 
 func TestComposeScaffoldValidationSection_NoErrors(t *testing.T) {
+	t.Parallel()
 	s := ComposeScaffoldValidationSection("", nil, nil, "")
 	if s.Status != StatusPassed {
 		t.Errorf("expected StatusPassed, got %v", s.Status)
@@ -236,6 +251,7 @@ func TestComposeScaffoldValidationSection_NoErrors(t *testing.T) {
 }
 
 func TestComposeScaffoldValidationSection_WithDrift(t *testing.T) {
+	t.Parallel()
 	s := ComposeScaffoldValidationSection("some drift", []string{"exec failed"}, []string{"cluster-a"}, "")
 	if s.Status != StatusError {
 		t.Error("expected error section")
@@ -250,6 +266,7 @@ func TestComposeScaffoldValidationSection_WithDrift(t *testing.T) {
 // missing clusters already gets - it rolls the parent up to StatusWarning,
 // not StatusError.
 func TestComposeScaffoldValidationSection_PreExistingDriftAloneIsNonBlocking(t *testing.T) {
+	t.Parallel()
 	s := ComposeScaffoldValidationSection("", nil, nil, "myapp: overlay `staging` drifted from its scaffold template/config (pre-existing, not introduced by this PR)")
 	if s.Status != StatusWarning {
 		t.Errorf("expected pre-existing drift alone to roll up to StatusWarning (non-blocking), got %v:\n%s", s.Status, s.Body)
@@ -271,6 +288,7 @@ func TestComposeScaffoldValidationSection_PreExistingDriftAloneIsNonBlocking(t *
 // even as an active warning: it rolls the parent up to StatusInfo (a
 // purely informational FYI), not StatusWarning/StatusError.
 func TestComposeScaffoldValidationSection_MissingClustersAloneIsNonBlocking(t *testing.T) {
+	t.Parallel()
 	s := ComposeScaffoldValidationSection("", nil, []string{"myapp/staging"}, "")
 	if s.Status != StatusInfo {
 		t.Errorf("expected missing clusters alone to roll up to StatusInfo (informational, non-blocking), got %v:\n%s", s.Status, s.Body)
