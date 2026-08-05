@@ -77,7 +77,14 @@ func TestClient_IsAvailable_MissingInfo(t *testing.T) {
 }
 
 func TestValidatePRTitle_Patterns(t *testing.T) {
-	ok := []string{"feat: add thing", "fix(scope): bug", "docs: update"}
+	ok := []string{
+		"feat: add thing",
+		"fix(scope): bug",
+		"docs: update",
+		"revert: let us never again speak of the noodle incident",
+		"feat(api)!: send an email",
+		"Fix: case-insensitive type per spec §15",
+	}
 	bad := []string{"adding thing", "", "WIP: foo"}
 	for _, s := range ok {
 		if err := ValidatePRTitleString(s); err != nil {

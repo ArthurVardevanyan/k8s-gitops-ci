@@ -85,7 +85,11 @@ func ValidatePRTitle(c *Client) error {
 	return ValidatePRTitleString(title)
 }
 
-var prTitlePattern = regexp.MustCompile(`^(feat|fix|docs|style|refactor|test|build|ci|chore|perf)(\(.+\))?!?: .+`)
+// prTitlePattern matches the Conventional Commits prefix. The (?i) flag makes
+// the type case-insensitive per spec §15 ("units of information ... MUST NOT be
+// treated as case-sensitive"); `revert` is included per the spec's recommended
+// revert convention. The type set mirrors @commitlint/config-conventional.
+var prTitlePattern = regexp.MustCompile(`(?i)^(feat|fix|docs|style|refactor|test|build|ci|chore|perf|revert)(\(.+\))?!?: .+`)
 
 // ValidatePRTitleString validates a single title string.
 func ValidatePRTitleString(title string) error {
