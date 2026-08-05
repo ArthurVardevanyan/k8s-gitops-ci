@@ -48,7 +48,13 @@ var KnownNonManifestFiles = map[string]bool{
 	".golangci.yaml":          true,
 	".goreleaser.yaml":        true,
 	".goreleaser.yml":         true,
+	"dependabot.yml":          true,
+	"dependabot.yaml":         true,
 	".pre-commit-config.yaml": true,
+	".bulldozer.yml":          true,
+	".bulldozer.yaml":         true,
+	".policy.yml":             true,
+	".policy.yaml":            true,
 }
 
 // IsKnownNonManifestFile reports whether path's basename is a known
