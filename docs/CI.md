@@ -565,7 +565,14 @@ than failed when it's disabled - either explicitly
 Scaffold Validation section's "Cluster Coverage" sub-dropdown). A scafctl
 execution failure is always treated as blocking. A content mismatch is
 blocking when the PR itself touches the affected overlay (or a base/
-component it inherits from - `isOverlayRelatedToChangedFiles`); otherwise
+component it inherits from - `isOverlayRelatedToChangedFiles`; the
+overlay's own directory and the app's `base/` are coarse signals, but a
+`components/<name>/<version>/` change only counts when that specific
+overlay's kustomization reference chain actually includes the changed
+version directory - resolved via `overlay.RefsChangedDir` over the
+`kustomize.ResolveRefs` graph - so version-partitioned components
+(`components/foo/v0.21.0` vs `components/foo/v0.19.1`) don't blame an
+overlay pinned to a different, unaffected version); otherwise
 it's checked against the merge-base template/config
 (`computeBaselineMismatches`, gated on `Options.BaseRef` being set - i.e.
 an actual CI/PR run, never a local `test-all` run against a live working

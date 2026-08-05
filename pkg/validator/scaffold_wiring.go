@@ -260,24 +260,47 @@ func flattenSkippedClusters(skipped map[string][]string) []string {
 }
 
 // isOverlayRelatedToChangedFiles reports whether app's cluster overlay -
-// or the app's base/components, which flow into every overlay via
-// kustomize - was itself touched by this PR's own changed files. A
-// mismatch scaffold.Run finds is only ever eligible for the non-blocking
-// pre-existing-drift downgrade (see runScaffoldValidation) when this
-// returns false: if the PR is already modifying files in the affected
-// overlay (or a base/component the overlay inherits from), it must also
-// fix any drift found there, baseline or not.
+// or a base/component the overlay actually inherits from - was itself
+// touched by this PR's own changed files. A mismatch scaffold.Run finds is
+// only ever eligible for the non-blocking pre-existing-drift downgrade (see
+// runScaffoldValidation) when this returns false: if the PR is already
+// modifying files in the affected overlay (or a base/component the overlay
+// inherits from), it must also fix any drift found there, baseline or not.
+//
+// The overlay's own directory and the app's base/ are treated as coarse
+// signals (base/ flows into effectively every overlay), but changes under
+// components/ are scoped precisely: a component change only relates to this
+// overlay when the overlay's kustomization reference chain actually includes
+// that specific component directory. Because components are
+// version-partitioned (e.g. components/foo/v0.21.0 vs components/foo/v0.19.1)
+// and each overlay pins one version, this stops a change to one version from
+// blaming overlays pinned to a different, unaffected version - letting their
+// genuinely pre-existing drift fall through to the non-blocking downgrade.
 func isOverlayRelatedToChangedFiles(app, cluster string, changedFiles []string) bool {
 	overlayPrefix := filepath.ToSlash(filepath.Join(app, "overlays", cluster)) + "/"
 	basePrefix := filepath.ToSlash(filepath.Join(app, "base")) + "/"
 	componentsPrefix := filepath.ToSlash(filepath.Join(app, "components")) + "/"
+
+	var changedComponentDirs []string
+	seen := map[string]bool{}
 	for _, cf := range changedFiles {
 		cf = filepath.ToSlash(cf)
-		if strings.HasPrefix(cf, overlayPrefix) || strings.HasPrefix(cf, basePrefix) || strings.HasPrefix(cf, componentsPrefix) {
+		if strings.HasPrefix(cf, overlayPrefix) || strings.HasPrefix(cf, basePrefix) {
 			return true
 		}
+		if strings.HasPrefix(cf, componentsPrefix) {
+			dir := filepath.ToSlash(filepath.Dir(cf))
+			if !seen[dir] {
+				seen[dir] = true
+				changedComponentDirs = append(changedComponentDirs, dir)
+			}
+		}
 	}
-	return false
+	if len(changedComponentDirs) == 0 {
+		return false
+	}
+	overlayDir := filepath.Join(app, "overlays", cluster)
+	return overlay.RefsChangedDir(overlayDir, changedComponentDirs)
 }
 
 // computeBaselineMismatches re-runs scaffold for app against the
