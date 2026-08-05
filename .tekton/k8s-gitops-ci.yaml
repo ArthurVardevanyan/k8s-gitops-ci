@@ -220,7 +220,19 @@ spec:
                   # PVC too — otherwise it lives in the fresh-clone workspace
                   # and every push re-installs golangci-lint/govulncheck/
                   # gofumpt/goimports. Consumed by Taskfile's TOOLS var.
-                  export K8S_GITOPS_CI_TOOLS_DIR="${GO_CACHE_PATH}/tool"
+                  # Keyed by architecture: the go-cache PVC can be mounted
+                  # on nodes of different architectures (amd64/arm64), but Go
+                  # tool binaries are arch-specific. Without the arch segment
+                  # they'd share one dir, and Taskfile's install_tool guard —
+                  # which skips reinstalling whenever the binary exists and
+                  # its recorded version marker matches — would keep a
+                  # wrong-arch binary a prior run installed, only for it to
+                  # fail at exec with "exec format error". A per-arch path
+                  # makes each architecture install and cache its own tools.
+                  # (ARCH is assigned separately, then referenced, to keep
+                  # the export SC2155-clean — matching REPO_DIR above.)
+                  ARCH="$(uname -m)"
+                  export K8S_GITOPS_CI_TOOLS_DIR="${GO_CACHE_PATH}/tool/${ARCH}"
 
                   # golangci-lint cache guard (see comment above REPO_DIR):
                   # if REPO_DIR's location differs from the value recorded

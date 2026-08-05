@@ -165,7 +165,13 @@ Two-tier: an optional `go-cache` PVC workspace, falling back to a pod
   var) so the installed Go dev-tools (`golangci-lint`, `govulncheck`,
   `gofumpt`, `goimports`) land on the PVC instead of the fresh-clone
   workspace's `.tool/` — otherwise `install-tools` re-links all four on
-  every push, since each run starts from an empty checkout.
+  every push, since each run starts from an empty checkout. This path is
+  keyed by `$(uname -m)` (`${GO_CACHE_PATH}/tool/<arch>`): the PVC can be
+  mounted on amd64 or arm64 nodes, and since `install-tools` skips
+  reinstalling a tool whose binary and version marker are already
+  present, a shared (non-arch-keyed) dir would let a wrong-arch binary
+  from a prior run survive and then fail at exec with "exec format
+  error".
   **The cloned source itself (`${GO_CACHE_PATH}/src`) is also persisted
   and reused** (fetch + `git reset --hard` + `git clean -fd` instead of
   a fresh `git init`) rather than re-cloned every run. This isn't just
