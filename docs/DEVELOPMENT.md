@@ -4,7 +4,7 @@ This covers build/test/lint commands, repository structure, and the
 design conventions that keep this a generic, org-agnostic core. See
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the runtime shape (what actually
 happens when you run a pipeline) and a "Where do I find X?" table
-pointing to every other doc (`CI.md`, `HOOKS.md`, `EXCEPTIONS.md`,
+pointing to every other doc (`CI.md`, `HOOKS.md`, `EXEMPTIONS.md`,
 `TEKTON.md`, `RELEASE.md`, `SECURITY.md`, `SCHEMAS.md`).
 
 ## Table of Contents
@@ -235,7 +235,7 @@ per step:
   that would otherwise trip kubeconform's "missing 'kind' key" error. For
   finer-grained, per-file exemptions instead of disabling the whole step,
   see `check=kubeconform` selectors in
-  [`EXCEPTIONS.md`](EXCEPTIONS.md#exemptable-check-ids).
+  [`EXEMPTIONS.md`](EXEMPTIONS.md#exemptable-check-ids).
 - `Options.EnabledChecks []string` — turn on a step that defaults to
   **disabled**: `kyverno` (see [`SCHEMAS.md`](SCHEMAS.md) for why) and
   `scaffold-readme` (see [`CI.md`](CI.md#scaffold-validation) for why).
@@ -261,7 +261,7 @@ time.
    `check.Register`/`exempt.RegisterExemptable`) unless it's explicitly
    guarded against exemption (the only current example is
    `exempt.IDClusterIdentity`, a deliberately non-exemptable structural
-   bucket — see [`EXCEPTIONS.md`](EXCEPTIONS.md)).
+   bucket — see [`EXEMPTIONS.md`](EXEMPTIONS.md)).
 3. Add `testdata/` fixtures under your package (`testdata/` for
    fixtures expected to pass or produce specific findings,
    `testdata/invalid/` for deliberately-malformed inputs) — this repo's
@@ -548,8 +548,8 @@ count:
   has a finding in a directly-modified file — blocking — vs ⚠️ for a
   pre-existing, non-blocking finding only), sorted alphabetically by check
   ID (this generic core has no fixed, org-defined check ordering to
-  hardcode), plus an "Accepted Exceptions" audit sub-block
-  (`renderAcceptedExceptions`, table `| Resource | Value | Scope |`) built
+  hardcode), plus an "Accepted Exemptions" audit sub-block
+  (`renderAcceptedExemptions`, table `| Resource | Value | Scope |`) built
   from applied exemptions (`check.Result.Exempted` /
   `[]exempt.Applied`), labeled `(pre-existing)` when none of the
   exemptions were applied to a directly-modified resource. The section's

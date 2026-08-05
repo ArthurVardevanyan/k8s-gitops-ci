@@ -41,9 +41,9 @@ type Report struct {
 }
 
 // SectionStatus represents the outcome of a report section. Unlike a bare
-// pass/fail bool, it distinguishes an accepted (non-blocking) exception -
+// pass/fail bool, it distinguishes an accepted (non-blocking) exemption -
 // StatusInfo - from an active warning or a blocking error, so a section can
-// render "0 blocking findings, 2 accepted exceptions" instead of collapsing
+// render "0 blocking findings, 2 accepted exemptions" instead of collapsing
 // both into the same "passed" bucket.
 type SectionStatus int
 
@@ -93,7 +93,7 @@ type CheckOutcome struct {
 // sub-dropdown beneath one (via renderSubDropdown). It carries a full
 // SectionStatus (rather than a bare pass/fail bool) plus a short Summary
 // shown when the section passed and there's no need for a full Body, so a
-// section can render "0 blocking findings, 2 accepted exceptions" instead
+// section can render "0 blocking findings, 2 accepted exemptions" instead
 // of collapsing everything into the same binary pass/fail icon - and so a
 // parent section's icon can correctly inherit the worst status among its
 // children (composeParentFromChildren) instead of only ever showing ✅/❌

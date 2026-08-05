@@ -198,7 +198,7 @@ func TestPsaCheck_CarriesMissingLabelsInExtra(t *testing.T) {
 // Annotations, so a gitops-ci.k8s.io/exempt-<check-id> annotation on the
 // resource itself silently never matched anything (exempt.Accepts fails
 // closed whenever value == "") - only an EXEMPTIONS=(...) test.sh selector
-// could exempt these three checks. See docs/EXCEPTIONS.md's "Adding
+// could exempt these three checks. See docs/EXEMPTIONS.md's "Adding
 // exemption support to a new check".
 
 func TestRbacWildcardCheck_AnnotationExemptionEndToEnd(t *testing.T) {

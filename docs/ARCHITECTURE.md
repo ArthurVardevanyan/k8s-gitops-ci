@@ -105,7 +105,7 @@ of the flow above:
   `pkg/scaffold`.
 - **Resource Compliance:** `pkg/validator/check` (the registry engine),
   `pkg/validator/exempt` (the unified exemption framework — see
-  [EXCEPTIONS.md](EXCEPTIONS.md)), and one package per validator
+  [EXEMPTIONS.md](EXEMPTIONS.md)), and one package per validator
   (`namespace`, `psa`, `rbac`, `crb`, `syncopts`, `image`, `namedport`,
   `podspec`, `placeholder`, `clusterid`).
 - **NetworkAttachmentDefinition validation:** `pkg/validator/nad` — a
@@ -145,7 +145,7 @@ canonical reference for:
 | ------------------------------------------------------------------------------ | -------------------------------- |
 | Full list of checks/steps, pipeline phases, report structure                   | [CI.md](CI.md)                   |
 | `test.sh` hook contract, `PRE_BUILD_HOOK`/etc. current status                  | [HOOKS.md](HOOKS.md)             |
-| Annotation vs. `EXEMPTIONS` selector exemptions, adding a new exemptable check | [EXCEPTIONS.md](EXCEPTIONS.md)   |
+| Annotation vs. `EXEMPTIONS` selector exemptions, adding a new exemptable check | [EXEMPTIONS.md](EXEMPTIONS.md)   |
 | Tekton pipeline/task layout, PaC triggers, build-step script                   | [TEKTON.md](TEKTON.md)           |
 | Versioning, changelog, release artifacts                                       | [RELEASE.md](RELEASE.md)         |
 | Trust model, `exec.Command` audit, file-permission rationale                   | [SECURITY.md](SECURITY.md)       |

@@ -7,7 +7,7 @@ metadata:
     io.kubernetes.cri-o.TrySkipVolumeSELinuxLabel: "true"
     # The toolbox image is deliberately floating (Renovate-updated, not
     # git-tracked per-digest) - both the `build` and `lint` steps below use
-    # it. See docs/EXCEPTIONS.md's annotation-exemption mode.
+    # it. See docs/EXEMPTIONS.md's annotation-exemption mode.
     gitops-ci.k8s.io/exempt-image-checksum: "registry.arthurvardevanyan.com/homelab/toolbox:not_latest"
     pipelinesascode.tekton.dev/on-cel-expression: |
       (event == "pull_request" || event == "push") && target_branch == "main"

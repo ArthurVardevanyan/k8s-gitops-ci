@@ -122,7 +122,7 @@ pattern, and the generic check-enablement mechanism).
 - [`docs/HOOKS.md`](docs/HOOKS.md) — the `test.sh` contract
   (`SCAFFOLD=`/`AVP_EXCLUDE=`/`EXEMPTIONS=(...)`/hook directives) and
   which of them are actually wired today
-- [`docs/EXCEPTIONS.md`](docs/EXCEPTIONS.md) — the exemption framework:
+- [`docs/EXEMPTIONS.md`](docs/EXEMPTIONS.md) — the exemption framework:
   annotation vs. `EXEMPTIONS` selector modes, exemptable check IDs,
   adding exemption support to a new check
 - [`docs/TEKTON.md`](docs/TEKTON.md) — this repo's own Tekton

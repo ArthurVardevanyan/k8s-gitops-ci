@@ -424,7 +424,7 @@ func TestComposeResourceComplianceSection_DoesNotOverDedup(t *testing.T) {
 	}
 }
 
-func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T) {
+func TestComposeResourceComplianceSection_RendersAcceptedExemptions(t *testing.T) {
 	t.Parallel()
 	exempted := []exempt.Applied{
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: true},
@@ -433,8 +433,8 @@ func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T
 	if s.Status != StatusInfo {
 		t.Errorf("expected StatusInfo (an audit trail, not a warning/error) when only exemptions are present (no findings), got %v", s.Status)
 	}
-	if !strings.Contains(s.Body, "Accepted Exceptions") {
-		t.Errorf("expected an Accepted Exceptions block, got:\n%s", s.Body)
+	if !strings.Contains(s.Body, "Accepted Exemptions") {
+		t.Errorf("expected an Accepted Exemptions block, got:\n%s", s.Body)
 	}
 	if strings.Contains(s.Body, "(pre-existing)") {
 		t.Errorf("a directly-applied exemption should not be labeled pre-existing, got:\n%s", s.Body)
@@ -444,13 +444,13 @@ func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T
 	}
 }
 
-func TestComposeResourceComplianceSection_AcceptedExceptionsPreExistingLabel(t *testing.T) {
+func TestComposeResourceComplianceSection_AcceptedExemptionsPreExistingLabel(t *testing.T) {
 	t.Parallel()
 	exempted := []exempt.Applied{
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: false},
 	}
 	s := ComposeResourceComplianceSection(nil, nil, exempted)
-	if !strings.Contains(s.Body, "Accepted Exceptions (pre-existing)") {
+	if !strings.Contains(s.Body, "Accepted Exemptions (pre-existing)") {
 		t.Errorf("expected the pre-existing qualifier when no exemption is direct, got:\n%s", s.Body)
 	}
 	if !strings.Contains(s.Body, "pre-existing") {
