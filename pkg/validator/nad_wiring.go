@@ -11,18 +11,22 @@ import (
 
 // runNADValidation writes every successfully-rendered overlay's YAML to a
 // temp directory and runs NetworkAttachmentDefinition validation against the
-// batch (structural checks always; the OVN-Kubernetes-aware semantic tier
-// additionally when assumeOpenshift is set - see pkg/validator/nad's package
-// doc comment). This mirrors runKyvernoValidation's temp-file + remap
-// pattern (kyverno_wiring.go) so a finding's File points at the overlay a
-// reviewer can act on instead of an ephemeral temp path.
+// batch. Validation dispatches on each NAD's declared CNI type (OVN NADs get
+// OVN's semantic rules; non-OVN NADs get structural gates plus advisory
+// warnings) - see pkg/validator/nad's package doc comment. This mirrors
+// runKyvernoValidation's temp-file + remap pattern (kyverno_wiring.go) so a
+// finding's File points at the overlay a reviewer can act on instead of an
+// ephemeral temp path.
+//
+// Hard errors gate the run (logged via ErrorInSection); advisory warnings are
+// surfaced in the section (⚠️) but never gate.
 //
 // The returned bool reports whether any NAD resource was actually present in
 // the rendered-overlay chain. When it's false the caller omits the section
 // entirely rather than rendering a "0 NADs, all good" stub: NAD validation is
 // still always-on (never gated), but an empty section is pure noise on the
 // (common) PRs that touch no NetworkAttachmentDefinition at all.
-func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logger.Logger) (ReportSection, bool) {
+func runNADValidation(outputs []renderedOverlay, log *logger.Logger) (ReportSection, bool) {
 	if len(outputs) == 0 {
 		return ReportSection{}, false
 	}
@@ -36,7 +40,7 @@ func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logg
 
 	present := false
 	files := make([]string, 0, len(outputs))
-	remap := make(map[string]string, len(outputs))
+	srcOf := make(map[string]string, len(outputs))
 	for i, o := range outputs {
 		if nad.ContainsNAD(o.data) {
 			present = true
@@ -47,22 +51,29 @@ func runNADValidation(outputs []renderedOverlay, assumeOpenshift bool, log *logg
 			continue
 		}
 		files = append(files, f)
-		remap[f] = o.overlay
+		srcOf[f] = o.overlay
 	}
 
 	if !present {
 		return ReportSection{}, false
 	}
 
-	errs := nad.ValidateFiles(files, assumeOpenshift)
-	for i := range errs {
-		if src, ok := remap[errs[i].File]; ok {
-			errs[i].File = src
+	errs, warns := nad.ValidateFiles(files)
+	remap := func(fs []nad.ValidationError) {
+		for i := range fs {
+			if src, ok := srcOf[fs[i].File]; ok {
+				fs[i].File = src
+			}
 		}
 	}
+	remap(errs)
+	remap(warns)
 
+	// Only hard errors gate the run; advisory warnings are surfaced in the
+	// section (⚠️) but must not fail the pipeline (Result.Failed keys off
+	// logged errors, not section status - see validator.Result.Failed).
 	if len(errs) > 0 {
 		log.ErrorInSection("NAD", "%d NetworkAttachmentDefinition validation error(s)", len(errs))
 	}
-	return ComposeNADSection(errs, assumeOpenshift), true
+	return ComposeNADSection(errs, warns), true
 }

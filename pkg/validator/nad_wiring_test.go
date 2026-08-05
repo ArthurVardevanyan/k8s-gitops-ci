@@ -11,7 +11,7 @@ import (
 func TestRunNADValidation_NoOutputsOmitsSection(t *testing.T) {
 	t.Parallel()
 	log := logger.NewLogger(false, "")
-	_, present := runNADValidation(nil, false, log)
+	_, present := runNADValidation(nil, log)
 	if present {
 		t.Error("expected no section (present=false) with no rendered overlays to validate")
 	}
@@ -23,7 +23,7 @@ func TestRunNADValidation_NoNADResourcesOmitsSection(t *testing.T) {
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: foo\n")},
 	}
-	_, present := runNADValidation(outputs, false, log)
+	_, present := runNADValidation(outputs, log)
 	if present {
 		t.Error("expected no section (present=false) for a batch with no NAD resources")
 	}
@@ -33,9 +33,9 @@ func TestRunNADValidation_ValidNADShowsPassingSection(t *testing.T) {
 	t.Parallel()
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
-		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: good\nspec:\n  config: '{\"cniVersion\":\"0.3.1\"}'\n")},
+		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: good\nspec:\n  config: '{\"cniVersion\":\"0.3.1\",\"type\":\"macvlan\"}'\n")},
 	}
-	s, present := runNADValidation(outputs, false, log)
+	s, present := runNADValidation(outputs, log)
 	if !present {
 		t.Fatal("expected a section (present=true) when a NAD is in the chain, even when it passes")
 	}
@@ -45,15 +45,18 @@ func TestRunNADValidation_ValidNADShowsPassingSection(t *testing.T) {
 	if s.Status == StatusError {
 		t.Errorf("expected a passing (non-error) section for a valid NAD, got: %+v", s)
 	}
+	if log.HasFailures() {
+		t.Error("a valid NAD must not record a failure")
+	}
 }
 
-func TestRunNADValidation_StructuralFindingRemapsToOverlay(t *testing.T) {
+func TestRunNADValidation_ErrorFindingRemapsToOverlay(t *testing.T) {
 	t.Parallel()
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: bad\nspec:\n  config: ''\n")},
 	}
-	s, present := runNADValidation(outputs, false, log)
+	s, present := runNADValidation(outputs, log)
 	if !present {
 		t.Fatal("expected a section (present=true) when a NAD is in the chain")
 	}
@@ -63,13 +66,17 @@ func TestRunNADValidation_StructuralFindingRemapsToOverlay(t *testing.T) {
 	if !strings.Contains(s.Body, "myapp/overlays/prod") {
 		t.Errorf("expected the finding remapped back to the overlay path, got body: %s", s.Body)
 	}
+	if !log.HasFailures() {
+		t.Error("a hard NAD error must record a failure so the run gates")
+	}
 }
 
-func TestRunNADValidation_OVNTierAppliedWhenAssumeOpenShift(t *testing.T) {
+// OVN semantic rules are applied to ovn-k8s-cni-overlay NADs regardless of any
+// platform flag (the type field is self-describing). Here a layer3 topology
+// with persistent IPs is an OVN violation and must gate.
+func TestRunNADValidation_OVNSemanticsAlwaysApplied(t *testing.T) {
 	t.Parallel()
 	log := logger.NewLogger(false, "")
-	// Valid structurally (non-empty config) but invalid under OVN semantics:
-	// layer3 topology does not allow persistent IPs.
 	cfg := `apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
@@ -79,12 +86,32 @@ spec:
   config: '{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"myns/my-network","allowPersistentIPs":true,"role":"secondary"}'
 `
 	outputs := []renderedOverlay{{overlay: "myapp/overlays/prod", data: []byte(cfg)}}
-
-	if s, present := runNADValidation(outputs, false, log); !present || s.Status == StatusError {
-		t.Errorf("expected structural tier to surface a passing section, got present=%v s=%+v", present, s)
+	s, present := runNADValidation(outputs, log)
+	if !present || s.Status != StatusError {
+		t.Errorf("expected OVN semantics to catch the persistent-IPs-on-layer3 violation, got present=%v s=%+v", present, s)
 	}
-	if s, present := runNADValidation(outputs, true, log); !present || s.Status != StatusError {
-		t.Errorf("expected OVN-aware tier to catch the persistent-IPs-on-layer3 violation, got present=%v s=%+v", present, s)
+	if !log.HasFailures() {
+		t.Error("an OVN semantic violation must gate the run")
+	}
+}
+
+// A non-OVN NAD with an unrecognized CNI type is advisory-only: the section
+// rolls up to ⚠️ (StatusWarning) but the run must NOT gate.
+func TestRunNADValidation_UnknownTypeWarnsButDoesNotGate(t *testing.T) {
+	t.Parallel()
+	log := logger.NewLogger(false, "")
+	outputs := []renderedOverlay{
+		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: typo\nspec:\n  config: '{\"cniVersion\":\"0.3.1\",\"type\":\"mcvlan\"}'\n")},
+	}
+	s, present := runNADValidation(outputs, log)
+	if !present {
+		t.Fatal("expected a section for a NAD with an unrecognized type")
+	}
+	if s.Status != StatusWarning {
+		t.Errorf("expected StatusWarning for an unrecognized CNI type, got %v:\n%s", s.Status, s.Body)
+	}
+	if log.HasFailures() {
+		t.Error("an advisory warning must not gate the run")
 	}
 }
 
@@ -115,7 +142,7 @@ func TestRunAll_NADSectionOmittedWhenNoNAD(t *testing.T) {
 func TestRunAll_NADSectionPresentWhenNADInChain(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
-	mustWrite(t, filepath.Join(app, "overlays", "prod", "nad.yaml"), "apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: good\nspec:\n  config: '{\"cniVersion\":\"0.3.1\"}'\n")
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "nad.yaml"), "apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: good\nspec:\n  config: '{\"cniVersion\":\"0.3.1\",\"type\":\"macvlan\"}'\n")
 	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), "resources:\n  - nad.yaml\n")
 
 	res, err := RunAll(Options{Dirs: []string{d}})

@@ -129,8 +129,9 @@ ID:
 `pkg/validator/nad`'s NetworkAttachmentDefinition validation (see
 [CI.md](CI.md#networkattachmentdefinition-nad-validation)) is **not**
 part of the `check.Register` framework at all, so it has no check ID to
-exempt by either mode — a NAD finding always blocks regardless of
-`EXEMPTIONS=(...)` or annotations.
+exempt by either mode — a NAD hard-error finding always blocks regardless
+of `EXEMPTIONS=(...)` or annotations (its non-blocking advisory warnings
+never block in the first place).
 
 ## Non-app `test.sh` scoping
 

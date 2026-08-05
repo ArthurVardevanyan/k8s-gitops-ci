@@ -737,15 +737,16 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 
 	// NetworkAttachmentDefinition validation over every successfully-rendered
-	// overlay. Structural checks always run (default-on, like every other
-	// check in this phase); the OVN-Kubernetes-aware semantic tier is
-	// additionally applied when Options.AssumeOpenShift is set, since an
-	// OpenShift/OKD cluster's default CNI is OVN-Kubernetes - the same
-	// assumption AssumeOpenShift already makes for the sync-options check.
-	// The section is only emitted when a NAD is actually present in the
-	// rendered chain (like the opt-in Kyverno section above); a changeset
-	// with no NAD gets no section rather than an empty "all good" stub.
-	if nadSection, present := runNADValidation(renderedOverlays, opts.AssumeOpenShift, log); present {
+	// overlay. Validation dispatches on each NAD's declared CNI type: OVN
+	// NADs (type ovn-k8s-cni-overlay) get OVN-Kubernetes' semantic rules,
+	// non-OVN NADs (macvlan, bridge, SR-IOV, ...) get structural gates plus
+	// advisory-only warnings. This is independent of Options.AssumeOpenShift -
+	// the type field is self-describing, so no global OpenShift assumption is
+	// needed (that flag still governs the sync-options check). The section is
+	// only emitted when a NAD is actually present in the rendered chain (like
+	// the opt-in Kyverno section above); a changeset with no NAD gets no
+	// section rather than an empty "all good" stub.
+	if nadSection, present := runNADValidation(renderedOverlays, log); present {
 		res.Sections = append(res.Sections, nadSection)
 	}
 
