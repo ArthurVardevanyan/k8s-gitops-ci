@@ -4,6 +4,17 @@ project_name: k8s-gitops-ci
 before:
   hooks:
     - go mod tidy
+    # Regenerate the embedded kubeconform schema / kyverno policy archives
+    # (schemas.tar.gz / policies.tar.gz) so they're guaranteed present on
+    # disk before the embedschemas-tagged build below needs them via
+    # `//go:embed` - matches `task build`'s own [update:schemas,
+    # update:policies] deps (see Taskfile.yml). In the real Tekton release
+    # pipeline `task ci` already ran these moments earlier in the same
+    # step, so this is a fast no-op there; it only does real work for a
+    # standalone local `goreleaser build`/`release` (see
+    # docs/RELEASE.md's "Dry-run locally" section).
+    - task update:schemas
+    - task update:policies
     - go generate ./...
 builds:
   - id: k8s-gitops-ci
@@ -11,6 +22,15 @@ builds:
     binary: k8s-gitops-ci
     env:
       - CGO_ENABLED=0
+    # Without this, released binaries silently diverge from `task build`'s
+    # (see Taskfile.yml): the `!embedschemas`-gated stub compiles in
+    # instead, so kubeconform.ExtractSchemas returns
+    # schemas.ErrNoEmbeddedArchive and every CRD-only schema lookup
+    # (CustomResourceDefinition, and anything only present in the
+    # embedded custom-standalone-strict/master-local archive) fails with
+    # "could not find schema for X" at runtime - see docs/SCHEMAS.md.
+    flags:
+      - -tags=embedschemas
     goos:
       - linux
       - darwin
