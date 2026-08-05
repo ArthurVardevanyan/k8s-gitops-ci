@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -121,9 +120,11 @@ func runHookCommand(scriptPath, hookName, cmdName string, timeout time.Duration,
 	// child process), not just the immediate bash process - otherwise a
 	// grandchild that inherited the stdout/stderr pipe can keep cmd.Wait
 	// blocked well past ctx's deadline even after bash itself is killed.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// The process-group setup/kill is platform-specific; see
+	// exec_unix.go/exec_windows.go.
+	setProcGroup(cmd)
 	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		return killProcessGroup(cmd)
 	}
 	cmd.WaitDelay = 5 * time.Second
 
