@@ -262,7 +262,15 @@ output, not just the raw source.
   Go-templated source (often not valid standalone YAML). Both are skipped
   automatically by the kubeconform, doc-check, Kyverno, and YAML-syntax
   phases, so a changed scaffold config no longer trips a
-  "missing 'kind' key" error.
+  "missing 'kind' key" error. `<ScaffoldDir>/templates/` is likewise
+  excluded from **overlay-build (app-root) discovery** (`detectAppRoots`),
+  so a template subtree whose layout contains `overlays/<env>/` is never
+  treated as a buildable kustomize overlay (which would otherwise fail
+  with "unable to find kustomization.yaml"). Additional non-app path
+  prefixes can be registered via `validator.ExtraNonAppDirs`, whose keys
+  are matched on path-segment boundaries (a single-segment key like
+  `ford` excludes a top-level dir; a multi-segment key excludes a nested
+  subtree).
 - **Implementation:** a Go library, not a CLI wrapper — unlike the three
   checks above, there's no missing-binary case to gate.
 - **Default:** on. **Disable:** `--disable-checks kubeconform` — a genuine

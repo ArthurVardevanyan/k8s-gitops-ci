@@ -14,7 +14,7 @@ import (
 // detectOverlaysForChanges maps a PR's changed files to the overlays that
 // actually need building/checking. Unlike the old naive "any path segment
 // literally named overlays/" heuristic, this is app-aware: it finds each
-// touched app root (detectAppRoots, defined in kubeconform_overlay.go and
+// touched app root (detectAppRoots, defined in overlay_discovery.go and
 // already shared with the kubeconform-over-rendered-overlays path), asks
 // overlay.GetOverlaysToTest which overlays that app's changes imply
 // (cluster-specific vs. a base/component change that could affect every
