@@ -217,7 +217,7 @@ rules:
 	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res := runDocChecks([]string{f}, nil, 1, nil)
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
 	for _, finding := range res.Findings {
 		if finding.CheckID == "rbac-wildcards" {
 			t.Errorf("expected the rbac-wildcards finding to be excluded by its own annotation, got %+v", finding)
@@ -251,7 +251,7 @@ spec:
 	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res := runDocChecks([]string{f}, nil, 1, nil)
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
 	for _, finding := range res.Findings {
 		if finding.CheckID == "named-ports" {
 			t.Errorf("expected the named-ports finding to be excluded by its own annotation, got %+v", finding)
@@ -286,7 +286,7 @@ spec:
 	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res := runDocChecks([]string{f}, nil, 1, nil)
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
 	for _, finding := range res.Findings {
 		if finding.CheckID == "podspec-defaults" && finding.Container == "" {
 			t.Errorf("expected the pod-level podspec-defaults finding to be excluded by its own annotation, got %+v", finding)

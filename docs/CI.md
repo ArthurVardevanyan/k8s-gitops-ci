@@ -29,6 +29,7 @@ package map; this is the detailed, step-by-step reference.
     - [Ghost Patch Detection](#ghost-patch-detection)
     - [Scaffold Validation](#scaffold-validation)
     - [Registered checks](#registered-checks)
+      - [Raw vs. rendered check input (dual-pass compliance)](#raw-vs-rendered-check-input-dual-pass-compliance)
       - [`namespace`](#namespace)
       - [`psa-labels`](#psa-labels)
       - [`rbac-readonly`](#rbac-readonly)
@@ -662,6 +663,32 @@ begin with), regardless of which specific check would otherwise fire:
   real workloads. This doesn't affect kubeconform/Kyverno validation
   themselves, which run over the changeset independently.
 
+#### Raw vs. rendered check input (dual-pass compliance)
+
+Resource-compliance checks split by which input decides their verdict:
+
+- **Render-sensitive checks** — `namespace`, `psa-labels`,
+  `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`,
+  `image-checksum`, `named-ports`, `podspec-defaults`, and `placeholder`
+  — opt in via `check.RenderSensitive`
+  (`pkg/validator/register_checks.go`). Their verdict comes from the
+  kustomize/AVP-**rendered** overlay output (`runDocChecksRendered`,
+  `pkg/validator/engine.go`), so a value injected or replaced by a
+  base+overlay+component merge — a sentinel patched out at build time, a
+  digest pinned only by an overlay `images:` transformer, a
+  `securityContext` added by an overlay — is judged on its **final
+  rendered result**, not the intermediate raw fragment. The raw source is
+  still scanned as a **fallback** for any file that participates in no
+  rendered overlay (e.g. a brand-new component not yet wired into any
+  `kustomization.yaml`), so a violation in a not-yet-referenced manifest
+  is never silently skipped.
+- **Raw-only checks** — every other doc/static check runs directly over
+  the raw changed files.
+
+A render-sensitive finding is attributed to the overlay it came from, and
+whether it **blocks** is decided per-resource — see
+[Direct vs. external findings](#direct-vs-external-findings).
+
 #### `namespace`
 
 Namespace-scoped resources declare `metadata.namespace`; cluster-scoped
@@ -761,15 +788,21 @@ CRD's embedded OpenAPI schema can legitimately contain
 angle-bracket/sentinel-shaped tokens (defaults, examples, pattern
 strings) that aren't unresolved secrets.
 
-`placeholder` is registered with `placeholder.Options{CheckAVP: false}`
+`placeholder` runs in **both** passes (see
+[Raw vs. rendered check input](#raw-vs-rendered-check-input-dual-pass-compliance)
+above). The **raw** pass uses `placeholder.Options{CheckAVP: false}`
 (`pkg/validator/register_checks.go`), so AVP-scheme secret-reference
 tokens (`<path:...>`, `<vault:...>`, `<aws:...>`, `<gcp:...>`) are
-deliberately **not** flagged: this check runs over raw committed/changed
-source, where those tokens are the intended checked-in state, resolved
-at deploy time (see [Build Strategies](#build-strategies) above) rather
-than by the author. `placeholder.Options.CheckAVP` remains available for
-a caller validating already-rendered output instead, where a surviving
-AVP token would be a genuine unresolved-placeholder failure.
+deliberately **not** flagged there: over raw committed/changed source
+those tokens are the intended checked-in state, resolved at deploy time
+(see [Build Strategies](#build-strategies) above) rather than by the
+author. The **rendered** pass (`CheckRenderedDoc`) uses `CheckAVP: true`,
+so an AVP token that survives kustomize/AVP rendering — which AVP was
+expected to resolve — is caught as a genuine unresolved-placeholder
+failure, while a build-time-patched sentinel (e.g. a base/component
+holding `image: <PATCHED_BY_KUSTOMIZE>` that every overlay replaces via
+an `images:`/JSON-patch transformer) never produces a raw-source false
+positive.
 
 #### `cluster-identity`
 
@@ -883,6 +916,19 @@ base/component the affected overlay depends on changed elsewhere, it's
 **external** (⚠️, warning-only, non-blocking) — an issue you didn't
 introduce and shouldn't be blocked by fixing right now.
 
+For **render-sensitive** compliance findings (those from the rendered
+overlay stream — see
+[Raw vs. rendered check input](#raw-vs-rendered-check-input-dual-pass-compliance)),
+the same direct/external split is decided at the **resource** level rather
+than the file level: a finding is direct (blocking) only when this
+changeset directly modified that specific resource (`Kind/Name`) via a
+source file feeding the affected overlay
+(`changedResourceKeys`/`isResourceAffected`,
+`pkg/validator/compliance_attribution.go`). A PR that only touches an
+overlay's `kustomization.yaml` therefore surfaces the base-derived
+findings for its resources as ⚠️ warnings, not blocking errors, unless it
+also changed those resource definitions themselves.
+
 ## Concurrency
 
 `Workers(opts)` returns `opts.Concurrency` if set (`--concurrency`), else
@@ -920,13 +966,19 @@ audit sub-block.
 Each check-ID group under Resource Compliance renders using that check's
 registered `check.TableSpec` (`pkg/validator/register_tables.go`) when
 one exists: its own descriptive title/preamble and columns (e.g.
-`image-checksum` shows Kind/Name/Image/File, not just a flat File/
-Message dump), with findings that are the same underlying issue fanned
-out across multiple overlays/build locations collapsed into one row
-listing every affected file (`dedupFindingsForTable` in
-`compose_sections.go`) instead of repeating an otherwise-identical row
-per location. A check id with no registered `TableSpec` still falls back
-to the original generic two-column File/Message table.
+`image-checksum` shows Kind/Name/Image, not just a flat File/Message
+dump). Findings that are the same underlying resource issue fanned out
+across many rendered overlays are deduped to a **single row** by resource
+identity (`dedupComplianceRows`, `compose_sections.go`), and the
+sub-section heading count reflects those **unique** issues, not the raw
+per-overlay fan-out. Such a row carries an **Overlays** column — a count
+of the distinct overlays the issue spans, or the single built-file label
+(`app/<cluster>.yaml`) when it appears in just one — and blocking
+sub-sections add a **Source File(s)** column naming the changed source
+that made the finding blocking. A check ID that has a `TableSpec` but no
+resource key (e.g. `placeholder`) keeps the file-list dedup, and a check
+ID with no registered `TableSpec` still falls back to the generic
+two-column File/Message table.
 
 Under `--lint-only`, only PR Checks, Linting, Static Checks, and CI Notes
 appear - Kustomize Build, Scaffold Validation, Scaffold Drift Protection,

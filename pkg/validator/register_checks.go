@@ -75,11 +75,12 @@ func init() {
 
 type namespaceCheck struct{}
 
-func (namespaceCheck) ID() string         { return "namespace" }
-func (namespaceCheck) Title() string      { return "Namespace Scope" }
-func (namespaceCheck) Section() string    { return "resource-compliance" }
-func (namespaceCheck) Blocking() bool     { return true }
-func (namespaceCheck) Scope() check.Scope { return check.ScopeDoc }
+func (namespaceCheck) ID() string            { return "namespace" }
+func (namespaceCheck) Title() string         { return "Namespace Scope" }
+func (namespaceCheck) Section() string       { return "resource-compliance" }
+func (namespaceCheck) Blocking() bool        { return true }
+func (namespaceCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (namespaceCheck) RenderSensitive() bool { return true }
 func (namespaceCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := namespace.ValidateBytes(data, source)
 	out := make([]check.Finding, 0, len(errs))
@@ -96,11 +97,12 @@ func (namespaceCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type psaCheck struct{}
 
-func (psaCheck) ID() string         { return "psa-labels" }
-func (psaCheck) Title() string      { return "PSA Namespace Labels" }
-func (psaCheck) Section() string    { return "resource-compliance" }
-func (psaCheck) Blocking() bool     { return true }
-func (psaCheck) Scope() check.Scope { return check.ScopeDoc }
+func (psaCheck) ID() string            { return "psa-labels" }
+func (psaCheck) Title() string         { return "PSA Namespace Labels" }
+func (psaCheck) Section() string       { return "resource-compliance" }
+func (psaCheck) Blocking() bool        { return true }
+func (psaCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (psaCheck) RenderSensitive() bool { return true }
 func (psaCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := psa.ValidateReader(bytes.NewReader(data), source)
 	out := make([]check.Finding, 0, len(errs))
@@ -123,11 +125,12 @@ func (psaCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type rbacReadonlyCheck struct{}
 
-func (rbacReadonlyCheck) ID() string         { return "rbac-readonly" }
-func (rbacReadonlyCheck) Title() string      { return "RBAC Read-Only Aggregate" }
-func (rbacReadonlyCheck) Section() string    { return "resource-compliance" }
-func (rbacReadonlyCheck) Blocking() bool     { return true }
-func (rbacReadonlyCheck) Scope() check.Scope { return check.ScopeDoc }
+func (rbacReadonlyCheck) ID() string            { return "rbac-readonly" }
+func (rbacReadonlyCheck) Title() string         { return "RBAC Read-Only Aggregate" }
+func (rbacReadonlyCheck) Section() string       { return "resource-compliance" }
+func (rbacReadonlyCheck) Blocking() bool        { return true }
+func (rbacReadonlyCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (rbacReadonlyCheck) RenderSensitive() bool { return true }
 func (rbacReadonlyCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := rbac.ValidateReader(bytes.NewReader(data), source)
 	out := make([]check.Finding, 0, len(errs))
@@ -144,11 +147,12 @@ func (rbacReadonlyCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type rbacWildcardCheck struct{}
 
-func (rbacWildcardCheck) ID() string         { return "rbac-wildcards" }
-func (rbacWildcardCheck) Title() string      { return "RBAC Wildcards" }
-func (rbacWildcardCheck) Section() string    { return "resource-compliance" }
-func (rbacWildcardCheck) Blocking() bool     { return true }
-func (rbacWildcardCheck) Scope() check.Scope { return check.ScopeDoc }
+func (rbacWildcardCheck) ID() string            { return "rbac-wildcards" }
+func (rbacWildcardCheck) Title() string         { return "RBAC Wildcards" }
+func (rbacWildcardCheck) Section() string       { return "resource-compliance" }
+func (rbacWildcardCheck) Blocking() bool        { return true }
+func (rbacWildcardCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (rbacWildcardCheck) RenderSensitive() bool { return true }
 func (rbacWildcardCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := rbac.ValidateWildcardsReader(bytes.NewReader(data), source)
 	out := make([]check.Finding, 0, len(errs))
@@ -171,11 +175,12 @@ func (rbacWildcardCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type crbCheck struct{}
 
-func (crbCheck) ID() string         { return "crb" }
-func (crbCheck) Title() string      { return "ClusterRoleBinding Subject Namespace" }
-func (crbCheck) Section() string    { return "resource-compliance" }
-func (crbCheck) Blocking() bool     { return true }
-func (crbCheck) Scope() check.Scope { return check.ScopeDoc }
+func (crbCheck) ID() string            { return "crb" }
+func (crbCheck) Title() string         { return "ClusterRoleBinding Subject Namespace" }
+func (crbCheck) Section() string       { return "resource-compliance" }
+func (crbCheck) Blocking() bool        { return true }
+func (crbCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (crbCheck) RenderSensitive() bool { return true }
 func (crbCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := crb.ValidateBytes(data, source)
 	out := make([]check.Finding, 0, len(errs))
@@ -192,11 +197,12 @@ func (crbCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type syncoptsCheck struct{}
 
-func (syncoptsCheck) ID() string         { return "sync-options" }
-func (syncoptsCheck) Title() string      { return "Argo CD Sync Options" }
-func (syncoptsCheck) Section() string    { return "resource-compliance" }
-func (syncoptsCheck) Blocking() bool     { return true }
-func (syncoptsCheck) Scope() check.Scope { return check.ScopeDoc }
+func (syncoptsCheck) ID() string            { return "sync-options" }
+func (syncoptsCheck) Title() string         { return "Argo CD Sync Options" }
+func (syncoptsCheck) Section() string       { return "resource-compliance" }
+func (syncoptsCheck) Blocking() bool        { return true }
+func (syncoptsCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (syncoptsCheck) RenderSensitive() bool { return true }
 func (syncoptsCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := syncopts.ValidateReader(bytes.NewReader(data), source)
 	out := make([]check.Finding, 0, len(errs))
@@ -213,11 +219,12 @@ func (syncoptsCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type imageCheck struct{}
 
-func (imageCheck) ID() string         { return "image-checksum" }
-func (imageCheck) Title() string      { return "Image Digest Pinning" }
-func (imageCheck) Section() string    { return "resource-compliance" }
-func (imageCheck) Blocking() bool     { return true }
-func (imageCheck) Scope() check.Scope { return check.ScopeDoc }
+func (imageCheck) ID() string            { return "image-checksum" }
+func (imageCheck) Title() string         { return "Image Digest Pinning" }
+func (imageCheck) Section() string       { return "resource-compliance" }
+func (imageCheck) Blocking() bool        { return true }
+func (imageCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (imageCheck) RenderSensitive() bool { return true }
 func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
 	// ValidateBytesRaw (not ValidateBytes) so exemption evaluation happens
 	// once, uniformly, in the shared check/exempt engine - which is what
@@ -243,11 +250,12 @@ func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type namedportCheck struct{}
 
-func (namedportCheck) ID() string         { return "named-ports" }
-func (namedportCheck) Title() string      { return "Named Ports" }
-func (namedportCheck) Section() string    { return "resource-compliance" }
-func (namedportCheck) Blocking() bool     { return true }
-func (namedportCheck) Scope() check.Scope { return check.ScopeDoc }
+func (namedportCheck) ID() string            { return "named-ports" }
+func (namedportCheck) Title() string         { return "Named Ports" }
+func (namedportCheck) Section() string       { return "resource-compliance" }
+func (namedportCheck) Blocking() bool        { return true }
+func (namedportCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (namedportCheck) RenderSensitive() bool { return true }
 func (namedportCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := namedport.ValidateBytes(data, source)
 	out := make([]check.Finding, 0, len(errs))
@@ -268,11 +276,12 @@ func (namedportCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type podspecCheck struct{}
 
-func (podspecCheck) ID() string         { return "podspec-defaults" }
-func (podspecCheck) Title() string      { return "PodSpec Defaults" }
-func (podspecCheck) Section() string    { return "resource-compliance" }
-func (podspecCheck) Blocking() bool     { return true }
-func (podspecCheck) Scope() check.Scope { return check.ScopeDoc }
+func (podspecCheck) ID() string            { return "podspec-defaults" }
+func (podspecCheck) Title() string         { return "PodSpec Defaults" }
+func (podspecCheck) Section() string       { return "resource-compliance" }
+func (podspecCheck) Blocking() bool        { return true }
+func (podspecCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (podspecCheck) RenderSensitive() bool { return true }
 func (podspecCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := podspec.ValidateReader(bytes.NewReader(data), source)
 	out := make([]check.Finding, 0, len(errs))
@@ -293,25 +302,46 @@ func (podspecCheck) CheckDoc(data []byte, source string) []check.Finding {
 
 type placeholderCheck struct{}
 
-func (placeholderCheck) ID() string         { return "placeholder" }
-func (placeholderCheck) Title() string      { return "Unresolved Placeholders" }
-func (placeholderCheck) Section() string    { return "resource-compliance" }
-func (placeholderCheck) Blocking() bool     { return true }
-func (placeholderCheck) Scope() check.Scope { return check.ScopeDoc }
+func (placeholderCheck) ID() string            { return "placeholder" }
+func (placeholderCheck) Title() string         { return "Unresolved Placeholders" }
+func (placeholderCheck) Section() string       { return "resource-compliance" }
+func (placeholderCheck) Blocking() bool        { return true }
+func (placeholderCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (placeholderCheck) RenderSensitive() bool { return true }
 func (placeholderCheck) CheckDoc(data []byte, source string) []check.Finding {
-	// CheckAVP: false - this check runs over the RAW changed source files
-	// (see phases.go: yamlFiles = filterYAML(changed)), NOT the AVP-rendered
-	// output. In an argocd-vault-plugin repo, AVP-scheme references
-	// (<path:...#...>, <vault:...>, etc.) are the intended, committed state:
-	// they are resolved by AVP at deploy time (and by this pipeline's own
-	// overlay build via `argocd-vault-plugin generate`), not by the author.
-	// Flagging them here would make every AVP-managed secret a blocking
-	// "unresolved placeholder" false positive. Only genuine unresolved
+	// Raw-source pass. CheckAVP: false - AVP-scheme references
+	// (<path:...#...>, <vault:...>, etc.) are the intended, committed state
+	// in an argocd-vault-plugin repo: they are resolved by AVP at deploy
+	// time (and by this pipeline's own overlay build via `argocd-vault-plugin
+	// generate`), not by the author. Flagging them here would make every
+	// AVP-managed secret a blocking false positive. Only genuine unresolved
 	// template placeholders (angle-bracket UPPER/<a-b-c> tokens and CHANGEME
-	// sentinels) are flagged. The AVP-scanning capability remains available
-	// via placeholder.Options.CheckAVP for callers that validate already-
-	// rendered output (where a surviving <path:...> IS a real failure).
-	errs := placeholder.ValidateReaderWithOptions(bytes.NewReader(data), source, placeholder.Options{CheckAVP: false})
+	// sentinels) are flagged.
+	//
+	// This raw pass only reaches files that never appear in any rendered
+	// overlay (e.g. a brand-new component not yet wired into any
+	// kustomization.yaml) - for every file that does participate in a
+	// rendered overlay, the rendered pass (CheckRenderedDoc) is authoritative
+	// and this raw pass's findings are suppressed. That is what prevents a
+	// sentinel like `image: <PATCHED_BY_KUSTOMIZE>` in a base/component -
+	// always replaced by an overlay `images:`/JSON-patch at build time - from
+	// being reported as a false-positive unresolved placeholder.
+	return placeholderFindings(placeholder.ValidateReaderWithOptions(
+		bytes.NewReader(data), source, placeholder.Options{CheckAVP: false},
+	))
+}
+
+// CheckRenderedDoc validates already-rendered (kustomize/AVP) output. Here
+// CheckAVP: true, because a `<path:...>`/`<vault:...>` reference that
+// SURVIVES AVP rendering is a genuine unresolved-secret failure (AVP was
+// expected to resolve it and didn't), not the intended committed state.
+func (placeholderCheck) CheckRenderedDoc(data []byte, source string) []check.Finding {
+	return placeholderFindings(placeholder.ValidateReaderWithOptions(
+		bytes.NewReader(data), source, placeholder.Options{CheckAVP: true},
+	))
+}
+
+func placeholderFindings(errs []placeholder.ValidationError) []check.Finding {
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
 		out = append(out, check.Finding{

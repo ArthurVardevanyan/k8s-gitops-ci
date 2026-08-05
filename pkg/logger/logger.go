@@ -148,17 +148,16 @@ func (l *Logger) trackNamedSection(section string) {
 	l.failedSections = append(l.failedSections, section)
 }
 
-// Summary returns a formatted summary string. totalSections/failedSections
-// (typically len(validator.Result.Sections) and
+// Summary returns a formatted summary string. totalSections/warnedSections/
+// failedSections (typically len(validator.Result.Sections),
+// validator.Result.WarnedSectionCount(), and
 // validator.Result.FailedSectionCount()) render a leading "Sections: N
-// passed, M failed" line - the generic-core equivalent of a per-run
-// pass/fail tally. pkg/logger can't import pkg/validator itself (validator
-// already imports logger), so callers pass the two counts as plain ints
-// instead of a Section slice. Passing 0 for both (e.g. callers with no
-// validator.Result, like standalone lint-only helpers or pre-existing
-// tests) omits the line entirely, leaving Summary's output unchanged from
-// before this parameter was added.
-func (l *Logger) Summary(totalSections, failedSections int) string {
+// passed, X warned, Y failed" line. pkg/logger can't import pkg/validator
+// itself (validator already imports logger), so callers pass the counts as
+// plain ints. Passing 0 for all three (e.g. callers with no
+// validator.Result, like standalone lint-only helpers or pre-existing tests)
+// omits the line entirely.
+func (l *Logger) Summary(totalSections, warnedSections, failedSections int) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -169,7 +168,8 @@ func (l *Logger) Summary(totalSections, failedSections int) string {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 
 	if totalSections > 0 {
-		fmt.Fprintf(&sb, "  Sections: %d passed, %d failed\n", totalSections-failedSections, failedSections)
+		passed := totalSections - warnedSections - failedSections
+		fmt.Fprintf(&sb, "  Sections: %d passed, %d warned, %d failed\n", passed, warnedSections, failedSections)
 	}
 	if len(l.warnings) > 0 {
 		fmt.Fprintf(&sb, "  Warnings: %d\n", len(l.warnings))

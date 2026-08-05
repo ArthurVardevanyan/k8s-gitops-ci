@@ -281,7 +281,7 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 // generic core has no fixed, org-defined check ordering (unlike an org
 // layer's own `complianceCheckOrder`, which is exactly the kind of policy
 // decision that doesn't belong here).
-func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempted []exempt.Applied) ReportSection {
+func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempted []exempt.Applied, sources map[string][]string) ReportSection {
 	hasFindings := len(blocking) > 0 || len(warning) > 0
 	hasExemptions := len(exempted) > 0
 	if !hasFindings && !hasExemptions {
@@ -297,25 +297,26 @@ func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempte
 	for _, f := range warning {
 		byCheck[f.CheckID] = append(byCheck[f.CheckID], f)
 	}
-	ids := make([]string, 0, len(byCheck))
-	for id := range byCheck {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
 
 	var b strings.Builder
 	if hasFindings {
 		b.WriteString("If the affected resource is being modified in this PR, these issues **must** be corrected.\n")
 		b.WriteString("Otherwise, these are non-blocking warnings for pre-existing issues.\n\n")
 	}
-	for _, id := range ids {
+	for _, id := range orderedComplianceIDs(byCheck) {
 		findings := byCheck[id]
+		blockingCheck := isBlocking[id]
 		icon := "⚠️"
-		if isBlocking[id] {
+		if blockingCheck {
 			icon = "❌"
 		}
-		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, complianceTitle(id), len(findings))
-		writeComplianceTable(&b, id, findings)
+		// count is the number of DEDUPED rows (unique resource issues), not the
+		// raw per-overlay fan-out - a single base/component resource flagged
+		// across 55 overlays is one finding, with the 55-overlay spread shown
+		// in the Overlays column (see renderResourceComplianceTable).
+		count, body := renderComplianceSub(id, findings, blockingCheck, sources)
+		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, complianceTitle(id), count)
+		b.WriteString(body)
 		b.WriteString("\n</details>\n\n")
 	}
 
@@ -336,6 +337,28 @@ func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempte
 	return ReportSection{Name: "Resource Compliance", Body: b.String(), Status: status}
 }
 
+// orderedComplianceIDs returns the check IDs present in byCheck, ordered by the
+// fixed complianceCheckOrder first, then any remaining IDs (e.g. placeholder,
+// cluster-identity) sorted alphabetically for deterministic output.
+func orderedComplianceIDs(byCheck map[string][]check.Finding) []string {
+	var ids []string
+	seen := map[string]bool{}
+	for _, id := range complianceCheckOrder {
+		if len(byCheck[id]) > 0 {
+			ids = append(ids, id)
+			seen[id] = true
+		}
+	}
+	var rest []string
+	for id := range byCheck {
+		if !seen[id] {
+			rest = append(rest, id)
+		}
+	}
+	sort.Strings(rest)
+	return append(ids, rest...)
+}
+
 // complianceTitle returns a check's registered TableSpec.Title (a fuller,
 // more descriptive heading - e.g. "Image Digest Pinning" rather than just
 // "Image-checksum") when one is registered, falling back to displayName(id)
@@ -348,27 +371,176 @@ func complianceTitle(id string) string {
 	return displayName(id)
 }
 
-// writeComplianceTable renders one check's findings as a markdown table into
-// b. When the check id has a registered TableSpec (register_tables.go), its
-// own columns are used (plus its descriptive Preamble, via
-// RenderColumnedTable) instead of a generic two-column dump, and findings
-// that are the same underlying issue fanned out across multiple overlays/
-// build locations - see engine.go's per-unique-document fan-out - are
-// collapsed into a single row (dedupFindingsForTable) whose File cell lists
-// every distinct location instead of repeating an otherwise-identical row
-// once per location. Any check id without a registered TableSpec (e.g. a
-// brand new check that hasn't been given one yet) falls back to the
-// original flat File/Message table, undeduplicated, so it still renders
-// something useful out of the box.
-func writeComplianceTable(b *strings.Builder, id string, findings []check.Finding) {
-	if _, ok := TableSpecForCheck(id); ok {
-		b.WriteString(RenderColumnedTable(dedupFindingsForTable(findings), id))
-		return
+// complianceRowCount returns the deduped row count for a check's findings -
+// the same number rendered in the sub-section heading (renderComplianceSub) -
+// so the console per-check warning/error lines agree with the PR comment.
+func complianceRowCount(id string, findings []check.Finding) int {
+	spec, ok := TableSpecForCheck(id)
+	if !ok {
+		return len(findings)
 	}
-	b.WriteString("| File | Message |\n| --- | --- |\n")
+	if spec.ResourceKey == nil {
+		return len(dedupFindingsForTable(findings))
+	}
+	return len(dedupComplianceRows(findings))
+}
+
+// renderComplianceSub renders one check's deduped findings and returns the
+// deduped row count (for the sub-section heading) plus the rendered table body.
+//
+// Three rendering paths:
+//   - Resource-based checks (TableSpec with a ResourceKey - podspec, psa, rbac,
+//     image-checksum, etc.): deduped by resource identity, rendered with an
+//     "Overlays" column (a count when the same issue spans multiple overlays, or
+//     the single built-file when just one) plus, for blocking sub-sections, a
+//     "Source File(s)" column naming the changed source that made it blocking.
+//   - File-based checks (TableSpec without a ResourceKey - placeholder,
+//     cluster-identity): the legacy file-list dedup (a File cell listing every
+//     distinct location).
+//   - No TableSpec: a flat File/Message dump.
+func renderComplianceSub(id string, findings []check.Finding, blocking bool, sources map[string][]string) (count int, body string) {
+	spec, ok := TableSpecForCheck(id)
+	if !ok {
+		var b strings.Builder
+		b.WriteString("| File | Message |\n| --- | --- |\n")
+		for _, f := range findings {
+			fmt.Fprintf(&b, "| %s | %s |\n", f.File, f.Message)
+		}
+		return len(findings), b.String()
+	}
+	if spec.ResourceKey == nil {
+		rows := dedupFindingsForTable(findings)
+		return len(rows), RenderColumnedTable(rows, id)
+	}
+	rows := dedupComplianceRows(findings)
+	return len(rows), renderResourceComplianceTable(spec, rows, blocking, sources)
+}
+
+// compRow is one deduplicated resource-compliance row: a representative finding
+// carrying the cell data, plus the distinct overlay/build files it was seen in
+// (count = len(files)).
+type compRow struct {
+	rep   check.Finding
+	files []string
+}
+
+// dedupComplianceRows groups findings by resource identity (findingDedupKey),
+// accumulating the distinct files each was seen in, preserving first-seen order.
+func dedupComplianceRows(findings []check.Finding) []compRow {
+	idx := map[string]int{}
+	seen := map[string]map[string]bool{}
+	var rows []compRow
 	for _, f := range findings {
-		fmt.Fprintf(b, "| %s | %s |\n", f.File, f.Message)
+		k := findingDedupKey(f)
+		i, ok := idx[k]
+		if !ok {
+			i = len(rows)
+			idx[k] = i
+			seen[k] = map[string]bool{}
+			rows = append(rows, compRow{rep: f})
+		}
+		if f.File != "" && !seen[k][f.File] {
+			seen[k][f.File] = true
+			rows[i].files = append(rows[i].files, f.File)
+		}
 	}
+	for i := range rows {
+		sort.Strings(rows[i].files)
+	}
+	return rows
+}
+
+// renderResourceComplianceTable renders resource-compliance rows with the
+// TableSpec's own columns plus an "Overlays" column (and, when blocking, a
+// "Source File(s)" column). A base/component
+// resource flagged across many overlays is one row with an overlay count,
+// instead of the same row repeated per overlay or a giant path list.
+func renderResourceComplianceTable(spec check.TableSpec, rows []compRow, blocking bool, sources map[string][]string) string {
+	var b strings.Builder
+	if spec.Preamble != "" {
+		fmt.Fprintf(&b, "%s\n\n", spec.Preamble)
+	}
+	headers := make([]string, 0, len(spec.Columns)+2)
+	for _, c := range spec.Columns {
+		headers = append(headers, c.Header)
+	}
+	if blocking {
+		headers = append(headers, "Source File(s)")
+	}
+	headers = append(headers, "Overlays")
+	seps := make([]string, len(headers))
+	for i := range seps {
+		seps[i] = "---"
+	}
+	fmt.Fprintf(&b, "| %s |\n| %s |\n", strings.Join(headers, " | "), strings.Join(seps, " | "))
+	for _, row := range rows {
+		cells := make([]string, 0, len(headers))
+		for _, c := range spec.Columns {
+			cells = append(cells, sanitizeCell(c.Cell(row.rep)))
+		}
+		if blocking {
+			kind, name := "", ""
+			if spec.SourceKey != nil {
+				kind, name = spec.SourceKey(row.rep)
+			}
+			cells = append(cells, sanitizeCell(sourceInfo(sources, kind, name, len(row.files))))
+		}
+		cells = append(cells, overlaysCell(row, blocking))
+		fmt.Fprintf(&b, "| %s |\n", strings.Join(cells, " | "))
+	}
+	return b.String()
+}
+
+// overlaysCell renders the "Overlays" column value: for a non-blocking row seen
+// in exactly one overlay, the single built-file label (e.g. `app/pd1010.yaml`);
+// otherwise the count of distinct overlays the issue spans.
+func overlaysCell(row compRow, blocking bool) string {
+	if !blocking && len(row.files) == 1 {
+		return fmt.Sprintf("`%s`", builtFileLabel(row.files[0]))
+	}
+	return fmt.Sprintf("%d", len(row.files))
+}
+
+// builtFileLabel normalizes a rendered finding's overlay-dir path
+// (app/overlays/<cluster>) to the built-file style label
+// (app/<cluster>.yaml), so single-overlay rows show something a reviewer can
+// map to the built output rather than a bare directory.
+func builtFileLabel(overlayPath string) string {
+	slash := filepath.ToSlash(overlayPath)
+	if i := strings.Index(slash, "/overlays/"); i >= 0 {
+		app := slash[:i]
+		cluster := slash[i+len("/overlays/"):]
+		if j := strings.IndexByte(cluster, '/'); j >= 0 {
+			cluster = cluster[:j]
+		}
+		return app + "/" + cluster + ".yaml"
+	}
+	return overlayPath
+}
+
+// sourceInfo renders the "Source File(s)" cell for a blocking row: the changed
+// source file(s) (from the PR's changedResourceKeys) that define the resource
+// and made this finding blocking. Falls back to an overlay count when no source
+// mapping is available.
+func sourceInfo(sources map[string][]string, kind, name string, count int) string {
+	files := sources[kind+"/"+name]
+	if len(files) == 0 {
+		if count == 1 {
+			return "1 overlay"
+		}
+		return fmt.Sprintf("%d overlays", count)
+	}
+	if len(files) == 1 {
+		return fmt.Sprintf("`%s`", files[0])
+	}
+	if len(files) <= 3 {
+		quoted := make([]string, len(files))
+		for i, f := range files {
+			quoted[i] = "`" + f + "`"
+		}
+		return strings.Join(quoted, ", ")
+	}
+	return fmt.Sprintf("%d files", len(files))
 }
 
 // dedupFindingsForTable collapses findings that describe the same

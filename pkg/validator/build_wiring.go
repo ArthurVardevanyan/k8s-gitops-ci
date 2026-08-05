@@ -57,6 +57,35 @@ func appFromOverlayPath(ovPath string) string {
 	return ovPath
 }
 
+// filesCoveredByRenderedOverlays returns the subset of files (cleaned) that
+// participate in the build chain of at least one successfully-rendered
+// overlay - i.e. files whose render-sensitive verdict is decided by the
+// rendered pass (runDocChecksRendered) and should therefore be skipped by
+// the raw pass's render-sensitive tier. A file is covered when it lives
+// under an overlay's own overlays/<cluster> dir, its app's base/, or a
+// component that overlay's kustomization chain references (the same app-aware
+// relatedness the scaffold-drift scoping uses). Files not covered here (e.g.
+// a brand-new component not yet wired into any kustomization.yaml) still get
+// their render-sensitive checks via the raw fallback, so nothing is skipped.
+func filesCoveredByRenderedOverlays(outputs []renderedOverlay, files []string) map[string]bool {
+	if len(outputs) == 0 || len(files) == 0 {
+		return nil
+	}
+	covered := make(map[string]bool, len(files))
+	for _, f := range files {
+		clean := filepath.Clean(f)
+		for _, o := range outputs {
+			app := appFromOverlayPath(o.overlay)
+			cluster := filepath.Base(o.overlay)
+			if isOverlayRelatedToChangedFiles(app, cluster, []string{f}) {
+				covered[clean] = true
+				break
+			}
+		}
+	}
+	return covered
+}
+
 // uniqueApps returns the deduplicated, sorted set of app roots referenced by
 // the given overlays.
 func uniqueApps(overlays []overlayRef) []string {

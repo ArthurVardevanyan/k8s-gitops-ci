@@ -114,15 +114,27 @@ func (r *Result) HasErrorSection() bool {
 }
 
 // FailedSectionCount returns how many Sections have StatusError. Used
-// alongside len(r.Sections) to feed Logger.Summary(totalSections,
-// failedSections int)'s "Sections: N passed, M failed" line - kept as a
-// method here (rather than a loop inlined at each call site) since
-// pkg/logger can't import pkg/validator to compute this itself (validator
-// already imports logger).
+// alongside WarnedSectionCount and len(r.Sections) to feed
+// Logger.Summary(total, warned, failed int)'s "Sections: N passed, X warned,
+// Y failed" line - kept as a method here (rather than a loop inlined at each
+// call site) since pkg/logger can't import pkg/validator to compute this
+// itself (validator already imports logger).
 func (r *Result) FailedSectionCount() int {
 	n := 0
 	for _, s := range r.Sections {
 		if s.Status == StatusError {
+			n++
+		}
+	}
+	return n
+}
+
+// WarnedSectionCount returns how many Sections have StatusWarning. Used
+// alongside FailedSectionCount to feed the summary line.
+func (r *Result) WarnedSectionCount() int {
+	n := 0
+	for _, s := range r.Sections {
+		if s.Status == StatusWarning {
 			n++
 		}
 	}

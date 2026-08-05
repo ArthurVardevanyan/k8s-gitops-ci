@@ -283,22 +283,24 @@ as the current section for error attribution; `SubHeader` prints a lighter
 40-column variant. `Error`/`ErrorInSection` (the latter for use from
 goroutines where the shared "current section" may have been overwritten by
 another goroutine) track errors and failed sections, feeding a final
-`Summary(totalSections, failedSections int)` banner - the two counts
-(typically `len(validator.Result.Sections)` and
+`Summary(totalSections, warnedSections, failedSections int)` banner - the
+three counts (typically `len(validator.Result.Sections)`,
+`validator.Result.WarnedSectionCount()`, and
 `validator.Result.FailedSectionCount()`) render a leading "Sections: N
-passed, M failed" line; pkg/logger can't import pkg/validator itself
-(validator already imports logger), so callers pass plain ints rather than
-a `ReportSection` slice, and passing `0, 0` (e.g. callers with no
-`validator.Result`) omits the line entirely. `FailedSectionCount`/
-`HasErrorSection` only count `StatusError` sections - a `StatusWarning`/
-`StatusInfo` section is worth a look in the PR comment but isn't a hard
-failure, so it's never counted as one here either:
+passed, X warned, Y failed" line (passed = total - warned - failed);
+pkg/logger can't import pkg/validator itself (validator already imports
+logger), so callers pass plain ints rather than a `ReportSection` slice,
+and passing `0, 0, 0` (e.g. callers with no `validator.Result`) omits the
+line entirely. `FailedSectionCount`/`HasErrorSection` count only
+`StatusError` sections and `WarnedSectionCount` only `StatusWarning` ones -
+a `StatusWarning` section is surfaced in the "warned" tally and the PR
+comment but is never a hard failure (`StatusInfo` counts as neither):
 
 ```text
 ============================================================
   RESULTS SUMMARY
 ============================================================
-  Sections: 6 passed, 2 failed
+  Sections: 6 passed, 1 warned, 2 failed
   Warnings: 2
   Errors: 1 (see details above)
   Failed sections:
@@ -545,10 +547,11 @@ count:
   here — see below.)
 - **Resource Compliance** (`ComposeResourceComplianceSection`) — findings
   grouped by `CheckID` into per-check nested `<details>` (❌ when a check
-  has a finding in a directly-modified file — blocking — vs ⚠️ for a
-  pre-existing, non-blocking finding only), sorted alphabetically by check
-  ID (this generic core has no fixed, org-defined check ordering to
-  hardcode), plus an "Accepted Exemptions" audit sub-block
+  has a finding on a directly-modified resource — blocking — vs ⚠️ for a
+  pre-existing, non-blocking finding only), ordered by the fixed
+  `complianceCheckOrder` (`register_tables.go`, image-checksum first) with
+  any check not in that list appended alphabetically
+  (`orderedComplianceIDs`), plus an "Accepted Exemptions" audit sub-block
   (`renderAcceptedExemptions`, table `| Resource | Value | Scope |`) built
   from applied exemptions (`check.Result.Exempted` /
   `[]exempt.Applied`), labeled `(pre-existing)` when none of the
@@ -556,20 +559,24 @@ count:
   own top-level `Status` is `StatusError` when any blocking finding
   exists, `StatusWarning` for warning-only findings, and `StatusInfo` when
   only exemptions are present (no findings at all) — an audit trail worth
-  a glance, but not an active warning. Each check-ID group's table itself
-  (`writeComplianceTable`) uses that check's registered `check.TableSpec`
+  a glance, but not an active warning. Each check-ID group's table
+  (`renderComplianceSub`) uses that check's registered `check.TableSpec`
   (`register_tables.go`'s `checkTableSpecs`) when one exists — its own
-  descriptive title/preamble and columns via `RenderColumnedTable`, e.g.
-  `image-checksum` renders Kind/Name/Image/File columns rather than a flat
-  two-column dump — falling back to a generic `| File | Message |` table
-  for any check id without one. Before rendering, `dedupFindingsForTable`
-  collapses findings that are the same underlying resource/issue fanned
-  out across multiple overlays/build locations (identical
-  Kind/Name/Message etc., differing only in `File` - see `engine.go`'s
-  per-unique-document fan-out) into a single row whose File cell lists
-  every distinct location, so the same issue doesn't repeat once per
-  overlay it happens to appear in; the header's `(N finding(s))` count
-  still reflects every raw, pre-dedup finding.
+  descriptive title/preamble and columns, e.g. `image-checksum` renders
+  Kind/Name/Image rather than a flat two-column dump — falling back to a
+  generic `| File | Message |` table for any check id without one.
+  Findings that are the same underlying resource/issue fanned out across
+  many rendered overlays (identical Kind/Name/Message etc., differing only
+  in `File` - see `engine.go`'s per-unique-document fan-out) are deduped by
+  resource identity (`dedupComplianceRows`) into a single row carrying an
+  **Overlays** column (a count of the distinct overlays it spans, or the
+  single built-file label when it appears in just one); blocking
+  sub-sections additionally gain a **Source File(s)** column. The header's
+  `(N finding(s))` count reflects those deduped **unique** issues, not the
+  raw per-overlay fan-out. A check with a `TableSpec` but no resource key
+  (e.g. `placeholder`) instead keeps the file-list dedup
+  (`dedupFindingsForTable`, one row whose File cell lists every distinct
+  location).
 
 ## Building
 

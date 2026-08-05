@@ -200,7 +200,7 @@ func printRunFooter(res *validator.Result, start time.Time) {
 			res.Logger.Raw(summary)
 		}
 	}
-	fmt.Println(res.Logger.Summary(len(res.Sections), res.FailedSectionCount()))
+	fmt.Println(res.Logger.Summary(len(res.Sections), res.WarnedSectionCount(), res.FailedSectionCount()))
 }
 
 // printAllSectionsConsole prints every section's result to the console: a

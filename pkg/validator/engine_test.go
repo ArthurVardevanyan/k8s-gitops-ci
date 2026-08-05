@@ -50,7 +50,7 @@ func TestFinalizeCompliance(t *testing.T) {
 }
 
 func TestRunDocChecks(t *testing.T) {
-	res := runDocChecks([]string{}, nil, 1, nil)
+	res := runDocChecks([]string{}, nil, nil, 1, nil)
 	if len(res.Findings) != 0 {
 		t.Errorf("expected empty findings")
 	}
@@ -88,7 +88,7 @@ spec:
 	if err := os.WriteFile(f, []byte(policy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res := runDocChecks([]string{f}, nil, 1, nil)
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
 	for _, finding := range res.Findings {
 		if finding.CheckID == "podspec-defaults" {
 			t.Errorf("expected Kyverno policy documents to be excluded from podspec-defaults, got %+v", finding)
@@ -198,7 +198,7 @@ func TestRunDocChecks_DisabledCheckExcluded(t *testing.T) {
 	_ = os.WriteFile(f, []byte("kind: ArgoCD\napiVersion: argoproj.io/v1alpha1\nmetadata:\n  name: cd\n"), 0o644)
 
 	// sync-options should normally flag this doc.
-	base := runDocChecks([]string{f}, nil, 1, nil)
+	base := runDocChecks([]string{f}, nil, nil, 1, nil)
 	found := false
 	for _, fnd := range base.Findings {
 		if fnd.CheckID == "sync-options" {
@@ -210,7 +210,7 @@ func TestRunDocChecks_DisabledCheckExcluded(t *testing.T) {
 	}
 
 	// Disabling sync-options should exclude it entirely.
-	out := runDocChecks([]string{f}, nil, 1, map[string]bool{"sync-options": true})
+	out := runDocChecks([]string{f}, nil, nil, 1, map[string]bool{"sync-options": true})
 	for _, fnd := range out.Findings {
 		if fnd.CheckID == "sync-options" {
 			t.Errorf("expected sync-options findings to be excluded, got %+v", out.Findings)
@@ -241,7 +241,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	res := runDocChecks([]string{f}, nil, 1, nil)
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
 	for _, fnd := range res.Findings {
 		if fnd.CheckID == "image-checksum" {
 			t.Errorf("expected the annotation-exempted image finding to be excluded, got %+v", fnd)
@@ -307,7 +307,7 @@ metadata:
 		t.Fatal(err)
 	}
 
-	res := runDocChecks([]string{tektonFile, elsewhereFile}, builtinExemptSelectors(), 1, nil)
+	res := runDocChecks([]string{tektonFile, elsewhereFile}, nil, builtinExemptSelectors(), 1, nil)
 
 	byFileAndCheck := map[string]bool{}
 	for _, f := range res.Findings {
