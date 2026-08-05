@@ -8,6 +8,7 @@ import (
 )
 
 func TestResolveNonAppHookConfigs_ExactDirectoryMatch(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	dir := filepath.Join(d, "okd", "node-config")
 	mustWrite(t, filepath.Join(dir, "test.sh"), "EXEMPTIONS=(check=kubeconform,file=gpu-1.yaml)\n")
@@ -32,6 +33,7 @@ func TestResolveNonAppHookConfigs_ExactDirectoryMatch(t *testing.T) {
 // a non-app subdirectory (e.g. okd/node-config/*.yaml) that has no test.sh
 // of its own.
 func TestResolveNonAppHookConfigs_WalksUpToParentDirectory(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	parent := filepath.Join(d, "okd")
 	child := filepath.Join(parent, "node-config")
@@ -61,6 +63,7 @@ func TestResolveNonAppHookConfigs_WalksUpToParentDirectory(t *testing.T) {
 // directory and its parent declare a test.sh, the closer one applies and
 // the parent's is never consulted for that file.
 func TestResolveNonAppHookConfigs_ClosestAncestorWins(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	parent := filepath.Join(d, "okd")
 	child := filepath.Join(parent, "node-config")
@@ -85,6 +88,7 @@ func TestResolveNonAppHookConfigs_ClosestAncestorWins(t *testing.T) {
 }
 
 func TestResolveNonAppHookConfigs_SkipsFilesUnderAppRoot(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources: []\n")
@@ -101,6 +105,7 @@ func TestResolveNonAppHookConfigs_SkipsFilesUnderAppRoot(t *testing.T) {
 }
 
 func TestResolveNonAppHookConfigs_NoTestShAnywhereReturnsEmpty(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	f := filepath.Join(d, "some", "nested", "dir", "plain.yaml")
 	mustWrite(t, f, "hosts: []\n")
@@ -114,6 +119,7 @@ func TestResolveNonAppHookConfigs_NoTestShAnywhereReturnsEmpty(t *testing.T) {
 }
 
 func TestNonAppExemptSelectors_ExtractsFromMultipleConfigs(t *testing.T) {
+	t.Parallel()
 	cfgs := map[string]*hook.Config{
 		"dirA": {ExemptSelectors: []hook.ExemptSelector{{Check: "kubeconform", File: "a.yaml"}}},
 		"dirB": {ExemptSelectors: []hook.ExemptSelector{{Check: "kubeconform", File: "b.yaml"}}},

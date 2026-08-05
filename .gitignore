@@ -7,6 +7,8 @@ vendor/
 .idea/
 .DS_Store
 schemas.tar.gz
+schemas.tar.gz.ref
 policies.tar.gz
+policies.tar.gz.ref
 .task
 .tool

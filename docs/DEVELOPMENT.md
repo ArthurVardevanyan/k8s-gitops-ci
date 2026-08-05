@@ -604,6 +604,84 @@ Every package's tests live alongside its source
 (`pkg/foo/foo_test.go`), and prefer table-driven tests over one-off
 `Test*` functions per case, matching the existing style.
 
+### Test performance: caching, parallelism, and shared fixtures
+
+`task test`/`task test:cover` deliberately avoid several things that
+silently defeat Go's own test-result cache or serialize otherwise-
+parallelizable work — worth understanding before adding a `GOFLAGS`/
+`GOTESTFLAGS` default or a new expensive per-test fixture:
+
+- **No forced `-count=1` or `-shuffle=on` default.** Per `go help test`,
+  a test run is only cache-eligible when every flag on the command line
+  comes from a small "cacheable" set (`-run`, `-short`, `-timeout`,
+  `-v`, `-parallel`, `-cpu`, `-list`, `-coverprofile`, `-outputdir`,
+  ...) — `-shuffle` is _not_ in that set, so passing it at all disables
+  caching unconditionally, regardless of `-count`. Both were previously
+  forced on by default in `Taskfile.yml`, meaning `go test ./...` never
+  hit its own cache even on a fully unchanged tree. `GOFLAGS`/
+  `GOTESTFLAGS` still default to empty/`-mod=mod` and remain overridable
+  per-invocation (e.g. `task test GOTESTFLAGS=-shuffle=on` to check for
+  order-dependent tests on demand) — just not on by default.
+- **The embedded archives `go:embed`ed by `pkg/lint/kubeconform/schemas`
+  and `pkg/lint/kyverno/policies` must be byte-reproducible.**
+  `scripts/pull-schemas.sh`/`pull-policies.sh` build them with
+  `tar --sort=name --mtime=... --owner=0 --group=0 --numeric-owner`
+  piped through `gzip -n`, stripping every source of run-to-run
+  non-determinism (directory-walk order, checkout/generation-time
+  mtimes, local uid/gid, gzip's own header timestamp). Regenerating
+  either archive without these flags gives it different bytes on every
+  run even when its logical content is unchanged - which invalidates
+  Go's build/test cache for every package that embeds it (`pkg/pipeline`,
+  `pkg/lint/kyverno`, `pkg/validator`, `cmd/k8s-gitops-ci`, ...) on
+  every single CI invocation. See [SCHEMAS.md](SCHEMAS.md) for the
+  matching `.ref`-marker short-circuit that skips regenerating them at
+  all when the pin/content hasn't changed.
+- **`go test`'s cache keys file inputs on mtime+size, never content** —
+  a fact with no bearing on local dev (you're not re-cloning between
+  runs), but critical for CI: the `.tekton/k8s-gitops-ci.yaml` build
+  step's own source checkout is persisted on the `go-cache` PVC and
+  reused via `git fetch` + `git reset --hard` + `git clean -fd` instead
+  of a fresh `git init` every run, specifically so unchanged files keep
+  their prior mtime and `go test` can hit its cache on a rerun that
+  touches unrelated files. See [TEKTON.md](TEKTON.md#caching) for the
+  full mechanism and `go doc -src cmd/go/internal/test.hashOpen` for the
+  underlying Go behavior (also refuses to cache a file read within 2
+  seconds of its mtime at all, via `modTimeCutoff`/`errFileTooNew`).
+- **`pkg/validator` shares one kubeconform schema extraction across its
+  whole test binary, via `TestMain` (`pkg/validator/main_test.go`).**
+  `RunAll` calls `kubeconform.ExtractSchemas()` whenever it reaches the
+  kubeconform phase without a pre-set `Options.SchemaDir` - and this
+  package alone has dozens of tests that call `RunAll`. Left to extract
+  independently, each call unpacks the embedded archive (108MB across
+  ~3100 files) into its own fresh temp dir; real CI timing showed 19
+  separate extractions costing 227s combined, by far the largest single
+  cost in the package's test suite. `TestMain` extracts once via the
+  exported `kubeconform.ExtractSchemas` override seam (the same seam
+  `kubeconform.TestExtractSchemas_IsOverridable` guards) and points every
+  call at that one shared, read-only directory for the rest of the run.
+  This doesn't reduce coverage of the real extraction path itself -
+  that's exercised directly, independently of this package, by
+  `pkg/lint/kubeconform`'s own `TestExtractSchemas_ContainsExpectedSubdirs`
+  and `TestExtractSchemas_IsOverridable`.
+- **`t.Parallel()` is used throughout `pkg/validator`, with two hard
+  exclusions.** Most of the package's ~265 tests call `t.Parallel()`.
+  Excluded, and must stay excluded for any new test added to this
+  package:
+  1. Anything using `t.Chdir`/`os.Chdir` — process-global, and `t.Chdir`
+     itself panics inside a parallel test.
+  2. Anything that calls `RunAll`, or otherwise writes a package-level
+     var — `RunAll` itself mutates `syncopts.AssumeOpenShift` and
+     `ClusterIndexProvider` on every call (see `validator.go`,
+     `register_checks.go`), and several tests directly assign other
+     unexported package globals (e.g. `hookBuildRoot` in
+     `hook_wiring_test.go`, `DefaultEnabledChecks` in `phases_test.go`).
+     None of this is enforced by the compiler or `go vet` — `-race`
+     will only catch it when two such tests happen to run concurrently,
+     so **grep for `RunAll(` and for direct assignment
+     (`someVar = ...`) to any package-level var before adding
+     `t.Parallel()` to a new test in this package**, don't assume a test
+     is safe just because its own body looks side-effect-free.
+
 ### Negative / error-path coverage
 
 `testdata/invalid/` (see [Adding a new

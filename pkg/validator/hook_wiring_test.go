@@ -17,6 +17,7 @@ import (
 var kustomizeStrategy = appBuildStrategy{Strategy: overlay.StrategyKustomize}
 
 func TestResolveHookSource_LocalRunDefaultsToLocal(t *testing.T) {
+	t.Parallel()
 	// No explicit --hook-source and no PR → local run; should read working
 	// tree test.sh without requiring --hook-source local.
 	if got := resolveHookSource(Options{}); got != hook.SourceLocal {
@@ -25,6 +26,7 @@ func TestResolveHookSource_LocalRunDefaultsToLocal(t *testing.T) {
 }
 
 func TestResolveHookSource_PRRunDefaultsToMain(t *testing.T) {
+	t.Parallel()
 	// PR set with no explicit --hook-source → pipeline run; must still
 	// fail-closed to SourceMain so the PR's own test.sh is never trusted.
 	if got := resolveHookSource(Options{PR: "42"}); got != hook.SourceMain {
@@ -33,12 +35,14 @@ func TestResolveHookSource_PRRunDefaultsToMain(t *testing.T) {
 }
 
 func TestResolveHookSource_ExplicitLocalHonored(t *testing.T) {
+	t.Parallel()
 	if got := resolveHookSource(Options{HookSource: "local"}); got != hook.SourceLocal {
 		t.Errorf("expected explicit local override honored, got %q", got)
 	}
 }
 
 func TestResolveHookSource_PRWithoutHookTestCommentFallsBackToMain(t *testing.T) {
+	t.Parallel()
 	opts := Options{HookSource: hook.SourcePR, PR: "42", TriggerComment: "/deploy"}
 	if got := resolveHookSource(opts); got != hook.SourceMain {
 		t.Errorf("expected a PR signal without the exact /hook-test comment to fail closed to main, got %q", got)
@@ -46,6 +50,7 @@ func TestResolveHookSource_PRWithoutHookTestCommentFallsBackToMain(t *testing.T)
 }
 
 func TestResolveAppHookConfigs(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "test.sh"), "SCAFFOLD=false\n")
@@ -61,6 +66,7 @@ func TestResolveAppHookConfigs(t *testing.T) {
 }
 
 func TestHookExemptSelectorsAndErrors_MergesAcrossApps(t *testing.T) {
+	t.Parallel()
 	cfgs := map[string]*hook.Config{
 		"appA": {ExemptSelectors: []hook.ExemptSelector{{Check: "image-checksum", Value: "registry.example.com/app:latest"}}},
 		"appB": {ExemptSelectors: []hook.ExemptSelector{{Check: "cluster-name", Match: "dev"}}},
@@ -84,6 +90,7 @@ func TestHookExemptSelectorsAndErrors_MergesAcrossApps(t *testing.T) {
 }
 
 func TestHookExemptSelectorsAndErrors_CollectsAndPrefixesErrors(t *testing.T) {
+	t.Parallel()
 	cfgs := map[string]*hook.Config{
 		"apps/myapp": {ExemptErrors: []string{"missing check= in exemption \"foo\""}},
 	}
@@ -97,6 +104,7 @@ func TestHookExemptSelectorsAndErrors_CollectsAndPrefixesErrors(t *testing.T) {
 }
 
 func TestMergeHookOutcome(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		current, next, want hookOutcome
 	}{
@@ -115,6 +123,7 @@ func TestMergeHookOutcome(t *testing.T) {
 }
 
 func TestAnyHookFailed(t *testing.T) {
+	t.Parallel()
 	if anyHookFailed(map[string]*appHookResult{}) {
 		t.Error("expected no failure for an empty result set")
 	}
@@ -137,6 +146,7 @@ func TestAnyHookFailed(t *testing.T) {
 }
 
 func TestBuildOverlayWithHooks_NoHooksDefined(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
 	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
@@ -151,6 +161,7 @@ func TestBuildOverlayWithHooks_NoHooksDefined(t *testing.T) {
 }
 
 func TestBuildOverlayWithHooks_PreBuildFailureSkipsBuild(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	ov := filepath.Join(app, "overlays", "prod")
@@ -171,6 +182,10 @@ func TestBuildOverlayWithHooks_PreBuildFailureSkipsBuild(t *testing.T) {
 	}
 }
 
+// Deliberately not t.Parallel(): this test writes the package-level
+// hookBuildRoot var (see hook_wiring.go), which every other test in this
+// package - parallel or not - reads via appBuildDir. Running concurrently
+// with another hookBuildRoot-writer would race.
 func TestBuildOverlayWithHooks_PostBuildHookRunsWithRenderedYAML(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
@@ -205,6 +220,8 @@ check_yaml() {
 	}
 }
 
+// Deliberately not t.Parallel(): writes the package-level hookBuildRoot var
+// (see the matching comment on TestBuildOverlayWithHooks_PostBuildHookRunsWithRenderedYAML above).
 func TestBuildOverlayWithHooks_PostBuildHookFailureIsReported(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
@@ -225,6 +242,7 @@ func TestBuildOverlayWithHooks_PostBuildHookFailureIsReported(t *testing.T) {
 }
 
 func TestBuildOverlayWithHooks_ReturnsRenderedYAMLOnSuccess(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
 	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
@@ -239,6 +257,7 @@ func TestBuildOverlayWithHooks_ReturnsRenderedYAMLOnSuccess(t *testing.T) {
 }
 
 func TestBuildOverlayWithHooks_NoRenderedYAMLOnBuildFailure(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	buildErr, _, _, rendered := buildOverlayWithHooks(overlayRef{path: filepath.Join(d, "does-not-exist"), cluster: "foo"}, nil, kustomizeStrategy)
 	if buildErr == "" {
@@ -249,6 +268,8 @@ func TestBuildOverlayWithHooks_NoRenderedYAMLOnBuildFailure(t *testing.T) {
 	}
 }
 
+// Deliberately not t.Parallel(): writes the package-level hookBuildRoot var
+// (see the matching comment on TestBuildOverlayWithHooks_PostBuildHookRunsWithRenderedYAML above).
 func TestRunAppPostValidateHooks(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
@@ -277,6 +298,8 @@ check_build_dir() {
 	}
 }
 
+// Deliberately not t.Parallel(): writes the package-level hookBuildRoot var
+// (see the matching comment on TestBuildOverlayWithHooks_PostBuildHookRunsWithRenderedYAML above).
 func TestRunAppPostValidateHooks_Failure(t *testing.T) {
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
@@ -295,6 +318,7 @@ func TestRunAppPostValidateHooks_Failure(t *testing.T) {
 }
 
 func TestNeedsBuildDir(t *testing.T) {
+	t.Parallel()
 	if needsBuildDir(nil) {
 		t.Error("expected nil config to not need a build dir")
 	}
@@ -310,6 +334,7 @@ func TestNeedsBuildDir(t *testing.T) {
 }
 
 func TestAppBuildDir_SanitizesNestedAppPaths(t *testing.T) {
+	t.Parallel()
 	got := appBuildDir(filepath.Join("apps", "myapp"))
 	if strings.Contains(got, string(filepath.Separator)+"apps"+string(filepath.Separator)+"myapp") {
 		t.Errorf("expected nested app path segments to be flattened, got %q", got)

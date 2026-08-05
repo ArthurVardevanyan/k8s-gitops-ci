@@ -10,6 +10,7 @@ import (
 )
 
 func TestResolveAppBuildStrategies_NoAVPIndicators(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources: []\n")
@@ -28,6 +29,7 @@ func TestResolveAppBuildStrategies_NoAVPIndicators(t *testing.T) {
 }
 
 func TestResolveAppBuildStrategies_AVPIndicatorSelectsAVPStrategy(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources: []\n")
@@ -40,6 +42,7 @@ func TestResolveAppBuildStrategies_AVPIndicatorSelectsAVPStrategy(t *testing.T) 
 }
 
 func TestResolveAppBuildStrategies_AVPDisabledForcesPlainKustomize(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources: []\n")
@@ -52,6 +55,7 @@ func TestResolveAppBuildStrategies_AVPDisabledForcesPlainKustomize(t *testing.T)
 }
 
 func TestResolveAppBuildStrategies_ExcludeFromHookConfig(t *testing.T) {
+	t.Parallel()
 	d := t.TempDir()
 	app := filepath.Join(d, "myapp")
 	cfgs := map[string]*hook.Config{app: {AVPExclude: []string{"dev", "staging"}}}

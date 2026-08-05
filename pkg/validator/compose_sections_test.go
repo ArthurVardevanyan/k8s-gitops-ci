@@ -10,6 +10,7 @@ import (
 )
 
 func TestComposePRChecksSection(t *testing.T) {
+	t.Parallel()
 	s := ComposePRChecksSection(errors.New("title"), nil, nil, "")
 	if s.Status != StatusError {
 		t.Errorf("expected error section")
@@ -23,6 +24,7 @@ func TestComposePRChecksSection(t *testing.T) {
 // than a single flat bullet list, so a reader can tell exactly which
 // check(s) failed at a glance and expand only the failing one(s).
 func TestComposePRChecksSection_EachCheckIsItsOwnSubDropdown(t *testing.T) {
+	t.Parallel()
 	s := ComposePRChecksSection(errors.New("bad title"), nil, errors.New("missing checklist item"), "")
 	if strings.Count(s.Body, "<details>") != 3 {
 		t.Errorf("expected 3 sub-dropdowns (one per PR check), got:\n%s", s.Body)
@@ -39,6 +41,7 @@ func TestComposePRChecksSection_EachCheckIsItsOwnSubDropdown(t *testing.T) {
 }
 
 func TestComposePRChecksSection_AllPassed(t *testing.T) {
+	t.Parallel()
 	s := ComposePRChecksSection(nil, nil, nil, "")
 	if s.Status == StatusError {
 		t.Errorf("expected no error when all three checks pass")
@@ -54,6 +57,7 @@ func TestComposePRChecksSection_AllPassed(t *testing.T) {
 // tripping the section's blocking Error flag - an org's optional title
 // convention must never fail the pipeline the way titleErr does.
 func TestComposePRChecksSection_TitleSuggestionIsNonBlocking(t *testing.T) {
+	t.Parallel()
 	s := ComposePRChecksSection(nil, nil, nil, "consider referencing a ticket, e.g. JIRA-123")
 	if s.Status == StatusError {
 		t.Errorf("expected a title suggestion to never be blocking")
@@ -69,6 +73,7 @@ func TestComposePRChecksSection_TitleSuggestionIsNonBlocking(t *testing.T) {
 // the required check fails, but the render layer must not surface a
 // stale/mistakenly-passed suggestion string alongside a hard failure either.
 func TestComposePRChecksSection_TitleErrSuppressesSuggestion(t *testing.T) {
+	t.Parallel()
 	s := ComposePRChecksSection(errors.New("bad title"), nil, nil, "consider referencing a ticket")
 	if s.Status != StatusError {
 		t.Errorf("expected the section to report an error")
@@ -82,6 +87,7 @@ func TestComposePRChecksSection_TitleErrSuppressesSuggestion(t *testing.T) {
 // struct-based path (validator.Options.PRValidation) renders the same
 // all-passed shape as the error-based ComposePRChecksSection.
 func TestComposePRChecksSectionFromResult_AllPassed(t *testing.T) {
+	t.Parallel()
 	s := composePRChecksSectionFromResult(&PRValidationResult{
 		TitlePassed:     true,
 		CommitsPassed:   true,
@@ -100,6 +106,7 @@ func TestComposePRChecksSectionFromResult_AllPassed(t *testing.T) {
 // set - otherwise it's a non-blocking StatusWarning (matching the
 // error-based path's non-blocking title-suggestion behavior).
 func TestComposePRChecksSectionFromResult_TitleBlockingVsWarning(t *testing.T) {
+	t.Parallel()
 	warn := composePRChecksSectionFromResult(&PRValidationResult{
 		TitlePassed:     false,
 		TitleMsg:        "missing conventional prefix",
@@ -129,6 +136,7 @@ func TestComposePRChecksSectionFromResult_TitleBlockingVsWarning(t *testing.T) {
 // Commits child renders the unsigned/total count and always errors (never
 // just a warning) when CommitsPassed is false.
 func TestComposePRChecksSectionFromResult_UnsignedCommits(t *testing.T) {
+	t.Parallel()
 	s := composePRChecksSectionFromResult(&PRValidationResult{
 		TitlePassed:     true,
 		ChecklistPassed: true,
@@ -149,6 +157,7 @@ func TestComposePRChecksSectionFromResult_UnsignedCommits(t *testing.T) {
 // StatusError) with the checklist message, matching the error-based path's
 // treatment of checklist failures as warnings.
 func TestComposePRChecksSectionFromResult_ChecklistIncomplete(t *testing.T) {
+	t.Parallel()
 	s := composePRChecksSectionFromResult(&PRValidationResult{
 		TitlePassed:     true,
 		CommitsPassed:   true,
@@ -167,6 +176,7 @@ func TestComposePRChecksSectionFromResult_ChecklistIncomplete(t *testing.T) {
 // TitleMsg/ChecklistMsg fields fall back to a generic message rather than
 // rendering an empty body.
 func TestComposePRChecksSectionFromResult_DefaultMessages(t *testing.T) {
+	t.Parallel()
 	s := composePRChecksSectionFromResult(&PRValidationResult{
 		TitlePassed:     false,
 		ChecklistPassed: false,
@@ -181,6 +191,7 @@ func TestComposePRChecksSectionFromResult_DefaultMessages(t *testing.T) {
 }
 
 func TestComposeLintingSection(t *testing.T) {
+	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "golangci", Status: StatusError}}
 	s := ComposeLintingSection(outcomes, map[string]string{"golangci": "issues"})
 	if s.Status != StatusError {
@@ -192,6 +203,7 @@ func TestComposeLintingSection(t *testing.T) {
 }
 
 func TestComposeLintingSection_AllPassedStillShowsFullBreakdown(t *testing.T) {
+	t.Parallel()
 	outcomes := []CheckOutcome{
 		{Name: "markdownlint", Status: StatusPassed, Skipped: true, Note: "No markdown files changed."},
 		{Name: "prettier", Status: StatusPassed},
@@ -214,6 +226,7 @@ func TestComposeLintingSection_AllPassedStillShowsFullBreakdown(t *testing.T) {
 }
 
 func TestComposeLintingSection_MissingOutcomeRendersAsNotRun(t *testing.T) {
+	t.Parallel()
 	// No outcomes recorded at all (e.g. lint phase didn't run) - every check
 	// must still render, as a non-failing "Not run." child, rather than
 	// silently vanishing from the report.
@@ -227,6 +240,7 @@ func TestComposeLintingSection_MissingOutcomeRendersAsNotRun(t *testing.T) {
 }
 
 func TestComposeStaticChecksSection(t *testing.T) {
+	t.Parallel()
 	s := ComposeStaticChecksSection(nil, map[string]string{})
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
@@ -234,6 +248,7 @@ func TestComposeStaticChecksSection(t *testing.T) {
 }
 
 func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
+	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "config-sort", Status: StatusError}}
 	s := ComposeStaticChecksSection(outcomes, map[string]string{"config-sort": "some.yaml is unsorted"})
 	if s.Status != StatusError {
@@ -251,6 +266,7 @@ func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
 // same way every other named static check does, with no bespoke rendering
 // needed.
 func TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint(t *testing.T) {
+	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusError}}
 	s := ComposeStaticChecksSection(outcomes, map[string]string{"scaffold table": "stale entries no longer on disk: myapp/removed"})
 	if s.Status != StatusError {
@@ -270,6 +286,7 @@ func TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint(t *testi
 // rather than the generic "Not run." a check phases.go never even attempted
 // to record an outcome for would get.
 func TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault(t *testing.T) {
+	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusPassed, Skipped: true, Note: "Disabled."}}
 	s := ComposeStaticChecksSection(outcomes, map[string]string{})
 	if s.Status == StatusError {
@@ -281,6 +298,7 @@ func TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault(t *testing.T)
 }
 
 func TestComposeResourceComplianceSection(t *testing.T) {
+	t.Parallel()
 	s := ComposeResourceComplianceSection([]check.Finding{{CheckID: "x", Message: "m"}}, nil, nil)
 	if s.Status != StatusError {
 		t.Errorf("expected error section")
@@ -288,6 +306,7 @@ func TestComposeResourceComplianceSection(t *testing.T) {
 }
 
 func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
+	t.Parallel()
 	s := ComposeResourceComplianceSection(nil, nil, nil)
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
@@ -298,6 +317,7 @@ func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
 }
 
 func TestComposeResourceComplianceSection_WarningOnlyIsNonBlocking(t *testing.T) {
+	t.Parallel()
 	s := ComposeResourceComplianceSection(nil, []check.Finding{{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned"}}, nil)
 	if s.Status != StatusWarning {
 		t.Errorf("expected StatusWarning (non-blocking) for pre-existing (indirect) findings only, got %v", s.Status)
@@ -308,6 +328,7 @@ func TestComposeResourceComplianceSection_WarningOnlyIsNonBlocking(t *testing.T)
 }
 
 func TestComposeResourceComplianceSection_GroupsByCheckID(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{
 		{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned a"},
 		{CheckID: "image-checksum", File: "b.yaml", Message: "unpinned b"},
@@ -327,6 +348,7 @@ func TestComposeResourceComplianceSection_GroupsByCheckID(t *testing.T) {
 // and descriptive Preamble via RenderColumnedTable, instead of the generic
 // flat File/Message table.
 func TestComposeResourceComplianceSection_UsesRegisteredTableSpec(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{
 		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "a.yaml", Message: "missing namespace"},
 	}
@@ -347,6 +369,7 @@ func TestComposeResourceComplianceSection_UsesRegisteredTableSpec(t *testing.T) 
 // one) still renders something useful via the generic File/Message
 // fallback, rather than being silently dropped.
 func TestComposeResourceComplianceSection_UnregisteredCheckFallsBack(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{{CheckID: "brand-new-check", File: "a.yaml", Message: "some issue"}}
 	s := ComposeResourceComplianceSection(findings, nil, nil)
 	if !strings.Contains(s.Body, "| File | Message |") {
@@ -364,6 +387,7 @@ func TestComposeResourceComplianceSection_UnregisteredCheckFallsBack(t *testing.
 // every affected file, not one row per file, while the header count above
 // the table still reports every raw (pre-dedup) finding.
 func TestComposeResourceComplianceSection_DedupsFanOutAcrossFiles(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{
 		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "overlays/dev/a.yaml", Message: "missing namespace"},
 		{CheckID: "namespace", Kind: "Pod", Name: "my-pod", File: "overlays/prod/a.yaml", Message: "missing namespace"},
@@ -384,6 +408,7 @@ func TestComposeResourceComplianceSection_DedupsFanOutAcrossFiles(t *testing.T) 
 // for the same resource but genuinely distinct issues (different Message)
 // are NOT collapsed together - only true fan-out duplicates are deduped.
 func TestComposeResourceComplianceSection_DoesNotOverDedup(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{
 		{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned a"},
 		{CheckID: "image-checksum", File: "b.yaml", Message: "unpinned b"},
@@ -400,6 +425,7 @@ func TestComposeResourceComplianceSection_DoesNotOverDedup(t *testing.T) {
 }
 
 func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T) {
+	t.Parallel()
 	exempted := []exempt.Applied{
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: true},
 	}
@@ -419,6 +445,7 @@ func TestComposeResourceComplianceSection_RendersAcceptedExceptions(t *testing.T
 }
 
 func TestComposeResourceComplianceSection_AcceptedExceptionsPreExistingLabel(t *testing.T) {
+	t.Parallel()
 	exempted := []exempt.Applied{
 		{CheckID: "image-checksum", Kind: "Deployment", Name: "app", Value: "nginx:latest", Direct: false},
 	}
@@ -432,6 +459,7 @@ func TestComposeResourceComplianceSection_AcceptedExceptionsPreExistingLabel(t *
 }
 
 func TestComposeKyvernoSection(t *testing.T) {
+	t.Parallel()
 	s := ComposeKyvernoSection("")
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
@@ -439,6 +467,7 @@ func TestComposeKyvernoSection(t *testing.T) {
 }
 
 func TestRenderSubDropdown(t *testing.T) {
+	t.Parallel()
 	out := RenderSubDropdown("Title", "Body")
 	if out == "" {
 		t.Errorf("expected dropdown")
@@ -446,6 +475,7 @@ func TestRenderSubDropdown(t *testing.T) {
 }
 
 func TestSummaryIndent(t *testing.T) {
+	t.Parallel()
 	if got := summaryIndent(0); got != "" {
 		t.Errorf("summaryIndent(0) = %q, want empty (top-level sections aren't indented)", got)
 	}
@@ -463,6 +493,7 @@ func TestSummaryIndent(t *testing.T) {
 }
 
 func TestRenderSubDropdown_ReportSection_Nested(t *testing.T) {
+	t.Parallel()
 	var sb strings.Builder
 	renderSubDropdown(&sb, ReportSection{Name: "Child", Status: StatusError, Body: "details here"}, 1)
 	out := sb.String()
@@ -478,6 +509,7 @@ func TestRenderSubDropdown_ReportSection_Nested(t *testing.T) {
 }
 
 func TestRenderSubDropdown_ReportSection_UsesSummaryWhenBodyEmpty(t *testing.T) {
+	t.Parallel()
 	var sb strings.Builder
 	renderSubDropdown(&sb, ReportSection{Name: "Child", Status: StatusPassed, Summary: "Passed."}, 1)
 	out := sb.String()
@@ -490,6 +522,7 @@ func TestRenderSubDropdown_ReportSection_UsesSummaryWhenBodyEmpty(t *testing.T) 
 }
 
 func TestDisplayName(t *testing.T) {
+	t.Parallel()
 	if got := displayName("markdownlint"); got != "Markdownlint" {
 		t.Errorf("displayName(markdownlint) = %q, want Markdownlint", got)
 	}

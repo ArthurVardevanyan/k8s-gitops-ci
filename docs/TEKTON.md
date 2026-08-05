@@ -9,12 +9,15 @@ Tekton architecture.
 
 ## Table of Contents
 
-- [Directory layout](#directory-layout)
-- [PaC trigger](#pac-trigger)
-- [The build task](#the-build-task)
-- [The lint task](#the-lint-task)
-- [Caching](#caching)
-- [Known limitations](#known-limitations)
+- [Tekton](#tekton)
+  - [Table of Contents](#table-of-contents)
+  - [Directory layout](#directory-layout)
+  - [PaC trigger](#pac-trigger)
+  - [The build task](#the-build-task)
+  - [The lint task](#the-lint-task)
+  - [Caching](#caching)
+    - [Parallelism (`GOMAXPROCS`)](#parallelism-gomaxprocs)
+  - [Known limitations](#known-limitations)
 
 ## Directory layout
 
@@ -71,14 +74,23 @@ the same pod, in the same shell script, so there's no separate
 `git-clone` Task or shared PVC workspace for source code:
 
 1. **Cache setup** — see [Caching](#caching).
-2. **Clone** — `git init` into a fresh directory (`/home/default/src`),
-   authenticate via `gh auth login --with-token` (using the
-   `git_auth_secret` workspace's token) then `gh auth setup-git` (installs
-   a git credential helper for the subsequent fetch), `git remote add
-origin`, `git fetch origin "${PARAM_REVISION}"` + `git checkout
-FETCH_HEAD` (works for any ref/SHA reachable on the remote, not just a
-   branch tip), then `git fetch --tags --force origin` (tags are needed
-   separately for git-cliff's version/changelog logic).
+2. **Clone** — into `${GO_CACHE_PATH}/src` when the `go-cache` PVC is
+   bound (persisted and reused across runs), or a fresh
+   `/home/default/src` emptyDir otherwise (see
+   [Caching](#caching)); authenticate via `gh auth login --with-token`
+   (using the `git_auth_secret` workspace's token) then `gh auth
+setup-git` (installs a git credential helper for the subsequent
+   fetch), `git init` only if this isn't already a git repo (a persisted
+   checkout already is, after its first run), an idempotent `git remote
+add origin` (`remove` first, ignoring failure, in case a previous run
+   already added it), `git fetch origin "${PARAM_REVISION}"` + `git
+reset --hard FETCH_HEAD` + `git clean -fd` (works for any ref/SHA
+   reachable on the remote, not just a branch tip - and, on a persisted
+   checkout, only rewrites files whose content actually changed, see
+   [Caching](#caching) on why that matters), then `git fetch --tags
+--force --prune --prune-tags origin` (tags are needed separately for
+   git-cliff's version/changelog logic; pruning matters once tags
+   persist across runs - see [Caching](#caching)).
 3. **`task ci`** — the full local CI pipeline (see
    `docs/DEVELOPMENT.md`'s [Task Targets
    Reference](DEVELOPMENT.md#task-targets-reference)) must pass before
@@ -106,7 +118,7 @@ input: "$(params.event)" operator: in values: ["pull_request"]`, so a
    that merged it. `build` has no such gate - it still runs (and
    branches internally on `event`) for both triggers.
 2. **No separate clone step** — unlike `build`'s own manual `git
-init`/`fetch`/`checkout`, this task invokes the `k8s-gitops-ci` binary
+init`/`fetch`/`reset`, this task invokes the `k8s-gitops-ci` binary
    directly (the toolbox image's own pinned, Renovate-updated install at
    `/usr/local/bin/k8s-gitops-ci` — not the one `build` is compiling from
    source this run), and `k8s-gitops-ci pipeline --url` clones into its
@@ -140,7 +152,7 @@ Two-tier: an optional `go-cache` PVC workspace, falling back to a pod
 `emptyDir` when not bound.
 
 - **PVC bound** (the normal case in the real cluster —
-  `go-cache-pvc.yaml`'s 25Gi `ReadWriteOnce` volume;
+  `go-cache-pvc.yaml`'s 50Gi `ReadWriteOnce` volume;
   `ReadWriteOnce` is sufficient specifically because
   `max-concurrency: "1"` guarantees only one pod ever mounts it at a
   time): the build step's script redirects `GOMODCACHE`, `GOCACHE`,
@@ -148,7 +160,30 @@ Two-tier: an optional `go-cache` PVC workspace, falling back to a pod
   kubeconform-schema/Kyverno-policy download cache — see
   [SCHEMAS.md](SCHEMAS.md)), `GOPATH` (needed for `go install`/sumdb
   verification, since the toolbox image's baked-in `GOPATH` is
-  read-only), and `GOENV` onto the PVC (`mkdir -p` each first).
+  read-only), and `GOENV` onto the PVC (`mkdir -p` each first). It also
+  exports `K8S_GITOPS_CI_TOOLS_DIR` (consumed by the Taskfile's `TOOLS`
+  var) so the installed Go dev-tools (`golangci-lint`, `govulncheck`,
+  `gofumpt`, `goimports`) land on the PVC instead of the fresh-clone
+  workspace's `.tool/` — otherwise `install-tools` re-links all four on
+  every push, since each run starts from an empty checkout.
+  **The cloned source itself (`${GO_CACHE_PATH}/src`) is also persisted
+  and reused** (fetch + `git reset --hard` + `git clean -fd` instead of
+  a fresh `git init`) rather than re-cloned every run. This isn't just
+  about avoiding a re-clone: Go's own test-result cache keys file inputs
+  on mtime and size, not content, and won't reuse a cached result for a
+  file read within 2 seconds of its own mtime at all (see
+  `cmd/go/internal/test.hashOpen` in the Go toolchain source). A fresh
+  checkout gives every file a brand-new mtime on every run, silently
+  defeating `go test`'s cache for every package whose tests open a repo
+  file (`testdata/` fixtures, etc.) regardless of `GOCACHE` being warm.
+  A `git reset --hard` only rewrites files whose content actually
+  changed between the previous and current revision, so everything else
+  keeps its prior mtime and can actually hit `go test`'s cache on a
+  rerun. This is also why tag pruning
+  (`git fetch --tags --force --prune --prune-tags`) matters here
+  specifically: a persisted checkout can accumulate local tags from this
+  same step's own `git tag` call on a prior push run, which would
+  otherwise skew git-cliff's `--bumped-version` on a later run.
 - **PVC not bound:** the `stepTemplate`'s env defaults keep every one of
   those on the pod's local `emptyDir` `home` volume instead — cold but
   self-contained; every subdirectory (`go-mod`, `go-build`,
@@ -166,6 +201,19 @@ build`/`install`'s scratch work dirs (`os.TempDir()`, default `/tmp`)
   location regardless of which cache tier is active. Neither is
   persisted on the PVC even when it's bound — both are scratch space,
   deleted after each build anyway.
+
+### Parallelism (`GOMAXPROCS`)
+
+The build task pins `GOMAXPROCS: "6"` in its `stepTemplate` env,
+matching the pod's CPU `limit`. Go 1.25+ otherwise derives `GOMAXPROCS`
+from the pod's cgroup CPU allocation, and a fractional CPU `request`
+(this task previously used `500m`) rounds down to **`GOMAXPROCS=1`** —
+silently serializing every Go step (`go test ./...`, `golangci-lint`,
+`govulncheck`, and the release build's compiles) onto a single core.
+Pinning it explicitly keeps those steps multi-core regardless of the
+request. The CPU `request` is set to `1` (was `500m`) to match the
+observed ~1-core average and keep scheduling honest; the `limit` stays
+at `6` for burst headroom now that the steps actually parallelize.
 
 ## Known limitations
 

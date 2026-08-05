@@ -9,6 +9,7 @@ import (
 )
 
 func TestRunKyvernoValidation_NoOutputsSkipsEntirely(t *testing.T) {
+	t.Parallel()
 	log := logger.NewLogger(false, "")
 	s := runKyvernoValidation(nil, nil, "", log)
 	if s.Name != "Kyverno Policies" {
@@ -29,6 +30,7 @@ func TestRunKyvernoValidation_NoOutputsSkipsEntirely(t *testing.T) {
 // output) - this is the whole point of the sourceFiles parameter, not just
 // an edge case of the rendered-overlay pass.
 func TestRunKyvernoValidation_SourceFilesOnlyStillRuns(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	f := filepath.Join(dir, "deployment.yaml")
 	mustWrite(t, f, "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
@@ -48,6 +50,7 @@ func TestRunKyvernoValidation_SourceFilesOnlyStillRuns(t *testing.T) {
 // manifests - are filtered out of the raw-source-file input rather than
 // passed to the kyverno CLI as noise.
 func TestRunKyvernoValidation_ExcludesKustomizationFiles(t *testing.T) {
+	t.Parallel()
 	if got := isKustomizationFile("myapp/overlays/prod/kustomization.yaml"); !got {
 		t.Error("expected kustomization.yaml to be excluded")
 	}
@@ -65,6 +68,7 @@ func TestRunKyvernoValidation_ExcludesKustomizationFiles(t *testing.T) {
 // must never call anything that marks the Logger as failed (kyverno
 // findings/setup issues are a non-blocking advisory, not a build error).
 func TestRunKyvernoValidation_MissingCLIDegradesGracefully(t *testing.T) {
+	t.Parallel()
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: foo\n")},
@@ -147,6 +151,7 @@ func TestRunAll_KyvernoDisabledEvenIfExplicitlyDisabled(t *testing.T) {
 }
 
 func TestRunKyvernoValidation_WritesEachOutputAsASeparateFile(t *testing.T) {
+	t.Parallel()
 	// Not directly observable from the Section alone (no CLI installed in
 	// the test environment to report violations back), but at minimum this
 	// must not panic across a multi-output batch, exercising the

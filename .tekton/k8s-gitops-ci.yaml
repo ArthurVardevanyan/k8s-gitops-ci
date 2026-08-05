@@ -126,6 +126,8 @@ spec:
               # default to $TMPDIR or /tmp — also read-only in this pod.
               - name: TMPDIR
                 value: /home/default/.cache/tmp
+              - name: GOMAXPROCS
+                value: "12"
               - name: GO_CACHE_BOUND
                 value: $(workspaces.go-cache.bound)
               - name: GO_CACHE_PATH
@@ -137,7 +139,7 @@ spec:
                 mountPath: /home/default/.cache
             computeResources:
               requests:
-                cpu: 500m
+                cpu: "1"
                 memory: 500Mi
                 ephemeral-storage: 1Gi
               limits:
@@ -183,6 +185,24 @@ spec:
                 : "${GO_CACHE_BOUND:=""}"
                 : "${GO_CACHE_PATH:=""}"
 
+                # REPO_DIR is computed here (rather than down in ── Clone ──
+                # below) because the golangci-lint cache guard immediately
+                # below needs it: golangci-lint's own result cache stores
+                # absolute source-file paths (used to re-render cached
+                # findings' source snippets), so if REPO_DIR's location ever
+                # changes across runs while GOLANGCI_LINT_CACHE persists
+                # (e.g. this cache existed before REPO_DIR moved onto this
+                # PVC), its cached entries point at files that no longer
+                # exist at that path - producing "no such file or
+                # directory" warnings and stale/duplicated findings, not a
+                # clean cache miss. See ── Clone ── below for why REPO_DIR
+                # itself is persisted.
+                if [[ "${GO_CACHE_BOUND}" == "true" ]]; then
+                  REPO_DIR="${GO_CACHE_PATH}/src"
+                else
+                  REPO_DIR="/home/default/src"
+                fi
+
                 # ── Go caches ──────────────────────────────────────────────────
                 # When the optional go-cache workspace is bound, redirect every
                 # Go cache to the persistent PVC (module cache, build cache,
@@ -196,7 +216,26 @@ spec:
                   export XDG_CACHE_HOME="${GO_CACHE_PATH}/.cache"
                   export GOPATH="${GO_CACHE_PATH}/gopath"
                   export GOENV="${GO_CACHE_PATH}/go-env/env"
-                  mkdir -p "${GOMODCACHE}" "${GOCACHE}" "${GOLANGCI_LINT_CACHE}" "${XDG_CACHE_HOME}" "${GOPATH}"
+                  # Redirect the installed Go dev-tools dir (.tool/) onto the
+                  # PVC too — otherwise it lives in the fresh-clone workspace
+                  # and every push re-installs golangci-lint/govulncheck/
+                  # gofumpt/goimports. Consumed by Taskfile's TOOLS var.
+                  export K8S_GITOPS_CI_TOOLS_DIR="${GO_CACHE_PATH}/tool"
+
+                  # golangci-lint cache guard (see comment above REPO_DIR):
+                  # if REPO_DIR's location differs from the value recorded
+                  # the last time this ran, wipe the stale cache rather than
+                  # let it silently poison this run's lint output. A marker
+                  # mismatch/absence both trigger this (absence covers the
+                  # first run ever, and the one-time migration to this
+                  # REPO_DIR-on-PVC scheme).
+                  REPO_DIR_MARKER="${GO_CACHE_PATH}/golangci-lint.repo-dir"
+                  if [[ ! -f "${REPO_DIR_MARKER}" ]] || [[ "$(cat "${REPO_DIR_MARKER}")" != "${REPO_DIR}" ]]; then
+                    echo "REPO_DIR changed (or first run) - clearing stale golangci-lint cache"
+                    rm -rf "${GOLANGCI_LINT_CACHE}"
+                  fi
+                  mkdir -p "${GOMODCACHE}" "${GOCACHE}" "${GOLANGCI_LINT_CACHE}" "${XDG_CACHE_HOME}" "${GOPATH}" "${K8S_GITOPS_CI_TOOLS_DIR}"
+                  printf '%s' "${REPO_DIR}" >"${REPO_DIR_MARKER}"
                   echo "Using persistent Go caches under: ${GO_CACHE_PATH}"
                 fi
 
@@ -212,15 +251,26 @@ spec:
                 # ── Clone ──────────────────────────────────────────────────────
                 # Single-step clone+build: no separate git-clone Task/PVC
                 # workspace is needed since everything runs in this one pod.
-                # Authenticate first (gh auth setup-git installs a git
-                # credential helper) so the subsequent fetch can use it, then
-                # fetch the exact revision directly (works for any ref/SHA
-                # reachable on the remote, not just default-branch tips) and
-                # pull tags separately for git-cliff's changelog/version bump.
-                REPO_DIR="/home/default/src"
+                #
+                # REPO_DIR (computed above, alongside the golangci-lint cache
+                # guard that depends on it) lives on the go-cache PVC when
+                # bound and is reused across runs via fetch+reset, rather
+                # than a fresh `git init` into the pod-local emptyDir every
+                # time. This matters beyond avoiding a re-clone: go test's
+                # cache keys file inputs on mtime+size, not content (see `go
+                # doc -src cmd/go/internal/test.hashOpen`), and refuses to
+                # cache a file read within 2s of its mtime at all. A fresh
+                # checkout gives every file a brand-new mtime on every
+                # single run, which silently defeats go test's cache for
+                # every package whose tests open a repo file (testdata
+                # fixtures, etc.) - `git reset --hard` (vs. a fresh
+                # checkout) only rewrites files whose content actually
+                # changed, so unchanged files keep their prior mtime and go
+                # test's cache can actually hit across runs. Falls back to
+                # the pod-local emptyDir, fresh each time, when the PVC
+                # isn't bound - same as every other cache in this step.
                 mkdir -p "${REPO_DIR}"
                 cd "${REPO_DIR}"
-                git init -q
                 git config --global --add safe.directory "${REPO_DIR}"
 
                 gh auth login --hostname "github.com" \
@@ -229,10 +279,31 @@ spec:
                 GITHUB_TOKEN=$(cat "${AUTH_PATH}/git-provider-token")
                 export GITHUB_TOKEN
 
+                # Re-init only if this isn't already a git repo (first run,
+                # or the PVC isn't bound) - `git rev-parse` also catches a
+                # corrupt/partial .git left by an aborted previous run,
+                # self-healing via a fresh init rather than staying wedged.
+                if ! git rev-parse --git-dir >/dev/null 2>&1; then
+                  git init -q
+                fi
+                # Idempotent remote: a persisted checkout already has
+                # "origin" from the previous run.
+                git remote remove origin 2>/dev/null || true
                 git remote add origin "${PARAM_GIT_URL}"
                 git fetch origin "${PARAM_REVISION}"
-                git checkout FETCH_HEAD
-                git fetch --tags --force origin
+                git reset --hard FETCH_HEAD
+                # Removes untracked leftovers from a previous run's revision
+                # (e.g. a file deleted since); deliberately not `-x`, so
+                # gitignored artifacts this run wants to reuse survive -
+                # schemas.tar.gz/policies.tar.gz + their .ref markers
+                # (scripts/pull-*.sh's own short-circuit), .task/ (Task's
+                # sources:/generates: checksum tracking), bin/.
+                git clean -fd
+                # --prune-tags: a persisted checkout can otherwise
+                # accumulate local tags created by this same step's own
+                # `git tag` call below on a prior push run, which would
+                # skew git-cliff's --bumped-version on this run.
+                git fetch --tags --force --prune --prune-tags origin
 
                 task ci
 

@@ -9,6 +9,7 @@ import (
 )
 
 func TestRunNADValidation_NoOutputsOmitsSection(t *testing.T) {
+	t.Parallel()
 	log := logger.NewLogger(false, "")
 	_, present := runNADValidation(nil, false, log)
 	if present {
@@ -17,6 +18,7 @@ func TestRunNADValidation_NoOutputsOmitsSection(t *testing.T) {
 }
 
 func TestRunNADValidation_NoNADResourcesOmitsSection(t *testing.T) {
+	t.Parallel()
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: foo\n")},
@@ -28,6 +30,7 @@ func TestRunNADValidation_NoNADResourcesOmitsSection(t *testing.T) {
 }
 
 func TestRunNADValidation_ValidNADShowsPassingSection(t *testing.T) {
+	t.Parallel()
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: good\nspec:\n  config: '{\"cniVersion\":\"0.3.1\"}'\n")},
@@ -45,6 +48,7 @@ func TestRunNADValidation_ValidNADShowsPassingSection(t *testing.T) {
 }
 
 func TestRunNADValidation_StructuralFindingRemapsToOverlay(t *testing.T) {
+	t.Parallel()
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
 		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: bad\nspec:\n  config: ''\n")},
@@ -62,6 +66,7 @@ func TestRunNADValidation_StructuralFindingRemapsToOverlay(t *testing.T) {
 }
 
 func TestRunNADValidation_OVNTierAppliedWhenAssumeOpenShift(t *testing.T) {
+	t.Parallel()
 	log := logger.NewLogger(false, "")
 	// Valid structurally (non-empty config) but invalid under OVN semantics:
 	// layer3 topology does not allow persistent IPs.

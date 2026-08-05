@@ -33,6 +33,7 @@ metadata:
 }
 
 func TestFilterCommentedPSAFindings_SuppressesFullyCommentedNamespace(t *testing.T) {
+	t.Parallel()
 	appRoot := t.TempDir()
 	writeNamespaceWithCommentedLabels(t, appRoot)
 	nsFile := filepath.Join(appRoot, "base", "namespace.yaml")
@@ -52,6 +53,7 @@ func TestFilterCommentedPSAFindings_SuppressesFullyCommentedNamespace(t *testing
 }
 
 func TestFilterCommentedPSAFindings_KeepsFindingWhenNotAllLabelsCommented(t *testing.T) {
+	t.Parallel()
 	appRoot := t.TempDir()
 	// Only comment out the enforce label, not the others.
 	base := filepath.Join(appRoot, "base")
@@ -77,6 +79,7 @@ func TestFilterCommentedPSAFindings_KeepsFindingWhenNotAllLabelsCommented(t *tes
 }
 
 func TestFilterCommentedPSAFindings_NeverSuppressesInvalidValueFindings(t *testing.T) {
+	t.Parallel()
 	// A label that's *present* with an invalid value must never be
 	// suppressed by a comment, even one commenting out that same label
 	// key - the MissingLabels entry for an invalid value carries extra
@@ -98,6 +101,7 @@ func TestFilterCommentedPSAFindings_NeverSuppressesInvalidValueFindings(t *testi
 }
 
 func TestFilterCommentedPSAFindings_IgnoresNonPSAFindings(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{{CheckID: "namespace", File: "x.yaml", Name: "foo"}}
 	out := filterCommentedPSAFindings(findings)
 	if len(out) != 1 {
@@ -106,6 +110,7 @@ func TestFilterCommentedPSAFindings_IgnoresNonPSAFindings(t *testing.T) {
 }
 
 func TestFilterCommentedPSAFindings_NoAppRootLeavesFindingUntouched(t *testing.T) {
+	t.Parallel()
 	findings := []check.Finding{{
 		CheckID: "psa-labels", File: "overlays/prod/namespace.yaml", Name: "foo",
 		Extra: map[string]string{psaMissingLabelsExtraKey: "pod-security.kubernetes.io/enforce"},
@@ -117,6 +122,7 @@ func TestFilterCommentedPSAFindings_NoAppRootLeavesFindingUntouched(t *testing.T
 }
 
 func TestAppRootFromBaseFile(t *testing.T) {
+	t.Parallel()
 	root, ok := appRootFromBaseFile(filepath.FromSlash("myapp/base/namespace.yaml"))
 	if !ok || root != filepath.FromSlash("myapp") {
 		t.Errorf("appRootFromBaseFile = (%q, %v), want (%q, true)", root, ok, "myapp")
@@ -127,6 +133,7 @@ func TestAppRootFromBaseFile(t *testing.T) {
 }
 
 func TestAllLabelsCommented(t *testing.T) {
+	t.Parallel()
 	commented := map[string]bool{"a": true, "b": true}
 	if !allLabelsCommented("a,b", commented) {
 		t.Error("expected all-commented to be true when every label is present")

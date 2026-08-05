@@ -9,6 +9,7 @@ import (
 )
 
 func TestReportRender(t *testing.T) {
+	t.Parallel()
 	r := &Report{
 		Marker:    "<!-- m -->",
 		Title:     "T",
@@ -29,6 +30,7 @@ func TestReportRender(t *testing.T) {
 // StatusWarning-only) overstating it as unchecked-but-fine. Render() must
 // use each Section's own Status.Icon() directly.
 func TestReportRender_UsesEachSectionsOwnStatusIcon(t *testing.T) {
+	t.Parallel()
 	r := &Report{
 		Marker: "<!-- m -->",
 		Title:  "T",
@@ -57,6 +59,7 @@ func TestReportRender_UsesEachSectionsOwnStatusIcon(t *testing.T) {
 // one, but a future/external caller might not) falls back to Summary
 // rather than rendering an empty <details> body.
 func TestReportRender_FallsBackToSummaryWhenBodyEmpty(t *testing.T) {
+	t.Parallel()
 	r := &Report{
 		Marker:   "<!-- m -->",
 		Title:    "T",
@@ -73,6 +76,7 @@ func TestReportRender_FallsBackToSummaryWhenBodyEmpty(t *testing.T) {
 // ("## GitOps CI Results") as two separate, redundant top-level headings.
 // Only Title should ever be rendered into the comment body.
 func TestReportRender_DoesNotDuplicateHeader(t *testing.T) {
+	t.Parallel()
 	r := &Report{
 		Marker: "<!-- m -->",
 		Title:  "GitOps CI Results",
@@ -88,6 +92,7 @@ func TestReportRender_DoesNotDuplicateHeader(t *testing.T) {
 }
 
 func TestStatusIcon(t *testing.T) {
+	t.Parallel()
 	if StatusIcon(StatusPassed) != "✅" {
 		t.Errorf("unexpected passed icon")
 	}
@@ -103,6 +108,7 @@ func TestStatusIcon(t *testing.T) {
 }
 
 func TestLegacyMarkers(t *testing.T) {
+	t.Parallel()
 	if len(LegacyMarkers()) == 0 {
 		t.Errorf("expected legacy markers")
 	}
@@ -114,6 +120,7 @@ func TestLegacyMarkers(t *testing.T) {
 // rather than the source-checkout-only "go run ./cmd/..." form or the
 // literal, non-functional "<binary>" placeholder.
 func TestReproduceCommand_UsesRealBinaryPath(t *testing.T) {
+	t.Parallel()
 	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "main"})
 	if strings.Contains(got, "<binary>") {
 		t.Errorf("ReproduceCommand still contains the unresolved <binary> placeholder: %q", got)
@@ -140,6 +147,7 @@ func (s stubBranding) BinaryName() string     { return s.bin }
 // downstream distributions (e.g. an org's own forked/renamed binary) emit a
 // copy-pasteable command instead of the generic default.
 func TestReproduceCommand_UsesProviderBinaryName(t *testing.T) {
+	t.Parallel()
 	got := ReproduceCommand(Options{
 		RepoURL:   "https://example.com/repo.git",
 		PR:        "42",
@@ -155,6 +163,7 @@ func TestReproduceCommand_UsesProviderBinaryName(t *testing.T) {
 // would make it reproduce a broader (or narrower) changeset than the run
 // that actually failed.
 func TestReproduceCommand_IncludesScopingFlags(t *testing.T) {
+	t.Parallel()
 	got := ReproduceCommand(Options{
 		RepoURL:        "https://example.com/repo.git",
 		PR:             "42",
@@ -178,6 +187,7 @@ func TestReproduceCommand_IncludesScopingFlags(t *testing.T) {
 // --dirs/--disable-checks/--enable-checks passed) doesn't grow spurious
 // empty flags.
 func TestReproduceCommand_NoScopingFlagsWhenUnset(t *testing.T) {
+	t.Parallel()
 	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "main"})
 	for _, unwanted := range []string{"--dirs=", "--disable-checks=", "--enable-checks=", "--assume-openshift", "--lint-only"} {
 		if strings.Contains(got, unwanted) {
@@ -191,6 +201,7 @@ func TestReproduceCommand_NoScopingFlagsWhenUnset(t *testing.T) {
 // reproduction see different sync-options findings than a run made by a
 // caller (e.g. a Tekton Task) that always passes --assume-openshift.
 func TestReproduceCommand_IncludesAssumeOpenShift(t *testing.T) {
+	t.Parallel()
 	got := ReproduceCommand(Options{
 		RepoURL:         "https://example.com/repo.git",
 		PR:              "42",
@@ -208,6 +219,7 @@ func TestReproduceCommand_IncludesAssumeOpenShift(t *testing.T) {
 // YAML/Post-Build Validation phase that a --lint-only caller (e.g. this
 // repo's own self-lint Tekton Task) never even attempted.
 func TestReproduceCommand_IncludesLintOnly(t *testing.T) {
+	t.Parallel()
 	got := ReproduceCommand(Options{
 		RepoURL:  "https://example.com/repo.git",
 		PR:       "42",
@@ -225,6 +237,7 @@ func TestReproduceCommand_IncludesLintOnly(t *testing.T) {
 // BaseRef back at the user is redundant and was reported as confusing
 // noise in the reproduce snippet.
 func TestReproduceCommand_OmitsTargetBranch(t *testing.T) {
+	t.Parallel()
 	got := ReproduceCommand(Options{RepoURL: "https://example.com/repo.git", PR: "42", BaseRef: "origin/main"})
 	if strings.Contains(got, "--target-branch") {
 		t.Errorf("ReproduceCommand() = %q, want it to omit --target-branch", got)
