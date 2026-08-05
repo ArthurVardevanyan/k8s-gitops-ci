@@ -428,8 +428,14 @@ func TestRun_DryRunParse_PerClusterDrift(t *testing.T) {
 	if summary.Failed == 0 {
 		t.Errorf("expected drift failure, got passed=%d failed=%d", summary.Passed, summary.Failed)
 	}
-	if len(summary.MismatchFiles) != 1 {
-		t.Errorf("expected 1 mismatch file, got %v", summary.MismatchFiles)
+	if len(summary.MismatchFiles) != 1 || summary.MismatchFiles[0] != "dev" {
+		t.Errorf("expected [dev] in MismatchFiles (normalized to cluster name), got %v", summary.MismatchFiles)
+	}
+	// Drift must be reported only via MismatchFiles, never as an execution
+	// error - otherwise it would unconditionally block, bypassing the
+	// blocking-vs-pre-existing drift classification.
+	if len(summary.Errors) != 0 {
+		t.Errorf("expected no execution errors for pure drift, got %v", summary.Errors)
 	}
 }
 
@@ -450,8 +456,11 @@ func TestRun_DryRunParse_FullTestSkipsNewCluster(t *testing.T) {
 	// FullTest runs a single all-overlays invocation; overlays list must
 	// include an on-disk cluster so it survives the pre-filter to toRun.
 	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}, FullTest: true})
-	if len(summary.MismatchFiles) != 1 {
-		t.Errorf("expected 1 mismatch (dev), got %v", summary.MismatchFiles)
+	if len(summary.MismatchFiles) != 1 || summary.MismatchFiles[0] != "dev" {
+		t.Errorf("expected [dev] mismatch (normalized to cluster name), got %v", summary.MismatchFiles)
+	}
+	if len(summary.Errors) != 0 {
+		t.Errorf("expected no execution errors for pure drift, got %v", summary.Errors)
 	}
 	if len(summary.SkippedClusters) != 1 || summary.SkippedClusters[0] != "future" {
 		t.Errorf("expected 'future' skipped as a new cluster, got %v", summary.SkippedClusters)

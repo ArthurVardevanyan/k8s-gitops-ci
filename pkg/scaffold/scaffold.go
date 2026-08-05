@@ -407,9 +407,11 @@ func runDryRunParse(opts RunOptions, toRun []string, summary *Summary) {
 				case "skipped":
 					summary.Skipped++
 					summary.SkippedClusters = append(summary.SkippedClusters, cluster)
-				default: // "error"
+				case "mismatch":
 					summary.Failed++
 					summary.MismatchFiles = append(summary.MismatchFiles, files...)
+				default: // "error" - a genuine tool/execution failure
+					summary.Failed++
 					if errMsg != "" {
 						summary.Errors = append(summary.Errors, errMsg)
 					}
@@ -450,14 +452,26 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 	}
 
 	var mismatches []string
+	seenMismatch := map[string]bool{}
 	skipped := map[string]bool{}
 	for _, f := range created {
 		cluster := ExtractOverlayDir(f)
 		switch {
 		case cluster == "":
-			mismatches = append(mismatches, f)
+			// A would-create file outside any overlays/<cluster>/ path has
+			// no cluster name to normalize to; keep the raw path so the
+			// finding isn't silently dropped.
+			if !seenMismatch[f] {
+				seenMismatch[f] = true
+				mismatches = append(mismatches, f)
+			}
 		case overlayExists(opts.App, cluster), IsInChangedFiles(cluster, opts.ChangedFiles):
-			mismatches = append(mismatches, f)
+			// Normalize to the overlay/cluster name (matching DiffDirs mode
+			// and MismatchFiles' documented contract), deduped per cluster.
+			if !seenMismatch[cluster] {
+				seenMismatch[cluster] = true
+				mismatches = append(mismatches, cluster)
+			}
 		default:
 			if !skipped[cluster] {
 				skipped[cluster] = true
@@ -470,14 +484,16 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 	if len(mismatches) > 0 {
 		summary.Failed += len(mismatches)
 		summary.MismatchFiles = append(summary.MismatchFiles, mismatches...)
-		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffolding created new files for %s", opts.App))
 	} else {
 		summary.Passed += len(toRun)
 	}
 }
 
 // dryRunOneCluster runs a single-cluster dry-run and classifies the result.
-// Returns ("passed"|"skipped"|"error", mismatchFiles, errMsg).
+// Returns ("passed"|"skipped"|"mismatch"|"error", mismatchFiles, errMsg).
+// "mismatch" is drift (the overlay would be (re)created) - reported via
+// MismatchFiles and classified downstream (blocking vs. pre-existing);
+// "error" is a genuine tool/execution failure, always blocking.
 func dryRunOneCluster(app, cluster string, changedFiles []string) (status string, mismatchFiles []string, errMsg string) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
@@ -509,7 +525,12 @@ func dryRunOneCluster(app, cluster string, changedFiles []string) (status string
 	if !overlayExists(app, cluster) && !IsInChangedFiles(cluster, changedFiles) {
 		return "skipped", nil, ""
 	}
-	return "error", created, fmt.Sprintf("scaffolding created new files for %s", cluster)
+	// Drift: the overlay would be (re)created. Report it as a mismatch (by
+	// overlay/cluster name, matching MismatchFiles' contract) rather than an
+	// execution error, so it flows through the drift classification (which
+	// can downgrade untouched, pre-existing drift to non-blocking) instead
+	// of unconditionally blocking as an exec failure.
+	return "mismatch", []string{cluster}, ""
 }
 
 func diffDirs(generated, committed string) (string, error) {
