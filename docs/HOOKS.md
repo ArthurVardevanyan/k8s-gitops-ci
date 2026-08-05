@@ -53,7 +53,7 @@ Each entry is a comma-separated set of `key=value` pairs. Recognized
 selector keys, matching `pkg/validator/exempt.Selector`'s fields exactly:
 `check` (required — the check ID this entry exempts), `file`, `kind`,
 `name`, `namespace`, `match`, `value`, `path`. (`dir` is also a valid
-`exempt.Selector` field — see [EXCEPTIONS.md](EXCEPTIONS.md) — but isn't
+`exempt.Selector` field — see [EXEMPTIONS.md](EXEMPTIONS.md) — but isn't
 a recognized `EXEMPTIONS=(...)` key today.) `check=` is mandatory; a
 malformed entry (no `=`, an unknown key, an empty value, or a missing
 `check=`) is collected into `Config.ExemptErrors` rather than silently
@@ -71,7 +71,7 @@ suppresses matching findings for **any exemptable check** (currently
 `image-checksum`, `cluster-name`, `project-ref` — see
 `pkg/validator/exempt.Exemptable`) across the whole run, the same as the
 annotation-based exemption mode
-(`gitops-ci.k8s.io/exempt-<check-id>` — see [EXCEPTIONS.md](EXCEPTIONS.md)).
+(`gitops-ci.k8s.io/exempt-<check-id>` — see [EXEMPTIONS.md](EXEMPTIONS.md)).
 
 Selectors are merged flatly across every app in the run, not scoped to
 only that app's own files - matching how the built-in selectors already

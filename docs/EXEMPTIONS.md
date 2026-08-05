@@ -1,4 +1,4 @@
-# Exceptions
+# Exemptions
 
 `pkg/validator/exempt` is the unified exemption framework every
 registered check's findings pass through. There are two modes, both wired
@@ -16,7 +16,7 @@ for the tradeoffs between them.
 - [Non-app `test.sh` scoping](#non-app-testsh-scoping)
 - [Value vs. Token](#value-vs-token)
 - [Adding exemption support to a new check](#adding-exemption-support-to-a-new-check)
-- [How exceptions surface in the PR comment](#how-exceptions-surface-in-the-pr-comment)
+- [How exemptions surface in the PR comment](#how-exemptions-surface-in-the-pr-comment)
 - [Selector reference](#selector-reference)
 
 ## The two modes
@@ -207,10 +207,10 @@ If you're adding a new `check.Check`:
    `clusterid`'s `cluster-name`/`project-ref`/`cluster-identity` split) —
    otherwise, just use the check's own `ID()`.
 
-## How exceptions surface in the PR comment
+## How exemptions surface in the PR comment
 
 `ComposeResourceComplianceSection` (`pkg/validator/compose_sections.go`)
-renders an **"Accepted Exceptions"** audit sub-block from
+renders an **"Accepted Exemptions"** audit sub-block from
 `check.Result.Exempted` (`[]exempt.Applied`) whenever any exemption was
 applied, listing `| Resource | Value | Scope |` per exemption.
 

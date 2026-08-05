@@ -267,7 +267,7 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 // ComposeResourceComplianceSection renders resource-compliance findings
 // grouped by CheckID into per-check nested <details> sub-sections (rather
 // than one flat table for every finding regardless of check type), plus an
-// "Accepted Exceptions" audit block listing applied exemptions.
+// "Accepted Exemptions" audit block listing applied exemptions.
 //
 // blocking findings are in files this PR directly modifies (must be fixed
 // before merge, per finalizeCompliance); warning findings are pre-existing
@@ -320,7 +320,7 @@ func ComposeResourceComplianceSection(blocking, warning []check.Finding, exempte
 	}
 
 	if hasExemptions {
-		renderAcceptedExceptions(&b, exempted)
+		renderAcceptedExemptions(&b, exempted)
 	}
 
 	status := StatusPassed
@@ -437,12 +437,12 @@ func joinBackticked(files []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-// renderAcceptedExceptions writes the "Accepted Exceptions" audit sub-block
+// renderAcceptedExemptions writes the "Accepted Exemptions" audit sub-block
 // from the applied exemptions (check.Result.Exempted / exempt.Applied),
 // distinguishing exemptions applied to a directly-modified resource
 // (e.Direct) from pre-existing ones. This data already existed
 // (exempt.Applied.Direct) but was never rendered anywhere before this.
-func renderAcceptedExceptions(b *strings.Builder, exemptions []exempt.Applied) {
+func renderAcceptedExemptions(b *strings.Builder, exemptions []exempt.Applied) {
 	var haveDirect bool
 	for _, e := range exemptions {
 		if e.Direct {
@@ -450,7 +450,7 @@ func renderAcceptedExceptions(b *strings.Builder, exemptions []exempt.Applied) {
 			break
 		}
 	}
-	label := "Accepted Exceptions"
+	label := "Accepted Exemptions"
 	if !haveDirect {
 		label += " (pre-existing)"
 	}

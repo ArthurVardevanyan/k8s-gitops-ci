@@ -37,7 +37,7 @@ anything that looks like it might be org-specific.
 - [docs/HOOKS.md](docs/HOOKS.md) — the `test.sh` hook contract and,
   importantly, which directives are actually wired vs. parsed-but-unused
   today.
-- [docs/EXCEPTIONS.md](docs/EXCEPTIONS.md) — the unified exemption
+- [docs/EXEMPTIONS.md](docs/EXEMPTIONS.md) — the unified exemption
   framework's two modes (annotation vs. `EXEMPTIONS=(...)` selector),
   which one actually takes effect today, and exemptable check IDs.
 - [docs/TEKTON.md](docs/TEKTON.md) — this repo's own Tekton

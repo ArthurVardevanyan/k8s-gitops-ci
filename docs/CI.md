@@ -283,7 +283,7 @@ output, not just the raw source.
   individual files can be skipped via
   `check=kubeconform,file=...`/`check=kubeconform,dir=...` selectors in a
   `test.sh` `EXEMPTIONS=(...)` block — see
-  [EXCEPTIONS.md](EXCEPTIONS.md) — intended for non-Kubernetes YAML (no
+  [EXEMPTIONS.md](EXEMPTIONS.md) — intended for non-Kubernetes YAML (no
   `kind`/`apiVersion`) that legitimately lives in the repository.
 
 #### `shellcheck`
@@ -629,7 +629,7 @@ there would otherwise go completely unreported. This renders as its own
 Every check below is registered via `check.Register` in
 `pkg/validator/register_checks.go` and, by that registration alone,
 automatically exemptable via its own check ID (see
-[EXCEPTIONS.md](EXCEPTIONS.md)) unless noted otherwise.
+[EXEMPTIONS.md](EXEMPTIONS.md)) unless noted otherwise.
 
 | ID                 | Package                     | Scope   | What it checks                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------------ | --------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -841,7 +841,7 @@ above, it is **not** part of the `check.Register` framework: it's always
 on (not gateable via `DisabledChecks`/`EnabledChecks`) and its findings
 are **not** exemptable via `EXEMPTIONS=(...)` or the
 `gitops-ci.k8s.io/exempt-<check-id>` annotation (see
-[EXCEPTIONS.md](EXCEPTIONS.md)). It renders as its own
+[EXEMPTIONS.md](EXEMPTIONS.md)). It renders as its own
 "NetworkAttachmentDefinition Validation" report section, blocking on any
 finding. The section is **omit-when-absent** (like the opt-in Kyverno
 section): it's rendered only when at least one
@@ -914,7 +914,7 @@ Resource Compliance, and CI Notes, plus NetworkAttachmentDefinition
 Validation when a NAD is present in the rendered-overlay chain and Kyverno
 Policies when the opt-in `kyverno` step is enabled (see
 [Registered checks](#registered-checks) above). Resource Compliance
-additionally groups findings by check ID with an "Accepted Exceptions"
+additionally groups findings by check ID with an "Accepted Exemptions"
 audit sub-block.
 
 Each check-ID group under Resource Compliance renders using that check's

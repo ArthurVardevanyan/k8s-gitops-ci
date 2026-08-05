@@ -8,8 +8,8 @@ description: >
 
 # Exemption Handling Skill
 
-Full reference: [`docs/EXCEPTIONS.md`](../../docs/EXCEPTIONS.md) and
-[`docs/HOOKS.md`](../../docs/HOOKS.md). This skill is a decision-oriented
+Full reference: [`docs/EXEMPTIONS.md`](../../../docs/EXEMPTIONS.md) and
+[`docs/HOOKS.md`](../../../docs/HOOKS.md). This skill is a decision-oriented
 quick-reference — read the docs for authoritative detail.
 
 ## Pick the right mode
@@ -30,7 +30,7 @@ metadata:
 ```
 
 `<value>` must exactly match the finding's `Value` (or `Token` when the
-check sets one — see [Value vs. Token](../../docs/EXCEPTIONS.md#value-vs-token)).
+check sets one — see [Value vs. Token](../../../docs/EXEMPTIONS.md#value-vs-token)).
 
 ## `EXEMPTIONS=(...)` in `test.sh`
 
@@ -46,7 +46,7 @@ export EXEMPTIONS=(
 Each entry is a comma-separated set of `key=value` pairs. `check=` is
 required; all other keys are optional narrowing filters. Quote each entry.
 `export` prefix is supported and recommended. See the
-[selector reference](../../docs/EXCEPTIONS.md#selector-reference) for all
+[selector reference](../../../docs/EXEMPTIONS.md#selector-reference) for all
 available keys (`file`, `kind`, `name`, `namespace`, `match`, `value`,
 `path`).
 
@@ -73,7 +73,7 @@ today.
 ### Exemptable check IDs
 
 See the full table in
-[`docs/EXCEPTIONS.md#exemptable-check-ids`](../../docs/EXCEPTIONS.md#exemptable-check-ids).
+[`docs/EXEMPTIONS.md#exemptable-check-ids`](../../../docs/EXEMPTIONS.md#exemptable-check-ids).
 Commonly used IDs:
 
 | ID               | When to use                                                                 |
@@ -139,7 +139,7 @@ export EXEMPTIONS=(
 - [ ] Selector is as narrow as possible (prefer `file=path/to/file.yaml`
       over bare `file=filename.yaml` to avoid basename collisions).
 - [ ] `check=` value is a valid exemptable ID (confirm in
-      [`docs/EXCEPTIONS.md`](../../docs/EXCEPTIONS.md#exemptable-check-ids)).
+      [`docs/EXEMPTIONS.md`](../../../docs/EXEMPTIONS.md#exemptable-check-ids)).
 - [ ] Entry is quoted; `export` prefix present.
 - [ ] A malformed entry causes a **blocking build error** — run the
       pipeline locally to confirm the entry parses cleanly before merging.
