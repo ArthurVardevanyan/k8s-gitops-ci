@@ -384,6 +384,11 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 					sl.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
 					return lintStepResult{report: kcRes.Summary(), status: StatusError}
 				}
+				if len(kcRes.SkippedNonManifest) > 0 {
+					note := formatSkippedNonManifest(kcRes.SkippedNonManifest)
+					sl.Info("kubeconform: passed (%s); %s", elapsed().Round(time.Millisecond), note)
+					return lintStepResult{status: StatusInfo, note: note}
+				}
 				sl.Info("kubeconform: passed (%s)", elapsed().Round(time.Millisecond))
 			}
 			return lintStepResult{status: StatusPassed}
@@ -907,6 +912,28 @@ func excludeKnownNonManifestFiles(files []string) []string {
 		out = append(out, f)
 	}
 	return out
+}
+
+// maxSkippedNonManifestListed caps how many file paths
+// formatSkippedNonManifest lists inline before summarizing the remainder as
+// "and N more", keeping the non-blocking ℹ️ sub-check note a single concise
+// line in the unified PR comment.
+const maxSkippedNonManifestListed = 5
+
+// formatSkippedNonManifest renders the non-blocking note describing files
+// the kubeconform step skipped because they carry no root apiVersion/kind
+// (see kubeconform.IsManifestYAML) - e.g. an Ansible inventory or NMState
+// config in a flat, non-app directory. Surfaced (never silent) so a
+// genuinely header-less manifest that was skipped stays visible for a human
+// to catch.
+func formatSkippedNonManifest(files []string) string {
+	listed := files
+	extra := ""
+	if len(listed) > maxSkippedNonManifestListed {
+		extra = fmt.Sprintf(", and %d more", len(listed)-maxSkippedNonManifestListed)
+		listed = listed[:maxSkippedNonManifestListed]
+	}
+	return fmt.Sprintf("Skipped %d non-manifest YAML file(s) (no apiVersion/kind): %s%s", len(files), strings.Join(listed, ", "), extra)
 }
 
 func filterYAML(files []string) []string {

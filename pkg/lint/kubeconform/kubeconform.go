@@ -41,6 +41,14 @@ var MissingSchemaHint string
 // a separate override map consulted alongside a core one - there's no
 // risk of an org's addition shadowing or conflicting with a core entry,
 // since basenames are simply either known-non-manifest or not.
+//
+// This is a fast, unconditional basename skip for files that are NEVER
+// manifests regardless of content. It is complementary to the content-aware
+// gate (see IsManifestYAML): the content gate additionally skips any
+// raw-validated file that parses to YAML with no root apiVersion/kind
+// (e.g. an Ansible inventory.yml or NMState config in a flat, non-app
+// directory), while a file whose basename is listed here is skipped without
+// even reading it.
 var KnownNonManifestFiles = map[string]bool{
 	"Taskfile.yml":            true,
 	"Taskfile.yaml":           true,
@@ -102,6 +110,13 @@ func DefaultOptions() Options {
 type Result struct {
 	Valid, Invalid, Errors, Skipped int
 	Details                         []FileResult
+	// SkippedNonManifest lists files that were not validated because they
+	// carry no root-level apiVersion/kind (see IsManifestYAML) - e.g. an
+	// Ansible inventory or NMState config sitting in a flat, non-app
+	// directory. Surfaced as a non-blocking note so the skip is visible
+	// (never silent), not counted toward Skipped (which tracks kubeconform's
+	// own per-resource SkipKinds skips).
+	SkippedNonManifest []string
 }
 
 // FileResult is per-file results.
@@ -172,6 +187,7 @@ func (r *Result) Merge(src *Result) {
 	r.Errors += src.Errors
 	r.Skipped += src.Skipped
 	r.Details = append(r.Details, src.Details...)
+	r.SkippedNonManifest = append(r.SkippedNonManifest, src.SkippedNonManifest...)
 }
 
 // Deduplicate de-duplicates result errors.
@@ -203,6 +219,15 @@ func (r *Result) Summary() string {
 	s := fmt.Sprintf("Summary: %d valid, %d invalid, %d errors, %d skipped\n", r.Valid, r.Invalid, r.Errors, r.Skipped)
 	for _, d := range r.Deduplicate() {
 		s += "  - " + d.StringWithFiles() + "\n"
+	}
+	if n := len(r.SkippedNonManifest); n > 0 {
+		files := dedupeStrings(r.SkippedNonManifest)
+		extra := ""
+		if len(files) > maxListedFiles {
+			extra = fmt.Sprintf(", and %d more", len(files)-maxListedFiles)
+			files = files[:maxListedFiles]
+		}
+		s += fmt.Sprintf("  - skipped %d non-manifest YAML file(s) (no apiVersion/kind): %s%s\n", n, strings.Join(files, ", "), extra)
 	}
 	return s
 }
@@ -397,7 +422,10 @@ func ValidateFiles(files []string, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return validateFilesPar(v, files), nil
+	manifests, skipped := partitionManifests(files)
+	res := validateFilesPar(v, manifests)
+	res.SkippedNonManifest = append(res.SkippedNonManifest, skipped...)
+	return res, nil
 }
 
 // ValidateDir validates all YAML files under dir, extracting schemas if needed.
@@ -427,7 +455,10 @@ func ValidateDir(dir string, opts Options) (*Result, func(), error) {
 		}
 		return nil
 	})
-	return validateFilesPar(v, files), cleanup, nil
+	manifests, skipped := partitionManifests(files)
+	res := validateFilesPar(v, manifests)
+	res.SkippedNonManifest = append(res.SkippedNonManifest, skipped...)
+	return res, cleanup, nil
 }
 
 func validateFilesPar(v kfv.Validator, files []string) *Result {
