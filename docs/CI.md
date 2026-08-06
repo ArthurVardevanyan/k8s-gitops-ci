@@ -274,6 +274,24 @@ output, not just the raw source.
   subtree).
 - **Implementation:** a Go library, not a CLI wrapper — unlike the three
   checks above, there's no missing-binary case to gate.
+- **Non-manifest YAML (content gate):** files validated on the **raw**
+  path (flat directories that are _not_ kustomize/helm app roots) are
+  first checked for a root-level `apiVersion`/`kind` (see
+  `kubeconform.IsManifestYAML`). YAML that parses but has neither at the
+  document root — e.g. an Ansible `inventory.yml` or an NMState network
+  config living beside cluster manifests — is **skipped** rather than
+  tripping a `missing 'kind' key` error. Detection is root-level only (a
+  nested `kind:` in an Ansible/Helm value does not count) and keys solely
+  on `apiVersion`/`kind` (not `metadata`/`data`/`spec`, which appear in
+  non-manifests too). This applies **only to the raw path**: content
+  rendered from a kustomize/helm app is always validated strictly, so a
+  real manifest that loses its header inside an app still fails. Skips are
+  surfaced as a non-blocking **ℹ️** note in the Linting → Kubeconform
+  sub-check (and in `--dir`/standalone summary output) — never silent — so
+  a genuinely header-less manifest in a flat directory stays visible for a
+  human to catch. This is the content-aware complement to the
+  unconditional `KnownNonManifestFiles` basename fast-path (`Taskfile.yml`,
+  `.golangci.yml`, …).
 - **Default:** on. **Disable:** `--disable-checks kubeconform` — a genuine
   wholesale opt-out (unlike the CLI-wrapper checks above, there's no
   "binary not installed" reason to disable it; the reason here is usually
@@ -284,8 +302,11 @@ output, not just the raw source.
   individual files can be skipped via
   `check=kubeconform,file=...`/`check=kubeconform,dir=...` selectors in a
   `test.sh` `EXEMPTIONS=(...)` block — see
-  [EXEMPTIONS.md](EXEMPTIONS.md) — intended for non-Kubernetes YAML (no
-  `kind`/`apiVersion`) that legitimately lives in the repository.
+  [EXEMPTIONS.md](EXEMPTIONS.md). Note that whole non-manifest YAML files
+  on the raw path (no root `kind`/`apiVersion`) are now **auto-skipped** by
+  the content gate above, so a selector is only needed when a file _is_ a
+  manifest (or otherwise carries `kind`/`apiVersion`) but you deliberately
+  want its schema check suppressed.
 
 #### `shellcheck`
 

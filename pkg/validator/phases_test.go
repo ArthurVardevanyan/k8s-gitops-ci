@@ -357,6 +357,35 @@ func TestRunAll_KubeconformSkipsKnownNonManifestFiles(t *testing.T) {
 	}
 }
 
+// TestRunAll_KubeconformSkipsNonManifestFlatYAML guards the content-aware
+// gate: flat, non-kustomize/helm YAML with no root apiVersion/kind (an
+// Ansible inventory, an NMState config) must be skipped by kubeconform
+// rather than tripping "missing 'kind' key", and the skip must surface as a
+// non-blocking note in the Linting section (never silent) so a genuinely
+// header-less manifest stays visible for a human to catch.
+func TestRunAll_KubeconformSkipsNonManifestFlatYAML(t *testing.T) {
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "inventory.yml"), "webservers:\n  vars:\n    http_port: 80\n  hosts:\n    web-0:\n      ansible_host: web-0.example.com\n")
+	mustWrite(t, filepath.Join(d, "node-0.example.com.yaml"), "hostname:\n  config: node-0.example.com\ninterfaces:\n  - name: bond0\n    type: vlan\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "prettier", "shellcheck", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger != nil && res.Logger.HasFailures() {
+		t.Errorf("expected flat non-manifest YAML to be skipped by kubeconform, not fail")
+	}
+	var lint ReportSection
+	for _, s := range res.Sections {
+		if s.Name == "Linting" {
+			lint = s
+		}
+	}
+	if !strings.Contains(lint.Body, "non-manifest") || !strings.Contains(lint.Body, "inventory.yml") {
+		t.Errorf("expected the Linting section to surface skipped non-manifest files, got:\n%s", lint.Body)
+	}
+}
+
 // --- shellcheck extraction wiring (PR-7) -----------------------------------
 
 func hasShellcheckBinary() bool {
