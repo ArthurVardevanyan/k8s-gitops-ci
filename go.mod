@@ -3,7 +3,7 @@ module github.com/ArthurVardevanyan/k8s-gitops-ci
 go 1.26.5
 
 require (
-	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260804105810-ae11b76235ef
+	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260807080327-aa2d0bba0cfb
 	github.com/yannh/kubeconform v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.21.3
