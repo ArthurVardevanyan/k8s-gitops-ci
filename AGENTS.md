@@ -65,6 +65,7 @@ resource generation steps a raw command would silently skip.
 | Lint                                               | `task lint`                    |
 | Format                                             | `task format`                  |
 | Full CI                                            | `task ci`                      |
+| Replay real merged PRs (smoke gate)                | `task test:homelab-prs`        |
 | Regenerate embedded schemas                        | `task update:schemas`          |
 | Regenerate resource-scope maps from a live cluster | `task update:scoped-resources` |
 

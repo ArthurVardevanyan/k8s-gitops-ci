@@ -70,6 +70,8 @@ func main() {
 		err = runYAMLSyntax(args)
 	case "validate-nad":
 		err = runValidateNAD(args)
+	case "ci-report":
+		err = runCIReport(args)
 	case "version", "--version", "-v":
 		fmt.Println(version.String())
 	case "--help", "-h", "help":
@@ -700,6 +702,10 @@ Static Checks:
   sort-configs      Sort repo config files
   update-scaffold-status Update scaffold README status table
   validate-nad      Validate NetworkAttachmentDefinition files (auto-dispatches on CNI type)
+
+CI Meta:
+  ci-report         Post/update a self-CI status comment on this repo's own PR
+                    (overall task-ci verdict + a non-blocking live-replay section)
 
 Version:
   version           Show version information

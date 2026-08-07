@@ -317,7 +317,67 @@ spec:
                 # skew git-cliff's --bumped-version on this run.
                 git fetch --tags --force --prune --prune-tags origin
 
-                task ci
+                # Run the full CI gate, but capture its exit code instead of
+                # letting `set -o errexit` abort here, so that on a PR event we
+                # can still post an informative self-CI status comment (with the
+                # ❌ verdict) before failing. The step re-asserts CI_RC at the
+                # very end, so `task ci` remains the authoritative blocking gate.
+                # Tee the output so the comment can embed a tail of the failing
+                # step's log (the raw log is on the pipeline anyway).
+                CI_RC=0
+                CI_LOG="${TMPDIR}/task-ci.log"
+                task ci 2>&1 | tee "${CI_LOG}" || CI_RC="${PIPESTATUS[0]}"
+
+                # ── Self-CI status comment + non-blocking live replay ─────────
+                # PR events only: a push has no PR to comment on. Everything in
+                # this block is best-effort (|| true) and must NEVER change the
+                # build's pass/fail outcome — only CI_RC does that.
+                if [ "${PARAM_EVENT}" = "pull_request" ]; then
+                  CI_STATUS="pass"
+                  CI_REPORT_ARGS=()
+                  if [ "${CI_RC}" -ne 0 ]; then
+                    CI_STATUS="fail"
+                    # Embed only the last lines of the CI log to keep the
+                    # comment compact; the full log lives on the pipeline.
+                    CI_DETAIL="${TMPDIR}/task-ci-tail.log"
+                    tail -n 40 "${CI_LOG}" >"${CI_DETAIL}" || true
+                    CI_REPORT_ARGS+=(--ci-report "${CI_DETAIL}")
+                  fi
+
+                  # Live regression replay — a non-blocking false-positive smoke
+                  # gate (see docs/DEVELOPMENT.md#end-to-end--regression-replay).
+                  # 25 PRs at parallelism 10 for meaningful coverage; runs after
+                  # the gate, so it never blocks. Per-PR wall time may rise a
+                  # little under contention/GitHub throttling at this width, but
+                  # the aggregate stays well within budget.
+                  # Exit-code contract from scripts/test-homelab-prs.sh:
+                  #   0 = all passed → pass; 1 = some PRs failed → warn
+                  #   (eyeball the diff, not necessarily a regression);
+                  #   other = harness/setup error → fail.
+                  REPLAY_REPORT="${TMPDIR}/homelab-replay.md"
+                  REPLAY_RC=0
+                  task test:homelab-prs COUNT=25 PARALLEL=10 OUTPUT="${REPLAY_REPORT}" || REPLAY_RC=$?
+                  case "${REPLAY_RC}" in
+                  0) REPLAY_STATUS="pass" ;;
+                  1) REPLAY_STATUS="warn" ;;
+                  *) REPLAY_STATUS="fail" ;;
+                  esac
+
+                  k8s-gitops-ci-bin() { "${REPO_DIR}/bin/k8s-gitops-ci" "$@"; }
+                  k8s-gitops-ci-bin ci-report \
+                    --url "${PARAM_GIT_URL}" \
+                    --pr "${PARAM_PR_NUMBER}" \
+                    --ci-status "${CI_STATUS}" \
+                    "${CI_REPORT_ARGS[@]}" \
+                    --replay-status "${REPLAY_STATUS}" \
+                    --replay-report "${REPLAY_REPORT}" || true
+                fi
+
+                # Re-assert the CI gate: fail the step iff `task ci` failed.
+                if [ "${CI_RC}" -ne 0 ]; then
+                  echo "task ci failed (exit ${CI_RC})"
+                  exit "${CI_RC}"
+                fi
 
                 # Push event - run Goreleaser with semantic version
                 if [ "${PARAM_EVENT}" = "push" ]; then

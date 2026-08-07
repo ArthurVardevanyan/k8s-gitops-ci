@@ -377,6 +377,24 @@ tasks:
     cmds:
       - task: test:cover
 
+  test:homelab-prs:
+    desc: Replay the last N merged PRs of a real GitOps repo (default HomeLab)
+    silent: true
+    deps: [build]
+    vars:
+      COUNT: '{{.COUNT | default "15"}}'
+      PARALLEL: '{{.PARALLEL | default "5"}}'
+      REPOS: '{{.REPOS | default "ArthurVardevanyan/HomeLab"}}'
+      OUTPUT: '{{.OUTPUT | default ""}}'
+    cmds:
+      - >
+        ./scripts/test-homelab-prs.sh
+        --binary "{{.DIST}}/{{.NAME}}"
+        --count "{{.COUNT}}"
+        --parallel "{{.PARALLEL}}"
+        --repos "{{.REPOS}}"
+        {{if .OUTPUT}}--output "{{.OUTPUT}}"{{end}}
+
   coverage:report:
     desc: Print per-file coverage report
     silent: true
