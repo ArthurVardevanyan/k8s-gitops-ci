@@ -254,6 +254,24 @@ func TestComposeSections(t *testing.T) {
 	}
 }
 
+// TestComposeSections_ChecklistErrIsBlocking guards that a non-nil
+// ChecklistErr (e.g. no Change Type selected in the PR description) renders
+// the PR Checks section as a blocking ❌ StatusError - matching the pipeline
+// exit-code contract in Run, where res.ChecklistErr now fails the pipeline
+// alongside TitleErr/UnsignedErr. Previously the checklist rendered ❌ in the
+// comment but Run's failure check omitted it, so CI passed while the comment
+// showed an error.
+func TestComposeSections_ChecklistErrIsBlocking(t *testing.T) {
+	res := &Result{ChecklistErr: errors.New("no Change Type selected in PR description")}
+	sections := composeSections(res, Options{})
+	if len(sections) == 0 {
+		t.Fatalf("expected sections")
+	}
+	if sections[0].Status != validator.StatusError {
+		t.Errorf("expected PR Checks section to be StatusError for a checklist failure, got %v", sections[0].Status)
+	}
+}
+
 // TestComposeSections_ReusesAlreadyRenderedLintingSection guards against a
 // regression of the double-composition bug: composeSections used to
 // re-derive "Linting"/"Static Checks" section bodies from the *already-
