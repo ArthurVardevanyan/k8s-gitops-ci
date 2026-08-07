@@ -27,6 +27,7 @@ pointing to every other doc (`CI.md`, `HOOKS.md`, `EXEMPTIONS.md`,
 - [Building](#building)
 - [Testing](#testing)
   - [Negative / error-path coverage](#negative--error-path-coverage)
+  - [End-to-end / regression replay](#end-to-end--regression-replay)
 - [Task Targets Reference](#task-targets-reference)
 
 ## Prerequisites
@@ -718,36 +719,150 @@ memory in a future doc update — re-run `task coverage:report`/
 `go test ./... -cover` and paste the fresh numbers; they will drift as
 these packages keep changing.
 
+### End-to-end / regression replay
+
+Beyond the unit suite, `task test:homelab-prs` runs the freshly-built
+binary against the last _N_ **merged** PRs of a real GitOps repository
+(default [`ArthurVardevanyan/HomeLab`](https://github.com/ArthurVardevanyan/HomeLab),
+the corpus this engine was designed around) and prints a Markdown
+pass/fail report. It shells out to
+[`scripts/test-homelab-prs.sh`](../scripts/test-homelab-prs.sh),
+invoking `k8s-gitops-ci pipeline --url <repo> --pr <n>` per PR — the same
+`pipeline` entrypoint production and any downstream consumer use, so a
+real-world break surfaces as a real failure. `GH_TOKEN` is scrubbed for
+the binary (it can never post a comment) and `avp` is disabled by default
+(no secret backend for a public repo).
+
+```sh
+task test:homelab-prs                       # last 15 HomeLab PRs
+task test:homelab-prs COUNT=5               # fewer, faster
+task test:homelab-prs OUTPUT=report.md      # write a Markdown report
+task test:homelab-prs REPOS=some/other-repo # a different corpus
+```
+
+**This is a smoke/acceptance gate, not a deterministic regression lock.**
+Understand its limits before relying on it:
+
+1. **Non-deterministic.** It reads live GitHub state; HomeLab's merged-PR
+   history can (and does) move under you, so a rerun isn't guaranteed to
+   test the same inputs. It needs network access and a working `gh` auth.
+2. **Not a behavior lock.** It only asserts each PR's overall pass/fail —
+   there is no golden baseline, so a _silent_ change in a check's output
+   or findings (one that doesn't flip pass↔fail) will slip through
+   undetected.
+3. **Edge coverage is incidental.** It exercises only whatever a real PR
+   happened to touch; rare validator edges no PR has hit are simply never
+   covered.
+4. **Intentional changes can fail old PRs.** A newer, stricter check may
+   legitimately fail a PR that merged cleanly under the old rules — a red
+   result here is a prompt to _eyeball the diff_, not automatically a
+   regression.
+5. **Blind to false negatives.** Every input in the corpus is a _merged_
+   PR — i.e. expected to **pass**. So the replay can flag a PR that
+   _newly fails_ (a false **positive** — the tool became too strict), but
+   it is structurally incapable of catching a false **negative**: a check
+   that silently stops firing (returns "pass" when it should fail) keeps
+   every replay green forever. This is the more dangerous class, and it is
+   **not** this tool's job — see the coverage split below.
+
+#### Coverage: who catches what
+
+| Failure class                   | Live replay (all-pass corpus)    | Unit tests (`testdata/invalid/`, `*_wiring_test.go`, `phases_test.go`)                         | Golden e2e (deferred) |
+| ------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------- |
+| **False positive** (too strict) | Partial — a formerly-green PR ❌ | ✅ (`testdata/` valid inputs assert zero findings)                                             | ✅                    |
+| **False negative** (too lax)    | ❌ **blind**                     | ✅ per-check (`wantErrs: 1` / `expected exactly 1 finding`) + wiring (`RunAll` `res.Sections`) | ✅ end-to-end         |
+
+False negatives are the **unit suite's** responsibility: each validator's
+`testdata/invalid/` fixtures assert findings _fire_, and
+`phases_test.go`/`*_wiring_test.go` assert each check is actually reached
+during `RunAll`. The replay is explicitly a **false-positive smoke
+gate**, not a false-negative net — treat it as complementary to, never a
+substitute for, the unit tests.
+
+The one residual gap even the unit + wiring tests don't close is fully
+black-box: they call `RunAll` in-process, so they prove a check _fires_
+but not that it fires **through the built binary end to end**. Only a
+golden run over deliberately-broken fixtures (see "Future work" below)
+would catch a check that's correct in isolation yet dropped from the
+compiled pipeline.
+
+Its intended use is a **re-pin / release acceptance gate** (does the
+current engine still pass real-world PRs?) and ad-hoc smoke testing —
+not a substitute for unit tests.
+
+#### In CI
+
+The replay also runs automatically in this repo's own meta-CI, but
+**non-blocking**. The `build` task in
+[`.tekton/k8s-gitops-ci.yaml`](../.tekton/k8s-gitops-ci.yaml) runs
+`task test:homelab-prs` (small `COUNT`) after `task ci` on pull-request
+events and feeds the result — plus the blocking `task ci` verdict — into
+a single self-CI status comment (`<!-- ci-self-report -->`) via the
+`k8s-gitops-ci ci-report` subcommand. Only `task ci` blocks merge; a
+replay failure surfaces as a ⚠️ section in that comment and never fails
+the build (for all the reasons above — it reads live state and can't see
+false negatives). See [TEKTON.md](TEKTON.md) for the pipeline wiring.
+
+#### Future work: deterministic golden regression
+
+If a silent regression (limitation #2) ever escapes into a release, the
+targeted fix is a small **deterministic golden fixture** for that
+specific case rather than reaching for the live replay. The design that
+was scoped for this (and can be revived on demand):
+
+- Vendor a tiny fixture as a **two-commit local git repo** (`base/` tree
+  → first commit, `head/` tree → the change under test), snapshotted from
+  a pinned upstream commit for realism.
+- Drive it offline through the real pipeline via
+  `pipeline --target-branch <base-sha>` (no `--url`/`--pr`), which falls
+  through to a local `git diff <base>...HEAD` in `pkg/changeset` — no
+  remote, no PR, no GitHub — plus optionally `test-all <dir>` for the
+  standalone whole-repo path.
+- Normalize the console output down to the stable result surface (strip
+  the version banner, `[HH:MM:SS]` timestamps, `(…ms)`/`(…s)` durations,
+  the per-run timing footer, and absolute temp paths; keep section
+  verdicts, `[WARN]`/finding lines, and the exit code) and compare
+  against a committed `*.golden`, with an `UPDATE_GOLDEN=1` regenerate
+  path for reviewed intentional changes.
+
+The **known cost** is that normalization: run-to-run non-determinism
+(timestamps, durations, and goroutine-ordering of parallel-phase log
+lines) has to be scrubbed carefully or the goldens flake. That tax — plus
+the vendored fixture files — is why this tier was deferred in favor of the
+live replay above; add it only when a concrete silent-regression escape
+justifies the maintenance.
+
 ## Task Targets Reference
 
 See [`CI.md`](CI.md) for what `task ci`'s underlying pipeline
 (`k8s-gitops-ci pipeline`/`ci`) actually checks once built — this table
 is about the local dev-loop `task` targets themselves.
 
-| Target                    | Purpose                                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `mod`                     | Download and tidy Go modules                                                                           |
-| `mod:check`               | Ensure `go.mod`/`go.sum` are tidy without modifying the working tree                                   |
-| `mod:verify`              | Verify Go module integrity and checksums                                                               |
-| `install-tools`           | Install all Go development tools to `.tool/`                                                           |
-| `install-tools:go`        | Install Go tooling (golangci-lint, govulncheck, gofumpt, goimports)                                    |
-| `format`                  | Auto-format Go code (goimports + gofumpt) and tidy modules                                             |
-| `format:check`            | Check Go formatting without modifying files (fails if changes needed)                                  |
-| `lint`                    | Run golangci-lint                                                                                      |
-| `vet`                     | Run `go vet`                                                                                           |
-| `vulncheck`               | Check for known vulnerabilities (only fails on fixable findings)                                       |
-| `build`                   | Build `bin/k8s-gitops-ci`                                                                              |
-| `test`                    | Run test suite                                                                                         |
-| `test:cover`              | Run tests with coverage profile + race detector                                                        |
-| `test:race`               | Alias for `test:cover` (race detector runs there)                                                      |
-| `coverage:report`         | Print per-file coverage report                                                                         |
-| `coverage:html`           | Generate HTML coverage report and open in browser                                                      |
-| `ci`                      | Full CI pipeline — mod check, format, schemas, lint, vulncheck, test, build                            |
-| `clean`                   | Remove build artifacts, caches, and temp files                                                         |
-| `update`                  | Run all update tasks (deps, schemas, policies, scoped-resources)                                       |
-| `update:deps`             | Upgrade all Go dependencies and tidy `go.mod`/`go.sum`                                                 |
-| `update:schemas`          | Pull embedded kubeconform schemas (see `docs/SCHEMAS.md`)                                              |
-| `update:policies`         | Pull embedded Kyverno policies (placeholder by default — see `docs/SCHEMAS.md`)                        |
-| `update:scoped-resources` | Regenerate `resource_scope.go`/`extra_resource_scope.go` from a live cluster's `kubectl api-resources` |
+| Target                    | Purpose                                                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `mod`                     | Download and tidy Go modules                                                                                                       |
+| `mod:check`               | Ensure `go.mod`/`go.sum` are tidy without modifying the working tree                                                               |
+| `mod:verify`              | Verify Go module integrity and checksums                                                                                           |
+| `install-tools`           | Install all Go development tools to `.tool/`                                                                                       |
+| `install-tools:go`        | Install Go tooling (golangci-lint, govulncheck, gofumpt, goimports)                                                                |
+| `format`                  | Auto-format Go code (goimports + gofumpt) and tidy modules                                                                         |
+| `format:check`            | Check Go formatting without modifying files (fails if changes needed)                                                              |
+| `lint`                    | Run golangci-lint                                                                                                                  |
+| `vet`                     | Run `go vet`                                                                                                                       |
+| `vulncheck`               | Check for known vulnerabilities (only fails on fixable findings)                                                                   |
+| `build`                   | Build `bin/k8s-gitops-ci`                                                                                                          |
+| `test`                    | Run test suite                                                                                                                     |
+| `test:cover`              | Run tests with coverage profile + race detector                                                                                    |
+| `test:race`               | Alias for `test:cover` (race detector runs there)                                                                                  |
+| `test:homelab-prs`        | Replay the last _N_ merged PRs of a real GitOps repo (default HomeLab) — smoke gate, see [Testing](#end-to-end--regression-replay) |
+| `coverage:report`         | Print per-file coverage report                                                                                                     |
+| `coverage:html`           | Generate HTML coverage report and open in browser                                                                                  |
+| `ci`                      | Full CI pipeline — mod check, format, schemas, lint, vulncheck, test, build                                                        |
+| `clean`                   | Remove build artifacts, caches, and temp files                                                                                     |
+| `update`                  | Run all update tasks (deps, schemas, policies, scoped-resources)                                                                   |
+| `update:deps`             | Upgrade all Go dependencies and tidy `go.mod`/`go.sum`                                                                             |
+| `update:schemas`          | Pull embedded kubeconform schemas (see `docs/SCHEMAS.md`)                                                                          |
+| `update:policies`         | Pull embedded Kyverno policies (placeholder by default — see `docs/SCHEMAS.md`)                                                    |
+| `update:scoped-resources` | Regenerate `resource_scope.go`/`extra_resource_scope.go` from a live cluster's `kubectl api-resources`                             |
 
 Run `task --list` for the authoritative, up-to-date list.

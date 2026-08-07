@@ -317,7 +317,47 @@ spec:
                 # skew git-cliff's --bumped-version on this run.
                 git fetch --tags --force --prune --prune-tags origin
 
-                task ci
+                # Run the full CI gate, but capture its exit code instead of
+                # letting `set -o errexit` abort here, so that on a PR event we
+                # can still post an informative self-CI status comment (with the
+                # ❌ verdict) before failing. The step re-asserts CI_RC at the
+                # very end, so `task ci` remains the authoritative blocking gate.
+                CI_RC=0
+                task ci || CI_RC=$?
+
+                # ── Self-CI status comment + non-blocking live replay ─────────
+                # PR events only: a push has no PR to comment on. Everything in
+                # this block is best-effort (|| true) and must NEVER change the
+                # build's pass/fail outcome — only CI_RC does that.
+                if [ "${PARAM_EVENT}" = "pull_request" ]; then
+                  CI_STATUS="pass"
+                  [ "${CI_RC}" -ne 0 ] && CI_STATUS="fail"
+
+                  # Live regression replay — a non-blocking false-positive smoke
+                  # gate (see docs/DEVELOPMENT.md#end-to-end--regression-replay).
+                  # Small COUNT to keep CI fast; never fail the build on it.
+                  REPLAY_REPORT="${TMPDIR}/homelab-replay.md"
+                  REPLAY_STATUS="pass"
+                  if task test:homelab-prs COUNT=5 OUTPUT="${REPLAY_REPORT}"; then
+                    REPLAY_STATUS="pass"
+                  else
+                    REPLAY_STATUS="fail"
+                  fi
+
+                  k8s-gitops-ci-bin() { "${REPO_DIR}/bin/k8s-gitops-ci" "$@"; }
+                  k8s-gitops-ci-bin ci-report \
+                    --url "${PARAM_GIT_URL}" \
+                    --pr "${PARAM_PR_NUMBER}" \
+                    --ci-status "${CI_STATUS}" \
+                    --replay-status "${REPLAY_STATUS}" \
+                    --replay-report "${REPLAY_REPORT}" || true
+                fi
+
+                # Re-assert the CI gate: fail the step iff `task ci` failed.
+                if [ "${CI_RC}" -ne 0 ]; then
+                  echo "task ci failed (exit ${CI_RC})"
+                  exit "${CI_RC}"
+                fi
 
                 # Push event - run Goreleaser with semantic version
                 if [ "${PARAM_EVENT}" = "push" ]; then

@@ -141,10 +141,22 @@ auth login --with-token` + `gh auth setup-git` first (same rationale
    `target_branch == "main"` anyway), fed from a `target-branch` param
    bound to `{{ target_branch }}` on the shared `pipelineSpec.params`.
 
-There's no PR-comment collision with `build`: `build` never invokes
-`k8s-gitops-ci pipeline` (it runs `task ci` + `goreleaser` instead), so
-`lint` is the only task in this pipeline that posts/updates the marker-
-based PR comment.
+Both `build` and `lint` post a PR comment, but they are **separate,
+non-colliding** comments identified by distinct markers, so neither
+overwrites the other:
+
+- **`lint`** posts the product's manifest-validation report
+  (`<!-- ci-unified-report -->`) by running `k8s-gitops-ci pipeline …
+--comment` — dogfooding this repo's own manifests.
+- **`build`** posts a **self-CI status comment**
+  (`<!-- ci-self-report -->`) via `k8s-gitops-ci ci-report`, summarizing
+  the blocking `task ci` verdict plus a **non-blocking** live-regression
+  replay section. On a pull-request event, `build` runs
+  `task test:homelab-prs` (small `COUNT`) after `task ci`; the replay
+  never affects the build's pass/fail (only `task ci`'s exit code does —
+  it is captured, the comment is posted, then the step re-exits with that
+  code). See [DEVELOPMENT.md](DEVELOPMENT.md#end-to-end--regression-replay)
+  for why the replay is non-blocking.
 
 ## Caching
 
