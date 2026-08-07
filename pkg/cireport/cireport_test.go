@@ -1,4 +1,4 @@
-package main
+package cireport
 
 import (
 	"os"
@@ -48,18 +48,18 @@ func TestStatusIcon(t *testing.T) {
 	}
 }
 
-func TestBuildCIReport(t *testing.T) {
+func TestBuild(t *testing.T) {
 	cases := []struct {
 		name         string
-		in           ciReportBody
+		in           Options
 		wantContains []string
 		wantExcludes []string
 	}{
 		{
-			name: "ci pass, replay pass",
-			in:   ciReportBody{ciStatus: statusPass, replayStatus: statusPass},
+			name: "ci pass, replay pass, custom label",
+			in:   Options{CIStatus: "pass", ReplayStatus: "pass", ReplayLabel: "HomeLab"},
 			wantContains: []string{
-				ciReportMarker,
+				Marker,
 				"## CI Pipeline Status",
 				"✅ **`task ci` passed**",
 				"Live regression replay (HomeLab)",
@@ -68,12 +68,26 @@ func TestBuildCIReport(t *testing.T) {
 			},
 			wantExcludes: []string{
 				// The redundant footer was removed.
-				"Posted by `k8s-gitops-ci ci-report`",
+				"Posted by",
+			},
+		},
+		{
+			name: "default label when none given",
+			in:   Options{CIStatus: "pass", ReplayStatus: "skipped"},
+			wantContains: []string{
+				"Live regression replay (live GitOps repo)",
+			},
+		},
+		{
+			name: "docs link rendered only when provided",
+			in:   Options{CIStatus: "pass", ReplayStatus: "pass", DocsURL: "https://example.test/docs"},
+			wantContains: []string{
+				"[the docs](https://example.test/docs)",
 			},
 		},
 		{
 			name: "ci fail still reports and blocks",
-			in:   ciReportBody{ciStatus: statusFail, replayStatus: statusSkipped},
+			in:   Options{CIStatus: "fail", ReplayStatus: "skipped"},
 			wantContains: []string{
 				"❌ **`task ci` failed**",
 				"blocks merge",
@@ -82,10 +96,10 @@ func TestBuildCIReport(t *testing.T) {
 		},
 		{
 			name: "ci fail embeds failing-step detail when provided",
-			in: ciReportBody{
-				ciStatus:     statusFail,
-				ciDetail:     "golangci-lint: 1 issue\nfoo.go:1:1: something",
-				replayStatus: statusSkipped,
+			in: Options{
+				CIStatus:     "fail",
+				CIDetail:     "golangci-lint: 1 issue\nfoo.go:1:1: something",
+				ReplayStatus: "skipped",
 			},
 			wantContains: []string{
 				"❌ **`task ci` failed**",
@@ -95,7 +109,7 @@ func TestBuildCIReport(t *testing.T) {
 		},
 		{
 			name: "replay warn is framed as a non-blocking review prompt",
-			in:   ciReportBody{ciStatus: statusPass, replayStatus: statusWarn},
+			in:   Options{CIStatus: "pass", ReplayStatus: "warn"},
 			wantContains: []string{
 				"✅ **`task ci` passed**",
 				"⚠️ Expand: Live regression replay",
@@ -109,7 +123,7 @@ func TestBuildCIReport(t *testing.T) {
 		},
 		{
 			name: "replay fail (harness error) is not a review prompt",
-			in:   ciReportBody{ciStatus: statusPass, replayStatus: statusFail},
+			in:   Options{CIStatus: "pass", ReplayStatus: "fail"},
 			wantContains: []string{
 				"✅ **`task ci` passed**",
 				"harness/setup error",
@@ -121,10 +135,10 @@ func TestBuildCIReport(t *testing.T) {
 		},
 		{
 			name: "embeds the replay report when provided",
-			in: ciReportBody{
-				ciStatus:     statusPass,
-				replayStatus: statusWarn,
-				replayReport: "| PR | Result |\n|----|--------|\n| #1 | ❌ Fail |",
+			in: Options{
+				CIStatus:     "pass",
+				ReplayStatus: "warn",
+				ReplayReport: "| PR | Result |\n|----|--------|\n| #1 | ❌ Fail |",
 			},
 			wantContains: []string{
 				"| #1 | ❌ Fail |",
@@ -134,8 +148,8 @@ func TestBuildCIReport(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := buildCIReport(c.in)
-			if !strings.HasPrefix(got, ciReportMarker) {
+			got := Build(c.in)
+			if !strings.HasPrefix(got, Marker) {
 				t.Errorf("body must start with the marker for UpsertComment to find it; got prefix %q", firstLine(got))
 			}
 			for _, want := range c.wantContains {
@@ -153,18 +167,18 @@ func TestBuildCIReport(t *testing.T) {
 }
 
 func TestReadDetailFile(t *testing.T) {
-	if got := readDetailFile(""); got != "" {
+	if got := ReadDetailFile(""); got != "" {
 		t.Errorf("empty path should yield empty string, got %q", got)
 	}
-	if got := readDetailFile(filepath.Join(t.TempDir(), "nope.md")); got != "" {
+	if got := ReadDetailFile(filepath.Join(t.TempDir(), "nope.md")); got != "" {
 		t.Errorf("missing file should yield empty string, got %q", got)
 	}
 	f := filepath.Join(t.TempDir(), "report.md")
 	if err := os.WriteFile(f, []byte("  hello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := readDetailFile(f); got != "hello" {
-		t.Errorf("readDetailFile trimmed content = %q, want %q", got, "hello")
+	if got := ReadDetailFile(f); got != "hello" {
+		t.Errorf("ReadDetailFile trimmed content = %q, want %q", got, "hello")
 	}
 }
 
