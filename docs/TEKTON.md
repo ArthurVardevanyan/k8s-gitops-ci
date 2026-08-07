@@ -146,8 +146,9 @@ non-colliding** comments identified by distinct markers, so neither
 overwrites the other:
 
 - **`lint`** posts the product's manifest-validation report
-  (`<!-- ci-unified-report -->`) by running `k8s-gitops-ci pipeline …
---comment` — dogfooding this repo's own manifests.
+  (`<!-- ci-unified-report -->`) by running
+  `k8s-gitops-ci pipeline … --comment` — dogfooding this repo's own
+  manifests.
 - **`build`** posts a **self-CI status comment**
   (`<!-- ci-self-report -->`) via `k8s-gitops-ci ci-report`, summarizing
   the blocking `task ci` verdict plus a **non-blocking** live-regression

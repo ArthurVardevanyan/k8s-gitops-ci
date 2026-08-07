@@ -389,11 +389,11 @@ tasks:
     cmds:
       - >
         ./scripts/test-homelab-prs.sh
-        --binary {{.DIST}}/{{.NAME}}
-        --count {{.COUNT}}
-        --parallel {{.PARALLEL}}
-        --repos {{.REPOS}}
-        {{if .OUTPUT}}--output {{.OUTPUT}}{{end}}
+        --binary "{{.DIST}}/{{.NAME}}"
+        --count "{{.COUNT}}"
+        --parallel "{{.PARALLEL}}"
+        --repos "{{.REPOS}}"
+        {{if .OUTPUT}}--output "{{.OUTPUT}}"{{end}}
 
   coverage:report:
     desc: Print per-file coverage report
