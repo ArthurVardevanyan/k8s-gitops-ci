@@ -156,20 +156,24 @@ func Run(opts Options) error {
 		if shouldRunChecklistCheck(opts) {
 			res.ChecklistErr = github.ValidatePRChecklist(client)
 			if res.ChecklistErr != nil {
-				log.Warn("PR checklist: %v", res.ChecklistErr)
+				log.Error("PR checklist: %v", res.ChecklistErr)
 			} else {
 				log.Info("PR checklist: passed")
 			}
 		}
 		tc.Record("PR Validation", time.Since(prStart), false)
-		// A single consolidated line - gated on the two BLOCKING checks
-		// only (title/unsigned), matching downstream's behavior where this
-		// still appears despite a non-blocking title-suggestion warning or
-		// checklist warning - alongside the individual per-check lines
-		// above, which stay so a failure's specific cause (title vs.
-		// unsigned commits) remains visible; this aggregate only adds a
-		// phase-level "how long did this take" summary.
-		if res.TitleErr == nil && res.UnsignedErr == nil {
+		// A single consolidated line - gated on the BLOCKING checks only
+		// (title/unsigned, plus checklist when it ran), matching downstream's
+		// behavior where this still appears despite a non-blocking
+		// title-suggestion warning - alongside the individual per-check lines
+		// above, which stay so a failure's specific cause (title vs. unsigned
+		// commits vs. checklist) remains visible; this aggregate only adds a
+		// phase-level "how long did this take" summary. res.ChecklistErr is
+		// nil both when the checklist passed and when the check was skipped
+		// (e.g. --lint-only, see shouldRunChecklistCheck), so a skipped
+		// checklist never suppresses this line - the checklist only gates it
+		// when it actually ran and failed.
+		if res.TitleErr == nil && res.UnsignedErr == nil && res.ChecklistErr == nil {
 			log.Info("PR validation passed (%s)", time.Since(prStart).Round(time.Millisecond))
 		}
 	}
@@ -229,7 +233,7 @@ func Run(opts Options) error {
 	}
 	log.Info("Pipeline completed in %s", time.Since(start).Round(time.Second))
 
-	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil || validatorResultFailed(vr) {
+	if res.ValidationErr != nil || res.TitleErr != nil || res.UnsignedErr != nil || res.ChecklistErr != nil || validatorResultFailed(vr) {
 		// Not log.Error here: this exact message is returned as the error
 		// below, which main() already prints once via fmt.Fprintln(os.Stderr,
 		// err) - logging it too would print the identical line twice.

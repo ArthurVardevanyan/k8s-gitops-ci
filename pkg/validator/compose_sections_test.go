@@ -153,9 +153,9 @@ func TestComposePRChecksSectionFromResult_UnsignedCommits(t *testing.T) {
 }
 
 // TestComposePRChecksSectionFromResult_ChecklistIncomplete guards the PR
-// Checklist child renders as a non-blocking StatusWarning (never
-// StatusError) with the checklist message, matching the error-based path's
-// treatment of checklist failures as warnings.
+// Checklist child renders as a blocking StatusError with the checklist
+// message, matching the error-based path's treatment of checklist failures
+// (a missing Change Type / required checkbox fails the pipeline).
 func TestComposePRChecksSectionFromResult_ChecklistIncomplete(t *testing.T) {
 	t.Parallel()
 	s := composePRChecksSectionFromResult(&PRValidationResult{
@@ -164,8 +164,8 @@ func TestComposePRChecksSectionFromResult_ChecklistIncomplete(t *testing.T) {
 		ChecklistPassed: false,
 		ChecklistMsg:    "missing required checkbox",
 	})
-	if s.Status != StatusWarning {
-		t.Errorf("expected StatusWarning for an incomplete checklist, got %v", s.Status)
+	if s.Status != StatusError {
+		t.Errorf("expected StatusError for an incomplete checklist, got %v", s.Status)
 	}
 	if !strings.Contains(s.Body, "missing required checkbox") {
 		t.Errorf("expected the checklist message in the body, got:\n%s", s.Body)

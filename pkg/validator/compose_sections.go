@@ -72,7 +72,7 @@ func composePRChecksSectionFromResult(r *PRValidationResult) ReportSection {
 	checklistStatus := StatusPassed
 	checklistBody := "Passed."
 	if !r.ChecklistPassed {
-		checklistStatus = StatusWarning
+		checklistStatus = StatusError
 		if r.ChecklistMsg != "" {
 			checklistBody = r.ChecklistMsg
 		} else {
