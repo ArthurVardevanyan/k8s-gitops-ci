@@ -8,9 +8,10 @@
 # engine was designed around, so a real regression surfaces as a real failure —
 # there is deliberately no "known warning" downgrade classifier here.
 #
-# Caveats (see docs/E2E.md):
-#   1. Replaying merged PRs can't cover every validator edge — that's what the
-#      deterministic golden suite (task test:e2e) is for.
+# Caveats (see docs/DEVELOPMENT.md, "End-to-end / regression replay"):
+#   1. Replaying merged PRs can't cover every validator edge, and it is blind
+#      to false negatives — a deterministic golden suite (documented there as
+#      future work) would be needed for that.
 #   2. A newer, intentional check change may legitimately fail an older merged PR.
 #      Eyeball the diff; don't treat a single red as a regression on its own.
 #
@@ -28,6 +29,18 @@ set -o pipefail
 set -o errtrace
 shopt -s failglob
 shopt -s inherit_errexit
+
+# Any unexpected command failure (missing binary, gh/network error, etc.)
+# aborts via errexit; normalize that to exit code 2 ("harness error") so CI
+# can tell a setup failure apart from the exit-1 "some PRs failed" signal.
+# Deliberate `exit 0`/`exit 1` at the end do NOT trigger ERR, so they win.
+# shellcheck disable=SC2329  # invoked indirectly via `trap ... ERR`
+on_err() {
+  local rc=$?
+  echo "test-homelab-prs: harness error (exit ${rc})" >&2
+  exit 2
+}
+trap on_err ERR
 
 # --- Defaults ---
 COUNT=15
@@ -87,7 +100,11 @@ fi
 
 # --- Temp files ---
 RESULTS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/test-homelab-prs.XXXXXX")
+# generate_report writes the number of failed PRs here so the top-level can
+# derive its exit code even when the report is generated inside a redirect.
+FAIL_TALLY_FILE="${RESULTS_DIR}/.fail_tally"
 TOTAL_TESTS=0
+# shellcheck disable=SC2329  # invoked indirectly via `trap ... EXIT`
 cleanup() { rm -rf "${RESULTS_DIR}"; }
 trap cleanup EXIT
 
@@ -103,7 +120,6 @@ run_test() {
   local REPO="$1"
   local PR_NUMBER="$2"
   local PR_TITLE="$3"
-  local PR_AUTHOR="$4"
   local RESULT_FILE="${RESULTS_DIR}/${REPO//\//_}_${PR_NUMBER}.txt"
 
   local START_TIME
@@ -150,7 +166,6 @@ run_test() {
     "REPO='${REPO}'" \
     "PR='${PR_NUMBER}'" \
     "TITLE='${PR_TITLE//\'/\'\\\'\'}'" \
-    "AUTHOR='${PR_AUTHOR}'" \
     "EXIT_CODE='${EXIT_CODE}'" \
     "DURATION='${DURATION}'" \
     "ERROR_COUNT='${ERROR_COUNT}'" \
@@ -205,8 +220,8 @@ for REPO in "${REPO_LIST[@]}"; do
       --repo "${REPO}" \
       --state merged \
       --limit "${COUNT}" \
-      --json number,title,author,mergedAt \
-      --jq '.[] | "\(.number)\t\(.title)\t\(.author.login)\t\(.mergedAt)"'
+      --json number,title,mergedAt \
+      --jq '.[] | "\(.number)\t\(.title)\t\(.mergedAt)"'
   )
 
   if [[ -z "${PRS}" ]]; then
@@ -218,8 +233,8 @@ for REPO in "${REPO_LIST[@]}"; do
   echo "  Found ${PR_COUNT} PRs. Running tests..."
 
   JOB_COUNT=0
-  while IFS=$'\t' read -r PR_NUMBER PR_TITLE PR_AUTHOR _PR_MERGED; do
-    run_test "${REPO}" "${PR_NUMBER}" "${PR_TITLE}" "${PR_AUTHOR}" &
+  while IFS=$'\t' read -r PR_NUMBER PR_TITLE _PR_MERGED; do
+    run_test "${REPO}" "${PR_NUMBER}" "${PR_TITLE}" &
     JOB_COUNT=$((JOB_COUNT + 1))
     if ((JOB_COUNT >= PARALLEL)); then
       wait -n 2>/dev/null || true
@@ -235,7 +250,7 @@ done
 echo "Generating report..."
 echo ""
 
-REPO="" PR="" TITLE="" AUTHOR="" EXIT_CODE="" DURATION="" ERROR_COUNT="" RESULT=""
+REPO="" PR="" TITLE="" EXIT_CODE="" DURATION="" ERROR_COUNT="" RESULT=""
 
 generate_report() {
   local TIMESTAMP
@@ -259,8 +274,8 @@ generate_report() {
 
     echo "## ${REPO}"
     echo ""
-    echo "| # | PR | Author | Result | Duration | Errors |"
-    echo "|---|-----|--------|--------|----------|--------|"
+    echo "| # | PR | Result | Duration | Errors |"
+    echo "|---|-----|--------|----------|--------|"
 
     local PASS=0
     local FAIL=0
@@ -286,7 +301,7 @@ generate_report() {
         SHORT_TITLE="${SHORT_TITLE:0:47}..."
       fi
 
-      echo "| ${IDX} | [#${PR}](https://github.com/${REPO}/pull/${PR}) ${SHORT_TITLE} | @${AUTHOR} | ${STATUS} | ${DURATION}s | ${ERROR_COUNT} |"
+      echo "| ${IDX} | [#${PR}](https://github.com/${REPO}/pull/${PR}) ${SHORT_TITLE} | ${STATUS} | ${DURATION}s | ${ERROR_COUNT} |"
     done < <(find "${RESULTS_DIR}" -name "${REPO_SLUG}_*.txt" -print0 | sort -z -t_ -k3 -rn | tr '\0' '\n')
 
     TOTAL_PASS=$((TOTAL_PASS + PASS))
@@ -311,6 +326,12 @@ generate_report() {
   echo "|-------|--------|--------|-----------|"
   echo "| ${TOTAL} | ${TOTAL_PASS} | ${TOTAL_FAIL} | ${PASS_RATE}% |"
   echo ""
+
+  # Surface the failure tally to the caller (generate_report runs in a
+  # subshell/pipe when redirected to a file, so a bare variable wouldn't
+  # propagate — write it to a sentinel file the top-level reads for its
+  # exit code).
+  echo "${TOTAL_FAIL}" >"${FAIL_TALLY_FILE}"
 
   if [[ ${TOTAL_FAIL} -gt 0 ]]; then
     echo "### Failed PRs"
@@ -350,3 +371,22 @@ fi
 
 echo ""
 echo "Done."
+
+# Exit-code contract (consumed by CI to classify the replay):
+#   0 — every replayed PR passed
+#   1 — one or more PRs FAILED (a "warn"/eyeball-the-diff signal, not
+#       necessarily a regression — a newer, stricter check may legitimately
+#       fail an older merged PR)
+#   2 — harness/setup error (missing binary, gh failure, etc.) — these abort
+#       earlier via `set -o errexit`, which propagates the failing command's
+#       own status; the wrapper below normalizes any such non-zero abort to 2.
+# The report (stdout/--output) is always fully generated first, regardless.
+TOTAL_FAIL_COUNT=0
+if [[ -f "${FAIL_TALLY_FILE}" ]]; then
+  TOTAL_FAIL_COUNT=$(cat "${FAIL_TALLY_FILE}")
+fi
+if [[ "${TOTAL_FAIL_COUNT}" -gt 0 ]]; then
+  echo "${TOTAL_FAIL_COUNT} replayed PR(s) failed."
+  exit 1
+fi
+exit 0

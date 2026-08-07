@@ -36,7 +36,8 @@ func runCIReport(args []string) error {
 		url          = fs.String("url", "", "repository URL (e.g. https://github.com/org/repo)")
 		pr           = fs.String("pr", "", "pull request number")
 		ciStatus     = fs.String("ci-status", "", "overall `task ci` result: pass|fail")
-		replayStatus = fs.String("replay-status", "skipped", "live replay result: pass|fail|skipped")
+		ciReport     = fs.String("ci-report", "", "path to a file with `task ci` failure detail (optional; embedded when ci-status=fail)")
+		replayStatus = fs.String("replay-status", "skipped", "live replay result: pass|warn|fail|skipped")
 		replayReport = fs.String("replay-report", "", "path to the replay's Markdown report (optional)")
 	)
 	if err := fs.Parse(args); err != nil {
@@ -53,8 +54,9 @@ func runCIReport(args []string) error {
 
 	body := buildCIReport(ciReportBody{
 		ciStatus:     normalizeStatus(*ciStatus),
+		ciDetail:     readDetailFile(*ciReport),
 		replayStatus: normalizeStatus(*replayStatus),
-		replayReport: readReplayReport(*replayReport),
+		replayReport: readDetailFile(*replayReport),
 	})
 
 	if err := github.UpsertComment(client, ciReportMarker, body); err != nil {
@@ -70,6 +72,7 @@ func runCIReport(args []string) error {
 // ciReportBody is the resolved input to the markdown builder.
 type ciReportBody struct {
 	ciStatus     status
+	ciDetail     string // already-read `task ci` failure detail (may be empty)
 	replayStatus status
 	replayReport string // already-read Markdown (may be empty)
 }
@@ -79,6 +82,7 @@ type status string
 
 const (
 	statusPass    status = "pass"
+	statusWarn    status = "warn"
 	statusFail    status = "fail"
 	statusSkipped status = "skipped"
 	statusUnknown status = "unknown"
@@ -88,6 +92,8 @@ func normalizeStatus(s string) status {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "pass", "passed", "ok", "success", "0":
 		return statusPass
+	case "warn", "warning", "1":
+		return statusWarn
 	case "fail", "failed", "failure", "error":
 		return statusFail
 	case "skip", "skipped", "":
@@ -104,6 +110,8 @@ func (s status) icon() string {
 	switch s {
 	case statusPass:
 		return "✅"
+	case statusWarn:
+		return "⚠️"
 	case statusFail:
 		return "❌"
 	case statusSkipped:
@@ -113,9 +121,10 @@ func (s status) icon() string {
 	}
 }
 
-// readReplayReport reads the replay Markdown report if a path was given and it
-// exists; returns "" otherwise (the builder degrades gracefully).
-func readReplayReport(path string) string {
+// readDetailFile reads a detail/report file if a path was given and it exists;
+// returns "" otherwise (the builder degrades gracefully). Used for both the
+// `task ci` failure detail and the replay Markdown report.
+func readDetailFile(path string) string {
 	if strings.TrimSpace(path) == "" {
 		return ""
 	}
@@ -141,16 +150,18 @@ func buildCIReport(in ciReportBody) string {
 	case statusPass:
 		fmt.Fprintf(&b, "%s **`task ci` passed** — lint, tests, vulncheck, and build all succeeded.\n\n", statusPass.icon())
 	case statusFail:
-		fmt.Fprintf(&b, "%s **`task ci` failed** — see the pipeline logs for the failing step. This blocks merge.\n\n", statusFail.icon())
+		fmt.Fprintf(&b, "%s **`task ci` failed** — this blocks merge. See the pipeline logs for full output.\n\n", statusFail.icon())
+		if in.ciDetail != "" {
+			b.WriteString("<details>\n<summary>Failing step detail</summary>\n\n```\n")
+			b.WriteString(in.ciDetail)
+			b.WriteString("\n```\n\n</details>\n\n")
+		}
 	default:
 		fmt.Fprintf(&b, "%s **`task ci` status unknown** — the reporter was not told the outcome.\n\n", statusUnknown.icon())
 	}
 
 	// Non-blocking live-replay section.
 	b.WriteString(buildReplaySection(in))
-
-	b.WriteString("\n---\n")
-	b.WriteString("_Posted by `k8s-gitops-ci ci-report`. The live regression replay is a non-blocking smoke gate; only `task ci` blocks merge._\n")
 
 	return b.String()
 }
@@ -180,8 +191,10 @@ func replaySummaryLine(s status) string {
 	switch s {
 	case statusPass:
 		return "All replayed PRs passed. ✅"
-	case statusFail:
+	case statusWarn:
 		return "One or more replayed PRs failed — **review the diff below**; a newer, stricter check may be legitimately flagging an older PR (not necessarily a regression)."
+	case statusFail:
+		return "The replay could not run (harness/setup error) — the result is unavailable for this run."
 	case statusSkipped:
 		return "The replay was skipped for this run."
 	default:

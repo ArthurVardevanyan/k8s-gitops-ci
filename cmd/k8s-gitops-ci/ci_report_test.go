@@ -16,6 +16,9 @@ func TestNormalizeStatus(t *testing.T) {
 		{"passed", statusPass},
 		{"success", statusPass},
 		{"0", statusPass},
+		{"warn", statusWarn},
+		{"warning", statusWarn},
+		{"1", statusWarn},
 		{"fail", statusFail},
 		{"failed", statusFail},
 		{"error", statusFail},
@@ -33,6 +36,7 @@ func TestNormalizeStatus(t *testing.T) {
 func TestStatusIcon(t *testing.T) {
 	cases := map[status]string{
 		statusPass:    "✅",
+		statusWarn:    "⚠️",
 		statusFail:    "❌",
 		statusSkipped: "⚪",
 		statusUnknown: "⚠️",
@@ -62,34 +66,64 @@ func TestBuildCIReport(t *testing.T) {
 				"All replayed PRs passed",
 				"does not block merge",
 			},
+			wantExcludes: []string{
+				// The redundant footer was removed.
+				"Posted by `k8s-gitops-ci ci-report`",
+			},
 		},
 		{
 			name: "ci fail still reports and blocks",
 			in:   ciReportBody{ciStatus: statusFail, replayStatus: statusSkipped},
 			wantContains: []string{
 				"❌ **`task ci` failed**",
-				"This blocks merge",
+				"blocks merge",
 				"The replay was skipped",
 			},
 		},
 		{
-			name: "replay fail is framed as non-blocking review prompt",
-			in:   ciReportBody{ciStatus: statusPass, replayStatus: statusFail},
+			name: "ci fail embeds failing-step detail when provided",
+			in: ciReportBody{
+				ciStatus:     statusFail,
+				ciDetail:     "golangci-lint: 1 issue\nfoo.go:1:1: something",
+				replayStatus: statusSkipped,
+			},
+			wantContains: []string{
+				"❌ **`task ci` failed**",
+				"Failing step detail",
+				"foo.go:1:1: something",
+			},
+		},
+		{
+			name: "replay warn is framed as a non-blocking review prompt",
+			in:   ciReportBody{ciStatus: statusPass, replayStatus: statusWarn},
 			wantContains: []string{
 				"✅ **`task ci` passed**",
+				"⚠️ Expand: Live regression replay",
 				"review the diff",
 				"not necessarily a regression",
 			},
 			wantExcludes: []string{
-				// A replay failure must never present as a blocking failure.
-				"blocks merge\n",
+				// A replay result must never present as a blocking failure.
+				"blocks merge",
+			},
+		},
+		{
+			name: "replay fail (harness error) is not a review prompt",
+			in:   ciReportBody{ciStatus: statusPass, replayStatus: statusFail},
+			wantContains: []string{
+				"✅ **`task ci` passed**",
+				"harness/setup error",
+			},
+			wantExcludes: []string{
+				"review the diff",
+				"blocks merge",
 			},
 		},
 		{
 			name: "embeds the replay report when provided",
 			in: ciReportBody{
 				ciStatus:     statusPass,
-				replayStatus: statusFail,
+				replayStatus: statusWarn,
 				replayReport: "| PR | Result |\n|----|--------|\n| #1 | ❌ Fail |",
 			},
 			wantContains: []string{
@@ -118,19 +152,19 @@ func TestBuildCIReport(t *testing.T) {
 	}
 }
 
-func TestReadReplayReport(t *testing.T) {
-	if got := readReplayReport(""); got != "" {
+func TestReadDetailFile(t *testing.T) {
+	if got := readDetailFile(""); got != "" {
 		t.Errorf("empty path should yield empty string, got %q", got)
 	}
-	if got := readReplayReport(filepath.Join(t.TempDir(), "nope.md")); got != "" {
+	if got := readDetailFile(filepath.Join(t.TempDir(), "nope.md")); got != "" {
 		t.Errorf("missing file should yield empty string, got %q", got)
 	}
 	f := filepath.Join(t.TempDir(), "report.md")
 	if err := os.WriteFile(f, []byte("  hello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := readReplayReport(f); got != "hello" {
-		t.Errorf("readReplayReport trimmed content = %q, want %q", got, "hello")
+	if got := readDetailFile(f); got != "hello" {
+		t.Errorf("readDetailFile trimmed content = %q, want %q", got, "hello")
 	}
 }
 

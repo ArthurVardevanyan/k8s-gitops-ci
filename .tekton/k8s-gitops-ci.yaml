@@ -322,8 +322,11 @@ spec:
                 # can still post an informative self-CI status comment (with the
                 # ❌ verdict) before failing. The step re-asserts CI_RC at the
                 # very end, so `task ci` remains the authoritative blocking gate.
+                # Tee the output so the comment can embed a tail of the failing
+                # step's log (the raw log is on the pipeline anyway).
                 CI_RC=0
-                task ci || CI_RC=$?
+                CI_LOG="${TMPDIR}/task-ci.log"
+                task ci 2>&1 | tee "${CI_LOG}" || CI_RC="${PIPESTATUS[0]}"
 
                 # ── Self-CI status comment + non-blocking live replay ─────────
                 # PR events only: a push has no PR to comment on. Everything in
@@ -331,24 +334,38 @@ spec:
                 # build's pass/fail outcome — only CI_RC does that.
                 if [ "${PARAM_EVENT}" = "pull_request" ]; then
                   CI_STATUS="pass"
-                  [ "${CI_RC}" -ne 0 ] && CI_STATUS="fail"
+                  CI_REPORT_ARGS=()
+                  if [ "${CI_RC}" -ne 0 ]; then
+                    CI_STATUS="fail"
+                    # Embed only the last lines of the CI log to keep the
+                    # comment compact; the full log lives on the pipeline.
+                    CI_DETAIL="${TMPDIR}/task-ci-tail.log"
+                    tail -n 40 "${CI_LOG}" >"${CI_DETAIL}" || true
+                    CI_REPORT_ARGS+=(--ci-report "${CI_DETAIL}")
+                  fi
 
                   # Live regression replay — a non-blocking false-positive smoke
                   # gate (see docs/DEVELOPMENT.md#end-to-end--regression-replay).
                   # Small COUNT to keep CI fast; never fail the build on it.
+                  # Exit-code contract from scripts/test-homelab-prs.sh:
+                  #   0 = all passed → pass; 1 = some PRs failed → warn
+                  #   (eyeball the diff, not necessarily a regression);
+                  #   other = harness/setup error → fail.
                   REPLAY_REPORT="${TMPDIR}/homelab-replay.md"
-                  REPLAY_STATUS="pass"
-                  if task test:homelab-prs COUNT=5 OUTPUT="${REPLAY_REPORT}"; then
-                    REPLAY_STATUS="pass"
-                  else
-                    REPLAY_STATUS="fail"
-                  fi
+                  REPLAY_RC=0
+                  task test:homelab-prs COUNT=5 OUTPUT="${REPLAY_REPORT}" || REPLAY_RC=$?
+                  case "${REPLAY_RC}" in
+                  0) REPLAY_STATUS="pass" ;;
+                  1) REPLAY_STATUS="warn" ;;
+                  *) REPLAY_STATUS="fail" ;;
+                  esac
 
                   k8s-gitops-ci-bin() { "${REPO_DIR}/bin/k8s-gitops-ci" "$@"; }
                   k8s-gitops-ci-bin ci-report \
                     --url "${PARAM_GIT_URL}" \
                     --pr "${PARAM_PR_NUMBER}" \
                     --ci-status "${CI_STATUS}" \
+                    "${CI_REPORT_ARGS[@]}" \
                     --replay-status "${REPLAY_STATUS}" \
                     --replay-report "${REPLAY_REPORT}" || true
                 fi
