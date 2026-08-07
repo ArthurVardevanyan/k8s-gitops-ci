@@ -346,14 +346,17 @@ spec:
 
                   # Live regression replay — a non-blocking false-positive smoke
                   # gate (see docs/DEVELOPMENT.md#end-to-end--regression-replay).
-                  # Small COUNT to keep CI fast; never fail the build on it.
+                  # 25 PRs at parallelism 10 for meaningful coverage; runs after
+                  # the gate, so it never blocks. Per-PR wall time may rise a
+                  # little under contention/GitHub throttling at this width, but
+                  # the aggregate stays well within budget.
                   # Exit-code contract from scripts/test-homelab-prs.sh:
                   #   0 = all passed → pass; 1 = some PRs failed → warn
                   #   (eyeball the diff, not necessarily a regression);
                   #   other = harness/setup error → fail.
                   REPLAY_REPORT="${TMPDIR}/homelab-replay.md"
                   REPLAY_RC=0
-                  task test:homelab-prs COUNT=5 OUTPUT="${REPLAY_REPORT}" || REPLAY_RC=$?
+                  task test:homelab-prs COUNT=25 PARALLEL=10 OUTPUT="${REPLAY_REPORT}" || REPLAY_RC=$?
                   case "${REPLAY_RC}" in
                   0) REPLAY_STATUS="pass" ;;
                   1) REPLAY_STATUS="warn" ;;

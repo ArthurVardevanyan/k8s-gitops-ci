@@ -100,6 +100,9 @@ fi
 
 # --- Temp files ---
 RESULTS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/test-homelab-prs.XXXXXX")
+# Wall-clock start for the whole replay (elapsed time, distinct from the
+# summed per-PR durations — the runs are parallel, so wall < sum).
+SCRIPT_START=$(date +%s)
 # generate_report writes the number of failed PRs here so the top-level can
 # derive its exit code even when the report is generated inside a redirect.
 FAIL_TALLY_FILE="${RESULTS_DIR}/.fail_tally"
@@ -267,6 +270,7 @@ generate_report() {
 
   local TOTAL_PASS=0
   local TOTAL_FAIL=0
+  local TOTAL_DURATION=0
 
   for REPO in "${REPO_LIST[@]}"; do
     REPO=$(echo "${REPO}" | xargs)
@@ -302,6 +306,7 @@ generate_report() {
       fi
 
       echo "| ${IDX} | [#${PR}](https://github.com/${REPO}/pull/${PR}) ${SHORT_TITLE} | ${STATUS} | ${DURATION}s | ${ERROR_COUNT} |"
+      TOTAL_DURATION=$((TOTAL_DURATION + DURATION))
     done < <(find "${RESULTS_DIR}" -name "${REPO_SLUG}_*.txt" -print0 | sort -z -t_ -k3 -rn | tr '\0' '\n')
 
     TOTAL_PASS=$((TOTAL_PASS + PASS))
@@ -322,9 +327,10 @@ generate_report() {
   if [[ ${TOTAL} -gt 0 ]]; then
     PASS_RATE=$((TOTAL_PASS * 100 / TOTAL))
   fi
-  echo "| Total | Passed | Failed | Pass Rate |"
-  echo "|-------|--------|--------|-----------|"
-  echo "| ${TOTAL} | ${TOTAL_PASS} | ${TOTAL_FAIL} | ${PASS_RATE}% |"
+  local WALL_TIME=$(($(date +%s) - SCRIPT_START))
+  echo "| Total | Passed | Failed | Pass Rate | Wall Time | Sum of PR Times |"
+  echo "|-------|--------|--------|-----------|-----------|-----------------|"
+  echo "| ${TOTAL} | ${TOTAL_PASS} | ${TOTAL_FAIL} | ${PASS_RATE}% | ${WALL_TIME}s | ${TOTAL_DURATION}s |"
   echo ""
 
   # Surface the failure tally to the caller (generate_report runs in a
