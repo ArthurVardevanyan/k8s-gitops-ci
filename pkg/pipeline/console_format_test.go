@@ -3,6 +3,8 @@ package pipeline
 import (
 	"strings"
 	"testing"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
 )
 
 // TestSanitizeSectionBodyForConsole_StripsGitHubMarkdown guards against a
@@ -68,5 +70,56 @@ func TestSanitizeSectionBodyForConsole_CollapsesBlankRuns(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected %q in output, got: %s", want, got)
 		}
+	}
+}
+
+// TestSectionHasConsoleDetail verifies the single rule all console entry
+// points (pipeline, test-all, scan-all) share for deciding which sections
+// print their full per-finding Body: errored (❌) or warning (⚠️) sections
+// with a non-empty body. Anything else (passed/info, or an empty/whitespace
+// body) must render as a terse summary or be omitted.
+func TestSectionHasConsoleDetail(t *testing.T) {
+	cases := []struct {
+		name string
+		s    validator.ReportSection
+		want bool
+	}{
+		{
+			name: "error with body",
+			s:    validator.ReportSection{Name: "RC", Status: validator.StatusError, Body: "table"},
+			want: true,
+		},
+		{
+			name: "warning with body",
+			s:    validator.ReportSection{Name: "RC", Status: validator.StatusWarning, Body: "table"},
+			want: true,
+		},
+		{
+			name: "error with empty body",
+			s:    validator.ReportSection{Name: "RC", Status: validator.StatusError, Body: ""},
+			want: false,
+		},
+		{
+			name: "warning with whitespace body",
+			s:    validator.ReportSection{Name: "RC", Status: validator.StatusWarning, Body: "   \n  "},
+			want: false,
+		},
+		{
+			name: "passed with body",
+			s:    validator.ReportSection{Name: "RC", Status: validator.StatusPassed, Body: "table"},
+			want: false,
+		},
+		{
+			name: "info with body",
+			s:    validator.ReportSection{Name: "RC", Status: validator.StatusInfo, Body: "table"},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SectionHasConsoleDetail(tc.s); got != tc.want {
+				t.Errorf("SectionHasConsoleDetail(%+v) = %v, want %v", tc.s, got, tc.want)
+			}
+		})
 	}
 }

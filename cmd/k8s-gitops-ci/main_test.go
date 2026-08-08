@@ -240,6 +240,18 @@ func markdownSection(name string, isError bool) validator.ReportSection {
 	}
 }
 
+// markdownSectionStatus builds a markdown-bodied section with an explicit
+// status, so tests can exercise StatusWarning sections directly (the
+// warning-finding detail path) rather than only error/passed fixtures.
+func markdownSectionStatus(name string, status validator.SectionStatus, body string) validator.ReportSection {
+	if body == "" {
+		body = "Some intro **bold** text.\n\n" +
+			"<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⚠️ Finding (1 finding(s))</summary>\n\n" +
+			"| Kind | Name |\n| --- | --- |\n| Deployment | example |\n\n</details>\n"
+	}
+	return validator.ReportSection{Name: name, Body: body, Status: status}
+}
+
 // TestPrintAllSectionsConsole_StripsGitHubMarkdown guards against a
 // regression (see docs/CI.md) where test-all/build-yaml dumped raw
 // PR-comment markdown - literal <details>/<summary> tags, &nbsp;, and **bold**
@@ -299,6 +311,71 @@ func TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *tes
 	}
 	if !strings.Contains(out, "--- Failing ---") {
 		t.Errorf("printFailedSectionsConsole output missing %q, got: %s", "--- Failing ---", out)
+	}
+}
+
+// TestPrintAllSectionsConsole_WarningSectionPrintsDetail guards against a
+// regression where test-all's console output reduced warning (⚠️) Resource
+// Compliance sections to only the terse aggregate "[WARN] … N finding(s)
+// (non-blocking, pre-existing)" line, never showing which files/resources
+// triggered each finding - even though pipeline mode already printed the
+// per-check detail tables and the same body is built for test-all. Warning
+// sections with a non-empty body must now print their full (sanitized)
+// detail, matching the failing-section path.
+func TestPrintAllSectionsConsole_WarningSectionPrintsDetail(t *testing.T) {
+	sections := []validator.ReportSection{
+		markdownSectionStatus("ResourceCompliance", validator.StatusWarning, ""),
+	}
+
+	out := captureStdout(t, func() { printAllSectionsConsole(nil, sections) })
+
+	// Must NOT collapse to the terse passing one-liner.
+	if strings.TrimSpace(out) == "✅ ResourceCompliance: passed" {
+		t.Fatalf("printAllSectionsConsole reduced warning section to a one-liner, got: %q", out)
+	}
+	for _, want := range []string{"--- ResourceCompliance ---", "| Deployment | example |"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printAllSectionsConsole warning output missing %q, got: %s", want, out)
+		}
+	}
+}
+
+// TestPrintAllSectionsConsole_WarningSectionEmptyBodyIsTerse ensures a
+// warning section with an empty body (nothing actionable to render) still
+// falls back to the single-line summary rather than printing an empty box.
+func TestPrintAllSectionsConsole_WarningSectionEmptyBodyIsTerse(t *testing.T) {
+	sections := []validator.ReportSection{
+		markdownSectionStatus("ResourceCompliance", validator.StatusWarning, ""),
+	}
+	sections[0].Body = ""
+
+	out := captureStdout(t, func() { printAllSectionsConsole(nil, sections) })
+
+	want := "✅ ResourceCompliance: passed"
+	if strings.TrimSpace(out) != want {
+		t.Errorf("printAllSectionsConsole(empty warning) = %q, want %q", out, want)
+	}
+}
+
+// TestPrintFailedSectionsConsole_PrintsWarnings mirrors
+// TestPrintAllSectionsConsole_WarningSectionPrintsDetail for scan-all's
+// renderer, confirming warning detail is surfaced there too (scan-all only
+// prints failed/warned sections, omitting passing ones entirely).
+func TestPrintFailedSectionsConsole_PrintsWarnings(t *testing.T) {
+	sections := []validator.ReportSection{
+		markdownSectionStatus("Passing", validator.StatusPassed, ""),
+		markdownSectionStatus("ResourceCompliance", validator.StatusWarning, ""),
+	}
+
+	out := captureStdout(t, func() { printFailedSectionsConsole(nil, sections) })
+
+	if strings.Contains(out, "Passing") {
+		t.Errorf("printFailedSectionsConsole must omit passing section, got: %q", out)
+	}
+	for _, want := range []string{"--- ResourceCompliance ---", "| Deployment | example |"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printFailedSectionsConsole warning output missing %q, got: %s", want, out)
+		}
 	}
 }
 

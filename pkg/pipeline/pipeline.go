@@ -284,11 +284,9 @@ func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 		// section bodies to the console, so a local/CLI-only run shows the same
 		// Resource Compliance detail (per-check tables) the PR comment does -
 		// not just a terse count line. StatusPassed/StatusInfo sections have no
-		// actionable body worth dumping here.
-		if s.Status != validator.StatusError && s.Status != validator.StatusWarning {
-			continue
-		}
-		if strings.TrimSpace(s.Body) == "" {
+		// actionable body worth dumping here. SectionHasConsoleDetail is the
+		// shared rule so pipeline, test-all, and scan-all can't drift.
+		if !SectionHasConsoleDetail(s) {
 			continue
 		}
 		log.Raw("")
