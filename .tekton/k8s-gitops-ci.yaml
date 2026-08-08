@@ -404,13 +404,13 @@ spec:
                   # accessible by integration).
                   git tag "${NEW_SEMVER}" "${PARAM_REVISION}"
 
-                  # Generate the changelog with git-cliff (using cliff.toml's
-                  # conventional-commit groupings) into a path outside the git
-                  # worktree so it doesn't trip GoReleaser's dirty-state guard,
-                  # then hand it to GoReleaser as the release body.
-                  git-cliff --bump --unreleased -o "${TMPDIR}/CHANGELOG.md"
-
-                  GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean --release-notes "${TMPDIR}/CHANGELOG.md"
+                  # The release body comes from GitHub's native auto-generated
+                  # release notes (.goreleaser.yaml's changelog.use: github-native)
+                  # — GoReleaser calls GitHub's generate-notes API for the tag, so
+                  # no --release-notes / git-cliff CHANGELOG is passed here.
+                  # git-cliff above is used only for version bumping
+                  # (--bumped-version), not for the release body.
+                  GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean
                 else
                   # PR event - run Goreleaser with snapshot tag using short SHA
                   SHORT_SHA="${PARAM_REVISION:0:7}"
