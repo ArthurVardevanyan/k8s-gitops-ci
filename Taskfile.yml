@@ -136,6 +136,38 @@ tasks:
           exit 1
         fi
 
+        # Guard 3: bump-correctness. When VERSION advances past the latest
+        # tag (i.e. this PR is claiming a release), the size of the bump must
+        # be at least what the conventional commits since that tag warrant —
+        # e.g. you can't ship a `feat:` as a patch bump. git-cliff computes
+        # the expected bump (advisory only; VERSION still decides the number).
+        # This blocks UNDER-bumps only; over-bumps are allowed. It is skipped
+        # when VERSION == latest tag (a non-release PR — nothing to size) and
+        # when git-cliff isn't installed (local dev), so it only ever hard-
+        # gates a real release bump, and only where git-cliff is present (CI).
+        bump_class() {
+          # class of $1 relative to LATEST: 3=major, 2=minor, 1=patch, 0=none
+          old_major="${LATEST%%.*}"; rest="${LATEST#*.}"; old_minor="${rest%%.*}"
+          new_major="${1%%.*}"; rest="${1#*.}"; new_minor="${rest%%.*}"
+          if [ "${new_major}" != "${old_major}" ]; then echo 3
+          elif [ "${new_minor}" != "${old_minor}" ]; then echo 2
+          elif [ "$1" != "${LATEST}" ]; then echo 1
+          else echo 0; fi
+        }
+        if [ -n "${LATEST}" ] && [ "${VERSION}" != "${LATEST}" ] \
+          && command -v git-cliff >/dev/null 2>&1; then
+          SUGGESTED="$(git-cliff --bumped-version --unreleased 2>/dev/null | sed 's/^v//' || true)"
+          if printf '%s' "${SUGGESTED}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            WANT="$(bump_class "${SUGGESTED}")"
+            GOT="$(bump_class "${VERSION}")"
+            if [ "${GOT}" -lt "${WANT}" ]; then
+              kind="patch"; [ "${WANT}" = 2 ] && kind="minor"; [ "${WANT}" = 3 ] && kind="major"
+              echo "❌ VERSION '${VERSION}' under-bumps: commits since v${LATEST} warrant a ${kind} bump (git-cliff suggests v${SUGGESTED}). Bump VERSION to at least that."
+              exit 1
+            fi
+          fi
+        fi
+
         echo "✅ VERSION ${VERSION} is valid (latest tag: ${LATEST:+v}${LATEST:-<none>}, ${BASE_REF} VERSION: ${BASE_VERSION:-<n/a>})"
 
   # ── Modules ───────────────────────────────────────────────────────────────────

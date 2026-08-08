@@ -840,7 +840,7 @@ is about the local dev-loop `task` targets themselves.
 
 | Target                    | Purpose                                                                                                                            |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `version:check`           | Validate the `VERSION` file (semver, and not behind the latest release tag)                                                        |
+| `version:check`           | Validate the `VERSION` file (semver; never behind the latest tag/`main`; not an under-bump for the commits since the last release) |
 | `mod`                     | Download and tidy Go modules                                                                                                       |
 | `mod:check`               | Ensure `go.mod`/`go.sum` are tidy without modifying the working tree                                                               |
 | `mod:verify`              | Verify Go module integrity and checksums                                                                                           |

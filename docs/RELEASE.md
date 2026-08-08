@@ -1,7 +1,7 @@
 # Release
 
 This describes what's actually configured in `.goreleaser.yaml`, the
-`VERSION` file, and `.tekton/k8s-gitops-ci.yaml` today — see
+`VERSION` file, `cliff.toml`, and `.tekton/k8s-gitops-ci.yaml` today — see
 [TEKTON.md](TEKTON.md) for the pipeline infrastructure this all runs on.
 
 ## Table of Contents
@@ -32,6 +32,20 @@ _lowers_ `VERSION` — even to a value still ahead of the latest tag — fails
 CI and can't merge. (The `origin/main` comparison is enforced whenever
 that ref is resolvable — always in the Tekton PR run; a purely local
 `task version:check` with no network falls back to the tag comparison.)
+
+`version:check` also enforces **bump correctness**: when a PR advances
+`VERSION` (i.e. proposes a release), the bump must be at least as large as
+the conventional commits since the last tag warrant — you can't ship a
+`feat:` as a patch bump. It uses [git-cliff](https://git-cliff.org/)
+(configured by `cliff.toml`) purely as an **advisor** to compute the
+expected bump; `VERSION` still decides the actual number. Only
+_under_-bumps are rejected (over-bumps — a deliberately larger release —
+are allowed). Pre-1.0, breaking changes (`feat!:`/`BREAKING CHANGE:`) map
+to a **minor** bump (`cliff.toml`'s `[bump] breaking_always_bump_major =
+false`), not a jump to `1.0.0`. This check is skipped for non-release PRs
+(`VERSION` unchanged) and when `git-cliff` isn't installed (local dev), so
+it only ever hard-gates a real release bump — and it hard-gates in CI,
+where `git-cliff` is provided by the toolbox image.
 
 Tags are always `v`-prefixed (`vMAJOR.MINOR.PATCH`, e.g. `v0.47.0`) — this
 is required for the module to be resolvable as a Go dependency (`go get`/
@@ -117,10 +131,14 @@ Releases are gated by a pull request — the same review gate as any code
 change — not by a local tag push or a per-merge automation:
 
 1. Edit the repo-root **`VERSION`** file to the new version
-   (`MAJOR.MINOR.PATCH`, no `v` prefix), e.g. `0.46.1` → `0.47.0`.
+   (`MAJOR.MINOR.PATCH`, no `v` prefix), e.g. `0.46.1` → `0.47.0`. Choose
+   the bump size to match what's shipping — at least a minor if any
+   `feat:` has landed since the last release (`version:check` enforces
+   this; see [Versioning](#versioning)).
 2. Open a PR with that change (a good place to note what's in the
    release). `task ci`/`version:check` runs on it and fails if the new
-   `VERSION` is malformed or not ahead of the latest tag.
+   `VERSION` is malformed, not ahead of the latest tag/`main`, or an
+   under-bump for the commits since the last release.
 3. **Merge the PR.** That merge is a `push` to `main`; the pipeline sees
    `v${VERSION}` doesn't exist yet, so it tags `v${VERSION}` and publishes
    the GitHub Release (binaries + native notes).

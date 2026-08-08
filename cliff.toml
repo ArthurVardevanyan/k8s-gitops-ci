@@ -1,0 +1,63 @@
+# git-cliff config — ADVISORY ONLY.
+#
+# The version is NOT driven by git-cliff: the repo-root VERSION file is the
+# single source of truth and the release pipeline tags v${VERSION} (see
+# docs/RELEASE.md). git-cliff is used only by `task version:check` to
+# compute the *expected* semver bump from the conventional commits since the
+# last tag, so a VERSION bump that is too small (e.g. a patch bump when a
+# feat: has landed) is rejected. It never sets the version itself.
+#
+# NOTE: a local cliff.toml MUST exist in this repo — without it git-cliff
+# walks up and silently uses a parent directory's config.
+[changelog]
+header = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n"
+body = """
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [Unreleased]
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim }}{% if commit.github.username %} by @{{ commit.github.username }}{% endif %}{% if commit.github.pr_number %} in #{{ commit.github.pr_number }}{% endif %}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+[bump]
+# Pre-1.0 (0.x) semver rules for `version:check`'s bump-correctness gate:
+# a breaking change bumps the MINOR (0.x → 0.(x+1).0), it does NOT jump to
+# 1.0.0. A feature bumps the minor; a fix bumps the patch. This keeps a
+# stray `feat!:`/`BREAKING CHANGE:` from forcing a v1.0.0 release.
+breaking_always_bump_major = false
+features_always_bump_minor = true
+[git]
+conventional_commits = true
+filter_unconventional = true
+# Only "v"-prefixed tags are valid Go module versions; releases before this
+# were tagged bare (e.g. "0.38.0") and have since been mirrored as
+# "v"-prefixed tags (see docs/RELEASE.md). Restricting to "v[0-9]*" keeps
+# bump/changelog math anchored to that canonical tag set instead of also
+# matching the legacy bare tags.
+tag_pattern = "v[0-9]*"
+commit_preprocessors = []
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^doc", group = "Documentation" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactor" },
+  { message = "^style", group = "Styling" },
+  { message = "^test", group = "Testing" },
+  { message = "^chore\\(release\\): prepare for", skip = true },
+  { message = "^chore", group = "Miscellaneous Tasks" },
+  { message = "^build", group = "Build" },
+  { message = "^ci", group = "CI" },
+  { body = ".*security", group = "Security" },
+]
+protect_breaking_commits = false
+filter_commits = false
+topo_order = false
+sort_commits = "oldest"
