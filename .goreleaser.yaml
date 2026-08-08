@@ -73,3 +73,9 @@ release:
   github:
     owner: ArthurVardevanyan
     name: k8s-gitops-ci
+  # Auto-detect pre-releases from the tag: the Tekton pipeline publishes
+  # release candidates as `v<next>-rc.N` tags (see docs/RELEASE.md); this
+  # marks those as GitHub pre-releases (never "Latest"), while plain
+  # `vMAJOR.MINOR.PATCH` GA tags publish as full releases. `auto` is the
+  # default, set explicitly here as documentation of the RC behavior.
+  prerelease: auto

@@ -10,6 +10,7 @@ This describes what's actually configured in `.goreleaser.yaml`, the
 - [Published artifacts](#published-artifacts)
 - [Release flow](#release-flow)
 - [Cutting a release](#cutting-a-release)
+- [Release candidates](#release-candidates)
 - [Dry-run locally](#dry-run-locally)
 
 ## Versioning
@@ -100,25 +101,23 @@ Everything runs inside the single Tekton build step described in
    version check, deps check, format check, schema/policy refresh, lint,
    test+race+coverage, build) must pass before anything release-related
    runs. `task ci`'s `version:check` step validates the `VERSION` file.
-2. **Push event (merge to `main`):** the step reads `VERSION` and forms
-   `NEW_SEMVER="v${VERSION}"`, then:
-   - If the tag `${NEW_SEMVER}` **already exists**, this merge did not
-     bump `VERSION` (the common case) — or the pipeline is re-running
-     after a prior successful release. Either way there's nothing to
-     release, so the release path is skipped cleanly. **This is what makes
-     ordinary merges CI-only.**
-   - Otherwise `VERSION` advanced. The step re-validates the format and
-     that it's strictly greater than the latest tag (defense-in-depth
-     alongside `version:check`), then `git tag "${NEW_SEMVER}"
-"${PARAM_REVISION}"` creates the tag **locally only** — GoReleaser's
-     GitHub Releases API call (`target_commitish`) auto-creates the tag on
-     GitHub itself; creating it via the raw Git Data API isn't permitted
-     for this pipeline's GitHub App token (`403: Resource not accessible
-by integration`). Then
-     `GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko
---clean` builds both binaries and creates the GitHub Release, whose
-     body is GitHub's native auto-generated release notes
-     (`changelog.use: github-native`).
+2. **Push event (merge to `main`):** the step reads `VERSION` and branches
+   into one of three outcomes:
+   - **GA** — `v${VERSION}` isn't tagged yet (`VERSION` advanced). The step
+     re-validates format and strictly-greater-than-latest-tag
+     (defense-in-depth alongside `version:check`), then `git tag
+"v${VERSION}" "${PARAM_REVISION}"` (local only — GoReleaser's GitHub
+     Releases API call with `target_commitish` auto-creates the tag on
+     GitHub; the raw Git Data API isn't permitted for this pipeline's
+     GitHub App token, `403: Resource not accessible by integration`) and
+     `GORELEASER_CURRENT_TAG="v${VERSION}" goreleaser release --skip=ko
+--clean` publishes the GitHub Release (binaries + native notes). It
+     then deletes that version's release candidates.
+   - **RC** — `v${VERSION}` is already the latest GA tag, and there's a
+     shippable change (see [Release candidates](#release-candidates)). The
+     step cuts `v<next>-rc.N` as a GitHub pre-release.
+   - **CI-only** — otherwise (no `VERSION` bump and nothing shippable since
+     the last GA). **This is what makes ordinary merges CI-only.**
 3. **PR event:** a snapshot build only — no tag, no GitHub Release.
    `TAG="$(date -u +%Y%m%d%H%M%S)-pr-${PARAM_PR_NUMBER}-${SHORT_SHA}"`,
    then `GORELEASER_CURRENT_TAG="${TAG}" goreleaser release --snapshot
@@ -145,6 +144,57 @@ change — not by a local tag push or a per-merge automation:
 
 No one pushes a tag by hand; the tag is created by the pipeline as a
 consequence of the merged `VERSION` bump.
+
+## Release candidates
+
+Between GA releases, the pipeline automatically publishes **release
+candidates** for the _next_ version so changes can be validated before GA
+(e.g. a personal repo can pin to an RC build to test). RCs are **binary/
+asset only** — download the artifacts from the RC's GitHub pre-release;
+they are not meant to be consumed as a Go module (see the note below).
+
+**When an RC is cut.** On a merge to `main`, the pipeline cuts
+`v<next>-rc.N` only when **all** of these hold:
+
+1. `VERSION` equals the latest GA tag — i.e. we're between releases, not
+   on a GA-bump merge.
+2. A **binary-affecting** path changed since the latest GA tag. Only
+   inputs that alter the shipped binary count:
+   - `**/*.go`
+   - `scripts/pull-schemas.sh`, `scripts/pull-policies.sh`,
+     `scripts/pull-all.sh` — these pin (via a SHA) the embedded
+     kubeconform-schema / Kyverno-policy archives baked into the binary at
+     build time, so a bump there changes what the binary ships even though
+     the `.tar.gz` archives themselves are gitignored.
+   - `.goreleaser.yaml`
+     Docs, `.tekton/`, CI/editor config, `Taskfile.yml`, and `go.mod`/
+     `go.sum` (Go-module dependency bumps — low-risk, covered by tests)
+     do **not** trigger an RC on their own.
+3. git-cliff computes a `next` version greater than the latest GA tag
+   (there's a conventional releasable commit to size it).
+
+`<next>` is git-cliff's `--bumped-version` (the same advisor
+`version:check` uses), so it tracks whether the pending release is a patch
+or a minor. `N` is the next integer after the highest existing
+`v<next>-rc.*`. goreleaser's `prerelease: auto` marks `-rc` tags as GitHub
+pre-releases (never "Latest").
+
+**Cleanup.**
+
+- When the GA for a version is published, its `v<version>-rc.*`
+  **releases and tags are deleted** (best-effort — cleanup never fails a
+  publish).
+- If the computed `next` shifts mid-cycle (e.g. patch RCs exist, then a
+  `feat:` lands so `next` becomes a minor), the now-stale RCs for the old
+  base are deleted when the first RC for the new base is cut — they would
+  never become GA.
+
+**Go-module note.** RC tags use standard semver (`v<next>-rc.N`), which is
+a valid Go pre-release version, and they are deleted at GA. Deleting a tag
+that the Go module proxy has cached can cause `go get` resolution errors
+for anyone who pinned it. This is an accepted trade-off for the
+binary-only RC workflow: don't `go get` an RC as a module. (`go get`/
+`@latest` ignores pre-releases anyway.)
 
 ## Dry-run locally
 

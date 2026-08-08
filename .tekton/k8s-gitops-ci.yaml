@@ -381,34 +381,42 @@ spec:
                   exit "${CI_RC}"
                 fi
 
-                # Release is gated on the VERSION file, not on every merge.
-                # VERSION (repo root) is the single source of truth: a release
-                # is cut only when a merge to main advances it past the latest
-                # existing tag. Ordinary merges (VERSION unchanged) run CI only
-                # — this is what stops every merge from producing a release.
-                # See docs/RELEASE.md.
+                # Release handling for a push (merge to main) has three
+                # outcomes — GA, RC, or CI-only — all gated on the VERSION file
+                # and the commits/paths since the last GA. See docs/RELEASE.md.
                 if [ "${PARAM_EVENT}" = "push" ]; then
                   VERSION="$(tr -d '[:space:]' <VERSION)"
                   NEW_SEMVER="v${VERSION}"
 
-                  # Idempotent + non-release skip: if v${VERSION} already exists
-                  # as a tag, this merge did not bump VERSION (the common case),
-                  # or the pipeline is re-running after a prior successful
-                  # release. Either way there's nothing to release — exit the
-                  # release path cleanly. `git fetch --tags` ran earlier in this
-                  # step, so local tags reflect the remote.
-                  if git rev-parse -q --verify "refs/tags/${NEW_SEMVER}" >/dev/null; then
-                    echo "VERSION ${VERSION} already released (tag ${NEW_SEMVER} exists); skipping release."
-                  else
-                    # VERSION advanced. Defense-in-depth against a stale/bad
-                    # VERSION slipping past task ci's version:check: re-validate
-                    # format and that it's strictly greater than the latest tag.
+                  # Latest GA tag (strict vMAJOR.MINOR.PATCH — never an -rc tag,
+                  # so RC tags can't masquerade as the latest GA and mixed
+                  # GA/RC sets are never sort -V'd, which orders pre-releases
+                  # wrongly).
+                  LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname \
+                    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 | sed 's/^v//' || true)"
+
+                  # delete_rcs <base>: remove every v<base>-rc.* GitHub release
+                  # AND its tag, locally and on the remote. Best-effort — a
+                  # cleanup hiccup must never fail a publish.
+                  delete_rcs() {
+                    _base="$1"
+                    for _t in $(git tag -l "v${_base}-rc.*"); do
+                      gh release delete "${_t}" --repo "${PARAM_GIT_URL##*github.com/}" --cleanup-tag --yes 2>/dev/null \
+                        || git push origin ":refs/tags/${_t}" 2>/dev/null || true
+                      git tag -d "${_t}" 2>/dev/null || true
+                    done
+                  }
+
+                  if ! git rev-parse -q --verify "refs/tags/${NEW_SEMVER}" >/dev/null; then
+                    # ── GA ────────────────────────────────────────────────────
+                    # v${VERSION} isn't tagged yet → VERSION advanced → cut GA.
+                    # Defense-in-depth against a stale/bad VERSION slipping past
+                    # task ci's version:check: re-validate format + strictly >
+                    # latest tag.
                     if ! printf '%s' "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
                       echo "VERSION '${VERSION}' is not valid MAJOR.MINOR.PATCH" >&2
                       exit 1
                     fi
-                    LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname \
-                      | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 | sed 's/^v//' || true)"
                     if [ -n "${LATEST}" ]; then
                       HIGHEST="$(printf '%s\n%s\n' "${VERSION}" "${LATEST}" | sort -V | tail -n1)"
                       if [ "${HIGHEST}" != "${VERSION}" ] || [ "${VERSION}" = "${LATEST}" ]; then
@@ -417,22 +425,80 @@ spec:
                       fi
                     fi
 
-                    echo "Releasing ${NEW_SEMVER}..."
-
+                    echo "Releasing GA ${NEW_SEMVER}..."
                     # GoReleaser only validates that GORELEASER_CURRENT_TAG
-                    # exists as a local git tag pointing at HEAD — a local-only
-                    # check ("git tag %v was not made against commit %v"), it
-                    # does not need to exist on GitHub yet. GoReleaser's own
-                    # release-creation call uses the GitHub Releases API with
-                    # target_commitish (same mechanism as `gh release create
-                    # --target <sha>`), which auto-creates the tag on GitHub.
+                    # exists as a local git tag pointing at HEAD (a local-only
+                    # check); its GitHub Releases API call (target_commitish)
+                    # auto-creates the tag on GitHub.
                     git tag "${NEW_SEMVER}" "${PARAM_REVISION}"
-
-                    # The release body is GitHub's native auto-generated release
-                    # notes (.goreleaser.yaml's changelog.use: github-native) —
-                    # GoReleaser calls GitHub's generate-notes API for the tag,
-                    # so no --release-notes file is passed.
+                    # Release body = GitHub-native notes (changelog.use:
+                    # github-native), so no --release-notes file is passed.
                     GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean
+
+                    # GA shipped → the release candidates for this version are
+                    # obsolete; delete their releases + tags.
+                    delete_rcs "${VERSION}"
+                  else
+                    # ── RC or CI-only ─────────────────────────────────────────
+                    # v${VERSION} is already the latest GA tag (VERSION == the
+                    # released version). Cut a release candidate for the *next*
+                    # version, but only when there's an actual shippable change.
+                    #
+                    # NEXT = the version the unreleased conventional commits
+                    # warrant (git-cliff, same advisor as version:check). No
+                    # git-cliff (or no releasable commit) → nothing to size →
+                    # CI-only.
+                    NEXT=""
+                    if command -v git-cliff >/dev/null 2>&1; then
+                      NEXT="$(git-cliff --bumped-version --unreleased 2>/dev/null | sed 's/^v//' || true)"
+                    fi
+
+                    # Binary-affecting change since the last GA? RC is worth
+                    # cutting only if the *shipped artifact* could differ —
+                    # Go sources, the build-time embedded-data pulls
+                    # (schemas/policies SHAs live in scripts/pull-*.sh), and
+                    # goreleaser's build config. Docs/CI/config/go.mod-only
+                    # merges change nothing shippable → no RC.
+                    CHANGED=""
+                    if [ -n "${LATEST}" ]; then
+                      CHANGED="$(git diff --name-only "v${LATEST}..HEAD" -- \
+                        '*.go' \
+                        scripts/pull-schemas.sh scripts/pull-policies.sh scripts/pull-all.sh \
+                        .goreleaser.yaml 2>/dev/null || true)"
+                    fi
+
+                    if [ -n "${NEXT}" ] \
+                      && printf '%s' "${NEXT}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+                      && [ "${NEXT}" != "${LATEST}" ] \
+                      && [ -n "${CHANGED}" ]; then
+                      # Drop RCs for any *other* base (a shifted next version
+                      # means the old base will never GA).
+                      for _rct in $(git tag -l 'v*-rc.*'); do
+                        _rcbase="$(printf '%s' "${_rct}" | sed -n 's/^v\([0-9]\+\.[0-9]\+\.[0-9]\+\)-rc\.[0-9]\+$/\1/p')"
+                        [ -n "${_rcbase}" ] && [ "${_rcbase}" != "${NEXT}" ] && delete_rcs "${_rcbase}"
+                      done
+
+                      # Idempotency: HEAD already carries an rc tag for NEXT
+                      # (pipeline re-run) → nothing to do.
+                      if git tag --points-at HEAD | grep -Eq "^v${NEXT}-rc\.[0-9]+$"; then
+                        echo "RC for ${NEXT} already tagged at HEAD; skipping."
+                      else
+                        # N = highest existing v${NEXT}-rc.<N> + 1 (numeric scan,
+                        # not sort -V, which mis-orders pre-releases).
+                        N="$(git tag -l "v${NEXT}-rc.*" \
+                          | sed -n "s/^v${NEXT}-rc\.\([0-9]\+\)\$/\1/p" \
+                          | sort -n | tail -n1 || true)"
+                        N=$(( ${N:-0} + 1 ))
+                        RC_TAG="v${NEXT}-rc.${N}"
+                        echo "Releasing candidate ${RC_TAG}..."
+                        git tag "${RC_TAG}" "${PARAM_REVISION}"
+                        # goreleaser's default prerelease:auto marks an -rc tag
+                        # as a GitHub pre-release (never "Latest").
+                        GORELEASER_CURRENT_TAG="${RC_TAG}" goreleaser release --skip=ko --clean
+                      fi
+                    else
+                      echo "No shippable change since v${LATEST:-<none>} (or nothing to release); CI only, no RC."
+                    fi
                   fi
                 else
                   # PR event - run Goreleaser with snapshot tag using short SHA

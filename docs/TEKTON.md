@@ -97,10 +97,13 @@ reset --hard FETCH_HEAD` + `git clean -fd` (works for any ref/SHA
    Reference](DEVELOPMENT.md#task-targets-reference)) must pass before
    anything below runs.
 4. **Release** — branches on `${PARAM_EVENT}`. A `push` (merge to `main`)
-   publishes a release **only when the `VERSION` file has advanced** (the
-   tag `v${VERSION}` doesn't exist yet); otherwise it's a no-op. A
-   `pull_request` does a snapshot build only. See [RELEASE.md](RELEASE.md)
-   for the exact commands.
+   has three outcomes: **GA** when the `VERSION` file has advanced (tag
+   `v${VERSION}` doesn't exist yet) — publishes the release and deletes
+   that version's RCs; **RC** when `VERSION` equals the latest GA tag and a
+   binary-affecting change has landed since — publishes a `v<next>-rc.N`
+   pre-release; or **CI-only** otherwise. A `pull_request` does a snapshot
+   build only. See [RELEASE.md](RELEASE.md) for the exact rules and
+   commands.
 
 A commented-out `clair-action` task (`runAfter: [build]`, referencing the
 external Task pulled in by the `task-1` annotation above) is present but
