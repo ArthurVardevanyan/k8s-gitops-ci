@@ -127,8 +127,8 @@ pattern, and the generic check-enablement mechanism).
   adding exemption support to a new check
 - [`docs/TEKTON.md`](docs/TEKTON.md) — this repo's own Tekton
   `PipelineRun`/PaC-trigger/caching setup
-- [`docs/RELEASE.md`](docs/RELEASE.md) — versioning, changelog, and
-  published-artifact scope
+- [`docs/RELEASE.md`](docs/RELEASE.md) — `VERSION`-file versioning, the
+  release/RC flow, and published-artifact scope
 - [`docs/SECURITY.md`](docs/SECURITY.md) — trust model, `exec.Command`
   audit, file-permission rationale
 - [`docs/SCHEMAS.md`](docs/SCHEMAS.md) — how embedded kubeconform
