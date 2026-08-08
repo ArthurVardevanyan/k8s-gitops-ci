@@ -60,6 +60,8 @@ spec:
             value: $(params.pull-request-number)
           - name: event
             value: $(params.event)
+          - name: target-branch
+            value: $(params.target-branch)
         taskSpec:
           params:
             - name: git-url
@@ -71,6 +73,9 @@ spec:
               default: ""
             - name: event
               type: string
+            - name: target-branch
+              type: string
+              default: ""
           results: []
           workspaces:
             - name: basic-auth
@@ -168,6 +173,8 @@ spec:
                   value: $(params.pull-request-number)
                 - name: PARAM_EVENT
                   value: $(params.event)
+                - name: PARAM_TARGET_BRANCH
+                  value: $(params.target-branch)
                 - name: AUTH_PATH
                   value: $(workspaces.basic-auth.path)
               script: |
@@ -181,6 +188,7 @@ spec:
                 : "${PARAM_REVISION:=""}"
                 : "${PARAM_PR_NUMBER:=""}"
                 : "${PARAM_EVENT:=""}"
+                : "${PARAM_TARGET_BRANCH:=""}"
                 : "${AUTH_PATH:=""}"
                 : "${GO_CACHE_BOUND:=""}"
                 : "${GO_CACHE_PATH:=""}"
@@ -318,6 +326,20 @@ spec:
                 # "does v${VERSION} already exist?" idempotency check reflects
                 # what's actually published, not a stale local-only tag.
                 git fetch --tags --force --prune --prune-tags origin
+
+                # Make version:check's "not behind main's VERSION" downgrade
+                # guard (Guard 2) actually work in the pipeline. The clone above
+                # only fetches the single revision SHA + tags, so origin/main
+                # (the task's default base ref) is NOT present — without this,
+                # Guard 2 silently no-ops here. On a pull_request, fetch the
+                # target branch and point the guard at it via the base-ref
+                # override the task already honors. On a push (merge to main),
+                # HEAD already *is* main, so no base fetch is needed.
+                if [ "${PARAM_EVENT}" = "pull_request" ] && [ -n "${PARAM_TARGET_BRANCH}" ]; then
+                  if git fetch origin "${PARAM_TARGET_BRANCH}" 2>/dev/null; then
+                    export VERSION_CHECK_BASE_REF="FETCH_HEAD"
+                  fi
+                fi
 
                 # Run the full CI gate, but capture its exit code instead of
                 # letting `set -o errexit` abort here, so that on a PR event we
@@ -459,10 +481,13 @@ spec:
                     # (schemas/policies SHAs live in scripts/pull-*.sh), and
                     # goreleaser's build config. Docs/CI/config/go.mod-only
                     # merges change nothing shippable → no RC.
+                    # Go sources at any depth: use an explicit :(glob) pathspec
+                    # for both nested (**/*.go) and root (*.go) files rather
+                    # than relying on default-pathspec '*' spanning '/'.
                     CHANGED=""
                     if [ -n "${LATEST}" ]; then
                       CHANGED="$(git diff --name-only "v${LATEST}..HEAD" -- \
-                        '*.go' \
+                        ':(glob)**/*.go' ':(glob)*.go' \
                         scripts/pull-schemas.sh scripts/pull-policies.sh scripts/pull-all.sh \
                         .goreleaser.yaml 2>/dev/null || true)"
                     fi

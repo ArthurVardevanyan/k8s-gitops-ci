@@ -118,12 +118,14 @@ tasks:
           exit 1
         fi
 
-        # Guard 2: VERSION must not be behind main's current VERSION (catches a
-        # downgrade that's still >= the latest tag, e.g. reverting a bump that
-        # hasn't been tagged yet). Best-effort: only enforced when origin/main
-        # is resolvable (always true in the Tekton PR run; locally it silently
-        # skips if origin/main or the file isn't available, so offline/local
-        # dev keeps working).
+        # Guard 2: VERSION must not be behind the base branch's current
+        # VERSION (catches a downgrade that's still >= the latest tag, e.g.
+        # reverting a bump that hasn't been tagged yet). Base ref defaults to
+        # origin/main but is overridable via VERSION_CHECK_BASE_REF — the
+        # Tekton PR run fetches the target branch and sets this to FETCH_HEAD
+        # (the clone otherwise lacks origin/main). Best-effort: silently
+        # skips when the base ref or its VERSION file isn't resolvable, so
+        # offline/local dev keeps working.
         BASE_REF="${VERSION_CHECK_BASE_REF:-origin/main}"
         BASE_VERSION=""
         if git rev-parse --verify --quiet "${BASE_REF}" >/dev/null 2>&1; then
