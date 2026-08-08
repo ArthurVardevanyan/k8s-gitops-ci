@@ -91,6 +91,7 @@ func TestBuild(t *testing.T) {
 			wantContains: []string{
 				"❌ **`task ci` failed**",
 				"blocks merge",
+				"See the pipeline logs for the full output",
 				"The replay was skipped",
 			},
 		},
@@ -103,6 +104,7 @@ func TestBuild(t *testing.T) {
 			},
 			wantContains: []string{
 				"❌ **`task ci` failed**",
+				"The failing step detail is below",
 				"Failing step detail",
 				"foo.go:1:1: something",
 			},

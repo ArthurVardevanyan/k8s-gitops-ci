@@ -243,13 +243,14 @@ func markdownSection(name string, isError bool) validator.ReportSection {
 // markdownSectionStatus builds a markdown-bodied section with an explicit
 // status, so tests can exercise StatusWarning sections directly (the
 // warning-finding detail path) rather than only error/passed fixtures.
-func markdownSectionStatus(name string, status validator.SectionStatus, body string) validator.ReportSection {
-	if body == "" {
-		body = "Some intro **bold** text.\n\n" +
+func markdownSectionStatus(name string, status validator.SectionStatus) validator.ReportSection {
+	return validator.ReportSection{
+		Name: name,
+		Body: "Some intro **bold** text.\n\n" +
 			"<details>\n<summary>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⚠️ Finding (1 finding(s))</summary>\n\n" +
-			"| Kind | Name |\n| --- | --- |\n| Deployment | example |\n\n</details>\n"
+			"| Kind | Name |\n| --- | --- |\n| Deployment | example |\n\n</details>\n",
+		Status: status,
 	}
-	return validator.ReportSection{Name: name, Body: body, Status: status}
 }
 
 // TestPrintAllSectionsConsole_StripsGitHubMarkdown guards against a
@@ -324,7 +325,7 @@ func TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *tes
 // detail, matching the failing-section path.
 func TestPrintAllSectionsConsole_WarningSectionPrintsDetail(t *testing.T) {
 	sections := []validator.ReportSection{
-		markdownSectionStatus("ResourceCompliance", validator.StatusWarning, ""),
+		markdownSectionStatus("ResourceCompliance", validator.StatusWarning),
 	}
 
 	out := captureStdout(t, func() { printAllSectionsConsole(nil, sections) })
@@ -345,7 +346,7 @@ func TestPrintAllSectionsConsole_WarningSectionPrintsDetail(t *testing.T) {
 // falls back to the single-line summary rather than printing an empty box.
 func TestPrintAllSectionsConsole_WarningSectionEmptyBodyIsTerse(t *testing.T) {
 	sections := []validator.ReportSection{
-		markdownSectionStatus("ResourceCompliance", validator.StatusWarning, ""),
+		markdownSectionStatus("ResourceCompliance", validator.StatusWarning),
 	}
 	sections[0].Body = ""
 
@@ -363,8 +364,8 @@ func TestPrintAllSectionsConsole_WarningSectionEmptyBodyIsTerse(t *testing.T) {
 // prints failed/warned sections, omitting passing ones entirely).
 func TestPrintFailedSectionsConsole_PrintsWarnings(t *testing.T) {
 	sections := []validator.ReportSection{
-		markdownSectionStatus("Passing", validator.StatusPassed, ""),
-		markdownSectionStatus("ResourceCompliance", validator.StatusWarning, ""),
+		markdownSectionStatus("Passing", validator.StatusPassed),
+		markdownSectionStatus("ResourceCompliance", validator.StatusWarning),
 	}
 
 	out := captureStdout(t, func() { printFailedSectionsConsole(nil, sections) })
