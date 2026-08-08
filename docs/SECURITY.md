@@ -11,6 +11,7 @@ rather than creating a second security doc.
 ## Table of Contents
 
 - [Trust model](#trust-model)
+- [PR-triggered CI is not a security boundary](#pr-triggered-ci-is-not-a-security-boundary)
 - [`exec.Command`/`exec.CommandContext` audit](#execcommandexeccommandcontext-audit)
 - [File-permission rationale](#file-permission-rationale)
 - [Decompression-bomb guard](#decompression-bomb-guard)
@@ -25,6 +26,59 @@ against. There is no HTTP request handling anywhere in this codebase and
 no user-supplied input arriving over a network boundary — `pkg/github`
 talks to the `gh` CLI (itself talking to GitHub's API over the
 operator's own authenticated session), not the reverse.
+
+## PR-triggered CI is not a security boundary
+
+When this tool runs as **PR-triggered CI** — e.g. under
+[Pipelines-as-Code](https://pipelinesascode.com) — it executes code that
+was resolved from the **pull-request head**, i.e. from the untrusted
+contributor's branch. A PR author can therefore change what the checks
+do. **Self-CI verdicts** (`task ci`, the `ci-report` comment, the
+regression replay) are consequently **advisory, not authoritative**, and
+must never be the sole gate for a merge.
+
+### Provenance: what a PR author can and cannot change
+
+Pipelines-as-Code's
+[provenance control](https://pipelinesascode.com/docs/concepts/#provenance-control)
+(`spec.settings.pipelinerun_provenance`) is the one setting that moves
+this boundary — but only for _pipeline/task definitions_, not for the
+checked-out source. This splits the files a run depends on into two trust
+classes:
+
+| Class                                | Files                                                                                                                                                                                                                                                          | `source` provenance (default)             | `default_branch` provenance                                                                |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **A — PaC-resolved definitions**     | The `.tekton/` `PipelineRun`, and every pipeline/task file referenced by the `pipelinesascode.tekton.dev/pipeline` and `.../task` annotations (e.g. `tekton/base/pipelines/…`, `tekton/base/tasks/…`) — **including any inline `script:` bash in those tasks** | **PR-mutable** (fetched from the PR head) | **Trusted** (fetched from the default branch — only someone who can merge can change them) |
+| **B — workspace-checked-out source** | Everything the clone step places in the workspace at the PR revision: the Go source the binary is compiled from, `taskfile.yaml`, `scripts/*.sh`, `.golangci.yml` and other tool configs, the embedded schema/policy pins, `go.mod`/`go.sum`, and testdata     | **PR-mutable** (always)                   | **Still PR-mutable** — provenance does **not** protect this                                |
+
+The important consequence: **`default_branch` provenance trusts the task
+_definitions_ (Class A), but the tasks still `task ci` / run scripts /
+compile Go from the PR-controlled workspace (Class B).** This is why the
+two common "just move the logic" ideas only _partially_ help:
+
+- **Putting all logic in task `script:` bash** does **not** help on its
+  own — under the default `source` provenance those task files are Class
+  A and still come from the PR head. It only helps _combined with_
+  `default_branch` provenance, and even then the bash typically still
+  invokes Class-B inputs (`task ci`, `scripts/*`).
+- **Baking the logic into a pinned, digest-referenced image** trusts the
+  _tools_, but the run still executes Class-B inputs/config from the PR,
+  so a malicious PR can still change what those trusted tools are told to
+  do.
+
+### What actually contains the risk
+
+- **`default_branch` provenance** for the pipeline/task definitions.
+- **Author-trust gating** — PaC `spec.settings.policy.ok_to_test` and/or
+  an `OWNERS` file, so untrusted authors' PR pipelines require an
+  explicit maintainer approval before running.
+- **Server-side branch protection** with required status checks, so the
+  merge decision is enforced by the forge, not by a check the PR could
+  have edited.
+- **Least-privilege credentials.** Assume any secret mounted into a task
+  that runs Class-B code is readable by that code. Scope tokens to the
+  minimum (prefer read-only), and never mount a write-capable or
+  broadly-scoped credential into a PR-triggered task.
 
 ## `exec.Command`/`exec.CommandContext` audit
 

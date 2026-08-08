@@ -3,12 +3,12 @@
 // the blocking `task ci` verdict plus a non-blocking, informational live
 // regression-replay section.
 //
-// It is org-agnostic: the corpus label ("HomeLab", a Ford repo set, etc.) and
-// the docs link are injectable via Options, so both the upstream binary and a
-// downstream (e.g. Ford) binary can post a consistent comment. The marker is
-// deliberately distinct from the product's "<!-- ci-unified-report -->" comment
-// (which the built binary posts on DOWNSTREAM consumer repos): this one is about
-// the tool's OWN meta-CI.
+// It is org-agnostic: the corpus label (e.g. "HomeLab" or any repo-set name)
+// and the docs link are injectable via Options, so both this binary and any
+// downstream binary can post a consistent comment. The marker is deliberately
+// distinct from the product's "<!-- ci-unified-report -->" comment (which the
+// built binary posts on DOWNSTREAM consumer repos): this one is about the
+// tool's OWN meta-CI.
 package cireport
 
 import (
@@ -43,7 +43,7 @@ type Options struct {
 	ReplayReport string
 
 	// ReplayLabel names the replay corpus for the section summary, e.g.
-	// "HomeLab" or "Ford GitOps repos". Defaults to "live GitOps repo".
+	// "HomeLab" or a repo-set name. Defaults to "live GitOps repo".
 	ReplayLabel string
 	// DocsURL, when set, is linked from the replay section for the full
 	// rationale/limitations. Optional.
@@ -53,18 +53,23 @@ type Options struct {
 // Run builds the comment body and upserts it on the PR. It NEVER returns an
 // error for an unavailable client or a failed post — the authoritative gate is
 // `task ci`, not this reporter — so a transient GitHub hiccup can't turn a
-// green build red. It returns a short human-readable status string.
-func Run(o Options) (string, error) {
+// green build red.
+//
+// It returns posted=false (err=nil) when there was no PR/repo context to
+// comment on, or when the upsert failed; posted=true only when a comment was
+// actually posted/updated. All user-facing logging is left to the caller (the
+// cmd/ shim), so the package emits nothing to stdout/stderr itself — the upsert
+// error, when present, is returned for the caller to log or ignore.
+func Run(o Options) (posted bool, err error) {
 	client := github.NewClient(o.URL, o.PR)
 	if !client.IsAvailable() {
-		return "no PR/repo context available, skipping comment", nil
+		return false, nil
 	}
 	body := Build(o)
-	if err := github.UpsertComment(client, Marker, body); err != nil {
-		fmt.Fprintf(os.Stderr, "cireport: failed to post comment: %v\n", err)
-		return "comment post failed (non-fatal)", nil
+	if uerr := github.UpsertComment(client, Marker, body); uerr != nil {
+		return false, uerr
 	}
-	return "self-CI status comment posted/updated", nil
+	return true, nil
 }
 
 // resolved is the internal, normalized form of Options.

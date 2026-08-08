@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/cireport"
 )
@@ -18,7 +19,9 @@ import (
 // This command NEVER fails the build itself: a missing PR context, an
 // unavailable GitHub client, or a comment-post error is reported but returns
 // nil, because the authoritative pass/fail gate is task ci's own exit code,
-// re-asserted by the calling pipeline step — not this reporter.
+// re-asserted by the calling pipeline step — not this reporter. All user-facing
+// logging lives here (not in pkg/cireport) so the CLI output is owned by the
+// command layer.
 func runCIReport(args []string) error {
 	fs := flag.NewFlagSet("ci-report", flag.ExitOnError)
 	var (
@@ -33,7 +36,7 @@ func runCIReport(args []string) error {
 		return err
 	}
 
-	msg, err := cireport.Run(cireport.Options{
+	posted, err := cireport.Run(cireport.Options{
 		URL:          *url,
 		PR:           *pr,
 		CIStatus:     *ciStatus,
@@ -43,9 +46,15 @@ func runCIReport(args []string) error {
 		ReplayLabel:  "HomeLab",
 		DocsURL:      "https://github.com/ArthurVardevanyan/k8s-gitops-ci/blob/main/docs/DEVELOPMENT.md#end-to-end--regression-replay",
 	})
-	if err != nil {
-		return err
+	switch {
+	case err != nil:
+		// Best-effort: log and move on so a transient GitHub hiccup can't turn
+		// a green build red (or a red build's real cause into a comment error).
+		fmt.Fprintf(os.Stderr, "ci-report: failed to post comment: %v\n", err)
+	case posted:
+		fmt.Println("ci-report: self-CI status comment posted/updated")
+	default:
+		fmt.Println("ci-report: no PR/repo context available, skipping comment")
 	}
-	fmt.Println("ci-report: " + msg)
 	return nil
 }
