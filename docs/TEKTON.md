@@ -88,15 +88,19 @@ reset --hard FETCH_HEAD` + `git clean -fd` (works for any ref/SHA
    reachable on the remote, not just a branch tip - and, on a persisted
    checkout, only rewrites files whose content actually changed, see
    [Caching](#caching) on why that matters), then `git fetch --tags
---force --prune --prune-tags origin` (tags are needed separately for
-   git-cliff's version/changelog logic; pruning matters once tags
-   persist across runs - see [Caching](#caching)).
+--force --prune --prune-tags origin` (tags are needed separately so
+   the release step can tell whether `v${VERSION}` already exists;
+   pruning matters once tags persist across runs - see
+   [Caching](#caching)).
 3. **`task ci`** — the full local CI pipeline (see
    `docs/DEVELOPMENT.md`'s [Task Targets
    Reference](DEVELOPMENT.md#task-targets-reference)) must pass before
    anything below runs.
-4. **Release** — branches on `${PARAM_EVENT}` (`push` vs. everything
-   else); see [RELEASE.md](RELEASE.md) for the exact commands.
+4. **Release** — branches on `${PARAM_EVENT}`. A `push` (merge to `main`)
+   publishes a release **only when the `VERSION` file has advanced** (the
+   tag `v${VERSION}` doesn't exist yet); otherwise it's a no-op. A
+   `pull_request` does a snapshot build only. See [RELEASE.md](RELEASE.md)
+   for the exact commands.
 
 A commented-out `clair-action` task (`runAfter: [build]`, referencing the
 external Task pulled in by the `task-1` annotation above) is present but
@@ -202,7 +206,8 @@ Two-tier: an optional `go-cache` PVC workspace, falling back to a pod
   (`git fetch --tags --force --prune --prune-tags`) matters here
   specifically: a persisted checkout can accumulate local tags from this
   same step's own `git tag` call on a prior push run, which would
-  otherwise skew git-cliff's `--bumped-version` on a later run.
+  otherwise make the release step's "does `v${VERSION}` already exist?"
+  check see a stale local-only tag.
 - **PVC not bound:** the `stepTemplate`'s env defaults keep every one of
   those on the pod's local `emptyDir` `home` volume instead — cold but
   self-contained; every subdirectory (`go-mod`, `go-build`,

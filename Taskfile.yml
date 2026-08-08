@@ -34,10 +34,14 @@ vars:
         echo "${BUILD_VERSION}"
         exit 0
       fi
-      LATEST_TAG="$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname \
-        | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 | sed 's/^[vV]//')"
-      if [ -z "$LATEST_TAG" ]; then LATEST_TAG="0.0.1"; fi
-      echo "${LATEST_TAG}-local"
+      # VERSION is the single source of truth for the version (see
+      # docs/RELEASE.md): the release pipeline tags v${VERSION} when a merge
+      # to main advances it. Local/dev builds append -local so they're never
+      # mistaken for the released binary of that version (goreleaser injects
+      # the real tag via .goreleaser.yaml's ldflags at release time).
+      VERSION="$(tr -d '[:space:]' <VERSION 2>/dev/null)"
+      if [ -z "${VERSION}" ]; then VERSION="0.0.1"; fi
+      echo "${VERSION}-local"
   GIT_VERSION:
     sh: git describe --tags --always 2>/dev/null || echo dev
   BUILD_TIME:
@@ -75,6 +79,64 @@ tasks:
         echo "  BUILD_COMMIT:  {{.BUILD_COMMIT}}"
         echo "  GIT_SHA:       {{.GIT_SHA}}"
         echo "------------------------------------------------------------"
+
+  # ── Version ───────────────────────────────────────────────────────────────────
+  version:check:
+    desc: Validate the VERSION file (semver; never behind the latest tag or main's VERSION)
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+        # VERSION is the single source of truth for releases: the pipeline
+        # tags v${VERSION} when a merge to main advances it past the latest
+        # tag (see docs/RELEASE.md). This guard runs in `task ci` so a
+        # malformed, stale, or downgraded VERSION fails the PR instead of
+        # surfacing only at release time.
+        if [ ! -f VERSION ]; then
+          echo "❌ VERSION file is missing"
+          exit 1
+        fi
+        VERSION="$(tr -d '[:space:]' <VERSION)"
+        if ! printf '%s' "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "❌ VERSION '${VERSION}' is not valid MAJOR.MINOR.PATCH"
+          exit 1
+        fi
+
+        # ge <a> <b>: true (0) iff a >= b, using version sort. Equal is
+        # allowed everywhere below — only a strict *decrease* is rejected, so
+        # ordinary non-release PRs (VERSION unchanged) always pass.
+        ge() {
+          [ "$1" = "$2" ] && return 0
+          [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
+        }
+
+        # Guard 1: VERSION must not be behind the latest existing release tag.
+        LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname \
+          | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 | sed 's/^v//' || true)"
+        if [ -n "${LATEST}" ] && ! ge "${VERSION}" "${LATEST}"; then
+          echo "❌ VERSION '${VERSION}' is behind the latest release tag 'v${LATEST}'"
+          exit 1
+        fi
+
+        # Guard 2: VERSION must not be behind main's current VERSION (catches a
+        # downgrade that's still >= the latest tag, e.g. reverting a bump that
+        # hasn't been tagged yet). Best-effort: only enforced when origin/main
+        # is resolvable (always true in the Tekton PR run; locally it silently
+        # skips if origin/main or the file isn't available, so offline/local
+        # dev keeps working).
+        BASE_REF="${VERSION_CHECK_BASE_REF:-origin/main}"
+        BASE_VERSION=""
+        if git rev-parse --verify --quiet "${BASE_REF}" >/dev/null 2>&1; then
+          BASE_VERSION="$(git show "${BASE_REF}:VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+        fi
+        if [ -n "${BASE_VERSION}" ] \
+          && printf '%s' "${BASE_VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+          && ! ge "${VERSION}" "${BASE_VERSION}"; then
+          echo "❌ VERSION '${VERSION}' is behind ${BASE_REF}'s VERSION '${BASE_VERSION}' (downgrade)"
+          exit 1
+        fi
+
+        echo "✅ VERSION ${VERSION} is valid (latest tag: ${LATEST:+v}${LATEST:-<none>}, ${BASE_REF} VERSION: ${BASE_VERSION:-<n/a>})"
 
   # ── Modules ───────────────────────────────────────────────────────────────────
   mod:
@@ -415,7 +477,7 @@ tasks:
 
   # ── Full CI pipeline ──────────────────────────────────────────────────────────
   ci:
-    desc: Full CI pipeline — mod check, format, schemas, lint, vulncheck, test, build
+    desc: Full CI pipeline — version, mod check, format, schemas, lint, vulncheck, test, build
     silent: true
     vars:
       # Suffixed with the shell PID so concurrent/overlapping `task ci` runs
@@ -436,28 +498,31 @@ tasks:
         echo "🚀 Starting CI Pipeline"
         echo "=========================================="
         echo ""
-        echo "▶ Step 1/7  Module Dependencies Check"
+        echo "▶ Step 1/8  Version Check"
+      - task: version:check
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/8  Version Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 2/8  Module Dependencies Check"
       - task: mod:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/7  Module Dependencies Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 2/7  Code Formatting Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/8  Module Dependencies Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 3/8  Code Formatting Check"
       - task: format:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/7  Code Formatting Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 3/7  Schemas & Policies"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/8  Code Formatting Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 4/8  Schemas & Policies"
       - task: update:schemas
       - task: update:policies
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/7  Schemas & Policies" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 4/7  Linting"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/8  Schemas & Policies" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 5/8  Linting"
       - task: lint
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/7  Linting" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 5/7  Vulnerability Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/8  Linting" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 6/8  Vulnerability Check"
       - task: vulncheck
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/7  Vulnerability Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 6/7  Tests (coverage + race)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/8  Vulnerability Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 7/8  Tests (coverage + race)"
       - task: test:cover
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/7  Tests (coverage + race)" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 7/7  Build"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/8  Tests (coverage + race)" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 8/8  Build"
       - task: build
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/7  Build" >> "{{.TIMEFILE}}"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/8  Build" >> "{{.TIMEFILE}}"
       - |
         set -euo pipefail
         echo ""

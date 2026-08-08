@@ -65,10 +65,9 @@ kos:
 changelog:
   # Use GitHub's native auto-generated release notes ("What's Changed" +
   # New Contributors + Full Changelog compare link) as the release body.
-  # The Tekton release step no longer passes --release-notes, so GoReleaser
-  # renders these instead of a git-cliff CHANGELOG. git-cliff is still used
-  # in .tekton/k8s-gitops-ci.yaml, but only for version bumping
-  # (--bumped-version), not for the release body.
+  # The Tekton release step doesn't pass --release-notes, so GoReleaser
+  # renders these native notes. The version comes from the VERSION file
+  # (the tag the pipeline creates), not from any changelog tool.
   use: github-native
 release:
   github:
