@@ -3,6 +3,8 @@ package pipeline
 import (
 	"regexp"
 	"strings"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
 )
 
 // consoleReplacer strips the remaining GitHub-markdown-only artifacts from a
@@ -47,4 +49,14 @@ func SanitizeSectionBodyForConsole(body string) string {
 	body = consoleReplacer.Replace(body)
 	body = blankRunRe.ReplaceAllString(body, "\n\n")
 	return strings.TrimSpace(body)
+}
+
+// SectionHasConsoleDetail reports whether a section should print its full
+// (console-sanitized) Body to the terminal: errored (❌) or warning (⚠️)
+// sections with a non-empty body. Single source of truth shared by pipeline,
+// test-all, and scan-all so their console rendering can't drift on the
+// "which sections get per-finding detail" rule.
+func SectionHasConsoleDetail(s validator.ReportSection) bool {
+	return (s.Status == validator.StatusError || s.Status == validator.StatusWarning) &&
+		strings.TrimSpace(s.Body) != ""
 }

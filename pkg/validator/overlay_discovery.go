@@ -16,7 +16,7 @@ import (
 // layout coincidentally matches an app's shape). Each key is matched on
 // path-segment boundaries: a key equals the file's first segment, equals
 // the whole (slash-normalized) file path, or is a directory prefix of it
-// (key + "/"). This lets a single-segment key like "ford" exclude a
+// (key + "/"). This lets a single-segment key like "vendor" exclude a
 // top-level dir while a multi-segment key like ".scafctl/templates"
 // excludes a nested subtree. Empty by default - the generic core has
 // nothing to guard against; an org layer may populate it from a

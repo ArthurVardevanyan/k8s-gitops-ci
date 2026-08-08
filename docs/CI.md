@@ -270,7 +270,7 @@ output, not just the raw source.
   with "unable to find kustomization.yaml"). Additional non-app path
   prefixes can be registered via `validator.ExtraNonAppDirs`, whose keys
   are matched on path-segment boundaries (a single-segment key like
-  `ford` excludes a top-level dir; a multi-segment key excludes a nested
+  `vendor` excludes a top-level dir; a multi-segment key excludes a nested
   subtree).
 - **Implementation:** a Go library, not a CLI wrapper — unlike the three
   checks above, there's no missing-binary case to gate.

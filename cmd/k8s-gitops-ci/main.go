@@ -217,7 +217,7 @@ func printRunFooter(res *validator.Result, start time.Time) {
 // validator.RunAll (which shells out to git).
 func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
 	for _, s := range sections {
-		if s.Status == validator.StatusError {
+		if pipeline.SectionHasConsoleDetail(s) {
 			printFailedSectionConsole(log, s)
 			continue
 		}
@@ -225,23 +225,24 @@ func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSect
 	}
 }
 
-// printFailedSectionsConsole prints only the errored sections' full detail
-// (see printAllSectionsConsole) - the scan-all rendering, which (unlike
+// printFailedSectionsConsole prints only the failed and warned sections' full
+// detail (see printAllSectionsConsole) - the scan-all rendering, which (unlike
 // test-all/build-yaml) omits passing sections entirely rather than even a
 // one-line summary. See printAllSectionsConsole for why this is split out
 // from its caller.
 func printFailedSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
 	for _, s := range sections {
-		if s.Status == validator.StatusError {
+		if pipeline.SectionHasConsoleDetail(s) {
 			printFailedSectionConsole(log, s)
 		}
 	}
 }
 
 // printPassedSectionConsole prints a single-line "✅ Name: passed" summary
-// for a section that produced no blocking findings - the per-check detail
-// was already streamed live via log during RunAll, so this is intentionally
-// terse rather than repeating that detail a second time.
+// for a section that produced no errors and no warnings to render. The
+// per-check detail for errored/warned sections is printed separately via
+// printFailedSectionConsole (see pipeline.SectionHasConsoleDetail), so this
+// is intentionally terse rather than repeating that detail a second time.
 func printPassedSectionConsole(log *logger.Logger, name string) {
 	line := "✅ " + name + ": passed"
 	if log != nil {

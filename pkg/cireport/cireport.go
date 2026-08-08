@@ -171,7 +171,12 @@ func Build(o Options) string {
 	case statusPass:
 		fmt.Fprintf(&b, "%s **`task ci` passed** — lint, tests, vulncheck, and build all succeeded.\n\n", statusPass.icon())
 	case statusFail:
-		fmt.Fprintf(&b, "%s **`task ci` failed** — this blocks merge. See the pipeline logs for full output.\n\n", statusFail.icon())
+		fmt.Fprintf(&b, "%s **`task ci` failed** — this blocks merge.", statusFail.icon())
+		if in.ciDetail != "" {
+			b.WriteString(" The failing step detail is below; see the pipeline logs for the full output.\n\n")
+		} else {
+			b.WriteString(" See the pipeline logs for the full output.\n\n")
+		}
 		if in.ciDetail != "" {
 			b.WriteString("<details>\n<summary>Failing step detail</summary>\n\n```\n")
 			b.WriteString(in.ciDetail)
