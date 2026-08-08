@@ -54,12 +54,13 @@ Only what's actually active in `.goreleaser.yaml` today:
   `//go:embed` to pick up (a no-op in the real Tekton pipeline, where
   `task ci` already generated them moments earlier in the same step —
   see [Dry-run locally](#dry-run-locally) for why it matters standalone).
-- **GitHub Releases** (`release.github: {owner: ArthurVardevanyan, name:
-k8s-gitops-ci}`). The release body is GitHub's **native auto-generated
-  release notes** (`.goreleaser.yaml`'s `changelog.use: github-native`):
-  a "What's Changed" list of merged PRs, a "New Contributors" section,
-  and a Full Changelog compare link. git-cliff is **not** used for the
-  release body — only for computing the next version (see below).
+- **GitHub Releases**
+  (`release.github: {owner: ArthurVardevanyan, name: k8s-gitops-ci}`).
+  The release body is GitHub's **native auto-generated release notes**
+  (`.goreleaser.yaml`'s `changelog.use: github-native`): a "What's
+  Changed" list of merged PRs, a "New Contributors" section, and a Full
+  Changelog compare link. git-cliff is **not** used for the release body
+  — only for computing the next version (see below).
 
 **Not currently active** — present in config but not shipping:
 
@@ -82,19 +83,21 @@ Both paths run inside the single Tekton build step described in
    deps check, format check, schema/policy refresh, lint, test+race+
    coverage, build) must pass before anything release-related runs.
 2. **Push event (merge to `main`):**
-   - `NEW_SEMVER=$(git-cliff --bumped-version)` computes the next semver
-     from commits since the last tag. (This is git-cliff's only role in
-     the release now — the release body comes from GitHub-native notes,
-     not a git-cliff changelog.)
+   - `RAW_SEMVER=$(git-cliff --bumped-version)` computes the next semver
+     from commits since the last tag, then
+     `NEW_SEMVER="v${RAW_SEMVER#v}"` forces the `v` prefix (idempotent if
+     it's already there) so every tag Go modules see is a valid semver
+     tag. (This is git-cliff's only role in the release now — the release
+     body comes from GitHub-native notes, not a git-cliff changelog.)
    - `git tag "${NEW_SEMVER}" "${PARAM_REVISION}"` creates the tag
      **locally only** — GoReleaser's GitHub Releases API call
      (`target_commitish`) auto-creates the tag on GitHub itself; creating
      it there directly via the raw Git Data API isn't permitted for this
      pipeline's GitHub App token (`403: Resource not accessible by
 integration`).
-   - `GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release
---skip=ko --clean` builds both binaries and creates the GitHub Release,
-     whose body is GitHub's native auto-generated release notes
+   - `GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean`
+     builds both binaries and creates the GitHub Release, whose body is
+     GitHub's native auto-generated release notes
      (`changelog.use: github-native`) — no `--release-notes` file is
      passed.
 3. **PR event:** a snapshot build only — no tag, no GitHub Release.
