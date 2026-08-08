@@ -63,8 +63,13 @@ kos:
       - linux/arm64
     main: ./cmd/k8s-gitops-ci
 changelog:
-  use: git
-  abbrev: -1
+  # Use GitHub's native auto-generated release notes ("What's Changed" +
+  # New Contributors + Full Changelog compare link) as the release body.
+  # The Tekton release step no longer passes --release-notes, so GoReleaser
+  # renders these instead of a git-cliff CHANGELOG. git-cliff is still used
+  # in .tekton/k8s-gitops-ci.yaml, but only for version bumping
+  # (--bumped-version), not for the release body.
+  use: github-native
 release:
   github:
     owner: ArthurVardevanyan
