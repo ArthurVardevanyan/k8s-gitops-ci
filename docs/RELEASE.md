@@ -115,10 +115,11 @@ Everything runs inside the single Tekton build step described in
      it `git tag "v${VERSION}" "${PARAM_REVISION}"` (local only —
      GoReleaser's GitHub Releases API call with `target_commitish`
      auto-creates the tag on GitHub; the raw Git Data API isn't permitted
-     for this pipeline's GitHub App token, `403: Resource not accessible
-     by integration`) and `GORELEASER_CURRENT_TAG="v${VERSION}"
-goreleaser release --skip=ko --clean` publishes the GitHub Release
-     (binaries + native notes) against the correct previous GA.
+     for this pipeline's GitHub App token, which returns
+     `403: Resource not accessible by integration`), then runs GoReleaser
+     (`GORELEASER_CURRENT_TAG="v${VERSION}" goreleaser release --skip=ko --clean`)
+     to publish the GitHub Release (binaries + native notes) against the
+     correct previous GA.
    - **RC** — `v${VERSION}` is already the latest GA tag, and there's a
      shippable change (see [Release candidates](#release-candidates)). The
      step cuts `v<next>-rc.N` as a GitHub pre-release.
