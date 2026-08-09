@@ -42,7 +42,32 @@ var (
 	placeholderRe  = regexp.MustCompile(`<([A-Z][A-Z0-9_-]*)>`)
 	placeholderRe2 = regexp.MustCompile(`<([a-z]+-[a-z]+-[a-z]+)>`)
 	avpRe          = regexp.MustCompile(`<(path|vault|aws|gcp):[^>]+>`)
+	// blockScalarHeaderRe matches a YAML block-scalar header - a mapping
+	// key (or sequence item) whose value is a literal (`|`) or folded (`>`)
+	// block scalar, with optional chomping/indentation indicators and an
+	// optional trailing comment: e.g. `script: |`, `entrypoint.sh: |-`,
+	// `- config.txt: >2`. Everything indented under such a header is
+	// embedded free-form text (a shell script, an embedded config file, a
+	// heredoc), NOT a YAML field awaiting substitution - so
+	// angle-bracket/sentinel tokens inside it (e.g. a
+	// `sed "s/<VERSION>/${SHA}/g"` in a Tekton Task `script:`) are
+	// intentional syntax, not unresolved placeholders. The leading
+	// indentation is captured (spaces only - YAML forbids tabs for
+	// indentation, and leadingIndentWidth counts spaces) so the scanner
+	// knows when the block ends.
+	blockScalarHeaderRe = regexp.MustCompile(`^( *)(?:-\s+)?[^\s#].*?:\s*[|>][+-]?\d*\s*(?:#.*)?$`)
+	// bareBlockScalarRe matches a block-scalar header with no key - a bare
+	// `|`/`>` as a sequence element value (e.g. Tekton step `args:` list
+	// entries: `- |`, or `- >2` with an indentation indicator). Same
+	// content-skipping rationale as above; indent captured as spaces only.
+	bareBlockScalarRe = regexp.MustCompile(`^( *)-\s*[|>][+-]?\d*\s*(?:#.*)?$`)
 )
+
+// leadingIndentWidth returns the number of leading spaces on a line. Tabs
+// are not valid YAML indentation, so a space count is sufficient.
+func leadingIndentWidth(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " "))
+}
 
 // sentinelPatterns are precompiled once at package init, rather than
 // recompiled per sentinel per line of every file scanned (the previous
@@ -81,13 +106,46 @@ func ValidateReaderWithOptions(r io.Reader, source string, opts Options) []Valid
 	var errs []ValidationError
 	scanner := bufio.NewScanner(r)
 	lineNo := 0
+	// Block-scalar tracking: when >= 0, we are inside a YAML block scalar
+	// (`|`/`>`) whose header key was indented blockScalarIndent spaces.
+	// Every subsequent line that is blank or indented strictly deeper than
+	// the header is embedded content and is skipped for placeholder
+	// matching; the first line indented back to <= the header ends the
+	// block.
+	blockScalarIndent := -1
 	for scanner.Scan() {
 		lineNo++
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
+
+		if blockScalarIndent >= 0 {
+			// A blank line stays inside the block (block scalars may
+			// contain blank lines).
+			if trimmed == "" {
+				continue
+			}
+			if leadingIndentWidth(line) > blockScalarIndent {
+				continue // embedded block-scalar content - skip.
+			}
+			// Dedented back to the header level (or shallower): the block
+			// has ended. Fall through and process this line normally
+			// (it may itself open a new block scalar).
+			blockScalarIndent = -1
+		}
+
 		if strings.HasPrefix(trimmed, "#") {
 			continue
 		}
+
+		if m := blockScalarHeaderRe.FindStringSubmatch(line); m != nil {
+			blockScalarIndent = len(m[1])
+			continue
+		}
+		if m := bareBlockScalarRe.FindStringSubmatch(line); m != nil {
+			blockScalarIndent = len(m[1])
+			continue
+		}
+
 		for _, m := range findPlaceholders(line, opts) {
 			errs = append(errs, ValidationError{File: source, Line: lineNo, Match: m, Context: trimmed})
 		}

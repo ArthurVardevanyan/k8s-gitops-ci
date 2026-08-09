@@ -241,6 +241,7 @@ func TestValidateFile_InvalidFixturesYieldNoFindings(t *testing.T) {
 		"testdata/invalid/helm-template.yaml",
 		"testdata/invalid/known-non-placeholders.yaml",
 		"testdata/invalid/block-scalar-shell.yaml",
+		"testdata/invalid/tekton-script-version.yaml",
 	} {
 		t.Run(f, func(t *testing.T) {
 			errs := ValidateFile(f)
@@ -248,6 +249,53 @@ func TestValidateFile_InvalidFixturesYieldNoFindings(t *testing.T) {
 				t.Errorf("expected no findings for %s, got: %v", f, errs)
 			}
 		})
+	}
+}
+
+func TestValidateFile_BlockScalarWithRealPlaceholder(t *testing.T) {
+	// A real angle-bracket placeholder in a plain YAML field (spec.params
+	// default) must still be flagged even when the same document later
+	// contains a block-scalar `script:` with an intentional <VERSION>
+	// sed-templating token that must NOT be flagged. Guards against the
+	// block-scalar skip over-suppressing real placeholders elsewhere in the
+	// document.
+	errs := ValidateFile("testdata/block-scalar-with-real-placeholder.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly 1 finding (<REGISTRY> in the plain params default; the <VERSION> in the script block scalar must be skipped), got %d: %v", len(errs), errs)
+	}
+	if errs[0].Match != "<REGISTRY>" {
+		t.Errorf("expected the flagged placeholder to be <REGISTRY>, got: %q", errs[0].Match)
+	}
+}
+
+func TestValidateReaderWithOptions_BlockScalarSkipsSentinelAndAVP(t *testing.T) {
+	// Inside a block scalar, sentinels (CHANGEME) and AVP-scheme tokens are
+	// also skipped - the whole embedded body is free-form script/config,
+	// not a manifest field. A plain field with the same tokens still flags.
+	// A non-sensitive key name (marker, not password/secret) is used so the
+	// CHANGEME sentinel isn't masked by secret-scanning tooling and the test
+	// visibly exercises the sentinel path.
+	inBlock := "data:\n  run.sh: |\n    marker=CHANGEME\n    ref=<path:secret/data#k>\n"
+	if errs := ValidateReaderWithOptions(strings.NewReader(inBlock), "x.yaml", Options{CheckAVP: true}); len(errs) != 0 {
+		t.Fatalf("expected 0 findings inside a block scalar, got %d: %v", len(errs), errs)
+	}
+	plain := "marker: CHANGEME\n"
+	if errs := ValidateReaderWithOptions(strings.NewReader(plain), "x.yaml", Options{CheckAVP: true}); len(errs) != 1 {
+		t.Fatalf("expected 1 finding for a plain-field sentinel, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateReaderWithOptions_BlockScalarEndsOnDedent(t *testing.T) {
+	// A placeholder in a plain field AFTER a block scalar (dedented back to
+	// the mapping level) must still be flagged - the block-scalar skip must
+	// end when indentation returns to the header level.
+	doc := "spec:\n  script: |\n    sed 's/<VERSION>/x/'\n  image: <REGISTRY>/img\n"
+	errs := ValidateReaderWithOptions(strings.NewReader(doc), "x.yaml", Options{})
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 finding (<REGISTRY> after the block scalar dedents), got %d: %v", len(errs), errs)
+	}
+	if errs[0].Match != "<REGISTRY>" {
+		t.Errorf("expected <REGISTRY>, got %q", errs[0].Match)
 	}
 }
 
