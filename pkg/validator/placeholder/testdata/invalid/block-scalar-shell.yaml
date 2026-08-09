@@ -7,6 +7,10 @@ data:
     set -eu
     echo "home is ${HOME}"
     echo "path is ${PATH}"
+    # a sed templating pattern - intentional syntax, not a placeholder
+    sed "s/<VERSION>/${SHA}/g" manifest.yaml
+    echo "<REGISTRY>/image is a literal here"
+    marker="CHANGEME-but-inside-a-script"
     redirect() {
       cmd 1>&2
     }

@@ -1,0 +1,14 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: mixed
+spec:
+  params:
+    - name: image
+      default: <REGISTRY>/img
+  steps:
+    - name: run
+      image: registry.example.com/toolbox:latest
+      script: |
+        #!/bin/sh
+        sed "s/<VERSION>/${SHA}/g" file

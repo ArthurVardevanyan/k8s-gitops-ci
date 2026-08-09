@@ -1,0 +1,17 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: k8s-deploy
+spec:
+  steps:
+    - name: deploy
+      image: registry.example.com/toolbox:latest
+      script: |
+        #!/bin/bash
+        set -o errexit
+        echo "Starting Deployment"
+        kubectl kustomize overlays/prod |
+          sed "s/<VERSION>/${SHA}/g" | kubectl apply -f -
+      args:
+        - |
+          echo "another <UPPER> token inside a bare block scalar"
