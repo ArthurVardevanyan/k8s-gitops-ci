@@ -105,14 +105,20 @@ Everything runs inside the single Tekton build step described in
    into one of three outcomes:
    - **GA** — `v${VERSION}` isn't tagged yet (`VERSION` advanced). The step
      re-validates format and strictly-greater-than-latest-tag
-     (defense-in-depth alongside `version:check`), then `git tag
-"v${VERSION}" "${PARAM_REVISION}"` (local only — GoReleaser's GitHub
-     Releases API call with `target_commitish` auto-creates the tag on
-     GitHub; the raw Git Data API isn't permitted for this pipeline's
-     GitHub App token, `403: Resource not accessible by integration`) and
-     `GORELEASER_CURRENT_TAG="v${VERSION}" goreleaser release --skip=ko
---clean` publishes the GitHub Release (binaries + native notes). It
-     then deletes that version's release candidates.
+     (defense-in-depth alongside `version:check`), then **first deletes
+     that version's release candidates** (`v${VERSION}-rc.*` tags +
+     releases). This ordering matters: the native notes
+     (`changelog.use: github-native`) derive the "previous tag" from the
+     most recent existing tag, so a lingering `-rc.*` tag would make the
+     changelog compare against the RC instead of the prior GA (truncated
+     "What's Changed" + wrong "Full Changelog" link). With the RCs gone,
+     it `git tag "v${VERSION}" "${PARAM_REVISION}"` (local only —
+     GoReleaser's GitHub Releases API call with `target_commitish`
+     auto-creates the tag on GitHub; the raw Git Data API isn't permitted
+     for this pipeline's GitHub App token, `403: Resource not accessible
+     by integration`) and `GORELEASER_CURRENT_TAG="v${VERSION}"
+goreleaser release --skip=ko --clean` publishes the GitHub Release
+     (binaries + native notes) against the correct previous GA.
    - **RC** — `v${VERSION}` is already the latest GA tag, and there's a
      shippable change (see [Release candidates](#release-candidates)). The
      step cuts `v<next>-rc.N` as a GitHub pre-release.

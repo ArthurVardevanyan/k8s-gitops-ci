@@ -448,6 +448,16 @@ spec:
                     fi
 
                     echo "Releasing GA ${NEW_SEMVER}..."
+                    # Delete this version's RC releases + tags BEFORE cutting
+                    # GA. GitHub-native release notes (changelog.use:
+                    # github-native) derive "previous tag" from the most recent
+                    # tag by date/semver; if the v${VERSION}-rc.* tags still
+                    # exist, the notes compare against the RC instead of the
+                    # prior GA, producing a truncated changelog and a wrong
+                    # "Full Changelog" compare link. Removing them first makes
+                    # the previous tag resolve to the last real GA.
+                    delete_rcs "${VERSION}"
+
                     # GoReleaser only validates that GORELEASER_CURRENT_TAG
                     # exists as a local git tag pointing at HEAD (a local-only
                     # check); its GitHub Releases API call (target_commitish)
@@ -456,10 +466,6 @@ spec:
                     # Release body = GitHub-native notes (changelog.use:
                     # github-native), so no --release-notes file is passed.
                     GORELEASER_CURRENT_TAG="${NEW_SEMVER}" goreleaser release --skip=ko --clean
-
-                    # GA shipped → the release candidates for this version are
-                    # obsolete; delete their releases + tags.
-                    delete_rcs "${VERSION}"
                   else
                     # ── RC or CI-only ─────────────────────────────────────────
                     # v${VERSION} is already the latest GA tag (VERSION == the
