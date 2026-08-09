@@ -590,3 +590,50 @@ func TestDisplayName(t *testing.T) {
 		t.Errorf("displayName(some-unknown-check) = %q, want a titleCase fallback", got)
 	}
 }
+
+// TestComplianceCheckOrder_IncludesAllTableSpecs guards against a
+// regression where a compliance check had a registered TableSpec but was
+// omitted from complianceCheckOrder. phases.go only copies checks present
+// in that list into the composed section's direct/indirect classification,
+// so an omitted check's findings were silently dropped from the Resource
+// Compliance section (and its live "N finding(s)" log line) had no matching
+// table - the placeholder/cluster-identity bug. Every check that renders a
+// table must appear in the order list so the composed section and the live
+// per-check log always agree.
+func TestComplianceCheckOrder_IncludesAllTableSpecs(t *testing.T) {
+	t.Parallel()
+	inOrder := make(map[string]bool, len(complianceCheckOrder))
+	for _, id := range complianceCheckOrder {
+		inOrder[id] = true
+	}
+	// Every registered TableSpec must be present in complianceCheckOrder -
+	// including image-checksum (present as exempt.IDImageChecksum), so this
+	// guard also catches its removal.
+	for id := range checkTableSpecs {
+		if !inOrder[id] {
+			t.Errorf("check %q has a registered TableSpec but is missing from complianceCheckOrder; its findings would be dropped from the composed Resource Compliance section", id)
+		}
+	}
+}
+
+// TestComposeResourceComplianceSection_NonBlockingPlaceholderSurfaces is the
+// end-to-end regression for the placeholder visibility bug: a non-blocking
+// (pre-existing, no-diff) placeholder finding must roll the section up to
+// StatusWarning and include its per-finding table in the body, so it prints
+// to the console instead of being reduced to a bare count.
+func TestComposeResourceComplianceSection_NonBlockingPlaceholderSurfaces(t *testing.T) {
+	t.Parallel()
+	f := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    "tekton/tasks/k8s-deploy/0.1.1/k8s-deploy.yaml",
+		Value:   "<VERSION>",
+		Message: "tekton/tasks/k8s-deploy/0.1.1/k8s-deploy.yaml:85: unresolved placeholder \"<VERSION>\"",
+	}
+	sec := ComposeResourceComplianceSection(nil, []check.Finding{f}, nil, nil)
+	if sec.Status != StatusWarning {
+		t.Fatalf("expected StatusWarning for a non-blocking placeholder finding, got %v", sec.Status)
+	}
+	if !strings.Contains(sec.Body, "<VERSION>") || !strings.Contains(sec.Body, "k8s-deploy.yaml") {
+		t.Errorf("expected the section body to contain the per-finding table (file + placeholder), got:\n%s", sec.Body)
+	}
+}

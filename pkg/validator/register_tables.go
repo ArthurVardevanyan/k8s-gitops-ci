@@ -36,6 +36,16 @@ var complianceCheckOrder = []string{
 	IDRBACReadonly,
 	IDNamespace,
 	IDSyncOptions,
+	// placeholder and cluster-identity were previously omitted here, which
+	// silently dropped their findings from the composed Resource Compliance
+	// section's direct/indirect classification (phases.go only copies checks
+	// present in this list) - so an "Unresolved Placeholders: N finding(s)"
+	// live-log line had no matching table in the section body, and a no-diff
+	// test-all run reported the section as passed while still logging the
+	// warning count. Including them here makes the composed section and the
+	// live per-check log agree, and surfaces the per-finding table.
+	IDPlaceholder,
+	exempt.IDClusterIdentity,
 }
 
 // indexOfComplianceCheck returns the sort key for id within
