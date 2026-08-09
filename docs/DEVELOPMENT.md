@@ -840,6 +840,7 @@ is about the local dev-loop `task` targets themselves.
 
 | Target                    | Purpose                                                                                                                            |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `version:check`           | Validate the `VERSION` file (semver; never behind the latest tag/`main`; not an under-bump for the commits since the last release) |
 | `mod`                     | Download and tidy Go modules                                                                                                       |
 | `mod:check`               | Ensure `go.mod`/`go.sum` are tidy without modifying the working tree                                                               |
 | `mod:verify`              | Verify Go module integrity and checksums                                                                                           |
@@ -857,7 +858,7 @@ is about the local dev-loop `task` targets themselves.
 | `test:homelab-prs`        | Replay the last _N_ merged PRs of a real GitOps repo (default HomeLab) — smoke gate, see [Testing](#end-to-end--regression-replay) |
 | `coverage:report`         | Print per-file coverage report                                                                                                     |
 | `coverage:html`           | Generate HTML coverage report and open in browser                                                                                  |
-| `ci`                      | Full CI pipeline — mod check, format, schemas, lint, vulncheck, test, build                                                        |
+| `ci`                      | Full CI pipeline — version check, mod check, format, schemas, lint, vulncheck, test, build                                         |
 | `clean`                   | Remove build artifacts, caches, and temp files                                                                                     |
 | `update`                  | Run all update tasks (deps, schemas, policies, scoped-resources)                                                                   |
 | `update:deps`             | Upgrade all Go dependencies and tidy `go.mod`/`go.sum`                                                                             |

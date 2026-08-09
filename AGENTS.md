@@ -42,9 +42,9 @@ anything that looks like it might be org-specific.
   which one actually takes effect today, and exemptable check IDs.
 - [docs/TEKTON.md](docs/TEKTON.md) — this repo's own Tekton
   `PipelineRun`/Pipelines-as-Code trigger/caching setup.
-- [docs/RELEASE.md](docs/RELEASE.md) — versioning (git-cliff +
-  Conventional Commits), and the release flow's actual published
-  artifacts.
+- [docs/RELEASE.md](docs/RELEASE.md) — versioning (the `VERSION` file as
+  the single source of truth), how a release is cut (bump `VERSION` via
+  PR), and the release flow's actual published artifacts.
 - [docs/SECURITY.md](docs/SECURITY.md) — trust model, `exec.Command`
   audit table, file-permission rationale.
 - [docs/SCHEMAS.md](docs/SCHEMAS.md) — how embedded kubeconform

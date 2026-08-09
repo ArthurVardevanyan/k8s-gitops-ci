@@ -149,7 +149,7 @@ canonical reference for:
 | `test.sh` hook contract, `PRE_BUILD_HOOK`/etc. current status                  | [HOOKS.md](HOOKS.md)             |
 | Annotation vs. `EXEMPTIONS` selector exemptions, adding a new exemptable check | [EXEMPTIONS.md](EXEMPTIONS.md)   |
 | Tekton pipeline/task layout, PaC triggers, build-step script                   | [TEKTON.md](TEKTON.md)           |
-| Versioning, changelog, release artifacts                                       | [RELEASE.md](RELEASE.md)         |
+| Versioning (`VERSION` file), releases & RCs, release artifacts                 | [RELEASE.md](RELEASE.md)         |
 | Trust model, `exec.Command` audit, file-permission rationale                   | [SECURITY.md](SECURITY.md)       |
 | Embedded kubeconform schemas / Kyverno policies, how an org supplies its own   | [SCHEMAS.md](SCHEMAS.md)         |
 | Build/test/lint commands, repo structure, design conventions                   | [DEVELOPMENT.md](DEVELOPMENT.md) |
