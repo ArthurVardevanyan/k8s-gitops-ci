@@ -85,6 +85,26 @@ func hookExemptSelectorsAndErrors(cfgs map[string]*hook.Config) (selectors []exe
 	return selectors, errs
 }
 
+// hookMisdeclaredErrors collects every app's hook.MisdeclaredHooks entries
+// (a reserved hook name defined as a bash function without its directive
+// assignment - a hook that would silently never run) prefixed with the
+// offending app, so a dead validation gate fails closed instead of shipping.
+func hookMisdeclaredErrors(cfgs map[string]*hook.Config) []string {
+	apps := make([]string, 0, len(cfgs))
+	for app := range cfgs {
+		apps = append(apps, app)
+	}
+	sort.Strings(apps)
+	var errs []string
+	for _, app := range apps {
+		cfg := cfgs[app]
+		for _, m := range cfg.MisdeclaredHooks {
+			errs = append(errs, fmt.Sprintf("%s: test.sh: %s", app, m))
+		}
+	}
+	return errs
+}
+
 // hookOutcome is the per-hook result recorded for an app's build-report row.
 type hookOutcome int
 

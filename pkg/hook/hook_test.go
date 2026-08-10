@@ -210,3 +210,99 @@ func TestParseTestScript_EmptyHookValueIsNotDefined(t *testing.T) {
 		t.Error("expected HasPreBuild=false for an empty value")
 	}
 }
+
+func TestParseTestScript_MisdeclaredHook_FunctionDefNoDirective(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string // reserved hook name reported as mis-declared
+	}{
+		{"post-validate paren form", "POST_VALIDATE_HOOK() {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
+		{"post-validate space paren form", "POST_VALIDATE_HOOK () {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
+		{"post-validate function keyword", "function POST_VALIDATE_HOOK {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
+		{"post-validate function keyword parens", "function POST_VALIDATE_HOOK() {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
+		{"post-build paren form", "POST_BUILD_HOOK() {\n  echo hi\n}\n", "POST_BUILD_HOOK"},
+		{"pre-build paren form", "PRE_BUILD_HOOK() {\n  echo hi\n}\n", "PRE_BUILD_HOOK"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := parseString(tc.src)
+			got := strings.Join(cfg.MisdeclaredHooks, " ")
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("expected MisdeclaredHooks to mention %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestParseTestScript_MisdeclaredHook_DirectivePresentNotFlagged(t *testing.T) {
+	// When the directive assignment form is present and names the function,
+	// a same-named function definition (or none at all) must NOT be flagged.
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{
+			"directive + same-named function",
+			"POST_VALIDATE_HOOK=check_readme\nPOST_VALIDATE_HOOK() {\n  echo hi\n}\n",
+		},
+		{
+			"directive + renamed descriptive function",
+			"POST_VALIDATE_HOOK=check_readme\ncheck_readme() {\n  echo hi\n}\n",
+		},
+		{
+			"export-prefixed directive + descriptive function",
+			"export POST_BUILD_HOOK=validate_overlay\nvalidate_overlay() {\n  echo hi\n}\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := parseString(tc.src)
+			if len(cfg.MisdeclaredHooks) != 0 {
+				t.Errorf("expected no misdeclared hooks, got %q", cfg.MisdeclaredHooks)
+			}
+		})
+	}
+}
+
+func TestParseTestScript_MisdeclaredHook_IgnoredCases(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+	}{
+		{"commented out definition", "# POST_VALIDATE_HOOK() {\n#   echo hi\n# }\n"},
+		{"helper function not a hook name", "check_readme() {\n  echo hi\n}\n"},
+		{"no function definitions at all", "SCAFFOLD=true\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := parseString(tc.src)
+			if len(cfg.MisdeclaredHooks) != 0 {
+				t.Errorf("expected no misdeclared hooks, got %q", cfg.MisdeclaredHooks)
+			}
+		})
+	}
+}
+
+func TestHookFuncDefName(t *testing.T) {
+	cases := []struct {
+		line string
+		want string
+		ok   bool
+	}{
+		{"POST_VALIDATE_HOOK()", "POST_VALIDATE_HOOK", true},
+		{"POST_VALIDATE_HOOK ()", "POST_VALIDATE_HOOK", true},
+		{"function POST_VALIDATE_HOOK", "POST_VALIDATE_HOOK", true},
+		{"function POST_BUILD_HOOK()", "POST_BUILD_HOOK", true},
+		{"  PRE_BUILD_HOOK()", "PRE_BUILD_HOOK", true},
+		{"check_readme()", "", false},
+		{"SCAFFOLD=true", "", false},
+		{"POST_VALIDATE_HOOK=check_readme", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := hookFuncDefName(tc.line)
+		if ok != tc.ok || (ok && got != tc.want) {
+			t.Errorf("hookFuncDefName(%q) = (%q, %v), want (%q, %v)", tc.line, got, ok, tc.want, tc.ok)
+		}
+	}
+}
