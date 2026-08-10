@@ -112,8 +112,8 @@ func TestHookExemptSelectorsAndErrors_MergesAcrossApps(t *testing.T) {
 func TestHookMisdeclaredErrors_PrefixesAppAndSorts(t *testing.T) {
 	t.Parallel()
 	cfgs := map[string]*hook.Config{
-		"zapp":  {MisdeclaredHooks: []string{"POST_VALIDATE_HOOK is defined as a function but has no <HOOK>=<fn> directive; declare 'POST_VALIDATE_HOOK=<fn>' and rename the function so it runs"}},
-		"bapp":  {MisdeclaredHooks: []string{"POST_BUILD_HOOK is defined as a function but has no <HOOK>=<fn> directive; declare 'POST_BUILD_HOOK=<fn>' and rename the function so it runs"}},
+		"zapp":  {MisdeclaredHooks: []string{"POST_VALIDATE_HOOK is defined as a function but has no <HOOK>=<fn> directive; add 'POST_VALIDATE_HOOK=<fn>' naming the function/command to invoke so it actually runs"}},
+		"bapp":  {MisdeclaredHooks: []string{"POST_BUILD_HOOK is defined as a function but has no <HOOK>=<fn> directive; add 'POST_BUILD_HOOK=<fn>' naming the function/command to invoke so it actually runs"}},
 		"okapp": {},
 	}
 	errs := hookMisdeclaredErrors(cfgs)

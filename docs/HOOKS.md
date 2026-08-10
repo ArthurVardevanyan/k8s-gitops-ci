@@ -38,7 +38,7 @@ empty/false).
 
 Only the **directive assignment** `<HOOK>=<fn>` (e.g. `POST_VALIDATE_HOOK=check_readme`) wires a hook. Because the parser line-scans for the directive rather than running the script, a bash **function definition** named after a reserved hook (`POST_VALIDATE_HOOK() { ... }`, `function POST_VALIDATE_HOOK { ... }`) is **not** recognized as wiring that hook — the function body would never run, silently disabling validation.
 
-To keep a dead validation gate from shipping, `pkg/hook` records any reserved hook name declared as a function definition without a matching directive into `Config.MisdeclaredHooks`, and `pkg/validator` surfaces it as a **blocking** "Hooks" error (`log.ErrorInSection("Hooks", ...)`, folded into the "Kustomize Build" report section like a malformed `EXEMPTIONS`). The fix is to declare the directive that names the function and rename the body to a descriptive function, per the example below.
+To keep a dead validation gate from shipping, `pkg/hook` records any reserved hook name declared as a function definition without a matching directive into `Config.MisdeclaredHooks`, and `pkg/validator` surfaces it as a **blocking** "Hooks" error (`log.ErrorInSection("Hooks", ...)`, folded into the "Kustomize Build" report section like a malformed `EXEMPTIONS`). The fix is to add the directive assignment naming the function/command to invoke; renaming the function to something more descriptive is optional (e.g. `POST_VALIDATE_HOOK=POST_VALIDATE_HOOK` also wires it, though a descriptive name is clearer), per the example below.
 
 ```sh
 # Broken - defines a function but never wires it; the check silently never runs.

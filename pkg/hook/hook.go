@@ -234,12 +234,19 @@ func (c *Config) parse(text string) {
 // and directive-assignment lines are handled upstream, so only bare function
 // definitions reach here.
 func hookFuncDefName(line string) (string, bool) {
-	// Strip an optional "function " keyword, then take the first
-	// whitespace-delimited token - the function name - terminated by an
-	// optional "(" or body brace "{" (handles "NAME()", "NAME () {",
-	// "function NAME" and "function NAME() {" alike).
-	rest := strings.TrimSpace(strings.TrimPrefix(line, "function "))
-	fields := strings.Fields(rest)
+	// Split on any whitespace (space, tab, ...) so "function\tNAME" is
+	// recognized the same as "function NAME" - TrimPrefix on a literal
+	// "function " would miss non-space separators. Strip an optional leading
+	// "function" token, then take the first remaining token - the function
+	// name - terminated by an optional "(" or body brace "{" (handles
+	// "NAME()", "NAME () {", "function NAME" and "function NAME() {" alike).
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "", false
+	}
+	if fields[0] == "function" {
+		fields = fields[1:]
+	}
 	if len(fields) == 0 {
 		return "", false
 	}
@@ -269,7 +276,7 @@ func (c *Config) checkMisdeclaredHooks(funcDefns map[string]bool) {
 	for _, h := range all {
 		if funcDefns[h.name] && !h.has {
 			c.MisdeclaredHooks = append(c.MisdeclaredHooks,
-				h.name+" is defined as a function but has no <HOOK>=<fn> directive; declare '"+h.name+"=<fn>' and rename the function so it runs")
+				h.name+" is defined as a function but has no <HOOK>=<fn> directive; add '"+h.name+"=<fn>' naming the function/command to invoke so it actually runs")
 		}
 	}
 }

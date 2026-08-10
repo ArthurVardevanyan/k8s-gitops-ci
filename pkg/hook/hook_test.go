@@ -221,6 +221,7 @@ func TestParseTestScript_MisdeclaredHook_FunctionDefNoDirective(t *testing.T) {
 		{"post-validate space paren form", "POST_VALIDATE_HOOK () {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
 		{"post-validate function keyword", "function POST_VALIDATE_HOOK {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
 		{"post-validate function keyword parens", "function POST_VALIDATE_HOOK() {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
+		{"post-validate function keyword tab-separated", "function\tPOST_VALIDATE_HOOK {\n  echo hi\n}\n", "POST_VALIDATE_HOOK"},
 		{"post-build paren form", "POST_BUILD_HOOK() {\n  echo hi\n}\n", "POST_BUILD_HOOK"},
 		{"pre-build paren form", "PRE_BUILD_HOOK() {\n  echo hi\n}\n", "PRE_BUILD_HOOK"},
 	}
@@ -294,6 +295,7 @@ func TestHookFuncDefName(t *testing.T) {
 		{"POST_VALIDATE_HOOK ()", "POST_VALIDATE_HOOK", true},
 		{"function POST_VALIDATE_HOOK", "POST_VALIDATE_HOOK", true},
 		{"function POST_BUILD_HOOK()", "POST_BUILD_HOOK", true},
+		{"function\tPOST_VALIDATE_HOOK", "POST_VALIDATE_HOOK", true},
 		{"  PRE_BUILD_HOOK()", "PRE_BUILD_HOOK", true},
 		{"check_readme()", "", false},
 		{"SCAFFOLD=true", "", false},
