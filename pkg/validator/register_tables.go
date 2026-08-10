@@ -169,7 +169,7 @@ var checkTableSpecs = map[string]check.TableSpec{
 	},
 	"sync-options": {
 		Title:    "Argo CD Sync Options",
-		Preamble: "CRD-based resources must have annotation `argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true`.",
+		Preamble: "CRD-based resources must include `SkipDryRunOnMissingResource=true` in their `argocd.argoproj.io/sync-options` annotation.",
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
