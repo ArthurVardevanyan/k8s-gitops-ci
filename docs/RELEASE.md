@@ -34,6 +34,16 @@ CI and can't merge. (The `origin/main` comparison is enforced whenever
 that ref is resolvable — always in the Tekton PR run; a purely local
 `task version:check` with no network falls back to the tag comparison.)
 
+The latest-tag and latest-`main` checks compare `VERSION` on the PR branch
+as-is, so a branch that never modified `VERSION` but is simply _behind_
+`main` (it predates a newer release there) is **not** blocked by either
+check: since it didn't touch the file, merging it can't downgrade anything
+— the merge inherits main's newer `VERSION`. This is detected via
+`git diff --name-only ${BASE_REF}...HEAD` not listing `VERSION`. Any PR
+that _does_ change `VERSION` is still subject to the full checks, and when
+the base ref can't be resolved (offline/local) — or the diff itself fails —
+both checks stay fully in force (fail-closed).
+
 `version:check` also enforces **bump correctness**: when a PR advances
 `VERSION` (i.e. proposes a release), the bump must be at least as large as
 the conventional commits since the last tag warrant — you can't ship a
