@@ -130,17 +130,30 @@ before `ResolveSource` is called, applying one rule first:
   automatically without needing `--hook-source local`.
 
 `ResolveSource(signal, triggerComment, prSet)` then handles the remaining
-cases, fail-closed to `SourceMain`:
+cases, fail-closed. The `signal` is either an **explicit override** or a
+Pipelines-as-Code **`event_type`** carried via `--hook-source`:
 
-- `SourceLocal` → always honored as-is.
-- `SourcePR` → only honored when the triggering comment was **exactly**
-  `/hook-test` **and** a PR number is set; anything else falls back to
-  `SourceMain`. This means a PR's own `test.sh` changes are never trusted
-  by default — an explicit `/hook-test` comment is required, so a PR
-  can't quietly smuggle in a weaker `test.sh` and have its own, unreviewed
-  version take effect.
-- Anything else (including `pipeline --url ... --pr ...` with no
-  `--hook-source`) → `SourceMain`.
+- **Explicit overrides** (`main`/`pr`/`local`) → honored as-is (a trusted
+  operator/CI setting, e.g. local dev `--hook-source local`, or an explicit
+  merge-queue `pr`).
+- **`pull_request`** (event_type) → **`SourceMain`** — the trusted base
+  branch, so a PR can't sneak a weaker `test.sh` into its own validation.
+- **`push`** (event_type, merge-queue) → **`SourceLocal`** — the working
+  tree is the checked-out, already-approved merge commit.
+- **`on-comment`** (event_type) → **`SourcePR`** only when the triggering
+  comment matches `/hook-test` (optionally followed by args, e.g.
+  `/hook-test pp2000`); any other comment fails closed. This means a PR's
+  own `test.sh` changes are never trusted by default — an explicit
+  `/hook-test` comment is required, so a PR can't quietly smuggle in a
+  weaker `test.sh` and have its own, unreviewed version take effect.
+- Empty or unrecognized signal → **fails closed**: `SourceMain` whenever a
+  PR is in play (`prSet`), otherwise `SourceLocal`. A malformed or
+  unexpanded signal (e.g. an untouched `{{ event_type }}` placeholder) can
+  never cause CI to execute a PR-controlled `test.sh`.
+
+`triggerComment` (the body of the gitops comment) is only consulted for the
+`on-comment` class, so new gitops comment commands can be added to the
+allow-list without widening PR-sourcing to every comment.
 
 The CLI's `--hook-source`/`--trigger-comment` flags
 (`pipeline.Options.HookSource`/`TriggerComment`) flow through to

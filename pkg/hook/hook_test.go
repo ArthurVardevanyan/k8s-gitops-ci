@@ -7,18 +7,98 @@ import (
 	"testing"
 )
 
+func TestResolveSource_ExplicitOverride(t *testing.T) {
+	cases := []struct {
+		name   string
+		signal Source
+		want   Source
+	}{
+		{"main override", SourceMain, SourceMain},
+		{"pr override", SourcePR, SourcePR},
+		{"local override", SourceLocal, SourceLocal},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveSource(tc.signal, "", true); got != tc.want {
+				t.Errorf("ResolveSource(%q) = %q, want %q", tc.signal, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveSource_EventTypePullRequest(t *testing.T) {
+	if got := ResolveSource(eventTypePullRequest, "", true); got != SourceMain {
+		t.Errorf("pull_request with PR -> main got %q", got)
+	}
+	if got := ResolveSource(eventTypePullRequest, "", false); got != SourceMain {
+		t.Errorf("pull_request without PR -> main got %q", got)
+	}
+}
+
+func TestResolveSource_EventTypePush(t *testing.T) {
+	if got := ResolveSource(eventTypePush, "", true); got != SourceLocal {
+		t.Errorf("push (merge queue) -> local got %q", got)
+	}
+}
+
+func TestResolveSource_EventTypeOnComment(t *testing.T) {
+	cases := []struct {
+		name    string
+		comment string
+		prSet   bool
+		want    Source
+	}{
+		{"hook-test on PR", "/hook-test", true, SourcePR},
+		{"hook-test with args on PR", "/hook-test pp2000", true, SourcePR},
+		{"hook-test without PR", "/hook-test", false, SourcePR},
+		{"other comment on PR", "/retest", true, SourceMain},
+		{"other comment without PR", "/retest", false, SourceLocal},
+		{"empty comment on PR", "", true, SourceMain},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveSource(eventTypeOnComment, tc.comment, tc.prSet); got != tc.want {
+				t.Errorf("ResolveSource(on-comment, %q, %v) = %q, want %q",
+					tc.comment, tc.prSet, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestResolveSource_FailsClosed(t *testing.T) {
-	if got := ResolveSource("", "", false); got != SourceMain {
-		t.Errorf("empty -> main got %q", got)
+	if got := ResolveSource("", "", true); got != SourceMain {
+		t.Errorf("empty with PR -> main got %q", got)
+	}
+	if got := ResolveSource("", "", false); got != SourceLocal {
+		t.Errorf("empty without PR -> local got %q", got)
 	}
 	if got := ResolveSource("unknown", "", true); got != SourceMain {
-		t.Errorf("unknown -> main got %q", got)
+		t.Errorf("unknown with PR -> main got %q", got)
 	}
-	if got := ResolveSource(SourcePR, "/hook-test", true); got != SourcePR {
-		t.Errorf("pr + comment -> pr got %q", got)
+	if got := ResolveSource("unknown", "", false); got != SourceLocal {
+		t.Errorf("unknown without PR -> local got %q", got)
 	}
-	if got := ResolveSource(SourcePR, "/hook-test", false); got != SourceMain {
-		t.Errorf("pr without prSet -> main got %q", got)
+}
+
+func TestIsHookTestComment(t *testing.T) {
+	cases := []struct {
+		name    string
+		comment string
+		want    bool
+	}{
+		{"bare", "/hook-test", true},
+		{"with args", "/hook-test pp2000", true},
+		{"leading spaces", "  /hook-test", true},
+		{"not hook-test", "/retest", false},
+		{"prefix of other cmd", "/hook-testing", false},
+		{"empty", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isHookTestComment(tc.comment); got != tc.want {
+				t.Errorf("isHookTestComment(%q) = %v, want %v", tc.comment, got, tc.want)
+			}
+		})
 	}
 }
 

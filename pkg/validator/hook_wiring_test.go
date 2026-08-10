@@ -43,9 +43,29 @@ func TestResolveHookSource_ExplicitLocalHonored(t *testing.T) {
 
 func TestResolveHookSource_PRWithoutHookTestCommentFallsBackToMain(t *testing.T) {
 	t.Parallel()
-	opts := Options{HookSource: hook.SourcePR, PR: "42", TriggerComment: "/deploy"}
+	// An on-comment event that is not the /hook-test command must never source
+	// the PR's test.sh — it fails closed to main when a PR is in play.
+	opts := Options{HookSource: hook.Source("on-comment"), PR: "42", TriggerComment: "/deploy"}
 	if got := resolveHookSource(opts); got != hook.SourceMain {
-		t.Errorf("expected a PR signal without the exact /hook-test comment to fail closed to main, got %q", got)
+		t.Errorf("expected an on-comment event without the /hook-test comment to fail closed to main, got %q", got)
+	}
+}
+
+func TestResolveHookSource_ExplicitPROverrideHonored(t *testing.T) {
+	t.Parallel()
+	// An explicit "pr" hook-source override is a trusted operator/CI signal:
+	// it is honored verbatim (used for merge-queue / maintainer-triggered runs).
+	opts := Options{HookSource: hook.SourcePR, PR: "42", TriggerComment: "/deploy"}
+	if got := resolveHookSource(opts); got != hook.SourcePR {
+		t.Errorf("expected an explicit pr override to be honored, got %q", got)
+	}
+}
+
+func TestResolveHookSource_OnCommentHookTestSourcesPR(t *testing.T) {
+	t.Parallel()
+	opts := Options{HookSource: hook.Source("on-comment"), PR: "42", TriggerComment: "/hook-test"}
+	if got := resolveHookSource(opts); got != hook.SourcePR {
+		t.Errorf("expected on-comment /hook-test to source the PR working tree, got %q", got)
 	}
 }
 

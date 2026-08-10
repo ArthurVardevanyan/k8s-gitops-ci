@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -17,21 +18,70 @@ const (
 	SourceLocal Source = "local"
 )
 
-// ResolveSource chooses which test.sh source to use. Fail-closed to main.
-func ResolveSource(signal Source, triggerComment string, prSet bool) Source {
-	if signal == "" {
+// PaC trigger classes carried via the --hook-source signal ({{ event_type }}).
+// These are not hook Sources; ResolveSource maps them to one.
+const (
+	eventTypePullRequest = "pull_request" // PR open/sync → trusted base branch (main)
+	eventTypePush        = "push"         // merge-queue push → checked-out merge commit
+	eventTypeOnComment   = "on-comment"   // matched on-comment annotation (e.g. /hook-test)
+)
+
+// hookTestCommentRe matches the /hook-test gitops comment, optionally followed
+// by arguments (e.g. "/hook-test pp2000"). PaC escapes newlines in
+// {{ trigger_comment }} to a literal "\n", so a leading-anchored prefix match
+// reliably identifies the command.
+var hookTestCommentRe = regexp.MustCompile(`^/hook-test\b`)
+
+// isHookTestComment reports whether the triggering comment is the /hook-test
+// command. The comment body is the value of PaC's {{ trigger_comment }}.
+func isHookTestComment(triggerComment string) bool {
+	return hookTestCommentRe.MatchString(strings.TrimSpace(triggerComment))
+}
+
+// failClosed resolves to the trusted source: SourceMain when a PR is in play
+// (prSet), otherwise SourceLocal (local dev).
+func failClosed(prSet bool) Source {
+	if prSet {
 		return SourceMain
 	}
-	if signal == SourceLocal {
+	return SourceLocal
+}
+
+// ResolveSource maps a trigger signal into the hook Source used to read test.sh.
+//
+// The signal is either an explicit override (main, pr, local) or a PaC
+// event_type carried via {{ event_type }}:
+//
+//   - main/pr/local        → returned unchanged (explicit override, e.g. local dev)
+//   - pull_request         → SourceMain  (trusted base branch)
+//   - push (merge queue)   → SourceLocal (the checked-out, approved merge commit)
+//   - on-comment           → SourcePR only when triggerComment is an allow-listed
+//     command (/hook-test); any other comment fails closed
+//   - empty / unrecognized → fails closed
+//
+// "Fails closed" means: resolve to SourceMain whenever a PR is in play (prSet),
+// so a malformed, unknown, or non-allow-listed signal can never cause CI to
+// execute a PR-controlled test.sh. With no PR (local dev) it resolves to
+// SourceLocal.
+//
+// triggerComment is the body of the gitops comment (PaC {{ trigger_comment }}),
+// empty for non-comment triggers. It is only consulted for the on-comment class.
+func ResolveSource(signal Source, triggerComment string, prSet bool) Source {
+	switch signal {
+	case SourceMain, SourcePR, SourceLocal:
+		return signal
+	case eventTypePush:
 		return SourceLocal
-	}
-	if signal == SourcePR {
-		if strings.TrimSpace(triggerComment) == "/hook-test" && prSet {
+	case eventTypePullRequest:
+		return SourceMain
+	case eventTypeOnComment:
+		if isHookTestComment(triggerComment) {
 			return SourcePR
 		}
-		return SourceMain
+		return failClosed(prSet)
+	default:
+		return failClosed(prSet)
 	}
-	return SourceMain
 }
 
 // ExemptSelector mirrors the hook-layer EXEMPTIONS entry.
