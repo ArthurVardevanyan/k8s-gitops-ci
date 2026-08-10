@@ -316,6 +316,38 @@ func TestComposeResourceComplianceSection_NoFindingsOrExemptions(t *testing.T) {
 	}
 }
 
+// TestComposeResourceComplianceSection_MixedBlockingAndWarningRollsUpToError
+// guards the worst-case rollup: when a section has BOTH blocking and pre-existing
+// warning findings, the section status must be StatusError (❌ header), not
+// StatusWarning - and the pre-existing warning rows must still render. This is
+// the exact HomeLab#611 shape and locks in that the header propagates the worst
+// child upward.
+func TestComposeResourceComplianceSection_MixedBlockingAndWarningRollsUpToError(t *testing.T) {
+	t.Parallel()
+	blocking := []check.Finding{
+		{CheckID: "image-checksum", Kind: "Deployment", Name: "touched", Value: "reg/touched:not_latest", File: "kubernetes/app/overlays/okd"},
+	}
+	warning := []check.Finding{
+		{CheckID: "image-checksum", Kind: "Deployment", Name: "untouched", Value: "reg/untouched:not_latest", File: "kubernetes/other/overlays/okd"},
+	}
+	sources := map[string][]string{"Deployment/touched": {"kubernetes/app/base/deployment.yaml"}}
+
+	s := ComposeResourceComplianceSection(blocking, warning, nil, sources)
+
+	if s.Status != StatusError {
+		t.Errorf("expected StatusError (❌) header when any finding is blocking, got %v", s.Status)
+	}
+	if s.Status.Icon() != "❌" {
+		t.Errorf("expected the ❌ icon to propagate, got %q", s.Status.Icon())
+	}
+	if !strings.Contains(s.Body, "❌ Image Digest Pinning") {
+		t.Errorf("expected the sub-section to be marked blocking (❌), got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "touched") || !strings.Contains(s.Body, "untouched") {
+		t.Errorf("expected both blocking and pre-existing rows to render, got:\n%s", s.Body)
+	}
+}
+
 func TestComposeResourceComplianceSection_WarningOnlyIsNonBlocking(t *testing.T) {
 	t.Parallel()
 	s := ComposeResourceComplianceSection(nil, []check.Finding{{CheckID: "image-checksum", File: "a.yaml", Message: "unpinned"}}, nil, nil)

@@ -26,6 +26,39 @@ type complianceAttributionCtx struct {
 // kindNameKey is the standard resource identity key for a finding.
 func kindNameKey(f check.Finding) string { return f.Kind + "/" + f.Name }
 
+// appRootOf derives the app root (the directory whose overlays/<cluster> tree an
+// overlay lives under) from a changed file path, matching appFromOverlayPath's
+// prefix-before-"/overlays/" convention. This deliberately does NOT assume the
+// app root is the first path segment: repos frequently nest apps a directory or
+// more deep (e.g. "kubernetes/<app>/overlays/<cluster>"), so hardcoding
+// parts[0] mis-attributes every finding for those layouts.
+//
+// For an overlay file (…/overlays/<cluster>/…) it returns the prefix before
+// "/overlays/". For a base/component/top-level app file it returns the prefix
+// before the first "/base/" or "/components/" segment; failing that (a
+// top-level app file with no base/component dir) it returns the file's parent
+// directory. cluster is the segment immediately after "overlays" for an overlay
+// file, or "" otherwise.
+func appRootOf(filePath string) (app, cluster string) {
+	slash := filepath.ToSlash(filePath)
+	if idx := strings.Index(slash, "/overlays/"); idx >= 0 {
+		app = slash[:idx]
+		rest := strings.TrimPrefix(slash[idx:], "/overlays/")
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			cluster = rest[:i]
+		} else {
+			cluster = rest
+		}
+		return filepath.FromSlash(app), cluster
+	}
+	for _, marker := range []string{"/base/", "/components/"} {
+		if idx := strings.Index(slash, marker); idx >= 0 {
+			return filepath.FromSlash(slash[:idx]), ""
+		}
+	}
+	return filepath.FromSlash(filepath.Dir(slash)), ""
+}
+
 // changedResourceKeys parses every non-kustomization changed YAML file (raw
 // source, not rendered output) and maps each declared resource (Kind/Name) to
 // the files that define it. A PR's change to a resource makes findings on that
@@ -70,15 +103,14 @@ func changedResourceKeys(changedFiles []string) map[string][]string {
 func directlyChangedOverlays(changedFiles []string) map[string]bool {
 	direct := make(map[string]bool)
 	for _, f := range changedFiles {
-		parts := strings.Split(filepath.ToSlash(f), "/")
-		for i := 0; i < len(parts)-1; i++ {
-			if parts[i] == "overlays" && i+1 < len(parts) && i > 0 {
-				app := parts[0]
-				cluster := parts[i+1]
-				direct[app+"/"+cluster] = true
-				break
-			}
+		if !strings.Contains(filepath.ToSlash(f), "/overlays/") {
+			continue
 		}
+		app, cluster := appRootOf(f)
+		if app == "" || cluster == "" {
+			continue
+		}
+		direct[filepath.ToSlash(app)+"/"+cluster] = true
 	}
 	return direct
 }
@@ -89,13 +121,12 @@ func directlyChangedOverlays(changedFiles []string) map[string]bool {
 func appsWithBaseChanges(changedFiles []string) map[string]bool {
 	apps := make(map[string]bool)
 	for _, f := range changedFiles {
-		parts := strings.SplitN(filepath.ToSlash(f), "/", 3)
-		if len(parts) < 2 {
+		if strings.Contains(filepath.ToSlash(f), "/overlays/") {
 			continue
 		}
-		app := parts[0]
-		if !strings.Contains(f, "/overlays/") {
-			apps[app] = true
+		app, _ := appRootOf(f)
+		if app != "" {
+			apps[filepath.ToSlash(app)] = true
 		}
 	}
 	return apps
@@ -105,15 +136,20 @@ func appsWithBaseChanges(changedFiles []string) map[string]bool {
 // (app/overlays/<cluster>). Used by isResourceAffected to confirm that a
 // finding's source file from changedResourceKeys actually feeds this overlay.
 func isFileInOverlay(filePath, app, cluster string) bool {
-	parts := strings.Split(filepath.ToSlash(filePath), "/")
-	for i := 0; i < len(parts)-1; i++ {
-		if parts[i] == "overlays" && i > 0 && i+1 < len(parts) {
-			if parts[0] == app || (i >= 2 && parts[i-2] == "templates" && parts[i-1] == app) {
-				return parts[i+1] == cluster
-			}
-		}
+	fileApp, fileCluster := appRootOf(filePath)
+	if fileCluster == "" || fileCluster != cluster {
+		return false
 	}
-	return false
+	fileApp = filepath.ToSlash(fileApp)
+	app = filepath.ToSlash(app)
+	if fileApp == app {
+		return true
+	}
+	// Scaffold-template overlays live under templates/<app>/overlays/<cluster>:
+	// the resource's file app root ends with the overlay's app root
+	// (…/templates/<app> vs <app>). Match on that suffix boundary so a
+	// templated overlay's own resources are still attributed to it.
+	return strings.HasSuffix(fileApp, "/templates/"+app)
 }
 
 // isResourceAffected returns true when resourceKey's source files include one
@@ -125,10 +161,14 @@ func isFileInOverlay(filePath, app, cluster string) bool {
 func isResourceAffected(resourceKey string, ctx *complianceAttributionCtx, overlayPath string) bool {
 	app := appFromOverlayPath(overlayPath)
 	cluster := filepath.Base(overlayPath)
-	key := app + "/" + cluster
+	key := filepath.ToSlash(app) + "/" + cluster
 
-	// Direct overlay change: the resource must be defined by a file under this
-	// specific overlay dir to be blocking.
+	// Direct overlay change: the resource is blocking if it's defined by a
+	// file under this specific overlay dir. This is NOT exclusive with the
+	// base/component path below - an overlay whose kustomization.yaml was
+	// touched (making it a "direct" overlay) can also pull in a changed base
+	// resource, and that base resource must still be evaluated via the
+	// base/component branch. So we fall through rather than returning early.
 	if ctx.directOverlays[key] {
 		sourceFiles := ctx.changedKeys[resourceKey]
 		for _, sf := range sourceFiles {
@@ -136,13 +176,12 @@ func isResourceAffected(resourceKey string, ctx *complianceAttributionCtx, overl
 				return true
 			}
 		}
-		return false
 	}
 
 	// Base/component change: check if a changed dir feeds this overlay.
 	sourceFiles := ctx.changedKeys[resourceKey]
 	for _, sf := range sourceFiles {
-		dir := filepath.Dir(sf)
+		dir := filepath.ToSlash(filepath.Dir(sf))
 		if overlays, ok := ctx.overlaysByDir[dir]; ok && overlays[key] {
 			return true
 		}
@@ -183,7 +222,7 @@ func overlayDirsByChangedPaths(changedFiles []string, baseApps map[string]bool, 
 
 	result := make(map[string]map[string]bool)
 	for _, app := range apps {
-		if !baseApps[app] {
+		if !baseApps[filepath.ToSlash(app)] {
 			continue
 		}
 		overlaysDir := filepath.Join(app, "overlays")
@@ -197,13 +236,21 @@ func overlayDirsByChangedPaths(changedFiles []string, baseApps map[string]bool, 
 			}
 			cluster := entry.Name()
 			overlayDir := filepath.Join(overlaysDir, cluster)
-			overlayKey := app + "/" + cluster
+			overlayKey := filepath.ToSlash(app) + "/" + cluster
 
-			if overlay.RefsChangedDir(overlayDir, targetDirs) {
-				if result[overlayDir] == nil {
-					result[overlayDir] = make(map[string]bool)
+			// Record, per changed source dir, the overlay keys whose ref chain
+			// reaches it. isResourceAffected looks up overlaysByDir by the
+			// resource's source-file dir (filepath.Dir(sf)), so result MUST be
+			// keyed by the changed dir - not the overlay dir. Check each
+			// targetDir individually so we know which one matched.
+			for _, td := range targetDirs {
+				if overlay.RefsChangedDir(overlayDir, []string{td}) {
+					key := filepath.ToSlash(td)
+					if result[key] == nil {
+						result[key] = make(map[string]bool)
+					}
+					result[key][overlayKey] = true
 				}
-				result[overlayDir][overlayKey] = true
 			}
 		}
 	}
@@ -217,15 +264,11 @@ func changedComponentDirsOf(changedFiles []string, baseApps map[string]bool) []s
 	seen := make(map[string]bool)
 	var dirs []string
 	for _, f := range changedFiles {
-		parts := strings.SplitN(filepath.ToSlash(f), "/", 3)
-		if len(parts) < 2 {
+		if strings.Contains(filepath.ToSlash(f), "/overlays/") {
 			continue
 		}
-		app := parts[0]
-		if !baseApps[app] {
-			continue
-		}
-		if strings.Contains(f, "/overlays/") {
+		app, _ := appRootOf(f)
+		if app == "" || !baseApps[filepath.ToSlash(app)] {
 			continue
 		}
 		d := filepath.Dir(f)

@@ -781,13 +781,23 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 			indirectTotal += len(nd)
 		}
 	}
-	// Any findings without a registered TableSpec (e.g. a new check without
-	// a table) or from non-compliance checks still use the old finalizeCompliance.
-	changedSet := detectSourceFiles(changed)
-	direct, indirect := finalizeCompliance(combinedBlocking, changedSet)
-	d2, i2 := finalizeCompliance(combinedNonblocking, changedSet)
-	direct = append(direct, d2...)
-	indirect = append(indirect, i2...)
+	// combinedBlocking / combinedNonblocking are ALREADY the final
+	// resource-level split from classifyResourceCompliance (which honors
+	// ForcedDirect, the resource-level attribution model, and the
+	// no-TableSpec fallback). Re-running them through the file-based
+	// finalizeCompliance here used to UNDO that: a resource-level-blocking
+	// finding whose File is an overlay dir (not a literal changed file) was
+	// silently demoted back to a warning. Keep the split, only promoting any
+	// stray ForcedDirect finding that slipped into the non-blocking set.
+	direct := combinedBlocking
+	var indirect []check.Finding
+	for _, f := range combinedNonblocking {
+		if f.ForcedDirect {
+			direct = append(direct, f)
+		} else {
+			indirect = append(indirect, f)
+		}
+	}
 	// Re-sort by complianceCheckOrder.
 	sort.SliceStable(direct, func(i, j int) bool {
 		return indexOfComplianceCheck(direct[i].CheckID) < indexOfComplianceCheck(direct[j].CheckID)
