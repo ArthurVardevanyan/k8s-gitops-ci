@@ -97,9 +97,17 @@ type Config struct {
 	AVPExclude      []string
 	ExemptSelectors []ExemptSelector
 	ExemptErrors    []string
-	HasPreBuild     bool
-	HasPostBuild    bool
-	HasPostValidate bool
+	// MisdeclaredHooks records the reserved hook names
+	// (PRE_BUILD_HOOK/POST_BUILD_HOOK/POST_VALIDATE_HOOK) that test.sh defines
+	// as a bash function but never wires via the directive assignment form
+	// (<HOOK>=<fn>). Such a function definition is invisible to the parser's
+	// directive scan, so its hook silently never runs - callers should surface
+	// this as a blocking error so a dead validation gate can't ship. See
+	// hookDirectiveValue and pkg/validator/hookMisdeclaredErrors.
+	MisdeclaredHooks []string
+	HasPreBuild      bool
+	HasPostBuild     bool
+	HasPostValidate  bool
 	// PreBuildCmd/PostBuildCmd/PostValidateCmd hold the value assigned to
 	// PRE_BUILD_HOOK=/POST_BUILD_HOOK=/POST_VALIDATE_HOOK= (e.g. the
 	// function or command name to invoke - "run_my_script" in
@@ -138,6 +146,11 @@ func (c *Config) parse(text string) {
 	lines := strings.Split(text, "\n")
 	var inExemptions bool
 	var avpLines []string
+	// funcDefns tracks which reserved hook names are declared as bash function
+	// definitions (the DIRECTIVE_OUTPUT form above parses only the assignment
+	// directive <HOOK>=<fn>; a `POST_VALIDATE_HOOK() {...}` function definition
+	// with no directive is detected here and reported via MisdeclaredHooks).
+	funcDefns := make(map[string]bool, 3)
 	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -199,10 +212,73 @@ func (c *Config) parse(text string) {
 			c.PostValidateCmd = v
 			c.HasPostValidate = v != ""
 		}
+		// Reserved-name function definition detection: a line like
+		// POST_VALIDATE_HOOK() {...} or `function POST_VALIDATE_HOOK` defines
+		// a bash function but ISN'T the assignment directive the parser looks
+		// for, so the hook wouldn't be wired. Record it for the fail-loud
+		// reporting below (never auto-run it).
+		if name, ok := hookFuncDefName(line); ok {
+			funcDefns[name] = true
+		}
 		_ = i
 	}
 	_ = avpLines
 	sort.Strings(c.AVPExclude)
+	c.checkMisdeclaredHooks(funcDefns)
+}
+
+// hookFuncDefName reports whether line is a bash function definition whose
+// name is a reserved hook directive (PRE_BUILD_HOOK/POST_BUILD_HOOK/
+// POST_VALIDATE_HOOK), returning that name and true. Both `NAME()` / `NAME ()`
+// and `function NAME` (with or without `()`) forms are recognized. Comments
+// and directive-assignment lines are handled upstream, so only bare function
+// definitions reach here.
+func hookFuncDefName(line string) (string, bool) {
+	// Split on any whitespace (space, tab, ...) so "function\tNAME" is
+	// recognized the same as "function NAME" - TrimPrefix on a literal
+	// "function " would miss non-space separators. Strip an optional leading
+	// "function" token, then take the first remaining token - the function
+	// name - terminated by an optional "(" or body brace "{" (handles
+	// "NAME()", "NAME () {", "function NAME" and "function NAME() {" alike).
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "", false
+	}
+	if fields[0] == "function" {
+		fields = fields[1:]
+	}
+	if len(fields) == 0 {
+		return "", false
+	}
+	first := strings.TrimRight(fields[0], "() {")
+	first = strings.TrimSpace(first)
+	for _, name := range []string{"PRE_BUILD_HOOK", "POST_BUILD_HOOK", "POST_VALIDATE_HOOK"} {
+		if first == name {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// checkMisdeclaredHooks reports any reserved hook name that was declared as a
+// function definition but lacks its directive assignment (the only form that
+// actually wires a hook), prefixed with the corrective guidance.
+func (c *Config) checkMisdeclaredHooks(funcDefns map[string]bool) {
+	type hookName struct {
+		name string
+		has  bool
+	}
+	all := []hookName{
+		{"PRE_BUILD_HOOK", c.HasPreBuild},
+		{"POST_BUILD_HOOK", c.HasPostBuild},
+		{"POST_VALIDATE_HOOK", c.HasPostValidate},
+	}
+	for _, h := range all {
+		if funcDefns[h.name] && !h.has {
+			c.MisdeclaredHooks = append(c.MisdeclaredHooks,
+				h.name+" is defined as a function but has no <HOOK>=<fn> directive; add '"+h.name+"=<fn>' naming the function/command to invoke so it actually runs")
+		}
+	}
 }
 
 // hookDirectiveValue matches a "<key><rest>" or "export <key><rest>" line

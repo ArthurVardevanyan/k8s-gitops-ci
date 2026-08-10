@@ -11,6 +11,7 @@ behavior, and exactly how each directive is wired into the pipeline (see
 - [The `test.sh` contract](#the-testsh-contract)
   - [`EXEMPTIONS=(...)` selector syntax](#exemptions-selector-syntax)
   - [`EXEMPTIONS=(...)` wiring](#exemptions-wiring)
+  - [Mis-declared hook functions](#mis-declared-hook-functions)
 - [Hook execution](#hook-execution)
 - [`hook.Source` / `ResolveSource`](#hooksource--resolvesource)
 - [Current Limitations](#current-limitations)
@@ -31,7 +32,24 @@ empty/false).
 | `SCAFFOLD=`                                                    | `SCAFFOLD=false` (or `true`/`yes`/`1`)                                  | Opts an app out of scaffold-drift validation. Defaults to `true` (enabled) when absent. An app that has a scaffold template (so drift detection is actually available for it) but sets `SCAFFOLD=false` gets flagged in the "Scaffold Drift Protection" PR-comment section as a coverage gap (non-blocking) - see [CI.md](CI.md#scaffold-validation). |
 | `AVP_EXCLUDE=`                                                 | `AVP_EXCLUDE="cluster1 cluster2"`                                       | Space-separated list of overlay names to exclude from AVP secret resolution — see [CI.md](CI.md)'s Build Strategies section.                                                                                                                                                                                                                          |
 | `EXEMPTIONS=(...)` or `EXEMPTIONS="..."`                       | see below                                                               | Per-app exemption selectors, merged into every check run during the Build YAML/Post-Build Validation phases (see **`EXEMPTIONS=(...)` wiring** below).                                                                                                                                                                                                |
-| `PRE_BUILD_HOOK=` / `POST_BUILD_HOOK=` / `POST_VALIDATE_HOOK=` | `PRE_BUILD_HOOK=<cmd>` (optionally `export`-prefixed, like `SCAFFOLD=`) | Names a shell function (defined elsewhere in the same `test.sh`) or external command to invoke around the build — see **Hook execution** below. `<cmd>` empty/absent means "not defined".                                                                                                                                                             |
+| `PRE_BUILD_HOOK=` / `POST_BUILD_HOOK=` / `POST_VALIDATE_HOOK=` | `PRE_BUILD_HOOK=<cmd>` (optionally `export`-prefixed, like `SCAFFOLD=`) | Names a shell function (defined elsewhere in the same `test.sh`) or external command to invoke around the build — see **Hook execution** below. `<cmd>` empty/absent means "not defined". **The directive assignment is the only form that wires a hook** — see **Mis-declared hook functions** below.                                                |
+
+### Mis-declared hook functions
+
+Only the **directive assignment** `<HOOK>=<fn>` (e.g. `POST_VALIDATE_HOOK=check_readme`) wires a hook. Because the parser line-scans for the directive rather than running the script, a bash **function definition** named after a reserved hook (`POST_VALIDATE_HOOK() { ... }`, `function POST_VALIDATE_HOOK { ... }`) is **not** recognized as wiring that hook — the function body would never run, silently disabling validation.
+
+To keep a dead validation gate from shipping, `pkg/hook` records any reserved hook name declared as a function definition without a matching directive into `Config.MisdeclaredHooks`, and `pkg/validator` surfaces it as a **blocking** "Hooks" error (`log.ErrorInSection("Hooks", ...)`, folded into the "Kustomize Build" report section like a malformed `EXEMPTIONS`). The fix is to add the directive assignment naming the function/command to invoke; renaming the function to something more descriptive is optional (e.g. `POST_VALIDATE_HOOK=POST_VALIDATE_HOOK` also wires it, though a descriptive name is clearer), per the example below.
+
+```sh
+# Broken - defines a function but never wires it; the check silently never runs.
+POST_VALIDATE_HOOK() { ... }
+
+# Correct - the directive names the function to invoke.
+export POST_VALIDATE_HOOK=check_auto_sync_readme
+check_auto_sync_readme() { ... }
+```
+
+The mis-declared form is **never auto-run** — it is only detected and reported, preserving the "the directive RHS names the command" contract.
 
 ### `EXEMPTIONS=(...)` selector syntax
 
@@ -163,7 +181,10 @@ resolved `hook.Source`.
 
 ## Current Limitations
 
-None currently known - every directive in the table above is parsed
-_and_ connected to real behavior. See [CI.md](CI.md)'s Build Strategies
-section for exactly which overlay-rendering call sites `AVP_EXCLUDE=`
-does (and, deliberately, doesn't) affect.
+- A hook named as a reserved function definition without its directive (see
+  **Mis-declared hook functions** above) is detected and **blocked**, but is
+  never auto-executed — wiring must come from the directive assignment.
+- Otherwise none currently known - every directive in the table above is parsed
+  _and_ connected to real behavior. See [CI.md](CI.md)'s Build Strategies
+  section for exactly which overlay-rendering call sites `AVP_EXCLUDE=`
+  does (and, deliberately, doesn't) affect.

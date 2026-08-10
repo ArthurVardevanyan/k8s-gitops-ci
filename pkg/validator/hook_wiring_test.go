@@ -109,6 +109,40 @@ func TestHookExemptSelectorsAndErrors_MergesAcrossApps(t *testing.T) {
 	}
 }
 
+func TestHookMisdeclaredErrors_PrefixesAppAndSorts(t *testing.T) {
+	t.Parallel()
+	cfgs := map[string]*hook.Config{
+		"zapp":  {MisdeclaredHooks: []string{"POST_VALIDATE_HOOK is defined as a function but has no <HOOK>=<fn> directive; add 'POST_VALIDATE_HOOK=<fn>' naming the function/command to invoke so it actually runs"}},
+		"bapp":  {MisdeclaredHooks: []string{"POST_BUILD_HOOK is defined as a function but has no <HOOK>=<fn> directive; add 'POST_BUILD_HOOK=<fn>' naming the function/command to invoke so it actually runs"}},
+		"okapp": {},
+	}
+	errs := hookMisdeclaredErrors(cfgs)
+	// Deterministic (sorted by app name) and app-prefixed.
+	wantSorted := []string{
+		"bapp: test.sh: POST_BUILD_HOOK is defined as a function",
+		"zapp: test.sh: POST_VALIDATE_HOOK is defined as a function",
+	}
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 errors, got %d: %v", len(errs), errs)
+	}
+	for i, e := range errs {
+		if !strings.HasPrefix(e, wantSorted[i]) {
+			t.Errorf("errs[%d] = %q, want prefix %q", i, e, wantSorted[i])
+		}
+	}
+}
+
+func TestHookMisdeclaredErrors_NoMisdeclarations(t *testing.T) {
+	t.Parallel()
+	cfgs := map[string]*hook.Config{
+		"appA": {}, // no misdeclared hooks
+		"appB": {HasPostBuild: true, PostBuildCmd: "check_overlay"},
+	}
+	if errs := hookMisdeclaredErrors(cfgs); len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+}
+
 func TestHookExemptSelectorsAndErrors_CollectsAndPrefixesErrors(t *testing.T) {
 	t.Parallel()
 	cfgs := map[string]*hook.Config{

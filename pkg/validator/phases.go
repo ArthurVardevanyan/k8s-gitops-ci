@@ -623,6 +623,10 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		buildErrs = append(buildErrs, err)
 		log.ErrorInSection("Hooks", "%s", err)
 	}
+	for _, err := range hookMisdeclaredErrors(hookCfgs) {
+		buildErrs = append(buildErrs, err)
+		log.ErrorInSection("Hooks", "%s", err)
+	}
 
 	// Per-app "Building: <name>" summary banner - printed once per app,
 	// after every overlay of every app has already finished building
