@@ -22,10 +22,11 @@ scripts/pull-schemas.sh    ──writes──> pkg/lint/kubeconform/schemas/sche
 scripts/pull-policies.sh   ──writes──> pkg/lint/kyverno/policies/policies.tar.gz
 ```
 
-Both archives are gitignored, generated, build-time artifacts (`task
-schemas:pull`/`policies:pull` regenerate them, and `task build`/
-`task test`/`task lint` depend on those tasks so they're always present
-before anything that needs them runs) and embedded via `//go:embed`, but
+Both archives are gitignored, generated, build-time artifacts
+(`task schemas:pull`/`task policies:pull` regenerate them, and
+`task build`/`task test`/`task lint` depend on those tasks so they're
+always present before anything that needs them runs) and embedded via
+`//go:embed`, but
 **only when built with the `embedschemas` build tag**
 (`go build -tags embedschemas`). This repo's own binary is always built
 this way: `task build`/`task test` pass `-tags embedschemas` directly,

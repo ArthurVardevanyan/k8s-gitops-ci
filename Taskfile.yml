@@ -669,6 +669,16 @@ tasks:
 
         echo "⬆️  Updating ${LOCAL_SHA} → ${LATEST_SHA}"
         sed -i.bak "s/SCHEMA_REPO_SHA:=${LOCAL_SHA}}/SCHEMA_REPO_SHA:=${LATEST_SHA}}/" "${SCRIPT}" && rm -f "${SCRIPT}.bak"
+        # Verify the substitution actually landed: sed exits 0 even when it
+        # matches nothing, so re-read the pin and confirm it's now LATEST_SHA
+        # rather than trusting sed's exit status (guards against the pinned-
+        # line format drifting out from under the pattern above).
+        NEW_LOCAL_SHA=$(sed -n 's/.*SCHEMA_REPO_SHA:=\([0-9a-f]\{40\}\)}.*/\1/p' "${SCRIPT}" | head -1)
+        if [ "${NEW_LOCAL_SHA}" != "${LATEST_SHA}" ]; then
+          echo "❌ Failed to update SCHEMA_REPO_SHA in ${SCRIPT} (still '${NEW_LOCAL_SHA:-<none>}')"
+          echo "   The pinned-SHA line format may have changed; update this task's sed pattern."
+          exit 1
+        fi
         echo "   ✓ ${SCRIPT}"
         echo "✅ Bumped SCHEMA_REPO_SHA to ${LATEST_SHA}"
         echo "   Run 'task schemas:pull && task test' to verify, then commit."
