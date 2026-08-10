@@ -860,10 +860,12 @@ is about the local dev-loop `task` targets themselves.
 | `coverage:html`           | Generate HTML coverage report and open in browser                                                                                  |
 | `ci`                      | Full CI pipeline — version check, mod check, format, schemas, lint, vulncheck, test, build                                         |
 | `clean`                   | Remove build artifacts, caches, and temp files                                                                                     |
-| `update`                  | Run all update tasks (deps, schemas, policies, scoped-resources)                                                                   |
+| `update`                  | Run all update tasks (deps, schemas/policies pin bump + repack, scoped-resources)                                                  |
 | `update:deps`             | Upgrade all Go dependencies and tidy `go.mod`/`go.sum`                                                                             |
-| `update:schemas`          | Pull embedded kubeconform schemas (see `docs/SCHEMAS.md`)                                                                          |
-| `update:policies`         | Pull embedded Kyverno policies (placeholder by default — see `docs/SCHEMAS.md`)                                                    |
+| `schemas:pull`            | Repack embedded kubeconform schemas from the pinned `SCHEMA_REPO_SHA` (see `docs/SCHEMAS.md`)                                      |
+| `policies:pull`           | Repack embedded Kyverno policies (placeholder by default — see `docs/SCHEMAS.md`)                                                  |
+| `update:schemas`          | Bump the pinned `SCHEMA_REPO_SHA` in `scripts/pull-schemas.sh` to the `SCHEMA_REPO_BRANCH` tip (see `docs/SCHEMAS.md`)             |
+| `update:policies`         | Bump the pinned policy ref (no-op while policies are a static placeholder — see `docs/SCHEMAS.md`)                                 |
 | `update:scoped-resources` | Regenerate `resource_scope.go`/`extra_resource_scope.go` from a live cluster's `kubectl api-resources`                             |
 
 Run `task --list` for the authoritative, up-to-date list.

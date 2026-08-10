@@ -323,7 +323,7 @@ tasks:
     desc: Run golangci-lint
     aliases: [l]
     silent: true
-    deps: [install-tools, update:schemas, update:policies]
+    deps: [install-tools, schemas:pull, policies:pull]
     sources:
       - "./**/*.go"
       - .golangci.yml
@@ -350,7 +350,7 @@ tasks:
   vulncheck:
     desc: Check for known vulnerabilities (only fails on fixable findings)
     silent: true
-    deps: [install-tools, update:schemas, update:policies]
+    deps: [install-tools, schemas:pull, policies:pull]
     cmds:
       - |
         export PATH="{{.TOOLS_PATH}}:$PATH"
@@ -371,12 +371,12 @@ tasks:
   build:
     desc: Build bin/{{.NAME}}
     silent: true
-    deps: [update:schemas, update:policies]
+    deps: [schemas:pull, policies:pull]
     sources:
       - "**/*.go"
       - go.mod
       - go.sum
-      # update:schemas/update:policies have no `sources:` of their own (they
+      # schemas:pull/policies:pull have no `sources:` of their own (they
       # always re-run to keep the pinned-SHA fetch honest), so without these
       # two lines Task's up-to-date check never notices a freshly-regenerated
       # archive - the go:embed'd content silently changes underneath a build
@@ -417,7 +417,7 @@ tasks:
   test:
     desc: Run test suite
     aliases: [t]
-    deps: [update:schemas, update:policies]
+    deps: [schemas:pull, policies:pull]
     env:
       # Default matches the top-level `env:` block's GOFLAGS (task-level env
       # fully replaces it, not merges) rather than forcing `-count=1` — the
@@ -446,7 +446,7 @@ tasks:
   test:cover:
     desc: Run tests with coverage profile + race detector
     silent: true
-    deps: [update:schemas, update:policies]
+    deps: [schemas:pull, policies:pull]
     env:
       # See test's matching comment: default no longer forces `-count=1`,
       # so unchanged packages can reuse Go's cached test results.
@@ -542,8 +542,8 @@ tasks:
       - task: format:check
       - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/8  Code Formatting Check" >> "{{.TIMEFILE}}"
       - echo "" && echo "▶ Step 4/8  Schemas & Policies"
-      - task: update:schemas
-      - task: update:policies
+      - task: schemas:pull
+      - task: policies:pull
       - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/8  Schemas & Policies" >> "{{.TIMEFILE}}"
       - echo "" && echo "▶ Step 5/8  Linting"
       - task: lint
@@ -602,27 +602,98 @@ tasks:
         echo "✅ Dependencies updated — run 'task test' to verify"
 
   update:
-    desc: Run all update tasks (deps, schemas, policies, scoped-resources)
+    desc: Run all update tasks (deps, schemas/policies pin bump + repack, scoped-resources)
     silent: true
     cmds:
       - task: update:deps
+      # Bump the pins first, then repack the archives from the new pins so
+      # `task update` leaves both the pinned SHA and the on-disk archive in
+      # sync (update:schemas/update:policies only rewrite the pin).
       - task: update:schemas
       - task: update:policies
+      - task: schemas:pull
+      - task: policies:pull
       - task: update:scoped-resources
 
-  update:schemas:
-    desc: Pull embedded kubeconform schemas from git
+  schemas:pull:
+    desc: Pull embedded kubeconform schemas from git (repacks schemas.tar.gz from the pinned SCHEMA_REPO_SHA)
     cmds:
       - scripts/pull-schemas.sh
     generates:
       - pkg/lint/kubeconform/schemas/schemas.tar.gz
 
-  update:policies:
-    desc: Pull embedded kyverno policies (placeholder)
+  policies:pull:
+    desc: Pull embedded kyverno policies (placeholder) into policies.tar.gz
     cmds:
       - scripts/pull-policies.sh
     generates:
       - pkg/lint/kyverno/policies/policies.tar.gz
+
+  update:schemas:
+    desc: Bump the pinned SCHEMA_REPO_SHA in scripts/pull-schemas.sh to the SCHEMA_REPO_BRANCH tip
+    silent: true
+    cmds:
+      # Only rewrites the pinned SHA in scripts/pull-schemas.sh - it does
+      # NOT repack schemas.tar.gz. Producing the archive from whatever
+      # SCHEMA_REPO_SHA is pinned is `schemas:pull`'s job (a dep of
+      # build/test/lint/vulncheck), so the flow is:
+      #   task update:schemas   # bump the pin (this task)
+      #   task schemas:pull     # repack the archive from the new pin
+      # Renovate performs the same bump automatically via the git-refs
+      # customManager in renovate.json that tracks the pinned line.
+      - |
+        set -euo pipefail
+        : "${SCHEMA_REPO:=https://github.com/ArthurVardevanyan/kubernetes-json-schema}"
+        : "${SCHEMA_REPO_BRANCH:=main}"
+        SCRIPT="scripts/pull-schemas.sh"
+
+        echo "🔍 Checking ${SCHEMA_REPO_BRANCH} tip of ${SCHEMA_REPO}..."
+
+        LOCAL_SHA=$(sed -n 's/.*SCHEMA_REPO_SHA:=\([0-9a-f]\{40\}\)}.*/\1/p' "${SCRIPT}" | head -1)
+        if [ -z "${LOCAL_SHA}" ]; then
+          echo "❌ Could not find a pinned SCHEMA_REPO_SHA in ${SCRIPT}"
+          exit 1
+        fi
+        echo "   Local:  ${LOCAL_SHA}"
+
+        LATEST_SHA=$(git ls-remote "${SCHEMA_REPO}" "${SCHEMA_REPO_BRANCH}" | awk 'NR==1 {print $1}')
+        if ! printf '%s' "${LATEST_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
+          echo "❌ Could not resolve ${SCHEMA_REPO_BRANCH} tip from ${SCHEMA_REPO} (got: '${LATEST_SHA}')"
+          exit 1
+        fi
+
+        if [ "${LATEST_SHA}" = "${LOCAL_SHA}" ]; then
+          echo "✅ Already up to date (${LOCAL_SHA})"
+          exit 0
+        fi
+
+        echo "⬆️  Updating ${LOCAL_SHA} → ${LATEST_SHA}"
+        sed -i.bak "s/SCHEMA_REPO_SHA:=${LOCAL_SHA}}/SCHEMA_REPO_SHA:=${LATEST_SHA}}/" "${SCRIPT}" && rm -f "${SCRIPT}.bak"
+        echo "   ✓ ${SCRIPT}"
+        echo "✅ Bumped SCHEMA_REPO_SHA to ${LATEST_SHA}"
+        echo "   Run 'task schemas:pull && task test' to verify, then commit."
+
+  update:policies:
+    desc: Bump the pinned policy ref in scripts/pull-policies.sh (no-op while policies are a static placeholder)
+    silent: true
+    cmds:
+      # Mirror of update:schemas, but policies are currently a static
+      # placeholder (PLACEHOLDER_REF in scripts/pull-policies.sh - there is
+      # no upstream repo to `git ls-remote` yet), so there is nothing to
+      # resolve or rewrite. Wire POLICY_REPO/POLICY_REPO_BRANCH resolution
+      # in here (identical to update:schemas) once policies are pulled from
+      # a real source. `policies:pull` still repacks the placeholder
+      # archive as a dep of build/test/lint/vulncheck.
+      - |
+        set -euo pipefail
+        : "${POLICY_REPO:=}"
+        if [ -z "${POLICY_REPO}" ]; then
+          echo "ℹ️  Policies are a static placeholder — no upstream ref to bump."
+          echo "   (Set POLICY_REPO/POLICY_REPO_BRANCH here once a real policy source exists; see docs/SCHEMAS.md.)"
+          exit 0
+        fi
+        echo "❌ POLICY_REPO resolution is not implemented yet; wire it up like update:schemas."
+        exit 1
 
   update:scoped-resources:
     desc: Regenerate resource scope maps from kubectl api-resources
