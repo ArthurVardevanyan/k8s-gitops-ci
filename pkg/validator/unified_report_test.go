@@ -141,6 +141,7 @@ func (s stubBranding) ReportMarker() string   { return "" }
 func (s stubBranding) ReportTitle() string    { return "" }
 func (s stubBranding) PipelineHeader() string { return "" }
 func (s stubBranding) BinaryName() string     { return s.bin }
+func (stubBranding) OrgVersion() string       { return "" }
 
 // TestReproduceCommand_UsesProviderBinaryName verifies the reproduce hint
 // honors the org-injected binary name (provider.Branding.BinaryName) so

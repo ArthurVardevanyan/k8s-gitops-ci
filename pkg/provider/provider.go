@@ -12,6 +12,12 @@ type Branding interface {
 	// ship the tool under a different binary name override this so the hint
 	// is copy-pasteable; an empty string falls back to the generic default.
 	BinaryName() string
+	// OrgVersion is the org-side build version surfaced alongside the tool
+	// version in the report's CI Notes section. Consumers that distribute
+	// the tool as part of an org build override this so the report says which
+	// org build ran; an empty string falls back to the generic default (no
+	// org-version bullet at all).
+	OrgVersion() string
 }
 
 // CommentPolicy controls pruning of foreign comments.
@@ -43,6 +49,7 @@ const (
 	defaultReportTitle    = "GitOps CI Results"
 	defaultPipelineHeader = "GitOps CI Pipeline"
 	defaultBinaryName     = "k8s-gitops-ci"
+	defaultOrgVersion     = ""
 )
 
 // ReportMarker returns the marker string used to identify the unified PR comment.
@@ -75,6 +82,15 @@ func (p Providers) BinaryName() string {
 		return p.Branding.BinaryName()
 	}
 	return defaultBinaryName
+}
+
+// OrgVersion returns the org-side build version shown in the CI Notes
+// section of the PR-comment report. Empty means no org build is reported.
+func (p Providers) OrgVersion() string {
+	if p.Branding != nil && p.Branding.OrgVersion() != "" {
+		return p.Branding.OrgVersion()
+	}
+	return defaultOrgVersion
 }
 
 // ForeignMarkers returns markers for comments that should be pruned.

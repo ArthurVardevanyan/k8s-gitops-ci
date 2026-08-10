@@ -563,9 +563,12 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 		}
 	}
 
-	// 9. CI Notes
-	_ = opts
-	sections = append(sections, validator.ComposeCINotesSection("Pipeline completed."))
+	// CI Notes
+	body := "Pipeline completed.\n\n- Tool version: " + version.String()
+	if orgVersion := opts.Providers.OrgVersion(); orgVersion != "" {
+		body += "\n- Org version: " + orgVersion
+	}
+	sections = append(sections, validator.ComposeCINotesSection(body))
 	return sections
 }
 
