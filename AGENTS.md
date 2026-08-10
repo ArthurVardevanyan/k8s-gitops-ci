@@ -19,6 +19,24 @@ variable with a generic (usually empty/no-op) default. See
 section for the full explanation and worked examples before adding
 anything that looks like it might be org-specific.
 
+**This constraint is not just about code.** It applies equally to
+everything an agent writes for this public repo: PR titles/descriptions,
+commit messages, code comments, review replies, and issue text. Never
+name a specific organization, an organization's internal/private repo
+slug, an organization-internal domain, or any other
+organization-identifying detail in anything pushed here — even when
+citing a real downstream consumer's PR/repo as evidence that a fix
+works (e.g. in a "verified against a real PR" section). Describe it
+generically instead ("a real downstream consumer repo/PR", "an app with
+hundreds of overlays") and keep any concrete numbers (timings, overlay
+counts, before/after tables) - those are useful and not
+organization-identifying on their own. Before pushing any commit or
+opening/editing any PR/issue on this repo, scan the exact text you're
+about to send for any organization name or org-specific repo/domain
+pattern you may know from context and remove every match - this has
+slipped through before, so treat it as a mandatory final check, not an
+assumption.
+
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the top-level entry
@@ -144,3 +162,11 @@ After making a code change, before considering it done:
 Use the `gh` CLI for GitHub operations (PR comments, reviews, API
 calls) via `pkg/github`'s thin wrapper — don't add a second, parallel
 GitHub-API client.
+
+Before running `gh pr create`/`gh pr edit`/`gh pr comment`/`gh issue
+create`/`gh issue comment` (or pushing a commit) against this repo,
+scan the exact title/body/message text for any org-specific reference
+(org name, org's private repo slug, `*.<org>.com` domain, internal tool
+names) and rewrite generically if found — see the Overview section's
+"This constraint is not just about code" paragraph. This has recurred
+more than once; do not skip it.
