@@ -550,7 +550,10 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// per-app drift re-run, so it belongs with large-file/YAML-syntax/
 	// config-sort/startingCSV rather than folded into this section's drift
 	// summary.
+	scaffoldStart := time.Now()
 	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
+	tc.RecordStep("Build YAML", "scaffold-validation", time.Since(scaffoldStart))
+	log.Debug("scaffold-validation: %s", time.Since(scaffoldStart).Round(time.Millisecond))
 
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	kyvernoEnabled := stepEnabled(stepKyverno, disabled, enabled)
@@ -679,7 +682,10 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	var fixCheckErr error
 	kustomizeFixEnabled := stepEnabled(stepKustomizeFix, disabled, enabled)
 	if kustomizeFixEnabled {
+		fixStart := time.Now()
 		fixNeeded, fixCheckErr = kustomize.CheckFix(changed)
+		tc.RecordStep("Build YAML", "kustomize-fix", time.Since(fixStart))
+		log.Debug("kustomize-fix: %s", time.Since(fixStart).Round(time.Millisecond))
 		switch {
 		case fixCheckErr != nil:
 			log.ErrorInSection("KustomizeBuild", "kustomize fix check: %v", fixCheckErr)
@@ -697,8 +703,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// existing tolerant-of-git-failure pattern for changeset-resolution
 	// errors specifically (unlike kustomize.CheckFix above, which is a
 	// hard failure, not tolerated).
+	addedFilesStart := time.Now()
 	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
-	ghostTable, ghostBlockingCount := buildGhostTable(apps, changed, addedFiles)
+	tc.RecordStep("Build YAML", "added-files", time.Since(addedFilesStart))
+	log.Debug("added-files: %s", time.Since(addedFilesStart).Round(time.Millisecond))
+	ghostStart := time.Now()
+	ghostTable, ghostBlockingCount := buildGhostTable(renderedOverlays, changed, addedFiles)
+	tc.RecordStep("Build YAML", "ghost-patch", time.Since(ghostStart))
+	log.Debug("ghost-patch: %s", time.Since(ghostStart).Round(time.Millisecond))
 	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, fixCheckErr, kustomizeFixEnabled, ghostTable, ghostBlockingCount))
 	if ghostBlockingCount > 0 {
 		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)

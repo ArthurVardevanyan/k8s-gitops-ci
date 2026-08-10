@@ -146,42 +146,38 @@ func CheckApp(appPath string) ([]AppOverlayResult, error) {
 	return results, nil
 }
 
-// ClassifyApp checks all overlays under an app for ghost patches,
-// classifying each as blocking or warning via ClassifyOverlay - the
-// plural, app-level counterpart to ClassifyOverlay, mirroring how CheckApp
-// relates to CheckOverlay. Kept as a separate function from CheckApp
-// (rather than reimplementing CheckApp in terms of this one) so CheckApp's
-// existing callers/behavior - Ghosts always reported with Blocking: false,
-// no git-diff cost - are left completely unaffected.
-func ClassifyApp(appPath string, changedFiles, addedFiles []string) ([]AppOverlayResult, error) {
-	dir := filepath.Join(appPath, "overlays")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	results := make([]AppOverlayResult, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		ov := filepath.Join(dir, e.Name())
-		if _, err := os.Stat(filepath.Join(ov, "kustomization.yaml")); err != nil {
-			continue
-		}
-		rendered, err := kustomizeBuild(ov)
+// RenderedOverlay pairs an overlay's directory path with its already-built
+// YAML manifest stream, so ClassifyRendered can classify ghost patches
+// against overlays a caller has already rendered (e.g. the Build YAML
+// phase's own per-overlay renders) instead of re-rendering them itself.
+type RenderedOverlay struct {
+	Path string
+	YAML string
+}
+
+// ClassifyRendered classifies ghost patches across overlays whose YAML has
+// already been rendered by the caller, via ClassifyOverlay per overlay -
+// the plural counterpart to ClassifyOverlay, taking the overlay set and its
+// renders directly rather than discovering and re-rendering every overlay
+// under an app on disk (see ClassifyApp's history/removal: that scanned
+// every overlay in an app's overlays/ directory and called kustomizeBuild
+// on each one, which for an app with hundreds of overlays and a PR
+// touching only a handful was a redundant full-repo re-render dominating
+// the Build YAML phase's wall time - see docs/CI.md's Ghost Patch
+// Detection section). Callers should pass only the overlays relevant to
+// this run (typically the PR's changed/rendered overlays) - an overlay
+// omitted here is simply never classified, matching the intent that a
+// ghost patch on an overlay this PR didn't touch/build isn't this run's
+// concern.
+func ClassifyRendered(overlays []RenderedOverlay, changedFiles, addedFiles []string) ([]AppOverlayResult, error) {
+	results := make([]AppOverlayResult, 0, len(overlays))
+	for _, ov := range overlays {
+		gr, err := ClassifyOverlay(ov.Path, ov.YAML, changedFiles, addedFiles)
 		if err != nil {
-			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
+			results = append(results, AppOverlayResult{Overlay: ov.Path, Err: err})
 			continue
 		}
-		gr, err := ClassifyOverlay(ov, rendered, changedFiles, addedFiles)
-		if err != nil {
-			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
-			continue
-		}
-		results = append(results, AppOverlayResult{Overlay: ov, Ghosts: gr})
+		results = append(results, AppOverlayResult{Overlay: ov.Path, Ghosts: gr})
 	}
 	return results, nil
 }

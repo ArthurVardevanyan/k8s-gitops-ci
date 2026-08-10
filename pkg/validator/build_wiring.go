@@ -163,31 +163,50 @@ func buildHookTable(apps []string, cfgs map[string]*hook.Config, results map[str
 
 // buildGhostTable renders a "| Overlay | Target | |" markdown table of
 // ghost patches (kustomize patches targeting a resource absent from the
-// rendered base) detected across the given apps via
-// pkg/ghostpatch.ClassifyApp, and separately returns the blocking subset
-// (a ghost patch on an overlay whose own kustomization.yaml this PR changed)
-// so the caller can fold it into the overall pass/fail decision. A ghost on
-// an overlay this PR did not touch - pre-existing drift - or introduced by a
-// brand-new overlay, is surfaced for visibility only (non-blocking).
+// rendered base) detected across renderedOverlays via
+// pkg/ghostpatch.ClassifyRendered, and separately returns the blocking
+// subset (a ghost patch on an overlay whose own kustomization.yaml this PR
+// changed) so the caller can fold it into the overall pass/fail decision. A
+// ghost on an overlay this PR did not touch - pre-existing drift - or
+// introduced by a brand-new overlay, is surfaced for visibility only
+// (non-blocking).
+//
+// renderedOverlays is expected to be the Build YAML phase's own per-overlay
+// render output (see runBuildAndPostBuild's renderedOverlays var) - i.e.
+// only the overlays this run actually built, not every overlay on disk
+// under each app. This is deliberate: ghost-patch detection previously
+// walked every overlay directory under each app (see git history's
+// ClassifyApp) and re-rendered each one via kustomize, which for an app
+// with hundreds of overlays and a PR touching only a handful dominated the
+// Build YAML phase's wall time for no benefit - a ghost patch on an
+// overlay this PR never touched or built isn't this run's concern (see
+// ClassifyOverlay's blocking rule, which already only fires for a changed
+// overlay's own kustomization.yaml). An overlay that failed to build (and
+// so has no entry in renderedOverlays) is simply skipped here too - its
+// build failure already surfaces loudly via buildErrs/Overlay Build, and
+// there is no rendered YAML to check ghost targets against anyway.
+//
 // Returns table == "" when no ghost patches are found at all, so the
 // caller can render a plain "none detected" line instead of an empty
 // table.
-func buildGhostTable(apps, changed, addedFiles []string) (table string, blockingCount int) {
+func buildGhostTable(renderedOverlays []renderedOverlay, changed, addedFiles []string) (table string, blockingCount int) {
+	overlays := make([]ghostpatch.RenderedOverlay, 0, len(renderedOverlays))
+	for _, ro := range renderedOverlays {
+		overlays = append(overlays, ghostpatch.RenderedOverlay{Path: ro.overlay, YAML: string(ro.data)})
+	}
+	results, err := ghostpatch.ClassifyRendered(overlays, changed, addedFiles)
+	if err != nil {
+		return "", 0
+	}
 	var rows []string
-	for _, app := range apps {
-		results, err := ghostpatch.ClassifyApp(app, changed, addedFiles)
-		if err != nil {
-			continue
-		}
-		for _, r := range results {
-			for _, g := range r.Ghosts {
-				marker := ""
-				if g.Blocking {
-					marker = " 🚫"
-					blockingCount++
-				}
-				rows = append(rows, fmt.Sprintf("| `%s` | %s |%s", r.Overlay, g.Target.String(), marker))
+	for _, r := range results {
+		for _, g := range r.Ghosts {
+			marker := ""
+			if g.Blocking {
+				marker = " 🚫"
+				blockingCount++
 			}
+			rows = append(rows, fmt.Sprintf("| `%s` | %s |%s", r.Overlay, g.Target.String(), marker))
 		}
 	}
 	if len(rows) == 0 {
