@@ -196,6 +196,15 @@ or a minor. `N` is the next integer after the highest existing
 `v<next>-rc.*`. goreleaser's `prerelease: auto` marks `-rc` tags as GitHub
 pre-releases (never "Latest").
 
+**Advisor tag scoping.** `cliff.toml`'s `tag_pattern` is anchored to
+strict GA tags (`^v[0-9]+\.[0-9]+\.[0-9]+$`) — it deliberately excludes
+RC tags. If pre-release tags were included in the pattern,
+`git-cliff --bumped-version --unreleased` would anchor off the latest RC
+(e.g. `v0.48.4-rc.1`) instead of the last GA tag (`v0.48.3`), producing a
+pre-release-shaped `next` (e.g. `0.48.4-rc.2`) that fails the downstream
+strict `MAJOR.MINOR.PATCH` regex gate in both the Tekton pipeline and
+`version:check`, silently blocking RC cuts and the bump-correctness guard.
+
 **Cleanup.**
 
 - When the GA for a version is published, its `v<version>-rc.*`
