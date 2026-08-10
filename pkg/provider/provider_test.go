@@ -17,6 +17,9 @@ func TestNilDefaults(t *testing.T) {
 	if p.PipelineHeader() != defaultPipelineHeader {
 		t.Errorf("PipelineHeader = %q", p.PipelineHeader())
 	}
+	if p.OrgVersion() != defaultOrgVersion {
+		t.Errorf("OrgVersion = %q, want the empty default", p.OrgVersion())
+	}
 	if len(p.ForeignMarkers()) != 0 {
 		t.Error("expected no foreign markers")
 	}
@@ -30,7 +33,7 @@ func TestOverrides(t *testing.T) {
 	p := Providers{
 		Branding: testBranding{},
 	}
-	if p.ReportMarker() != "MARK" || p.ReportTitle() != "TITLE" || p.PipelineHeader() != "HEADER" || p.BinaryName() != "BIN" {
+	if p.ReportMarker() != "MARK" || p.ReportTitle() != "TITLE" || p.PipelineHeader() != "HEADER" || p.BinaryName() != "BIN" || p.OrgVersion() != "ORGVER" {
 		t.Errorf("override branding failed: %+v", p)
 	}
 }
@@ -42,12 +45,21 @@ func TestBinaryNameDefault(t *testing.T) {
 	}
 }
 
+// TestOrgVersionDefault verifies the empty generic fallback when Branding is
+// nil: no org build is reported unless a Branding provider supplies one.
+func TestOrgVersionDefault(t *testing.T) {
+	if got := (Providers{}).OrgVersion(); got != "" {
+		t.Errorf("OrgVersion() = %q, want the empty default", got)
+	}
+}
+
 type testBranding struct{}
 
 func (testBranding) ReportMarker() string   { return "MARK" }
 func (testBranding) ReportTitle() string    { return "TITLE" }
 func (testBranding) PipelineHeader() string { return "HEADER" }
 func (testBranding) BinaryName() string     { return "BIN" }
+func (testBranding) OrgVersion() string     { return "ORGVER" }
 
 type testClusterMetadata struct{}
 

@@ -995,7 +995,11 @@ Validation when a NAD is present in the rendered-overlay chain and Kyverno
 Policies when the opt-in `kyverno` step is enabled (see
 [Registered checks](#registered-checks) above). Resource Compliance
 additionally groups findings by check ID with an "Accepted Exemptions"
-audit sub-block.
+audit sub-block. The CI Notes section is always informational and always
+lists the tool version (`version.String()` — the `ldflags`-injected build
+metadata); org builds that wire a `Branding` provider supplying an
+`OrgVersion()` additionally render an "Org version:" bullet beneath it
+(generic builds omit that bullet entirely).
 
 Each check-ID group under Resource Compliance renders using that check's
 registered `check.TableSpec` (`pkg/validator/register_tables.go`) when

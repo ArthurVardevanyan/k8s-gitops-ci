@@ -123,7 +123,7 @@ metadata:
 
 ```go
 type Providers struct {
-    Branding        Branding        // report marker/title/header/binary name
+    Branding        Branding        // report marker/title/header/binary name/org version
     CommentPolicy   CommentPolicy   // foreign comment markers to prune
     Secrets         SecretBackend   // auth-error hint text
     ClusterMetadata ClusterMetadata // project/cluster identity + change groups
@@ -448,7 +448,11 @@ in `compose_sections.go` (`ComposeLintingSection`,
 list — reusing sections `phases.go` already built onto
 `Result.Sections` by name (`validatorSectionOrFallback`) rather than
 re-deriving/re-composing them a second time with different (often
-stub) inputs.
+stub) inputs. The one exception is CI Notes
+(`ComposeCINotesSection`), whose body `composeSections` builds directly:
+always the tool version (`version.String()`), plus an "Org version:" bullet
+from `opts.Providers.OrgVersion()` when a `Branding` provider supplies one
+(generic builds omit it).
 
 `renderSubDropdown` renders one `ReportSection` as a nested `<details>` at
 an arbitrary depth (`summaryIndent` adds `&nbsp;`-padding per level, since

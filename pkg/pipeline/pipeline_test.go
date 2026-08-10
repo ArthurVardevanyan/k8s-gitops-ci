@@ -272,6 +272,47 @@ func TestComposeSections_ChecklistErrIsBlocking(t *testing.T) {
 	}
 }
 
+// ciNotesSection returns the composeSections output's CI Notes section body.
+func ciNotesSection(t *testing.T, res *Result, opts Options) string {
+	t.Helper()
+	sections := composeSections(res, opts)
+	for _, s := range sections {
+		if s.Name == "CI Notes" {
+			return s.Body
+		}
+	}
+	t.Fatal("expected a CI Notes section in composeSections output")
+	return ""
+}
+
+// TestComposeSections_CINotesIncludesToolVersion guards that the CI Notes
+// section always reports the tool build version (version.String()) on every
+// run, generic or org-branded - it previously rendered a hardcoded
+// "Pipeline completed." placeholder.
+func TestComposeSections_CINotesIncludesToolVersion(t *testing.T) {
+	body := ciNotesSection(t, &Result{}, Options{})
+	if !strings.Contains(body, "Tool version: "+version.String()) {
+		t.Errorf("expected the CI Notes body to include the tool version, got:\n%s", body)
+	}
+	if strings.Contains(body, "Org version:") {
+		t.Errorf("expected no org-version bullet for a generic run, got:\n%s", body)
+	}
+}
+
+// TestComposeSections_CINotesIncludesOrgVersion guards that an org build
+// (a Branding provider supplying OrgVersion) additionally renders the org
+// version bullet alongside the tool version.
+func TestComposeSections_CINotesIncludesOrgVersion(t *testing.T) {
+	opts := Options{Providers: provider.Providers{Branding: fakeBranding{orgVersion: "acme-1.2.3"}}}
+	body := ciNotesSection(t, &Result{}, opts)
+	if !strings.Contains(body, "Tool version: "+version.String()) {
+		t.Errorf("expected the CI Notes body to include the tool version, got:\n%s", body)
+	}
+	if !strings.Contains(body, "Org version: acme-1.2.3") {
+		t.Errorf("expected the CI Notes body to include the org version, got:\n%s", body)
+	}
+}
+
 // TestComposeSections_ReusesAlreadyRenderedLintingSection guards against a
 // regression of the double-composition bug: composeSections used to
 // re-derive "Linting"/"Static Checks" section bodies from the *already-
@@ -542,12 +583,13 @@ func TestBuildReport_SetsTimestamp(t *testing.T) {
 	}
 }
 
-type fakeBranding struct{}
+type fakeBranding struct{ orgVersion string }
 
 func (fakeBranding) ReportMarker() string   { return "<!-- custom-marker -->" }
 func (fakeBranding) ReportTitle() string    { return "CUSTOM TITLE" }
 func (fakeBranding) PipelineHeader() string { return "CUSTOM HEADER" }
 func (fakeBranding) BinaryName() string     { return "custom-ci" }
+func (f fakeBranding) OrgVersion() string   { return f.orgVersion }
 
 type fakeCommentPolicy struct{ markers []string }
 
