@@ -68,8 +68,8 @@ Only what's actually active in `.goreleaser.yaml` today:
   passes `-tags=embedschemas` (matching `task build` — see
   [SCHEMAS.md](SCHEMAS.md)), so every published binary has the
   kubeconform schema archive/Kyverno policy archive baked in and works
-  standalone out of the box; `before.hooks` runs `task update:schemas`/
-  `task update:policies` first so those archives exist on disk for
+  standalone out of the box; `before.hooks` runs `task schemas:pull`/
+  `task policies:pull` first so those archives exist on disk for
   `//go:embed` to pick up (a no-op in the real Tekton pipeline, where
   `task ci` already generated them moments earlier in the same step —
   see [Dry-run locally](#dry-run-locally) for why it matters standalone).
@@ -217,11 +217,11 @@ Both require `GORELEASER_CURRENT_TAG` to be unset or to point at an
 existing local tag — `goreleaser build` doesn't need one, but `release`
 without `--snapshot` does.
 
-Unlike `task build`/`task test` (which depend on the `update:schemas`/
-`update:policies` Task targets directly), a standalone `goreleaser build`/
+Unlike `task build`/`task test` (which depend on the `schemas:pull`/
+`policies:pull` Task targets directly), a standalone `goreleaser build`/
 `release` doesn't go through `Taskfile.yml` at all by default — that's
-why `before.hooks` explicitly runs `task update:schemas`/
-`task update:policies` itself (see [Published artifacts](#published-artifacts)),
+why `before.hooks` explicitly runs `task schemas:pull`/
+`task policies:pull` itself (see [Published artifacts](#published-artifacts)),
 so `schemas.tar.gz`/`policies.tar.gz` are always present on disk before
 the `-tags=embedschemas` build's `//go:embed` needs them, even when
 dry-running `goreleaser` directly like this.

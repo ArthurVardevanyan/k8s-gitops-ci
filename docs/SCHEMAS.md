@@ -22,15 +22,16 @@ scripts/pull-schemas.sh    ──writes──> pkg/lint/kubeconform/schemas/sche
 scripts/pull-policies.sh   ──writes──> pkg/lint/kyverno/policies/policies.tar.gz
 ```
 
-Both archives are gitignored, generated, build-time artifacts (`task
-update:schemas`/`update:policies` regenerate them, and `task build`/
-`task test`/`task lint` depend on those tasks so they're always present
-before anything that needs them runs) and embedded via `//go:embed`, but
+Both archives are gitignored, generated, build-time artifacts
+(`task schemas:pull`/`task policies:pull` regenerate them, and
+`task build`/`task test`/`task lint` depend on those tasks so they're
+always present before anything that needs them runs) and embedded via
+`//go:embed`, but
 **only when built with the `embedschemas` build tag**
 (`go build -tags embedschemas`). This repo's own binary is always built
 this way: `task build`/`task test` pass `-tags embedschemas` directly,
 and `.goreleaser.yaml`'s `builds[].flags` passes the same tag (with its
-`before.hooks` running `task update:schemas`/`task update:policies`
+`before.hooks` running `task schemas:pull`/`task policies:pull`
 first so the archives exist on disk) for every published GitHub Release
 binary - so the standalone CLI works out of the box with no extra
 configuration, matching a local `task build`. Without the tag - the
@@ -93,6 +94,14 @@ single CI run. If you add a third `pull-*.sh` script or otherwise
 regenerate either archive, reuse this same `tar`/`gzip` invocation
 rather than a plain `tar -czf`.
 
+Those flags (`--sort`/`--mtime`/`--owner`/`--group`/`--numeric-owner`)
+are **GNU tar** features. macOS's default `tar` is bsdtar, which rejects
+`--sort=name`, so both scripts resolve GNU tar explicitly — `gtar` if
+present (homebrew's `gnu-tar`), otherwise a `tar` that reports itself as
+GNU — and **hard-fail** with install guidance if only bsdtar is found,
+rather than silently producing a non-reproducible archive with the wrong
+tar. On macOS: `brew install gnu-tar` (provides `gtar`).
+
 ## Kubeconform schemas
 
 `scripts/pull-schemas.sh` clones a public
@@ -106,7 +115,7 @@ hardcoded literal:
 
 ```sh
 SCHEMA_REPO=https://github.com/<your-org>/kubernetes-json-schema \
-  task update:schemas
+  task schemas:pull
 task build
 ```
 
@@ -116,35 +125,39 @@ By default `scripts/pull-schemas.sh` doesn't float to `SCHEMA_REPO`'s
 branch tip on every run - it fetches and checks out an explicit,
 tracked commit, **`SCHEMA_REPO_SHA`** (pinned in the script itself, next
 to a `# renovate: datasource=git-refs depName=...` marker comment), so
-`task update:schemas`/`task build` produce the exact same
+`task schemas:pull`/`task build` produce the exact same
 `schemas.tar.gz` every time for a given commit of this repo, instead of
 silently picking up whatever the upstream schema repo happens to
-contain at build time. Renovate tracks `SCHEMA_REPO_BRANCH`'s tip (see
-`renovate.json`'s `customManagers`) and opens a PR bumping
-`SCHEMA_REPO_SHA` whenever that branch advances - upgrading the schema
-set is then an explicit, reviewable diff instead of untracked drift.
+contain at build time. `task update:schemas` (and Renovate, which tracks
+`SCHEMA_REPO_BRANCH`'s tip via `renovate.json`'s `customManagers`)
+bumps `SCHEMA_REPO_SHA` when that branch advances - the pin bump and the
+archive repack are two separate steps: `update:schemas` rewrites the
+pinned SHA in `scripts/pull-schemas.sh`, and the next `schemas:pull`/
+`build` repacks `schemas.tar.gz` from it. Upgrading the schema set is
+then an explicit, reviewable diff instead of untracked drift.
 
 In pinned mode the script also short-circuits when it's already up to
 date: it writes a sibling marker (`schemas.tar.gz.ref`, gitignored)
 recording the `SCHEMA_REPO_SHA` the current archive was built from, and
 skips the network `git fetch` + repack entirely when that marker already
-matches. Since `update:schemas` is a `deps:` of `test`/`build`/`lint`/
+matches. Since `schemas:pull` is a `deps:` of `test`/`build`/`lint`/
 `vulncheck` and runs on every CI invocation, this avoids a per-run
 upstream fetch whenever the pin hasn't moved. Floating mode (empty
 `SCHEMA_REPO_SHA`) always re-fetches, since a branch tip can advance
 without the marker changing.
 
-`SCHEMA_REPO_BRANCH` (default `main`) is only consulted as the ref to
-fetch when `SCHEMA_REPO_SHA` is explicitly set to empty - the "floating"
-fallback, for an org overriding `SCHEMA_REPO` to a different fork that
-doesn't share the default pin's commit history and doesn't have a
-known-good SHA to pin to yet:
+`SCHEMA_REPO_BRANCH` (default `main`) is both the ref `update:schemas`
+resolves to bump the pin, and the ref `pull-schemas.sh` fetches when
+`SCHEMA_REPO_SHA` is explicitly set to empty - the "floating" fallback,
+for an org overriding `SCHEMA_REPO` to a different fork that doesn't
+share the default pin's commit history and doesn't have a known-good SHA
+to pin to yet:
 
 ```sh
 SCHEMA_REPO=https://github.com/<your-org>/kubernetes-json-schema \
 SCHEMA_REPO_BRANCH=main \
 SCHEMA_REPO_SHA= \
-  task update:schemas
+  task schemas:pull
 ```
 
 Once you have a commit you're happy with, pin it by setting

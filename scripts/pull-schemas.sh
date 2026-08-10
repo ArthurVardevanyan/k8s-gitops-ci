@@ -4,7 +4,7 @@ set -euo pipefail
 : "${SCHEMA_REPO:=https://github.com/ArthurVardevanyan/kubernetes-json-schema}"
 : "${SCHEMA_REPO_BRANCH:=main}"
 # renovate: datasource=git-refs depName=ArthurVardevanyan/kubernetes-json-schema
-: "${SCHEMA_REPO_SHA:=095a851bf8dee866809fc99a9818fddda9ef779b}"
+: "${SCHEMA_REPO_SHA:=00a24f99f02a884502a7eb9fef9dbd74960b71b8}"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 : "${SCHEMA_CACHE:=${XDG_CACHE_HOME}/k8s-gitops-ci/kubernetes-json-schema}"
 : "${OUTPUT:=pkg/lint/kubeconform/schemas/schemas.tar.gz}"
@@ -79,7 +79,24 @@ done
 # checked-out schema content is byte-identical, which defeats Go's
 # build/test cache for every package that go:embeds it (see the
 # sibling embed_archive.go and docs/SCHEMAS.md).
-tar --sort=name --mtime="UTC 1970-01-01" --owner=0 --group=0 --numeric-owner \
+#
+# Those flags are GNU tar features: macOS's default `tar` is bsdtar,
+# which rejects `--sort=name`. Resolve GNU tar explicitly (gtar via
+# homebrew's gnu-tar on macOS; plain tar on Linux) and hard-fail with
+# install guidance rather than silently falling back to bsdtar and
+# producing a non-reproducible archive that quietly busts Go's cache.
+if command -v gtar >/dev/null 2>&1; then
+  TAR=gtar
+elif tar --version 2>/dev/null | grep -q 'GNU tar'; then
+  TAR=tar
+else
+  echo "ERROR: GNU tar is required to build a reproducible archive," >&2
+  echo "       but only bsdtar (which lacks --sort) was found." >&2
+  echo "       macOS: brew install gnu-tar (provides 'gtar')." >&2
+  exit 1
+fi
+
+"${TAR}" --sort=name --mtime="UTC 1970-01-01" --owner=0 --group=0 --numeric-owner \
   -cf - -C "${TMP_DIR}" "kubernetes-json-schema" | gzip -n >"${TMP_DIR}/schemas.tar.gz"
 cp "${TMP_DIR}/schemas.tar.gz" "${OUTPUT}"
 # Record the ref this archive was built from so a subsequent run with an

@@ -7,14 +7,14 @@ before:
     # Regenerate the embedded kubeconform schema / kyverno policy archives
     # (schemas.tar.gz / policies.tar.gz) so they're guaranteed present on
     # disk before the embedschemas-tagged build below needs them via
-    # `//go:embed` - matches `task build`'s own [update:schemas,
-    # update:policies] deps (see Taskfile.yml). In the real Tekton release
+    # `//go:embed` - matches `task build`'s own [schemas:pull,
+    # policies:pull] deps (see Taskfile.yml). In the real Tekton release
     # pipeline `task ci` already ran these moments earlier in the same
     # step, so this is a fast no-op there; it only does real work for a
     # standalone local `goreleaser build`/`release` (see
     # docs/RELEASE.md's "Dry-run locally" section).
-    - task update:schemas
-    - task update:policies
+    - task schemas:pull
+    - task policies:pull
     - go generate ./...
 builds:
   - id: k8s-gitops-ci

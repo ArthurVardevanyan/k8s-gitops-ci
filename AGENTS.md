@@ -66,7 +66,8 @@ resource generation steps a raw command would silently skip.
 | Format                                             | `task format`                  |
 | Full CI                                            | `task ci`                      |
 | Replay real merged PRs (smoke gate)                | `task test:homelab-prs`        |
-| Regenerate embedded schemas                        | `task update:schemas`          |
+| Regenerate embedded schemas                        | `task schemas:pull`            |
+| Bump the pinned schema SHA to the branch tip       | `task update:schemas`          |
 | Regenerate resource-scope maps from a live cluster | `task update:scoped-resources` |
 
 Run `task --list` for the full, authoritative list — see
