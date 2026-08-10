@@ -45,7 +45,24 @@ INNER
 # cache for every package that go:embeds it (pkg/lint/kyverno/policies,
 # pkg/lint/kyverno, pkg/validator, pkg/pipeline, cmd/k8s-gitops-ci - see
 # the sibling embed_archive.go and docs/SCHEMAS.md).
-tar --sort=name --mtime="UTC 1970-01-01" --owner=0 --group=0 --numeric-owner \
+#
+# Those flags are GNU tar features: macOS's default `tar` is bsdtar,
+# which rejects `--sort=name`. Resolve GNU tar explicitly (gtar via
+# homebrew's gnu-tar on macOS; plain tar on Linux) and hard-fail with
+# install guidance rather than silently falling back to bsdtar and
+# producing a non-reproducible archive that quietly busts Go's cache.
+if command -v gtar >/dev/null 2>&1; then
+  TAR=gtar
+elif tar --version 2>/dev/null | grep -q 'GNU tar'; then
+  TAR=tar
+else
+  echo "ERROR: GNU tar is required to build a reproducible archive," >&2
+  echo "       but only bsdtar (which lacks --sort) was found." >&2
+  echo "       macOS: brew install gnu-tar (provides 'gtar')." >&2
+  exit 1
+fi
+
+"${TAR}" --sort=name --mtime="UTC 1970-01-01" --owner=0 --group=0 --numeric-owner \
   -cf - -C "${TMP_DIR}" "kyverno-policies" | gzip -n >"${TMP_DIR}/policies.tar.gz"
 cp "${TMP_DIR}/policies.tar.gz" "${OUTPUT}"
 printf '%s\n' "${PLACEHOLDER_REF}" >"${MARKER}"

@@ -93,6 +93,14 @@ single CI run. If you add a third `pull-*.sh` script or otherwise
 regenerate either archive, reuse this same `tar`/`gzip` invocation
 rather than a plain `tar -czf`.
 
+Those flags (`--sort`/`--mtime`/`--owner`/`--group`/`--numeric-owner`)
+are **GNU tar** features. macOS's default `tar` is bsdtar, which rejects
+`--sort=name`, so both scripts resolve GNU tar explicitly — `gtar` if
+present (homebrew's `gnu-tar`), otherwise a `tar` that reports itself as
+GNU — and **hard-fail** with install guidance if only bsdtar is found,
+rather than silently producing a non-reproducible archive with the wrong
+tar. On macOS: `brew install gnu-tar` (provides `gtar`).
+
 ## Kubeconform schemas
 
 `scripts/pull-schemas.sh` clones a public
