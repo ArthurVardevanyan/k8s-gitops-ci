@@ -412,9 +412,9 @@ func ValidateBytes(name string, data []byte, opts Options) (*Result, error) {
 // deliberately nil whenever validation itself ran, even if res.Invalid or
 // res.Errors is nonzero. Callers must inspect those Result fields directly
 // to detect validation failures, not this error: at least two real call
-// sites (pkg/validator/phases.go's kubeconform lint step, gated on
-// `err == nil`, and kubeconform_overlay.go's renderAppOverlays fallback
-// logic) already correctly branch on res.Invalid/res.Errors and would
+// sites (pkg/validator/phases.go's raw kubeconform lint step and its
+// rendered-overlay pass, both gated on `err == nil`) already correctly
+// branch on res.Invalid/res.Errors and would
 // silently drop findings from their reports if this returned a non-nil
 // error whenever validation found problems.
 func ValidateFiles(files []string, opts Options) (*Result, error) {

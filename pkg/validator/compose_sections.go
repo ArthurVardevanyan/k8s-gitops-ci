@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/nad"
@@ -875,6 +876,21 @@ func ComposeKyvernoSection(body string) ReportSection {
 		return ReportSection{Name: "Kyverno Policies", Status: StatusPassed, Body: "No Kyverno findings."}
 	}
 	return ReportSection{Name: "Kyverno Policies", Status: StatusError, Body: body}
+}
+
+// ComposeKubeconformRenderedSection renders schema-validation results over the
+// AVP/Helm-rendered overlay output (see validateRenderedOverlays). Invalid/error
+// counts gate with ❌; otherwise it passes with a compact summary. Non-manifest
+// skips surface as an informational note so they're never silent.
+func ComposeKubeconformRenderedSection(res *kubeconform.Result) ReportSection {
+	const name = "Kubeconform (Rendered)"
+	if res == nil {
+		return ReportSection{Name: name, Status: StatusPassed, Body: "No rendered overlays to validate."}
+	}
+	if res.Invalid > 0 || res.Errors > 0 {
+		return ReportSection{Name: name, Status: StatusError, Body: res.Summary()}
+	}
+	return ReportSection{Name: name, Status: StatusPassed, Summary: res.Summary()}
 }
 
 // ComposeCINotesSection renders CI notes. Purely informational (build
