@@ -163,8 +163,12 @@ func isResourceAffected(resourceKey string, ctx *complianceAttributionCtx, overl
 	cluster := filepath.Base(overlayPath)
 	key := filepath.ToSlash(app) + "/" + cluster
 
-	// Direct overlay change: the resource must be defined by a file under this
-	// specific overlay dir to be blocking.
+	// Direct overlay change: the resource is blocking if it's defined by a
+	// file under this specific overlay dir. This is NOT exclusive with the
+	// base/component path below - an overlay whose kustomization.yaml was
+	// touched (making it a "direct" overlay) can also pull in a changed base
+	// resource, and that base resource must still be evaluated via the
+	// base/component branch. So we fall through rather than returning early.
 	if ctx.directOverlays[key] {
 		sourceFiles := ctx.changedKeys[resourceKey]
 		for _, sf := range sourceFiles {
@@ -172,13 +176,12 @@ func isResourceAffected(resourceKey string, ctx *complianceAttributionCtx, overl
 				return true
 			}
 		}
-		return false
 	}
 
 	// Base/component change: check if a changed dir feeds this overlay.
 	sourceFiles := ctx.changedKeys[resourceKey]
 	for _, sf := range sourceFiles {
-		dir := filepath.Dir(sf)
+		dir := filepath.ToSlash(filepath.Dir(sf))
 		if overlays, ok := ctx.overlaysByDir[dir]; ok && overlays[key] {
 			return true
 		}
@@ -235,11 +238,19 @@ func overlayDirsByChangedPaths(changedFiles []string, baseApps map[string]bool, 
 			overlayDir := filepath.Join(overlaysDir, cluster)
 			overlayKey := filepath.ToSlash(app) + "/" + cluster
 
-			if overlay.RefsChangedDir(overlayDir, targetDirs) {
-				if result[overlayDir] == nil {
-					result[overlayDir] = make(map[string]bool)
+			// Record, per changed source dir, the overlay keys whose ref chain
+			// reaches it. isResourceAffected looks up overlaysByDir by the
+			// resource's source-file dir (filepath.Dir(sf)), so result MUST be
+			// keyed by the changed dir - not the overlay dir. Check each
+			// targetDir individually so we know which one matched.
+			for _, td := range targetDirs {
+				if overlay.RefsChangedDir(overlayDir, []string{td}) {
+					key := filepath.ToSlash(td)
+					if result[key] == nil {
+						result[key] = make(map[string]bool)
+					}
+					result[key][overlayKey] = true
 				}
-				result[overlayDir][overlayKey] = true
 			}
 		}
 	}
