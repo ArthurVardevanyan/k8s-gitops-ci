@@ -165,17 +165,17 @@ func buildHookTable(apps []string, cfgs map[string]*hook.Config, results map[str
 // ghost patches (kustomize patches targeting a resource absent from the
 // rendered base) detected across the given apps via
 // pkg/ghostpatch.ClassifyApp, and separately returns the blocking subset
-// (a ghost patch on a kustomization.yaml that isn't itself newly-added in
-// this PR and whose patches section did change) so the caller can fold it
-// into the overall pass/fail decision - a ghost patch predating this PR,
-// or introduced by a brand-new overlay, is surfaced for visibility only.
+// (a ghost patch on an overlay whose own kustomization.yaml this PR changed)
+// so the caller can fold it into the overall pass/fail decision. A ghost on
+// an overlay this PR did not touch - pre-existing drift - or introduced by a
+// brand-new overlay, is surfaced for visibility only (non-blocking).
 // Returns table == "" when no ghost patches are found at all, so the
 // caller can render a plain "none detected" line instead of an empty
 // table.
-func buildGhostTable(apps, addedFiles []string) (table string, blockingCount int) {
+func buildGhostTable(apps, changed, addedFiles []string) (table string, blockingCount int) {
 	var rows []string
 	for _, app := range apps {
-		results, err := ghostpatch.ClassifyApp(app, addedFiles)
+		results, err := ghostpatch.ClassifyApp(app, changed, addedFiles)
 		if err != nil {
 			continue
 		}

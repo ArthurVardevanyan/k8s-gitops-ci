@@ -1,10 +1,8 @@
 package ghostpatch
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -155,7 +153,7 @@ func CheckApp(appPath string) ([]AppOverlayResult, error) {
 // (rather than reimplementing CheckApp in terms of this one) so CheckApp's
 // existing callers/behavior - Ghosts always reported with Blocking: false,
 // no git-diff cost - are left completely unaffected.
-func ClassifyApp(appPath string, addedFiles []string) ([]AppOverlayResult, error) {
+func ClassifyApp(appPath string, changedFiles, addedFiles []string) ([]AppOverlayResult, error) {
 	dir := filepath.Join(appPath, "overlays")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -178,7 +176,7 @@ func ClassifyApp(appPath string, addedFiles []string) ([]AppOverlayResult, error
 			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
 			continue
 		}
-		gr, err := ClassifyOverlay(ov, rendered, addedFiles)
+		gr, err := ClassifyOverlay(ov, rendered, changedFiles, addedFiles)
 		if err != nil {
 			results = append(results, AppOverlayResult{Overlay: ov, Err: err})
 			continue
@@ -189,48 +187,38 @@ func ClassifyApp(appPath string, addedFiles []string) ([]AppOverlayResult, error
 }
 
 // ClassifyOverlay classifies ghosts as blocking or warning.
-func ClassifyOverlay(overlayPath, renderedYAML string, addedFiles []string) ([]GhostResult, error) {
+//
+// A ghost is blocking only when this PR changed the overlay's own
+// kustomization.yaml (it is in changedFiles but was not newly added). A ghost
+// on an overlay this PR did not touch - pre-existing drift, often from a
+// stale/advanced base - is surfaced as a non-blocking warning for visibility:
+// it is not something this PR introduced, so it must not fail the run. A
+// brand-new overlay's ghosts are likewise non-blocking (nothing shipped with
+// them yet).
+func ClassifyOverlay(overlayPath, renderedYAML string, changedFiles, addedFiles []string) ([]GhostResult, error) {
 	ghosts, err := CheckOverlay(overlayPath, renderedYAML)
 	if err != nil {
 		return nil, err
 	}
 	kustPath := filepath.Join(overlayPath, "kustomization.yaml")
-	isNew := false
-	for _, a := range addedFiles {
-		if a == kustPath || strings.HasSuffix(a, filepath.ToSlash(kustPath)) {
-			isNew = true
-			break
-		}
-	}
-	sectionChanged, _ := PatchesSectionChanged(kustPath)
+	blocking := containsFile(changedFiles, kustPath) && !containsFile(addedFiles, kustPath)
 	out := make([]GhostResult, 0, len(ghosts))
 	for _, g := range ghosts {
-		blocking := false
-		if !isNew && sectionChanged {
-			blocking = true
-		}
 		out = append(out, GhostResult{Target: g, Blocking: blocking})
 	}
 	return out, nil
 }
 
-// PatchesSectionChanged compares the current patches section to main.
-func PatchesSectionChanged(kustPath string) (bool, error) {
-	current, err := os.ReadFile(kustPath)
-	if err != nil {
-		return false, err
-	}
-	currentPatches := extractPatchesYAML(current)
-
-	base, err := gitShow(context.Background(), "main", kustPath)
-	if err != nil {
-		base, err = gitShow(context.Background(), "origin/main", kustPath)
-		if err != nil {
-			return false, nil //nolint:nilerr // new file or git unavailable -> not changed
+// containsFile reports whether files contains path, comparing against both the
+// raw path and its slash-normalized form.
+func containsFile(files []string, path string) bool {
+	slashed := filepath.ToSlash(path)
+	for _, f := range files {
+		if f == path || f == slashed {
+			return true
 		}
 	}
-	basePatches := extractPatchesYAML(base)
-	return string(currentPatches) != string(basePatches), nil
+	return false
 }
 
 // Kustomization represents a minimal kustomization.yaml.
@@ -287,17 +275,21 @@ func computeRenames(patches []Patch) map[string]string {
 //	    path: /metadata/name
 //	    value: new-name
 type jsonPatchOp struct {
-	Op    string `yaml:"op"`
-	Path  string `yaml:"path"`
-	Value string `yaml:"value"`
+	Op    string    `yaml:"op"`
+	Path  string    `yaml:"path"`
+	Value yaml.Node `yaml:"value"`
 }
 
 // renameFromPatch parses patch as a YAML list of JSON6902 operations and
-// returns the new name if it contains a replace/add of /metadata/name.
-// This must decode real YAML (not just a JSON-object-literal regex) since
-// that's the syntax kustomize patches actually use in practice - a
-// JSON-bracket-and-quotes-only matcher would silently fail to detect
-// renames in the common case.
+// returns the new name if it contains a replace/add of /metadata/name
+// whose value is a scalar. This must decode real YAML (not just a
+// JSON-object-literal regex) since that's the syntax kustomize patches
+// actually use in practice - a JSON-bracket-and-quotes-only matcher would
+// silently fail to detect renames in the common case. Value is decoded as a
+// yaml.Node (rather than a string) so that an unrelated op carrying a
+// non-scalar value - e.g. an `add` /spec/logging whose value is a map - does
+// not fail the whole op-list decode and thereby hide an earlier
+// `/metadata/name` rename.
 func renameFromPatch(patch string) string {
 	var ops []jsonPatchOp
 	if err := yaml.Unmarshal([]byte(patch), &ops); err != nil {
@@ -307,9 +299,17 @@ func renameFromPatch(patch string) string {
 		if op.Op != "replace" && op.Op != "add" {
 			continue
 		}
-		if op.Path == "/metadata/name" || op.Path == "metadata/name" {
-			return op.Value
+		if op.Path != "/metadata/name" && op.Path != "metadata/name" {
+			continue
 		}
+		if op.Value.Kind != yaml.ScalarNode {
+			continue
+		}
+		var name string
+		if err := op.Value.Decode(&name); err != nil {
+			return ""
+		}
+		return name
 	}
 	return ""
 }
@@ -344,31 +344,4 @@ func targetKey(t Target) string {
 func kustomizeBuild(overlayPath string) (string, error) {
 	out, err := overlay.RenderKustomize(overlayPath)
 	return string(out), err
-}
-
-func gitShow(ctx context.Context, ref, path string) ([]byte, error) {
-	return exec.CommandContext(ctx, "git", "show", fmt.Sprintf("%s:%s", ref, path)).Output()
-}
-
-func extractPatchesYAML(data []byte) []byte {
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
-		return nil
-	}
-	if len(root.Content) == 0 {
-		return nil
-	}
-	doc := root.Content[0]
-	for i := 0; i < len(doc.Content); i += 2 {
-		if doc.Content[i].Value != "patches" {
-			continue
-		}
-		var buf strings.Builder
-		enc := yaml.NewEncoder(&buf)
-		enc.SetIndent(2)
-		_ = enc.Encode(doc.Content[i+1])
-		_ = enc.Close()
-		return []byte(buf.String())
-	}
-	return nil
 }

@@ -181,13 +181,14 @@ subsection under Validation Steps.
 Every real caller that needs a fully-rendered overlay - this phase's
 build-error detection (`pkg/validator/hook_wiring.go`'s
 `buildOverlayWithHooks`) - goes through this strategy-aware path
-(`overlay.RenderWithStrategy`). Two callers deliberately still render
+(`overlay.RenderWithStrategy`). One caller deliberately still renders
 Kustomize-only, unconditionally, via `overlay.RenderKustomize` directly:
-`pkg/validator/kubeconform_overlay.go`'s schema validation over rendered
-overlays (runs during the earlier Linting phase, before any app's
-`test.sh`/strategy is resolved) and `pkg/ghostpatch/ghostpatch.go`'s
-patch-vs-base drift detection (structural, unaffected by secret
-placeholders either way). The `placeholder` check (registered with
+`pkg/ghostpatch/ghostpatch.go`'s patch-vs-base drift detection (structural,
+unaffected by secret placeholders either way). kubeconform no longer renders
+on its own at all - it consumes this phase's already-rendered, AVP-resolved
+and Helm-inclusive output for its schema-validation pass (see "Kubeconform
+(Rendered)" under Validation Steps), so it validates what actually deploys.
+The `placeholder` check (registered with
 `placeholder.Options{CheckAVP: false}`) deliberately does **not** flag
 AVP-scheme tokens (`<path:...>`, `<vault:...>`, `<aws:...>`, `<gcp:...>`)
 at all: it runs over the raw committed/changed source, where those
@@ -251,8 +252,27 @@ Checks Go file formatting and runs golangci-lint.
 
 #### `kubeconform`
 
-Schema-validates changed YAML plus every affected overlay's _rendered_
-output, not just the raw source.
+Schema-validation runs in two complementary passes:
+
+- **Raw (Linting → Kubeconform):** changed YAML files that are **not** part of a
+  scoped overlay's build chain are validated from source. Files inside an
+  affected overlay (its overlay dir, its app `base/`, referenced components)
+  are **excluded here** — they're schema-checked by the rendered pass below, so
+  each changed manifest is validated by exactly one pass and a raw pass never
+  trips over unresolved AVP placeholders.
+- **Kubeconform (Rendered):** a post-build pass validates the overlays a PR
+  actually affects — the change-scoped set the Build YAML phase resolves
+  (`detectOverlaysForChanges`, so a base/component change resolves to just the
+  overlays that reference it) — from the **already-rendered, AVP-resolved and
+  Helm-inclusive** output the Build YAML phase produced. This validates what
+  actually deploys (Helm charts rendered, AVP placeholders resolved), not raw
+  source, and does so in a bounded worker pool (`validator.Workers`,
+  `runtime.NumCPU()*2`). No overlay is re-rendered for kubeconform; it reuses
+  the Build phase's render. Overlays that failed to build were already reported
+  as build errors and simply aren't validated here.
+
+Under `--lint-only` (no Build YAML phase), only the **raw** pass runs — there
+is no rendered output to validate.
 
 - **Package:** `pkg/lint/kubeconform`
 - **Scaffold artifacts excluded:** files under `<ScaffoldDir>/configs/` and
@@ -503,20 +523,17 @@ Patches table, but only some are **blocking**
 - **Package:** `pkg/ghostpatch`
 - **Enablement:** always runs — no check ID, not gateable.
 
-- **Blocking** - the `kustomization.yaml`'s `patches:` section itself
-  changed relative to `main`/`origin/main` (via a real `git show` diff,
-  `ghostpatch.PatchesSectionChanged`) **and** the file isn't itself newly
-  added in this PR (per the changeset's added-files list, resolved once
-  via `changeset.GetAddedFiles` in `runBuildAndPostBuild`). This is the
-  case this PR most likely introduced or should have caught.
-- **Warning-only** - either the ghost patch predates this PR (the
-  `patches:` section is unchanged from `main`) or the `kustomization.yaml`
-  is brand new in this PR (nothing to compare against yet, so it can't
-  be confidently attributed to a change this PR made).
-
-A failure to resolve `main`/`origin/main` (no git history available, e.g.
-a shallow clone) degrades to "unchanged" (never blocking) rather than
-failing the check outright.
+- **Blocking** - this PR changed the overlay's own `kustomization.yaml`
+  (it is in the PR's changed-file set, resolved via `changeset` in
+  `runBuildAndPostBuild`) **and** the file isn't itself newly added in
+  this PR (per the changeset's added-files list, resolved once via
+  `changeset.GetAddedFiles`). This is the case this PR most likely
+  introduced or should have caught.
+- **Warning-only** - either the overlay's `kustomization.yaml` isn't in
+  this PR's changed-file set at all (the ghost predates this PR - visible
+  for awareness, but not this PR's fault) or the `kustomization.yaml` is
+  brand new in this PR (nothing shipped with it yet, so it can't be
+  confidently attributed to a change this PR made).
 
 The Kustomize Build section's own "Ghost Patches" sub-dropdown (one of four
 always-shown children - Overlay Build, Hooks, Kustomize Fix, Ghost Patches

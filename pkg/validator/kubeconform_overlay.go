@@ -3,81 +3,136 @@ package validator
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 )
 
-// renderAppOverlays renders every overlay of appRoot and validates the
-// combined rendered output with kubeconform. It returns the merged
-// validation result and whether every overlay of appRoot built
-// successfully. If any overlay fails to build, ok is false and the caller
-// should fall back to raw, per-file validation for appRoot so that nothing
-// silently goes unchecked.
-func renderAppOverlays(appRoot string, opts kubeconform.Options) (res *kubeconform.Result, ok bool) {
-	overlays := overlay.FindAllOverlays(appRoot)
-	if len(overlays) == 0 {
-		return nil, false
+// kubeconformSchemaOpts returns kubeconform options configured against the
+// pre-extracted schema directory when one is available (validator.Options
+// mirrors pkg/pipeline's Setup-phase prefetch), otherwise falling back to a
+// lazy per-call schema extraction exactly as the standalone paths do. The
+// returned options never carry a cleanup that outlives the caller; the lazy
+// path's cleanup is the caller's responsibility.
+func kubeconformSchemaOpts(opts Options) (kcOpts kubeconform.Options, cleanup func()) {
+	kcOpts = kubeconform.DefaultOptions()
+	cleanup = func() {}
+	if opts.SchemaDir != "" {
+		kcOpts.SchemaDir = opts.SchemaDir
+		return kcOpts, cleanup
 	}
-	combined := &kubeconform.Result{}
-	for _, ov := range overlays {
-		out, err := overlay.RenderKustomize(ov)
-		if err != nil {
-			return nil, false
-		}
-		name := filepath.Join(ov, "_kustomize-build.yaml")
-		r, err := kubeconform.ValidateBytes(name, out, opts)
-		if err != nil {
-			return nil, false
-		}
-		combined.Merge(r)
-	}
-	return combined, true
-}
-
-// validateWithRenderedOverlays runs kubeconform against files, but for any
-// file that lives under an app root whose overlays all build successfully,
-// validates the rendered (kustomize build) manifests for that app instead
-// of the raw source file. Files outside any buildable app root (or under an
-// app root where at least one overlay fails to build) are still validated
-// raw, so coverage is never silently dropped.
-func validateWithRenderedOverlays(files []string, opts kubeconform.Options) (*kubeconform.Result, error) {
-	appRoots := detectAppRoots(files)
-
-	combined := &kubeconform.Result{}
-	coveredRoots := make([]string, 0, len(appRoots))
-	for _, root := range appRoots {
-		r, ok := renderAppOverlays(root, opts)
-		if !ok {
-			continue
-		}
-		combined.Merge(r)
-		coveredRoots = append(coveredRoots, root)
-	}
-
-	rawFiles := excludeUnderRoots(files, coveredRoots)
-	rawRes, err := kubeconform.ValidateFiles(rawFiles, opts)
+	schemaDir, c, err := kubeconform.ExtractSchemas()
 	if err != nil {
-		return nil, err
+		return kcOpts, cleanup
 	}
-	combined.Merge(rawRes)
-	return combined, nil
+	// ExtractSchemas is an overridable seam (orgs swap it for their own schema
+	// source), so its cleanup must not be assumed non-nil - a nil override
+	// would panic at a caller's `defer cleanup()`. Substituting a no-op keeps
+	// the seam safe.
+	if c == nil {
+		c = func() {}
+	}
+	kcOpts.SchemaDir = schemaDir
+	return kcOpts, c
 }
 
-// excludeUnderRoots drops files that live under any of roots.
-func excludeUnderRoots(files, roots []string) []string {
-	if len(roots) == 0 {
+// validateRenderedOverlays runs kubeconform against the fully-rendered overlay
+// output produced by the Build YAML phase (buildOverlayWithHooks ->
+// overlay.RenderWithStrategy). Those bytes are already strategy-aware,
+// AVP-resolved, and Helm-inclusive - exactly the manifests that will deploy -
+// so this validates what actually ships rather than raw, pre-build source.
+// Validation runs in parallel across overlays (bounded by workers). Any overlay
+// already failed to build and simply won't appear in rendered; it was already
+// reported as a build error, so there is nothing to validate here.
+func validateRenderedOverlays(rendered []renderedOverlay, kcOpts kubeconform.Options, workers int) *kubeconform.Result {
+	combined := &kubeconform.Result{}
+	if len(rendered) == 0 {
+		return combined
+	}
+	if workers > len(rendered) {
+		workers = len(rendered)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+
+	var mu sync.Mutex
+	jobs := make(chan renderedOverlay, len(rendered))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ro := range jobs {
+				r, err := kubeconform.ValidateBytes(filepath.Join(ro.overlay, "_kustomize-build.yaml"), ro.data, kcOpts)
+				mu.Lock()
+				if err != nil {
+					// A ValidateBytes error is a genuine setup/construction
+					// failure (e.g. invalid schema locations) for this overlay,
+					// not "no findings". Surfacing it as a result error makes
+					// the rendered kubeconform section fail loudly instead of
+					// silently dropping the overlay and appearing to pass.
+					combined.Errors++
+					combined.Details = append(combined.Details, kubeconform.FileResult{
+						Filename: filepath.Join(ro.overlay, "_kustomize-build.yaml"),
+						Status:   "error",
+						Errors:   []string{err.Error()},
+					})
+				} else {
+					combined.Merge(r)
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, ro := range rendered {
+		jobs <- ro
+	}
+	close(jobs)
+	wg.Wait()
+	return combined
+}
+
+// coverByScopedOverlays returns the set of changed files that participate in
+// the build chain of at least one scoped overlay, computed pre-build from the
+// overlay paths alone (no rendered bytes needed). Such files are validated from
+// the rendered output (the post-build validateRenderedOverlays pass) rather than
+// raw source, so a changed manifest inside an overlay is not schema-checked
+// twice (raw source with unresolved AVP placeholders + authoritative rendered).
+func coverByScopedOverlays(scoped []overlayRef, files []string) map[string]bool {
+	if len(scoped) == 0 || len(files) == 0 {
+		return nil
+	}
+	covered := make(map[string]bool, len(files))
+	for _, f := range files {
+		clean := filepath.Clean(f)
+		for _, ov := range scoped {
+			app := appFromOverlayPath(ov.path)
+			if isOverlayRelatedToChangedFiles(app, ov.cluster, []string{f}) {
+				covered[clean] = true
+				break
+			}
+		}
+	}
+	return covered
+}
+
+// filesNotCovered returns the subset of files not in the covered set.
+func filesNotCovered(files []string, covered map[string]bool) []string {
+	if len(covered) == 0 {
 		return files
 	}
 	out := make([]string, 0, len(files))
 	for _, f := range files {
-		if !isUnderAnyRoot(f, roots) {
+		if !covered[filepath.Clean(f)] {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
+// isUnderAnyRoot reports whether path is equal to or nested under one of
+// roots.
 func isUnderAnyRoot(f string, roots []string) bool {
 	fSlash := filepath.ToSlash(f)
 	for _, r := range roots {
