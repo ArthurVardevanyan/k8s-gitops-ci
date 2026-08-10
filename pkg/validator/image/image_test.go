@@ -272,6 +272,88 @@ func TestValidateFile_Mixed(t *testing.T) {
 	}
 }
 
+func TestValidateFile_OCIImageVolumeReference(t *testing.T) {
+	errs := ValidateFile("testdata/oci-volume.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error (unpinned OCI volume reference), got %d: %v", len(errs), errs)
+	}
+	if errs[0].Kind != "Task" || errs[0].Name != "clair-action" {
+		t.Errorf("expected finding attributed to Task clair-action, got Kind=%q Name=%q", errs[0].Kind, errs[0].Name)
+	}
+	if errs[0].Image != "registry.io/homelab/clair-action-db:latest" {
+		t.Errorf("expected error for the unpinned OCI volume reference, got: %q", errs[0].Image)
+	}
+}
+
+func TestValidateBytes_OCIImageVolume(t *testing.T) {
+	const pinned = "registry.io/tools@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
+	task := func(imageBlock string) string {
+		return `kind: Task
+metadata:
+  name: t
+spec:
+  volumes:
+    - name: vuln-store
+      image:
+` + imageBlock + "\n"
+	}
+
+	tests := []struct {
+		name     string
+		yaml     string
+		wantErrs int
+	}{
+		{
+			name:     "unpinned reference - not pinned",
+			yaml:     task("        reference: registry.io/homelab/clair-action-db:latest\n        pullPolicy: Always"),
+			wantErrs: 1,
+		},
+		{
+			name:     "pinned reference - pinned",
+			yaml:     task("        reference: " + pinned + "\n        pullPolicy: IfNotPresent"),
+			wantErrs: 0,
+		},
+		{
+			name:     "image mapping without reference - no image",
+			yaml:     task("        pullPolicy: Always"),
+			wantErrs: 0,
+		},
+		{
+			name: "container image and OCI volume both unpinned",
+			yaml: `kind: Task
+metadata:
+  name: t
+spec:
+  steps:
+    - image: registry.io/tools:latest
+  volumes:
+    - name: vuln-store
+      image:
+        reference: registry.io/homelab/clair-action-db:latest
+        pullPolicy: Always
+`,
+			wantErrs: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := ValidateBytes([]byte(tt.yaml), "test.yaml")
+			if len(errs) != tt.wantErrs {
+				t.Fatalf("expected %d error(s), got %d: %v", tt.wantErrs, len(errs), errs)
+			}
+		})
+	}
+}
+
+func TestExtractImagesFromFile_OCIImageVolume(t *testing.T) {
+	images := ExtractImagesFromFile("testdata/oci-volume.yaml")
+	if len(images) != 2 {
+		t.Fatalf("expected 2 images, got %d: %v", len(images), images)
+	}
+}
+
 func TestValidateFile_NoImages(t *testing.T) {
 	errs := ValidateFile("testdata/no-images.yaml")
 	if len(errs) != 0 {

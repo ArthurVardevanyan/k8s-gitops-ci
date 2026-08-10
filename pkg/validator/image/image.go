@@ -311,12 +311,29 @@ func AuthenticatedClient(client *http.Client, registry, repo string) *http.Clien
 
 var imageRe = regexp.MustCompile(`(?i)image:\s*["']?([^\s"']+)["']?`)
 
+var imageBlockKeyRe = regexp.MustCompile(`(?i)^\s*image:\s*$`)
+
+var imageReferenceRe = regexp.MustCompile(`(?i)^\s*reference:\s*["']?([^\s"']+)["']?\s*$`)
+
 func extractImagesFromBytes(data []byte) []string {
 	var imgs []string
-	for _, line := range strings.Split(string(data), "\n") {
-		m := imageRe.FindStringSubmatch(line)
-		if len(m) >= 2 {
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if m := imageRe.FindStringSubmatch(line); len(m) >= 2 && m[1] != "" {
 			imgs = append(imgs, m[1])
+			continue
+		}
+		if !imageBlockKeyRe.MatchString(line) {
+			continue
+		}
+		for j := i + 1; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "" {
+				continue
+			}
+			if m := imageReferenceRe.FindStringSubmatch(lines[j]); len(m) >= 2 && m[1] != "" {
+				imgs = append(imgs, m[1])
+			}
+			break
 		}
 	}
 	return dedupStrings(imgs)
@@ -347,6 +364,10 @@ func extractImages(node *yaml.Node, parentKey string) []string {
 			switch {
 			case key == "image" && child.Kind == yaml.ScalarNode:
 				imageVal = child.Value
+			case key == "image" && child.Kind == yaml.MappingNode:
+				if ref := findKey(child, "reference"); ref != nil && ref.Kind == yaml.ScalarNode && ref.Value != "" {
+					imgs = append(imgs, ref.Value)
+				}
 			case key == "version" && child.Kind == yaml.ScalarNode && strings.HasPrefix(child.Value, "sha256:"):
 				versionDigest = child.Value
 			}

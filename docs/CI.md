@@ -773,7 +773,8 @@ Non-builtin API-group resources carry the ArgoCD
 #### `image-checksum`
 
 Every OCI image reference is pinned to a `sha256:` digest, not just a
-tag.
+tag. Coverage includes container/init/sidecar `image` fields and OCI
+image volume sources (`spec.volumes[].image.reference`).
 
 - **Package:** `pkg/validator/image`
 - **Scope:** Doc
