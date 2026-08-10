@@ -367,6 +367,32 @@ when the opt-in `kyverno` step is actually enabled (preparing them shells
 out to `kustomize build`, not worth paying for on every run - see
 `validator.Options.PolicyPath`).
 
+The `Build YAML` phase also prints an always-on, one-line summary
+(`build: N overlay(s) rendered (<duration>)`, `pkg/validator/phases.go`)
+matching the other phases' own `... passed (<duration>)` lines - it
+previously had no inline console duration at all, only the table row
+above. The per-overlay `Build YAML` sub-step row, however, times an
+entire overlay's build (overlay checks + PRE_BUILD_HOOK + render +
+POST_BUILD_HOOK) as one opaque unit, and `POST_VALIDATE_HOOK` isn't
+timed anywhere in this table. When diagnosing a slow Build phase, run
+with `--verbose` to get a finer breakdown as Debug lines (also always
+written to the log file regardless of verbosity - see `Logger.write`):
+
+```text
+[12:00:01] [DEBUG] overlay app1/overlays/prod: render=120ms pre-hook=0s post-hook=1.2s
+[12:00:03] [DEBUG] post-validate hook app1: 3.4s
+```
+
+`overlay <path>: render=... pre-hook=... post-hook=...` is emitted by
+`buildOverlayWithHooks` (`pkg/validator/hook_wiring.go`) for every
+overlay build; `render` includes the `argocd-vault-plugin` subprocess
+for AVP strategies (piped through internally by
+`overlay.RenderWithStrategy`), so it isn't split out further.
+`post-validate hook <app>: ...` is emitted by `runAppPostValidateHooks`
+for each app with a `POST_VALIDATE_HOOK` - the hook most likely to shell
+out to a slow external call (e.g. a cloud API lookup per referenced
+image), and the one previously invisible in any timing output.
+
 ### Failed-section console detail without `--comment` (`pkg/pipeline/pipeline.go`)
 
 Every phase composes a detail-bearing `ReportSection` (the actual

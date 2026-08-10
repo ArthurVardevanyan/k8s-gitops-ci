@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 )
 
@@ -15,6 +16,14 @@ import (
 // tests want - plain kustomize, no AVP exclusions - since strategy
 // detection itself is covered by pkg/overlay's own tests.
 var kustomizeStrategy = appBuildStrategy{Strategy: overlay.StrategyKustomize}
+
+// testLogger is a throwaway *logger.Logger for tests that call functions
+// which only use it for --verbose diagnostic timing (buildOverlayWithHooks,
+// runAppPostValidateHooks) - verbosity doesn't matter for these tests since
+// none assert on Debug output.
+func testLogger() *logger.Logger {
+	return logger.NewLogger(false, "")
+}
 
 func TestResolveHookSource_LocalRunDefaultsToLocal(t *testing.T) {
 	t.Parallel()
@@ -205,12 +214,49 @@ func TestBuildOverlayWithHooks_NoHooksDefined(t *testing.T) {
 	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
 	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
 
-	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy)
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy, testLogger())
 	if buildErr != "" {
 		t.Errorf("expected a clean build, got error: %q", buildErr)
 	}
 	if pre != hookNotDefined || post != hookNotDefined {
 		t.Errorf("expected no hook outcomes without a cfg, got pre=%v post=%v", pre, post)
+	}
+}
+
+// TestBuildOverlayWithHooks_LogsVerboseTiming asserts buildOverlayWithHooks
+// emits a --verbose-only "overlay <path>: render=... pre-hook=...
+// post-hook=..." Debug line for every build (success or failure) - this is
+// the diagnostic breakdown added specifically so a slow Build YAML phase
+// (previously timed only as one opaque per-overlay tc.RecordStep, see
+// runBuildAndPostBuild) can be localized to render vs. a specific hook. The
+// line is asserted via the log file (Debug always writes there regardless
+// of verbose - see logger.Logger.write) rather than stdout, since
+// buildOverlayWithHooks doesn't care whether console verbosity is on.
+func TestBuildOverlayWithHooks_LogsVerboseTiming(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
+
+	logPath := filepath.Join(t.TempDir(), "run.log")
+	log := logger.NewLogger(false, logPath)
+	defer log.Close()
+
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy, log)
+	if buildErr != "" {
+		t.Fatalf("expected a clean build, got error: %q", buildErr)
+	}
+	if pre != hookNotDefined || post != hookNotDefined {
+		t.Errorf("expected no hook outcomes without a cfg, got pre=%v post=%v", pre, post)
+	}
+
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("reading log file: %v", err)
+	}
+	want := "overlay " + d + ": render="
+	if !strings.Contains(string(logged), want) {
+		t.Errorf("expected log file to contain %q, got:\n%s", want, logged)
 	}
 }
 
@@ -224,7 +270,7 @@ func TestBuildOverlayWithHooks_PreBuildFailureSkipsBuild(t *testing.T) {
 	mustWrite(t, filepath.Join(app, "test.sh"), "#!/bin/sh\nPRE_BUILD_HOOK=fail_pre\nfail_pre() {\n\techo boom >&2\n\texit 1\n}\n")
 
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy, testLogger())
 	if buildErr == "" || !strings.Contains(buildErr, "pre-build hook") {
 		t.Errorf("expected a pre-build hook error, got %q", buildErr)
 	}
@@ -262,7 +308,7 @@ check_yaml() {
 
 	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy, testLogger())
 	if buildErr != "" {
 		t.Fatalf("expected a clean build, got error: %q", buildErr)
 	}
@@ -286,7 +332,7 @@ func TestBuildOverlayWithHooks_PostBuildHookFailureIsReported(t *testing.T) {
 
 	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
-	buildErr, _, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy)
+	buildErr, _, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "prod"}, cfgs[app], kustomizeStrategy, testLogger())
 	if buildErr == "" || !strings.Contains(buildErr, "post-build hook") {
 		t.Errorf("expected a post-build hook error, got %q", buildErr)
 	}
@@ -301,7 +347,7 @@ func TestBuildOverlayWithHooks_ReturnsRenderedYAMLOnSuccess(t *testing.T) {
 	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
 	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
 
-	buildErr, _, _, rendered := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy)
+	buildErr, _, _, rendered := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy, testLogger())
 	if buildErr != "" {
 		t.Fatalf("expected a clean build, got error: %q", buildErr)
 	}
@@ -313,7 +359,7 @@ func TestBuildOverlayWithHooks_ReturnsRenderedYAMLOnSuccess(t *testing.T) {
 func TestBuildOverlayWithHooks_NoRenderedYAMLOnBuildFailure(t *testing.T) {
 	t.Parallel()
 	d := t.TempDir()
-	buildErr, _, _, rendered := buildOverlayWithHooks(overlayRef{path: filepath.Join(d, "does-not-exist"), cluster: "foo"}, nil, kustomizeStrategy)
+	buildErr, _, _, rendered := buildOverlayWithHooks(overlayRef{path: filepath.Join(d, "does-not-exist"), cluster: "foo"}, nil, kustomizeStrategy, testLogger())
 	if buildErr == "" {
 		t.Fatal("expected a build error for a missing overlay")
 	}
@@ -340,7 +386,7 @@ check_build_dir() {
 	}
 	results := map[string]*appHookResult{app: {}}
 
-	errs := runAppPostValidateHooks([]string{app}, cfgs, results)
+	errs := runAppPostValidateHooks([]string{app}, cfgs, results, testLogger())
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %v", errs)
 	}
@@ -349,6 +395,45 @@ check_build_dir() {
 	}
 	if _, err := os.Stat(appBuildDir(app)); !os.IsNotExist(err) {
 		t.Error("expected the app build dir to be cleaned up after POST_VALIDATE_HOOK ran")
+	}
+}
+
+// TestRunAppPostValidateHooks_LogsVerboseTiming asserts a POST_VALIDATE_HOOK
+// call is timed via a --verbose-only Debug line - previously this hook (the
+// one most likely to shell out to a slow external call, e.g. a cloud API
+// per referenced image) had zero timing anywhere, even in the end-of-run
+// timing table, making it invisible when diagnosing a slow Build phase.
+func TestRunAppPostValidateHooks_LogsVerboseTiming(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	mustWrite(t, filepath.Join(app, "test.sh"), `#!/bin/sh
+POST_VALIDATE_HOOK=check_build_dir
+check_build_dir() {
+	[ -d "$1" ] || { echo "build dir $1 missing" >&2; exit 1; }
+}
+`)
+	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
+	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
+	if err := os.MkdirAll(appBuildDir(app), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	results := map[string]*appHookResult{app: {}}
+
+	logPath := filepath.Join(t.TempDir(), "run.log")
+	log := logger.NewLogger(false, logPath)
+	defer log.Close()
+
+	if errs := runAppPostValidateHooks([]string{app}, cfgs, results, log); len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
+	}
+
+	logged, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("reading log file: %v", err)
+	}
+	want := "post-validate hook " + app + ": "
+	if !strings.Contains(string(logged), want) {
+		t.Errorf("expected log file to contain %q, got:\n%s", want, logged)
 	}
 }
 
@@ -362,7 +447,7 @@ func TestRunAppPostValidateHooks_Failure(t *testing.T) {
 	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
 	results := map[string]*appHookResult{app: {}}
 
-	errs := runAppPostValidateHooks([]string{app}, cfgs, results)
+	errs := runAppPostValidateHooks([]string{app}, cfgs, results, testLogger())
 	if len(errs) != 1 || !strings.Contains(errs[0], "post-validate hook") {
 		t.Fatalf("expected 1 post-validate hook error, got %v", errs)
 	}

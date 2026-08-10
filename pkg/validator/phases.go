@@ -592,7 +592,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					ovStart := time.Now()
 					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
 					app := appFromOverlayPath(ov.path)
-					buildErr, pre, post, rendered := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app])
+					buildErr, pre, post, rendered := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app], log)
 					tc.RecordStep("Build YAML", ov.path, time.Since(ovStart))
 					overlayMu.Lock()
 					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
@@ -621,7 +621,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		overlayWg.Wait()
 	}
 
-	for _, err := range runAppPostValidateHooks(apps, hookCfgs, hookResults) {
+	for _, err := range runAppPostValidateHooks(apps, hookCfgs, hookResults, log) {
 		buildErrs = append(buildErrs, err)
 		log.ErrorInSection("Hooks", "%s", err)
 	}
@@ -711,7 +711,13 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		strings.Join(scaffoldResult.PreExistingDriftLines, "\n"),
 	))
 	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
-	tc.Record("Build YAML", time.Since(buildStart), len(overlays) > 1)
+	buildDur := time.Since(buildStart)
+	tc.Record("Build YAML", buildDur, len(overlays) > 1)
+	// Phase-summary line matching Setup/PR Validation/YAML Syntax's own
+	// "... passed (<duration>)" console line (see those phases' Info calls
+	// above/below) - Build YAML previously had no such line, so its
+	// duration was only visible in the end-of-run tc.Summary table.
+	log.Info("build: %d overlay(s) rendered (%s)", len(overlays), buildDur.Round(time.Millisecond))
 
 	// ── Post-Build Validation ────────────────────────────────────────────────
 	postBuildStart := time.Now()
