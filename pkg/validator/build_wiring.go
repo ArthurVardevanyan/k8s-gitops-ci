@@ -192,7 +192,7 @@ func buildHookTable(apps []string, cfgs map[string]*hook.Config, results map[str
 func buildGhostTable(renderedOverlays []renderedOverlay, changed, addedFiles []string) (table string, blockingCount int) {
 	overlays := make([]ghostpatch.RenderedOverlay, 0, len(renderedOverlays))
 	for _, ro := range renderedOverlays {
-		overlays = append(overlays, ghostpatch.RenderedOverlay{Path: ro.overlay, YAML: string(ro.data)})
+		overlays = append(overlays, ghostpatch.RenderedOverlay{Path: ro.overlay, YAML: ro.data})
 	}
 	results, err := ghostpatch.ClassifyRendered(overlays, changed, addedFiles)
 	if err != nil {

@@ -223,6 +223,24 @@ func TestBuildOverlayWithHooks_NoHooksDefined(t *testing.T) {
 	}
 }
 
+// TestBuildOverlayWithHooks_NilLoggerDoesNotPanic asserts a nil log is
+// tolerated (the diagnostic-only verbose timing Debug line is simply
+// skipped) rather than panicking in the deferred emission.
+func TestBuildOverlayWithHooks_NilLoggerDoesNotPanic(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	mustWrite(t, filepath.Join(d, "deployment.yaml"), "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\n")
+	mustWrite(t, filepath.Join(d, "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
+
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: d, cluster: "foo"}, nil, kustomizeStrategy, nil)
+	if buildErr != "" {
+		t.Errorf("expected a clean build, got error: %q", buildErr)
+	}
+	if pre != hookNotDefined || post != hookNotDefined {
+		t.Errorf("expected no hook outcomes without a cfg, got pre=%v post=%v", pre, post)
+	}
+}
+
 // TestBuildOverlayWithHooks_LogsVerboseTiming asserts buildOverlayWithHooks
 // emits a --verbose-only "overlay <path>: render=... pre-hook=...
 // post-hook=..." Debug line for every build (success or failure) - this is
@@ -395,6 +413,31 @@ check_build_dir() {
 	}
 	if _, err := os.Stat(appBuildDir(app)); !os.IsNotExist(err) {
 		t.Error("expected the app build dir to be cleaned up after POST_VALIDATE_HOOK ran")
+	}
+}
+
+// TestRunAppPostValidateHooks_NilLoggerDoesNotPanic asserts a nil log is
+// tolerated (the diagnostic-only verbose timing Debug line is simply
+// skipped) rather than panicking.
+func TestRunAppPostValidateHooks_NilLoggerDoesNotPanic(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	mustWrite(t, filepath.Join(app, "test.sh"), `#!/bin/sh
+POST_VALIDATE_HOOK=check_build_dir
+check_build_dir() {
+	[ -d "$1" ] || { echo "build dir $1 missing" >&2; exit 1; }
+}
+`)
+	hookBuildRoot = filepath.Join(t.TempDir(), "builds")
+	cfgs := resolveAppHookConfigs([]string{app}, hook.SourceLocal)
+	if err := os.MkdirAll(appBuildDir(app), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	results := map[string]*appHookResult{app: {}}
+
+	errs := runAppPostValidateHooks([]string{app}, cfgs, results, nil)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %v", errs)
 	}
 }
 

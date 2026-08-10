@@ -203,15 +203,19 @@ func appBuildDir(app string) string {
 //
 // log is used purely for --verbose diagnostic timing (render vs. pre/post
 // hook duration for this one overlay) - see the doc comment on the
-// "overlay %s:" Debug line below. It is never used for anything
-// user-visible in the normal (non-verbose) report, so a nil log is not
-// accepted; every call site already has one in scope.
+// "overlay %s:" Debug line below. Every real call site already has one in
+// scope; a nil log is tolerated (the deferred Debug emission below is a
+// no-op in that case) purely so tests/future callers don't have to
+// construct a throwaway logger just to satisfy this diagnostic-only param.
 func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStrategy, log *logger.Logger) (buildErr string, pre, post hookOutcome, rendered []byte) {
 	app := appFromOverlayPath(ov.path)
 	outFile := filepath.Join(appBuildDir(app), filepath.Base(ov.path)+".yaml")
 
 	var preDur, renderDur, postDur time.Duration
 	defer func() {
+		if log == nil {
+			return
+		}
 		// --verbose-only breakdown of where this overlay's build time
 		// went, so a slow Build YAML phase (see runBuildAndPostBuild's
 		// per-overlay tc.RecordStep, which times this whole function as
@@ -278,7 +282,8 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 // like PRE/POST_BUILD, see buildOverlayWithHooks), and was previously
 // entirely untimed even in the end-of-run timing table, making a slow
 // POST_VALIDATE_HOOK (e.g. one that shells out to a cloud API per
-// referenced image) invisible.
+// referenced image) invisible. A nil log is tolerated (the Debug line
+// below is simply skipped) for the same reason as buildOverlayWithHooks.
 func runAppPostValidateHooks(apps []string, cfgs map[string]*hook.Config, results map[string]*appHookResult, log *logger.Logger) (errs []string) {
 	for _, app := range apps {
 		cfg := cfgs[app]
@@ -286,7 +291,9 @@ func runAppPostValidateHooks(apps []string, cfgs map[string]*hook.Config, result
 		if cfg != nil && cfg.HasPostValidate {
 			start := time.Now()
 			err := hook.RunPostValidateHook(cfg, dir, app)
-			log.Debug("post-validate hook %s: %s", app, time.Since(start).Round(time.Millisecond))
+			if log != nil {
+				log.Debug("post-validate hook %s: %s", app, time.Since(start).Round(time.Millisecond))
+			}
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("kustomize build %s: post-validate hook: %s", app, err))
 				if r := results[app]; r != nil {

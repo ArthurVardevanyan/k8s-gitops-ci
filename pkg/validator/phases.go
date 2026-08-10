@@ -552,8 +552,9 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// summary.
 	scaffoldStart := time.Now()
 	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
-	tc.RecordStep("Build YAML", "scaffold-validation", time.Since(scaffoldStart))
-	log.Debug("scaffold-validation: %s", time.Since(scaffoldStart).Round(time.Millisecond))
+	scaffoldDur := time.Since(scaffoldStart)
+	tc.RecordStep("Build YAML", "scaffold-validation", scaffoldDur)
+	log.Debug("scaffold-validation: %s", scaffoldDur.Round(time.Millisecond))
 
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	kyvernoEnabled := stepEnabled(stepKyverno, disabled, enabled)
@@ -684,8 +685,9 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	if kustomizeFixEnabled {
 		fixStart := time.Now()
 		fixNeeded, fixCheckErr = kustomize.CheckFix(changed)
-		tc.RecordStep("Build YAML", "kustomize-fix", time.Since(fixStart))
-		log.Debug("kustomize-fix: %s", time.Since(fixStart).Round(time.Millisecond))
+		fixDur := time.Since(fixStart)
+		tc.RecordStep("Build YAML", "kustomize-fix", fixDur)
+		log.Debug("kustomize-fix: %s", fixDur.Round(time.Millisecond))
 		switch {
 		case fixCheckErr != nil:
 			log.ErrorInSection("KustomizeBuild", "kustomize fix check: %v", fixCheckErr)
@@ -705,12 +707,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// hard failure, not tolerated).
 	addedFilesStart := time.Now()
 	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
-	tc.RecordStep("Build YAML", "added-files", time.Since(addedFilesStart))
-	log.Debug("added-files: %s", time.Since(addedFilesStart).Round(time.Millisecond))
+	addedFilesDur := time.Since(addedFilesStart)
+	tc.RecordStep("Build YAML", "added-files", addedFilesDur)
+	log.Debug("added-files: %s", addedFilesDur.Round(time.Millisecond))
 	ghostStart := time.Now()
 	ghostTable, ghostBlockingCount := buildGhostTable(renderedOverlays, changed, addedFiles)
-	tc.RecordStep("Build YAML", "ghost-patch", time.Since(ghostStart))
-	log.Debug("ghost-patch: %s", time.Since(ghostStart).Round(time.Millisecond))
+	ghostDur := time.Since(ghostStart)
+	tc.RecordStep("Build YAML", "ghost-patch", ghostDur)
+	log.Debug("ghost-patch: %s", ghostDur.Round(time.Millisecond))
 	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, fixCheckErr, kustomizeFixEnabled, ghostTable, ghostBlockingCount))
 	if ghostBlockingCount > 0 {
 		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
