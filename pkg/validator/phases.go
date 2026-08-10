@@ -367,19 +367,25 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			yamlFiles = excludeInvalidTestdata(yamlFiles)
 			yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
 			yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
-			kcOpts := kubeconform.DefaultOptions()
-			if opts.SchemaDir != "" {
-				// Already extracted once, up front, by pkg/pipeline's Setup
-				// phase (see validator.Options.SchemaDir's doc comment) -
-				// callers that don't prefetch (test-all/build-yaml/scan-all)
-				// leave this empty and fall through to the lazy extraction
-				// below, exactly as before this field existed.
-				kcOpts.SchemaDir = opts.SchemaDir
-			} else if schemaDir, cleanup, err := kubeconform.ExtractSchemas(); err == nil {
-				kcOpts.SchemaDir = schemaDir
-				defer cleanup()
+			kcOpts, cleanup := kubeconformSchemaOpts(opts)
+			defer cleanup()
+			// Changed files that participate in a scoped overlay's build chain
+			// are schema-validated from the authoritative rendered output in the
+			// post-build "Kubeconform (Rendered)" pass (see
+			// runBuildAndPostBuild). Excluding them here keeps each changed
+			// manifest validated by exactly one pass, and avoids a misleading
+			// raw pass tripping over unresolved AVP placeholders that the
+			// rendered output resolves. This exclusion only applies when the
+			// rendered pass will actually run: under --lint-only the Build/
+			// Post-Build phase (and therefore the rendered pass) is skipped, so
+			// removing these files here would drop their kubeconform coverage
+			// entirely. In lint-only mode every changed manifest file is
+			// validated raw instead.
+			if !opts.LintOnly {
+				scoped := detectOverlaysForChanges(changed)
+				yamlFiles = filesNotCovered(yamlFiles, coverByScopedOverlays(scoped, yamlFiles))
 			}
-			if kcRes, err := validateWithRenderedOverlays(yamlFiles, kcOpts); err == nil && kcRes != nil {
+			if kcRes, err := kubeconform.ValidateFiles(yamlFiles, kcOpts); err == nil && kcRes != nil {
 				if kcRes.Invalid > 0 || kcRes.Errors > 0 {
 					sl.ErrorInSection("Kubeconform", "%s", kcRes.Summary())
 					return lintStepResult{report: kcRes.Summary(), status: StatusError}
@@ -692,7 +698,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// errors specifically (unlike kustomize.CheckFix above, which is a
 	// hard failure, not tolerated).
 	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
-	ghostTable, ghostBlockingCount := buildGhostTable(apps, addedFiles)
+	ghostTable, ghostBlockingCount := buildGhostTable(apps, changed, addedFiles)
 	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, fixCheckErr, kustomizeFixEnabled, ghostTable, ghostBlockingCount))
 	if ghostBlockingCount > 0 {
 		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
@@ -743,6 +749,24 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	if kyvernoEnabled {
 		res.Sections = append(res.Sections, runKyvernoValidation(renderedOverlays, yamlFiles, opts.PolicyPath, log))
+	}
+
+	// Schema-validation over the AVP/Helm-rendered overlay output (the same
+	// bytes Kyverno/NAD consume above). This is the authoritative pass for
+	// changed manifests that live inside an overlay - the raw Linting
+	// "Kubeconform" sub-check excludes those files (see runLintAndStaticChecks)
+	// so each manifest is schema-validated exactly once, and here we validate
+	// what actually deploys (AVP placeholders resolved, Helm charts rendered)
+	// rather than raw source. Only emitted when at least one overlay rendered.
+	if len(renderedOverlays) > 0 {
+		kcOpts, kcCleanup := kubeconformSchemaOpts(opts)
+		renderedKc := validateRenderedOverlays(renderedOverlays, kcOpts, Workers(opts))
+		kcCleanup()
+		// Always visible on the console (even on a clean pass - the report
+		// section for this pass is only printed when it fails), mirroring how
+		// the raw kubeconform "passed" line is always shown.
+		log.Info("kubeconform (rendered): %s", renderedKc.Summary())
+		res.Sections = append(res.Sections, ComposeKubeconformRenderedSection(renderedKc))
 	}
 
 	// NetworkAttachmentDefinition validation over every successfully-rendered

@@ -60,8 +60,8 @@ func isExtraNonAppPath(f string) bool {
 //
 // This is the shared app-root/overlay discovery used across the pipeline -
 // by the Overlay Build step (detectOverlaysForChanges in build_wiring.go),
-// kubeconform rendered-manifest validation (validateWithRenderedOverlays in
-// kubeconform_overlay.go), non-app checks (nonapp_wiring.go), and
+// the kubeconform raw-pass overlay exclusion and its change-scoped overlay set
+// (kubeconform_overlay.go), non-app checks (nonapp_wiring.go), and
 // --cluster/--app targeting (target_wiring.go) - not just kubeconform.
 func detectAppRoots(files []string) []string {
 	seen := map[string]bool{}
