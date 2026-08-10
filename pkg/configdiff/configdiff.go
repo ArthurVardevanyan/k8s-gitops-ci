@@ -157,7 +157,13 @@ func appName(s string) string {
 	return ""
 }
 
-func fetchMainConfig(path string) []byte {
+// fetchMainConfig returns the on-disk config file's contents as of the
+// merge-base with the default branch, used to diff current vs. merged state.
+// It is factored into a package var so tests can inject fixture bytes without
+// requiring a real git history.
+var fetchMainConfig = fetchMainConfigDefault
+
+func fetchMainConfigDefault(path string) []byte {
 	ctx := context.Background()
 	base, _ := exec.CommandContext(ctx, "git", "merge-base", "HEAD", "origin/main").Output()
 	ref := strings.TrimSpace(string(base))
@@ -178,6 +184,7 @@ func parseTopLevel(data []byte) (overrides, envs, groups map[string]*yaml.Node) 
 		return overrides, envs, groups
 	}
 	doc := root.Content[0]
+	// overrides is always a key->value mapping under overlayDefinitions.
 	if od := findKey(doc, "overlayDefinitions"); od != nil {
 		if ovs := findKey(od, "overrides"); ovs != nil {
 			for i := 0; i < len(ovs.Content); i += 2 {
@@ -185,17 +192,87 @@ func parseTopLevel(data []byte) (overrides, envs, groups map[string]*yaml.Node) 
 			}
 		}
 	}
-	if e := findKey(doc, "environments"); e != nil {
-		for i := 0; i < len(e.Content); i += 2 {
-			envs[e.Content[i].Value] = e.Content[i+1]
-		}
-	}
-	if g := findKey(doc, "changeGroups"); g != nil {
-		for i := 0; i < len(g.Content); i += 2 {
-			groups[g.Content[i].Value] = g.Content[i+1]
-		}
-	}
+	// environments and changeGroups are scaffold-tool defined, so their layout
+	// varies: they may be nested under overlayDefinitions or at the document
+	// root, and each entry may be a key->value mapping (name: {...}) or a
+	// sequence of items keyed by an identity field (e.g. name / group). Resolve
+	// either location and shape so changes are detected regardless of how the
+	// tool structures its config.
+	envs = identitySection(doc, "environments", "name")
+	groups = identitySection(doc, "changeGroups", "group")
 	return overrides, envs, groups
+}
+
+// identitySection resolves a scaffold-config section that may live either
+// under overlayDefinitions or at the document root, and may be expressed
+// either as a key->value mapping or as a sequence of items keyed by idField.
+// The returned map is keyed by that identity field (the map key for the
+// mapping form, or the idField value for the sequence form).
+func identitySection(doc *yaml.Node, name, idField string) map[string]*yaml.Node {
+	sec := findSection(doc, name)
+	if sec == nil {
+		return map[string]*yaml.Node{}
+	}
+	switch sec.Kind {
+	case yaml.MappingNode:
+		return mappingToNodes(sec)
+	case yaml.SequenceNode:
+		return sequenceToNodes(sec, idField)
+	default:
+		return map[string]*yaml.Node{}
+	}
+}
+
+// findSection locates name either beneath overlayDefinitions or at the
+// document root, preferring the nested location. The nested value is only
+// preferred when it is a usable mapping/sequence; an unsupported kind there
+// (e.g. a malformed scalar/null node) falls back to the document-root section
+// so a broken nested section can't silently shadow a valid root one.
+func findSection(doc *yaml.Node, name string) *yaml.Node {
+	if od := findKey(doc, "overlayDefinitions"); od != nil {
+		if sec := findKey(od, name); isMappingOrSequence(sec) {
+			return sec
+		}
+	}
+	return findKey(doc, name)
+}
+
+// isMappingOrSequence reports whether n is a YAML mapping or sequence node.
+func isMappingOrSequence(n *yaml.Node) bool {
+	return n != nil && (n.Kind == yaml.MappingNode || n.Kind == yaml.SequenceNode)
+}
+
+// mappingToNodes converts a key->value mapping node into a map keyed by each
+// key, holding the value node.
+func mappingToNodes(sec *yaml.Node) map[string]*yaml.Node {
+	out := make(map[string]*yaml.Node)
+	for i := 0; i < len(sec.Content); i += 2 {
+		out[sec.Content[i].Value] = sec.Content[i+1]
+	}
+	return out
+}
+
+// sequenceToNodes converts a sequence of mapping items into a map keyed by
+// each item's idField value, holding the whole item node. Items without the
+// identity field are skipped.
+func sequenceToNodes(sec *yaml.Node, idField string) map[string]*yaml.Node {
+	out := make(map[string]*yaml.Node)
+	for _, item := range sec.Content {
+		if item.Kind != yaml.MappingNode {
+			continue
+		}
+		key := ""
+		for i := 0; i < len(item.Content); i += 2 {
+			if item.Content[i].Value == idField {
+				key = item.Content[i+1].Value
+				break
+			}
+		}
+		if key != "" {
+			out[key] = item
+		}
+	}
+	return out
 }
 
 func findKey(node *yaml.Node, key string) *yaml.Node {
