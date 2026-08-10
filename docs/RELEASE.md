@@ -34,6 +34,16 @@ CI and can't merge. (The `origin/main` comparison is enforced whenever
 that ref is resolvable — always in the Tekton PR run; a purely local
 `task version:check` with no network falls back to the tag comparison.)
 
+The latest-tag and latest-`main` checks compare `VERSION` on the PR branch
+as-is, so a branch that never modified `VERSION` but is simply _behind_
+`main` (it predates a newer release there) is **not** blocked by either
+check: since it didn't touch the file, merging it can't downgrade anything
+— the merge inherits main's newer `VERSION`. This is detected via
+`git diff --name-only ${BASE_REF}...HEAD` not listing `VERSION`. Any PR
+that _does_ change `VERSION` is still subject to the full checks, and when
+the base ref can't be resolved (offline/local) — or the diff itself fails —
+both checks stay fully in force (fail-closed).
+
 `version:check` also enforces **bump correctness**: when a PR advances
 `VERSION` (i.e. proposes a release), the bump must be at least as large as
 the conventional commits since the last tag warrant — you can't ship a
@@ -185,6 +195,15 @@ they are not meant to be consumed as a Go module (see the note below).
 or a minor. `N` is the next integer after the highest existing
 `v<next>-rc.*`. goreleaser's `prerelease: auto` marks `-rc` tags as GitHub
 pre-releases (never "Latest").
+
+**Advisor tag scoping.** `cliff.toml`'s `tag_pattern` is anchored to
+strict GA tags (`^v[0-9]+\.[0-9]+\.[0-9]+$`) — it deliberately excludes
+RC tags. If pre-release tags were included in the pattern,
+`git-cliff --bumped-version --unreleased` would anchor off the latest RC
+(e.g. `v0.48.4-rc.1`) instead of the last GA tag (`v0.48.3`), producing a
+pre-release-shaped `next` (e.g. `0.48.4-rc.2`) that fails the downstream
+strict `MAJOR.MINOR.PATCH` regex gate in both the Tekton pipeline and
+`version:check`, silently blocking RC cuts and the bump-correctness guard.
 
 **Cleanup.**
 

@@ -110,28 +110,78 @@ tasks:
           [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
         }
 
+        # Resolve the base branch once, up front, so both Guard 1 and Guard 2
+        # below can share it. Base ref defaults to origin/main but is
+        # overridable via VERSION_CHECK_BASE_REF — the Tekton PR run fetches
+        # the target branch and sets this to FETCH_HEAD (the clone otherwise
+        # lacks origin/main). Best-effort: silently tolerates when the ref or
+        # its VERSION file isn't resolvable (offline/local dev), but we must
+        # still distinguish "resolved" from "unresolved" so Guard 1 can
+        # fail-closed later.
+        BASE_REF="${VERSION_CHECK_BASE_REF:-origin/main}"
+        BASE_RESOLVED=0
+        BASE_VERSION=""
+        if git rev-parse --verify --quiet "${BASE_REF}" >/dev/null 2>&1; then
+          BASE_RESOLVED=1
+          BASE_VERSION="$(git show "${BASE_REF}:VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
+        fi
+
+        # Did this PR actually modify VERSION relative to the base branch? Both
+        # Guard 1 (behind latest tag) and Guard 2 (behind base) only exist to
+        # reject a VERSION that was *downgraded*. A branch that simply never
+        # touched VERSION (it predates a newer release on main) isn't downgrading
+        # anything — the merge will inherit main's newer VERSION, so it must not
+        # be blocked for being staler than the tip of main. We detect that with a
+        # merge-base diff (three-dot) against the resolved base ref: absent =
+        # untouched. Tri-state:
+        #   no      — base resolved and VERSION unchanged → skip Guard 1 & 2
+        #   yes     — base resolved and VERSION changed → Guards fully in force
+        #   unknown — base unresolved OR the diff failed → fail-closed below
+        # The diff is captured into a variable first (with its own status) so a
+        # git error is distinguishable from an empty diff: we must NOT fall into
+        # VERSION_TOUCHED=no on a git failure, or a broken diff would silently
+        # disable both guards.
+        VERSION_TOUCHED="unknown"
+        if [ "${BASE_RESOLVED}" -eq 1 ]; then
+          DIFF="$(git diff --name-only "${BASE_REF}...HEAD" 2>/dev/null)" || true
+          if [ -z "${DIFF}" ]; then
+            # Empty diff means base tip == HEAD (no PR changes at all). This is
+            # a degenerate/forced state, not the "untouched but behind" case, so
+            # treat it as changed and let the guards decide.
+            VERSION_TOUCHED="yes"
+          else
+            if printf '%s\n' "${DIFF}" | grep -Fxq "VERSION"; then
+              VERSION_TOUCHED="yes"
+            else
+              VERSION_TOUCHED="no"
+            fi
+          fi
+        fi
+
         # Guard 1: VERSION must not be behind the latest existing release tag.
+        # Skipped only when this PR provably didn't modify VERSION relative to
+        # the base ref (see above); always enforced when VERSION was changed
+        # or the base ref couldn't be resolved (fail-closed, preserving the
+        # original behavior for offline/local runs and cleans upstream states).
         LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname \
           | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 | sed 's/^v//' || true)"
-        if [ -n "${LATEST}" ] && ! ge "${VERSION}" "${LATEST}"; then
+        if [ "${VERSION_TOUCHED}" != "no" ] \
+          && [ -n "${LATEST}" ] && ! ge "${VERSION}" "${LATEST}"; then
           echo "❌ VERSION '${VERSION}' is behind the latest release tag 'v${LATEST}'"
           exit 1
         fi
 
         # Guard 2: VERSION must not be behind the base branch's current
         # VERSION (catches a downgrade that's still >= the latest tag, e.g.
-        # reverting a bump that hasn't been tagged yet). Base ref defaults to
-        # origin/main but is overridable via VERSION_CHECK_BASE_REF — the
-        # Tekton PR run fetches the target branch and sets this to FETCH_HEAD
-        # (the clone otherwise lacks origin/main). Best-effort: silently
-        # skips when the base ref or its VERSION file isn't resolvable, so
+        # reverting a bump that hasn't been tagged yet). Gated on
+        # VERSION_TOUCHED just like Guard 1: an untouched VERSION on a branch
+        # that predates a newer base VERSION isn't a downgrade and must pass;
+        # only a PR that actually changes VERSION downward, or an
+        # unresolvable/failed diff (fail-closed), may fail here. Best-effort:
+        # silently skips when the base VERSION file isn't resolvable, so
         # offline/local dev keeps working.
-        BASE_REF="${VERSION_CHECK_BASE_REF:-origin/main}"
-        BASE_VERSION=""
-        if git rev-parse --verify --quiet "${BASE_REF}" >/dev/null 2>&1; then
-          BASE_VERSION="$(git show "${BASE_REF}:VERSION" 2>/dev/null | tr -d '[:space:]' || true)"
-        fi
-        if [ -n "${BASE_VERSION}" ] \
+        if [ "${VERSION_TOUCHED}" != "no" ] \
+          && [ -n "${BASE_VERSION}" ] \
           && printf '%s' "${BASE_VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
           && ! ge "${VERSION}" "${BASE_VERSION}"; then
           echo "❌ VERSION '${VERSION}' is behind ${BASE_REF}'s VERSION '${BASE_VERSION}' (downgrade)"
