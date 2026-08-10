@@ -393,17 +393,19 @@ func TestClassifyOverlay_NewlyAddedIsWarning(t *testing.T) {
 	}
 }
 
-func TestClassifyApp_NoOverlaysDir(t *testing.T) {
-	results, err := ClassifyApp(t.TempDir(), nil, nil)
+func TestClassifyRendered_Empty(t *testing.T) {
+	results, err := ClassifyRendered(nil, nil, nil)
 	if err != nil || len(results) != 0 {
-		t.Errorf("expected no results for an app with no overlays/: %v err %v", results, err)
+		t.Errorf("expected no results for no overlays: %v err %v", results, err)
 	}
 }
 
-// TestClassifyApp_UntouchedOverlayNotBlocking verifies ClassifyApp threads
-// the changed-files set through, so a ghost on an overlay this PR did not
-// touch stays non-blocking while a touched one is blocking.
-func TestClassifyApp_BlockingReflectsChangedSet(t *testing.T) {
+// TestClassifyRendered_BlockingReflectsChangedSet verifies ClassifyRendered
+// threads the changed-files set through per overlay, so a ghost on an
+// overlay this PR did not touch stays non-blocking while a touched one is
+// blocking - mirroring ClassifyOverlay's own blocking rule, just across
+// multiple already-rendered overlays at once.
+func TestClassifyRendered_BlockingReflectsChangedSet(t *testing.T) {
 	app := filepath.Join(t.TempDir(), "myapp")
 	touched := filepath.Join(app, "overlays", "prod")
 	untouched := filepath.Join(app, "overlays", "stage")
@@ -419,8 +421,12 @@ func TestClassifyApp_BlockingReflectsChangedSet(t *testing.T) {
 	write(touched)
 	write(untouched)
 
-	// Only prod's kustomization.yaml was changed by this PR.
-	results, err := ClassifyApp(app, []string{filepath.Join(touched, "kustomization.yaml")}, nil)
+	// Only prod's kustomization.yaml was changed by this PR. Both overlays
+	// are passed as already-rendered (empty YAML - no matching resources,
+	// so both still have a ghost) since ClassifyRendered never renders
+	// anything itself.
+	overlays := []RenderedOverlay{{Path: touched}, {Path: untouched}}
+	results, err := ClassifyRendered(overlays, []string{filepath.Join(touched, "kustomization.yaml")}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -435,5 +441,37 @@ func TestClassifyApp_BlockingReflectsChangedSet(t *testing.T) {
 	}
 	if byOverlay[untouched] {
 		t.Errorf("expected the untouched overlay's ghost to be non-blocking: %v", byOverlay)
+	}
+}
+
+// TestClassifyRendered_OnlyIncludesSuppliedOverlays verifies ClassifyRendered
+// only ever classifies the overlays it was handed - not every overlay on
+// disk under the app - since that's the entire point of it existing (see
+// the doc comment on ClassifyRendered/buildGhostTable's caller for why the
+// old app-directory-scanning ClassifyApp was removed).
+func TestClassifyRendered_OnlyIncludesSuppliedOverlays(t *testing.T) {
+	app := filepath.Join(t.TempDir(), "myapp")
+	included := filepath.Join(app, "overlays", "prod")
+	notIncluded := filepath.Join(app, "overlays", "stage")
+	write := func(dir string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "kustomization.yaml"), []byte("patches:\n- target:\n    kind: Deployment\n    name: missing\n  patch: |-\n    []\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(included)
+	write(notIncluded)
+
+	// Only "included" is passed in, even though "notIncluded" exists on
+	// disk with the exact same ghost-producing content.
+	results, err := ClassifyRendered([]RenderedOverlay{{Path: included}}, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || results[0].Overlay != included {
+		t.Errorf("expected exactly the one supplied overlay to be classified, got: %+v", results)
 	}
 }

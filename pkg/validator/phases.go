@@ -550,7 +550,11 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// per-app drift re-run, so it belongs with large-file/YAML-syntax/
 	// config-sort/startingCSV rather than folded into this section's drift
 	// summary.
+	scaffoldStart := time.Now()
 	scaffoldResult := runScaffoldValidation(opts, apps, changed, log)
+	scaffoldDur := time.Since(scaffoldStart)
+	tc.RecordStep("Build YAML", "scaffold-validation", scaffoldDur)
+	log.Debug("scaffold-validation: %s", scaffoldDur.Round(time.Millisecond))
 
 	log.Info("running overlay checks over %d overlay(s)...", len(overlays))
 	kyvernoEnabled := stepEnabled(stepKyverno, disabled, enabled)
@@ -592,7 +596,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					ovStart := time.Now()
 					r := runOverlayChecks([]string{ov.path}, ov.cluster, selectors, 1, disabled)
 					app := appFromOverlayPath(ov.path)
-					buildErr, pre, post, rendered := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app])
+					buildErr, pre, post, rendered := buildOverlayWithHooks(ov, hookCfgs[app], appStrategies[app], log)
 					tc.RecordStep("Build YAML", ov.path, time.Since(ovStart))
 					overlayMu.Lock()
 					overlayResult.Findings = append(overlayResult.Findings, r.Findings...)
@@ -621,7 +625,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		overlayWg.Wait()
 	}
 
-	for _, err := range runAppPostValidateHooks(apps, hookCfgs, hookResults) {
+	for _, err := range runAppPostValidateHooks(apps, hookCfgs, hookResults, log) {
 		buildErrs = append(buildErrs, err)
 		log.ErrorInSection("Hooks", "%s", err)
 	}
@@ -679,7 +683,11 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	var fixCheckErr error
 	kustomizeFixEnabled := stepEnabled(stepKustomizeFix, disabled, enabled)
 	if kustomizeFixEnabled {
+		fixStart := time.Now()
 		fixNeeded, fixCheckErr = kustomize.CheckFix(changed)
+		fixDur := time.Since(fixStart)
+		tc.RecordStep("Build YAML", "kustomize-fix", fixDur)
+		log.Debug("kustomize-fix: %s", fixDur.Round(time.Millisecond))
 		switch {
 		case fixCheckErr != nil:
 			log.ErrorInSection("KustomizeBuild", "kustomize fix check: %v", fixCheckErr)
@@ -697,8 +705,16 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// existing tolerant-of-git-failure pattern for changeset-resolution
 	// errors specifically (unlike kustomize.CheckFix above, which is a
 	// hard failure, not tolerated).
+	addedFilesStart := time.Now()
 	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
-	ghostTable, ghostBlockingCount := buildGhostTable(apps, changed, addedFiles)
+	addedFilesDur := time.Since(addedFilesStart)
+	tc.RecordStep("Build YAML", "added-files", addedFilesDur)
+	log.Debug("added-files: %s", addedFilesDur.Round(time.Millisecond))
+	ghostStart := time.Now()
+	ghostTable, ghostBlockingCount := buildGhostTable(renderedOverlays, changed, addedFiles)
+	ghostDur := time.Since(ghostStart)
+	tc.RecordStep("Build YAML", "ghost-patch", ghostDur)
+	log.Debug("ghost-patch: %s", ghostDur.Round(time.Millisecond))
 	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, fixCheckErr, kustomizeFixEnabled, ghostTable, ghostBlockingCount))
 	if ghostBlockingCount > 0 {
 		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
@@ -711,7 +727,13 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		strings.Join(scaffoldResult.PreExistingDriftLines, "\n"),
 	))
 	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
-	tc.Record("Build YAML", time.Since(buildStart), len(overlays) > 1)
+	buildDur := time.Since(buildStart)
+	tc.Record("Build YAML", buildDur, len(overlays) > 1)
+	// Phase-summary line matching Setup/PR Validation/YAML Syntax's own
+	// "... passed (<duration>)" console line (see those phases' Info calls
+	// above/below) - Build YAML previously had no such line, so its
+	// duration was only visible in the end-of-run tc.Summary table.
+	log.Info("build: %d overlay(s) rendered (%s)", len(overlays), buildDur.Round(time.Millisecond))
 
 	// ── Post-Build Validation ────────────────────────────────────────────────
 	postBuildStart := time.Now()

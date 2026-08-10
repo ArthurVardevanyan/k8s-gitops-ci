@@ -517,11 +517,26 @@ overlay's rendered output, almost always because the resource it was meant
 to patch was renamed or removed elsewhere without updating (or removing)
 the patch. Every detected ghost is always shown in the report's Ghost
 Patches table, but only some are **blocking**
-(`ghostpatch.ClassifyOverlay`/`ClassifyApp`, wired via
+(`ghostpatch.ClassifyOverlay`/`ClassifyRendered`, wired via
 `buildGhostTable` in `pkg/validator/build_wiring.go`):
 
 - **Package:** `pkg/ghostpatch`
 - **Enablement:** always runs — no check ID, not gateable.
+- **Scope:** only the overlays this run actually built and rendered (the
+  Build YAML phase's own `renderedOverlays`, see
+  `runBuildAndPostBuild`/`buildOverlayWithHooks`) are classified -
+  `ghostpatch.ClassifyRendered` never re-renders or discovers overlays on
+  disk itself. An earlier version (`ghostpatch.ClassifyApp`, since removed)
+  walked every overlay directory under each changed app and re-rendered
+  each one via kustomize purely to check for ghosts; for an app with
+  hundreds of overlays and a PR touching only a handful, that redundant
+  full-app re-render dominated the Build YAML phase's wall time (minutes,
+  for no benefit - see `docs/DEVELOPMENT.md`'s Timing table section) for
+  detecting ghosts in overlays this PR never touched or built. A ghost on
+  an overlay outside this run's changed/rendered set is simply never
+  classified now - it isn't this run's concern, and the blocking rule
+  below already only fires for a changed overlay's own
+  `kustomization.yaml` anyway.
 
 - **Blocking** - this PR changed the overlay's own `kustomization.yaml`
   (it is in the PR's changed-file set, resolved via `changeset` in

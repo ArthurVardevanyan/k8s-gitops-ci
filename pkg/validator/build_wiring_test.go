@@ -182,16 +182,9 @@ func TestBuildHookTable_AppWithHooksDefined(t *testing.T) {
 	}
 }
 
-func TestBuildGhostTable_NoApps(t *testing.T) {
+func TestBuildGhostTable_NoOverlays(t *testing.T) {
 	if got, blocking := buildGhostTable(nil, nil, nil); got != "" || blocking != 0 {
-		t.Errorf("expected empty table for no apps, got %q blocking=%d", got, blocking)
-	}
-}
-
-func TestBuildGhostTable_AppWithNoOverlays(t *testing.T) {
-	d := t.TempDir()
-	if got, blocking := buildGhostTable([]string{filepath.Join(d, "app-without-overlays")}, nil, nil); got != "" || blocking != 0 {
-		t.Errorf("expected empty table when the app has no overlays, got %q blocking=%d", got, blocking)
+		t.Errorf("expected empty table for no rendered overlays, got %q blocking=%d", got, blocking)
 	}
 }
 
@@ -213,8 +206,12 @@ func TestBuildGhostTable_GhostPatchDetected(t *testing.T) {
 `)
 
 	// The overlay's kustomization.yaml was NOT changed by this PR, so the
-	// ghost is pre-existing drift: non-blocking.
-	got, blocking := buildGhostTable([]string{app}, []string{filepath.Join(ov, "other.yaml")}, nil)
+	// ghost is pre-existing drift: non-blocking. renderedOverlays mirrors
+	// what runBuildAndPostBuild's own build loop would have collected for
+	// this overlay - buildGhostTable no longer re-renders or discovers
+	// overlays on disk itself.
+	rendered := []renderedOverlay{{overlay: ov}}
+	got, blocking := buildGhostTable(rendered, []string{filepath.Join(ov, "other.yaml")}, nil)
 	if got == "" {
 		t.Fatal("expected a non-empty ghost patch table")
 	}
@@ -242,11 +239,40 @@ func TestBuildGhostTable_BlockingGhostReflectedInCount(t *testing.T) {
     []
 `)
 
-	got, blocking := buildGhostTable([]string{app}, []string{kustPath}, nil)
+	rendered := []renderedOverlay{{overlay: ov}}
+	got, blocking := buildGhostTable(rendered, []string{kustPath}, nil)
 	if got == "" {
 		t.Fatal("expected a non-empty ghost patch table")
 	}
 	if blocking != 1 {
 		t.Errorf("expected 1 blocking ghost patch (overlay kustomization changed by this PR), got %d (table: %s)", blocking, got)
+	}
+}
+
+// TestBuildGhostTable_OnlyIncludesRenderedOverlays verifies buildGhostTable
+// never classifies an overlay that wasn't in renderedOverlays, even if it
+// exists on disk with the exact same ghost-producing content - this is the
+// entire point of scoping ghost-patch detection to overlays this run
+// actually built (see buildGhostTable's doc comment): an overlay this PR
+// didn't touch/build is not this run's concern, and previously walking
+// every overlay on disk under each app dominated the Build YAML phase's
+// wall time for large apps.
+func TestBuildGhostTable_OnlyIncludesRenderedOverlays(t *testing.T) {
+	app := filepath.Join(t.TempDir(), "myapp")
+	rendered := filepath.Join(app, "overlays", "prod")
+	notRendered := filepath.Join(app, "overlays", "stage")
+	write := func(dir string) {
+		t.Helper()
+		mustWrite(t, filepath.Join(dir, "kustomization.yaml"), "patches:\n- target:\n    kind: Deployment\n    name: missing\n  patch: |-\n    []\n")
+	}
+	write(rendered)
+	write(notRendered)
+
+	got, _ := buildGhostTable([]renderedOverlay{{overlay: rendered}}, nil, nil)
+	if !strings.Contains(got, rendered) {
+		t.Errorf("expected the rendered overlay's ghost in the table, got:\n%s", got)
+	}
+	if strings.Contains(got, notRendered) {
+		t.Errorf("expected the non-rendered overlay to be absent from the table, got:\n%s", got)
 	}
 }

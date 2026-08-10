@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
@@ -198,18 +200,47 @@ func appBuildDir(app string) string {
 // any failure) - the caller reuses it for Kyverno policy validation
 // (runKyvernoValidation) instead of rendering the same overlay a second
 // time.
-func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStrategy) (buildErr string, pre, post hookOutcome, rendered []byte) {
+//
+// log is used purely for --verbose diagnostic timing (render vs. pre/post
+// hook duration for this one overlay) - see the doc comment on the
+// "overlay %s:" Debug line below. Every real call site already has one in
+// scope; a nil log is tolerated (the deferred Debug emission below is a
+// no-op in that case) purely so tests/future callers don't have to
+// construct a throwaway logger just to satisfy this diagnostic-only param.
+func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStrategy, log *logger.Logger) (buildErr string, pre, post hookOutcome, rendered []byte) {
 	app := appFromOverlayPath(ov.path)
 	outFile := filepath.Join(appBuildDir(app), filepath.Base(ov.path)+".yaml")
 
+	var preDur, renderDur, postDur time.Duration
+	defer func() {
+		if log == nil {
+			return
+		}
+		// --verbose-only breakdown of where this overlay's build time
+		// went, so a slow Build YAML phase (see runBuildAndPostBuild's
+		// per-overlay tc.RecordStep, which times this whole function as
+		// one opaque unit) can be localized to render vs. a specific
+		// hook without re-running with ad hoc instrumentation. render
+		// includes the argocd-vault-plugin subprocess for AVP strategies
+		// (overlay.RenderWithStrategy pipes through runAVP internally) -
+		// not split out further to avoid threading a logger dependency
+		// into the generic pkg/overlay package for a single Debug line.
+		log.Debug("overlay %s: render=%s pre-hook=%s post-hook=%s", ov.path, renderDur.Round(time.Millisecond), preDur.Round(time.Millisecond), postDur.Round(time.Millisecond))
+	}()
+
 	if cfg != nil && cfg.HasPreBuild {
-		if err := hook.RunPreBuildHook(cfg, ov.path, outFile); err != nil {
+		preStart := time.Now()
+		err := hook.RunPreBuildHook(cfg, ov.path, outFile)
+		preDur = time.Since(preStart)
+		if err != nil {
 			return fmt.Sprintf("kustomize build %s: pre-build hook: %s", ov.path, err), hookFailed, hookNotDefined, nil
 		}
 		pre = hookRan
 	}
 
+	renderStart := time.Now()
 	out, err := overlay.RenderWithStrategy(app, ov.path, strategy.Strategy, strategy.Exclude)
+	renderDur = time.Since(renderStart)
 	if err != nil {
 		return fmt.Sprintf("kustomize build %s: %s", ov.path, err), pre, post, nil
 	}
@@ -221,7 +252,10 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 		if err := os.WriteFile(outFile, out, 0o600); err != nil {
 			return fmt.Sprintf("kustomize build %s: post-build hook: writing rendered YAML: %s", ov.path, err), pre, hookFailed, nil
 		}
-		if err := hook.RunPostBuildHook(cfg, outFile, ov.path); err != nil {
+		postStart := time.Now()
+		err := hook.RunPostBuildHook(cfg, outFile, ov.path)
+		postDur = time.Since(postStart)
+		if err != nil {
 			return fmt.Sprintf("kustomize build %s: post-build hook: %s", ov.path, err), pre, hookFailed, nil
 		}
 		post = hookRan
@@ -242,12 +276,25 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 // buildOverlayError's "kustomize build <app>: <cause>" format. It also
 // removes each app's scratch build directory (see appBuildDir) once its
 // POST_VALIDATE_HOOK has had a chance to read it, regardless of outcome.
-func runAppPostValidateHooks(apps []string, cfgs map[string]*hook.Config, results map[string]*appHookResult) (errs []string) {
+//
+// log is used purely for --verbose diagnostic timing of each app's
+// POST_VALIDATE_HOOK - this hook runs once per app (not once per overlay
+// like PRE/POST_BUILD, see buildOverlayWithHooks), and was previously
+// entirely untimed even in the end-of-run timing table, making a slow
+// POST_VALIDATE_HOOK (e.g. one that shells out to a cloud API per
+// referenced image) invisible. A nil log is tolerated (the Debug line
+// below is simply skipped) for the same reason as buildOverlayWithHooks.
+func runAppPostValidateHooks(apps []string, cfgs map[string]*hook.Config, results map[string]*appHookResult, log *logger.Logger) (errs []string) {
 	for _, app := range apps {
 		cfg := cfgs[app]
 		dir := appBuildDir(app)
 		if cfg != nil && cfg.HasPostValidate {
-			if err := hook.RunPostValidateHook(cfg, dir, app); err != nil {
+			start := time.Now()
+			err := hook.RunPostValidateHook(cfg, dir, app)
+			if log != nil {
+				log.Debug("post-validate hook %s: %s", app, time.Since(start).Round(time.Millisecond))
+			}
+			if err != nil {
 				errs = append(errs, fmt.Sprintf("kustomize build %s: post-validate hook: %s", app, err))
 				if r := results[app]; r != nil {
 					r.PostValidate = hookFailed
