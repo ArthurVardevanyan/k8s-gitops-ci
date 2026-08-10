@@ -27,10 +27,12 @@ const (
 )
 
 // hookTestCommentRe matches the /hook-test gitops comment, optionally followed
-// by arguments (e.g. "/hook-test pp2000"). PaC escapes newlines in
-// {{ trigger_comment }} to a literal "\n", so a leading-anchored prefix match
-// reliably identifies the command.
-var hookTestCommentRe = regexp.MustCompile(`^/hook-test\b`)
+// by whitespace-separated arguments (e.g. "/hook-test pp2000"). The command
+// must be followed by whitespace or end-of-string so a prefix like
+// /hook-test-evil is never treated as the allow-listed command. PaC escapes
+// newlines in {{ trigger_comment }} to a literal "\n", so a leading-anchored
+// match reliably identifies the command.
+var hookTestCommentRe = regexp.MustCompile(`^/hook-test(\s|$)`)
 
 // isHookTestComment reports whether the triggering comment is the /hook-test
 // command. The comment body is the value of PaC's {{ trigger_comment }}.

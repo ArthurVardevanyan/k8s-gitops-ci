@@ -53,6 +53,7 @@ func TestResolveSource_EventTypeOnComment(t *testing.T) {
 		{"hook-test without PR", "/hook-test", false, SourcePR},
 		{"other comment on PR", "/retest", true, SourceMain},
 		{"other comment without PR", "/retest", false, SourceLocal},
+		{"hyphen-suffixed comment fails closed", "/hook-test-evil", true, SourceMain},
 		{"empty comment on PR", "", true, SourceMain},
 	}
 	for _, tc := range cases {
@@ -91,6 +92,8 @@ func TestIsHookTestComment(t *testing.T) {
 		{"leading spaces", "  /hook-test", true},
 		{"not hook-test", "/retest", false},
 		{"prefix of other cmd", "/hook-testing", false},
+		{"hyphen suffix not allow-listed", "/hook-test-evil", false},
+		{"hyphen suffix with args", "/hook-test-evil pp2000", false},
 		{"empty", "", false},
 	}
 	for _, tc := range cases {
