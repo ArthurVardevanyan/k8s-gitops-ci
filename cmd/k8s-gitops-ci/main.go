@@ -275,11 +275,11 @@ func printFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
 // versa) using an equivalent flag set, instead of test-all/scan-all only
 // exposing --verbose.
 type validatorFlagSet struct {
-	url, pr, targetBranch, hookSource string
-	dirs, disableChecks, enableChecks string
-	concurrency                       int
-	assumeOpenshift, verbose          bool
-	apps, clusters                    []string
+	url, pr, targetBranch, hookSource  string
+	dirs, disableChecks, enableChecks  string
+	concurrency                        int
+	assumeOpenshift, verbose, lintOnly bool
+	apps, clusters                     []string
 }
 
 // bindValidatorFlags registers the shared flags on fs and returns the
@@ -296,6 +296,7 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.IntVar(&v.concurrency, "concurrency", 0, "worker concurrency (0=auto)")
 	fs.BoolVar(&v.assumeOpenshift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
 	fs.BoolVar(&v.verbose, "verbose", false, "verbose output")
+	fs.BoolVar(&v.lintOnly, "lint-only", false, "lint only, skip build checks")
 	fs.Var(newStringSliceFlag(&v.apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
 	fs.Var(newStringSliceFlag(&v.clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
 	return v
@@ -316,6 +317,7 @@ func (v *validatorFlagSet) applyTo(opts *validator.Options) {
 	opts.EnabledChecks = splitCommaList(v.enableChecks)
 	opts.Concurrency = v.concurrency
 	opts.AssumeOpenShift = v.assumeOpenshift
+	opts.LintOnly = v.lintOnly
 	opts.Verbose = v.verbose
 	opts.Apps = v.apps
 	opts.Clusters = v.clusters
@@ -677,8 +679,8 @@ Pipeline:
   build-yaml        Build YAML for a specific app/cluster
   test-all          Run all validators; accepts positional [dirs...] (full-tree
                     walk) or the same --url/--pr/--dirs/--disable-checks/
-                    --enable-checks/etc. flags as "pipeline" (default: working-
-                    tree git diff)
+                    --enable-checks/--lint-only/etc. flags as "pipeline"
+                    (default: working-tree git diff)
   scan-all          Like test-all, but only prints failing sections; defaults to
                     an uncommitted working-tree diff (git diff + git diff
                     --cached) - NOT a full-repo scan unless --dirs/--url/--pr
