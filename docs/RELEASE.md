@@ -46,17 +46,36 @@ both checks stay fully in force (fail-closed).
 
 `version:check` also enforces **bump correctness**: when a PR advances
 `VERSION` (i.e. proposes a release), the bump must be at least as large as
-the conventional commits since the last tag warrant — you can't ship a
-`feat:` as a patch bump. It uses [git-cliff](https://git-cliff.org/)
-(configured by `cliff.toml`) purely as an **advisor** to compute the
-expected bump; `VERSION` still decides the actual number. Only
-_under_-bumps are rejected (over-bumps — a deliberately larger release —
-are allowed). Pre-1.0, breaking changes (`feat!:`/`BREAKING CHANGE:`) map
-to a **minor** bump (`cliff.toml`'s `[bump] breaking_always_bump_major =
-false`), not a jump to `1.0.0`. This check is skipped for non-release PRs
-(`VERSION` unchanged) and when `git-cliff` isn't installed (local dev), so
-it only ever hard-gates a real release bump — and it hard-gates in CI,
-where `git-cliff` is provided by the toolbox image.
+the change warrants — you can't ship a `feat:` as a patch bump. Because
+PRs are **squash-merged**, the PR title _is_ the squash commit's subject
+and so the change that actually lands on `main` — the change the release
+step's git-cliff bump/changelog will see — is the **PR title**, not the
+branch's individual commits (which are discarded on squash). Two sources
+therefore contribute the expected bump, and the _required_ bump is the
+**max** of the two:
+
+- **`PR_TITLE` (preferred)** — the PR title is read from the environment;
+  the Tekton PR run sets it (via PAC) to `{{ pull_request_title }}`. Its
+  conventional type sizes the bump exactly as git-cliff will post-merge.
+- **the branch's conventional commits** via
+  [git-cliff](https://git-cliff.org/) (configured by `cliff.toml`) — still
+  computed so the check covers rebase/non-squash workflows and catches an
+  under-labeled PR title (a `fix:` title hiding a `feat:` commit).
+
+`VERSION` still decides the actual number; git-cliff and the PR title are
+only **advisors** sizing the _minimum_. Only _under_-bumps are rejected
+(over-bumps — a deliberately larger release — are allowed). Pre-1.0,
+breaking changes (`feat!:`/`BREAKING CHANGE:`) map to a **minor** bump
+(`cliff.toml`'s `[bump] breaking_always_bump_major = false`), not a jump
+to `1.0.0`. Non-release-relevant types (`docs:`/`chore:`/`ci:`/`build:`/
+`refactor:`/`style:`/`test:`) contribute nothing from either source,
+matching what git-cliff sizes them as post-merge, so the two arms never
+disagree spuriously. This check is skipped for non-release PRs (`VERSION`
+unchanged); with `PR_TITLE` unset (local `task version:check`) it falls
+back to commit-based sizing alone, and the git-cliff arm additionally
+no-ops when git-cliff isn't installed (local dev). So it only ever
+hard-gates a real release bump, and it hard-gates in CI, where `PR_TITLE`
+is injected and `git-cliff` is provided by the toolbox image.
 
 Tags are always `v`-prefixed (`vMAJOR.MINOR.PATCH`, e.g. `v0.47.0`) — this
 is required for the module to be resolvable as a Go dependency (`go get`/

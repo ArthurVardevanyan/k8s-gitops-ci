@@ -190,13 +190,29 @@ tasks:
 
         # Guard 3: bump-correctness. When VERSION advances past the latest
         # tag (i.e. this PR is claiming a release), the size of the bump must
-        # be at least what the conventional commits since that tag warrant —
-        # e.g. you can't ship a `feat:` as a patch bump. git-cliff computes
-        # the expected bump (advisory only; VERSION still decides the number).
-        # This blocks UNDER-bumps only; over-bumps are allowed. It is skipped
-        # when VERSION == latest tag (a non-release PR — nothing to size) and
-        # when git-cliff isn't installed (local dev), so it only ever hard-
-        # gates a real release bump, and only where git-cliff is present (CI).
+        # be at least what the change warrants — e.g. you can't ship a `feat:`
+        # as a patch bump. Two sources contribute the "expected bump":
+        #   1. PR_TITLE (preferred) — because PRs are squash-merged, the PR
+        #      title *is* the squash commit's subject and so the change that
+        #      actually lands on main (and drives the real post-merge git-cliff
+        #      bump/changelog). Sizing from it is authoritative for a squash-
+        #      merged repo; the branch's individual commits are discarded on
+        #      squash and only reflect a draft's WIP history.
+        #   2. the branch's conventional commits via git-cliff — retained so
+        #      the check still covers non-squash/rebase workflows, and so an
+        #      under-labeled PR title (`fix:` title hiding a `feat:` commit)
+        #      can't slip a too-small VERSION through.
+        # The required bump is the MAX of the two (whichever demands the
+        # larger bump wins), compared against VERSION's own bump class. This
+        # blocks UNDER-bumps only; over-bumps are allowed. PR_TITLE is read
+        # from the environment (the Tekton PR run sets it from PAC), so local
+        # dev without it falls back to the commit-based sizing alone. Like the
+        # git-cliff arm, the PR-title arm contributes bump class 0 for
+        # non-release-relevant types (docs/chore/test/ci/build/...), matching
+        # what git-cliff will size them as post-merge, so the two never
+        # disagree spuriously. A malformed/non-conventional title also sizes 0
+        # here — format enforcement lives in the separate conventional-PR-title
+        # CI check, not here.
         bump_class() {
           # class of $1 relative to LATEST: 3=major, 2=minor, 1=patch, 0=none
           old_major="${LATEST%%.*}"; rest="${LATEST#*.}"; old_minor="${rest%%.*}"
@@ -206,17 +222,54 @@ tasks:
           elif [ "$1" != "${LATEST}" ]; then echo 1
           else echo 0; fi
         }
-        if [ -n "${LATEST}" ] && [ "${VERSION}" != "${LATEST}" ] \
-          && command -v git-cliff >/dev/null 2>&1; then
-          SUGGESTED="$(git-cliff --bumped-version --unreleased 2>/dev/null | sed 's/^v//' || true)"
-          if printf '%s' "${SUGGESTED}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            WANT="$(bump_class "${SUGGESTED}")"
-            GOT="$(bump_class "${VERSION}")"
-            if [ "${GOT}" -lt "${WANT}" ]; then
-              kind="patch"; [ "${WANT}" = 2 ] && kind="minor"; [ "${WANT}" = 3 ] && kind="major"
-              echo "❌ VERSION '${VERSION}' under-bumps: commits since v${LATEST} warrant a ${kind} bump (git-cliff suggests v${SUGGESTED}). Bump VERSION to at least that."
-              exit 1
+        # title_bump_class <title> <new_major>: the bump class implied by a
+        # conventional PR title alone, honoring cliff.toml's pre-1.0 rules —
+        # on a 0.x target a breaking title bumps MINOR
+        # ("breaking_always_bump_major = false"), not MAJOR; `feat:` bumps
+        # minor; `fix:`/`perf:` bump patch; everything else
+        # (docs/chore/ci/build/refactor/style/test, unknown) contributes
+        # nothing, matching git-cliff's post-merge sizing of those.
+        title_bump_class() {
+          case "$1" in
+            feat!*|BREAKING\ CHANGE:*)
+              [ "$2" = "0" ] && echo 2 || echo 3 ;;
+            feat:*|feat\(*\):*) echo 2 ;;
+            fix:*|fix\(*\):*|perf:*|perf\(*\):*) echo 1 ;;
+            *) echo 0 ;;
+          esac
+        }
+        PR_TITLE="${PR_TITLE:-}"
+        if [ -n "${LATEST}" ] && [ "${VERSION}" != "${LATEST}" ]; then
+          GOT="$(bump_class "${VERSION}")"
+          # Required class starts at 0 and only goes up; we only fail if the
+          # actual VERSION bump is smaller than the max of the two sources.
+          WANT=0
+          REASON=""
+          # PR-title arm: authoritative for squash-merges. The pre-1.0
+          # breaking rule keys off the NEW version's major, so pass
+          # ${VERSION%%.*} as title_bump_class's second argument.
+          if [ -n "${PR_TITLE}" ]; then
+            TITLE_WANT="$(title_bump_class "${PR_TITLE}" "${VERSION%%.*}")"
+            if [ "${TITLE_WANT}" -gt "${WANT}" ]; then
+              WANT="${TITLE_WANT}"
+              REASON="PR title '${PR_TITLE}' warrants a $( [ "${TITLE_WANT}" = 2 ] && echo minor || { [ "${TITLE_WANT}" = 3 ] && echo major || echo patch; }) bump"
             fi
+          fi
+          # Commit arm: git-cliff (best-effort — skipped if not installed,
+          # e.g. local dev). Only raises WANT; never lowers it.
+          if command -v git-cliff >/dev/null 2>&1; then
+            SUGGESTED="$(git-cliff --bumped-version --unreleased 2>/dev/null | sed 's/^v//' || true)"
+            if printf '%s' "${SUGGESTED}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              COMMIT_WANT="$(bump_class "${SUGGESTED}")"
+              if [ "${COMMIT_WANT}" -gt "${WANT}" ]; then
+                WANT="${COMMIT_WANT}"
+                REASON="the commits since v${LATEST} warrant a $( [ "${COMMIT_WANT}" = 2 ] && echo minor || { [ "${COMMIT_WANT}" = 3 ] && echo major || echo patch; }) bump (git-cliff suggests v${SUGGESTED})"
+              fi
+            fi
+          fi
+          if [ "${GOT}" -lt "${WANT}" ]; then
+            echo "❌ VERSION '${VERSION}' under-bumps: ${REASON}. Bump VERSION to at least that."
+            exit 1
           fi
         fi
 
