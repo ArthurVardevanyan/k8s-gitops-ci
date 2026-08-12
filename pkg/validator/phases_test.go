@@ -432,8 +432,17 @@ spec:
 `)
 	var sb strings.Builder
 	total := writeShellcheckExtractionReport(&sb, "", []string{taskFile, deployFile})
-	if total != 2 {
-		t.Fatalf("expected 2 total violations (1 Tekton + 1 embedded), got %d: %s", total, sb.String())
+	if total < 6 {
+		t.Fatalf("expected at least 6 total violations (3 per script), got %d: %s", total, sb.String())
+	}
+	// SC2250 (prefer braces) is an opt-in/style-level check: its presence
+	// proves --enable=all is live rather than asserting a brittle exact
+	// count that can drift across shellcheck versions. SC2086 is a
+	// baseline warning-level finding on the shared fixture.
+	for _, sc := range []string{"[SC2086]", "[SC2250]"} {
+		if !strings.Contains(sb.String(), sc) {
+			t.Errorf("expected the report to surface %s, got: %s", sc, sb.String())
+		}
 	}
 	if !strings.Contains(sb.String(), "[Tekton build/build]") {
 		t.Errorf("expected a Tekton-labeled report line, got: %s", sb.String())
@@ -464,8 +473,11 @@ spec:
 `)
 	var sb strings.Builder
 	total := writeShellcheckExtractionReport(&sb, " (external)", []string{taskFile})
-	if total != 1 {
-		t.Fatalf("expected 1 violation, got %d", total)
+	if total < 3 {
+		t.Fatalf("expected at least 3 violations, got %d", total)
+	}
+	if !strings.Contains(sb.String(), "[SC2250]") {
+		t.Errorf("expected the report to surface SC2250 (proves --enable=all is live), got: %s", sb.String())
 	}
 	if !strings.Contains(sb.String(), "(external)") {
 		t.Errorf("expected the label suffix to appear in the report, got: %s", sb.String())

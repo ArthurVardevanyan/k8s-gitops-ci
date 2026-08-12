@@ -41,6 +41,16 @@ func isShellScript(path string) bool {
 	return ShellScriptRe.Match(data)
 }
 
+// gccLineRe matches one gcc-format shellcheck finding line:
+//
+//	<file>:<line>:<column>: <severity>: <message>
+//
+// The greedy leading `.*` lets file paths contain colons (e.g. Windows
+// drive letters); the trailing numeric line/column fields and the
+// severity label are pinned by the anchors, so a colon in the path never
+// shifts the field assignment.
+var gccLineRe = regexp.MustCompile(`^(.*):([0-9]+):([0-9]+): ([a-z]+): (.*)$`)
+
 // Violation records a shellcheck finding.
 type Violation struct {
 	File     string
@@ -59,7 +69,7 @@ func Run(files []string) ([]Violation, string, error) {
 	if _, err := exec.LookPath("shellcheck"); err != nil {
 		return nil, "", ErrCLINotFound
 	}
-	args := append([]string{"--format=gcc", "--severity=warning"}, files...)
+	args := append([]string{"--format=gcc", "--enable=all", "--severity=style"}, files...)
 	cmd := exec.CommandContext(context.Background(), "shellcheck", args...)
 	out, err := cmd.CombinedOutput()
 	violations := parseGCC(string(out))
@@ -73,21 +83,20 @@ func parseGCC(output string) []Violation {
 	lines := strings.Split(output, "\n")
 	violations := make([]Violation, 0, len(lines))
 	for _, line := range lines {
-		parts := strings.SplitN(line, ":", 5)
-		if len(parts) < 5 {
+		m := gccLineRe.FindStringSubmatch(line)
+		if m == nil {
 			continue
 		}
-		file := parts[0]
-		lineNo, _ := strconv.Atoi(parts[1])
-		msg := strings.TrimSpace(parts[4])
+		lineNo, _ := strconv.Atoi(m[2])
+		msg := strings.TrimSpace(m[5])
 		sc := ""
 		if idx := strings.LastIndex(msg, "["); idx != -1 {
 			sc = strings.TrimSuffix(msg[idx:], "]")
 		}
 		violations = append(violations, Violation{
-			File:     file,
+			File:     m[1],
 			Line:     lineNo,
-			Severity: "warning",
+			Severity: m[4],
 			Message:  msg,
 			SC:       sc,
 		})

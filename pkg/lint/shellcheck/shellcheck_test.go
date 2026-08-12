@@ -24,9 +24,33 @@ func TestFilterShellScripts(t *testing.T) {
 }
 
 func TestParseGCC(t *testing.T) {
-	v := parseGCC("file.sh:10:1: warning: message [SC1234]")
-	if len(v) != 1 || v[0].File != "file.sh" || v[0].Line != 10 {
-		t.Errorf("unexpected parse: %+v", v)
+	cases := []struct {
+		line     string
+		wantFile string
+		wantLine int
+		severity string
+		sc       string
+	}{
+		{"file.sh:10:1: warning: message [SC1234]", "file.sh", 10, "warning", "[SC1234"},
+		{"file.sh:11:2: style: msg [SC2250]", "file.sh", 11, "style", "[SC2250"},
+		{"file.sh:12:3: info: msg [SC2312]", "file.sh", 12, "info", "[SC2312"},
+		{"file.sh:13:4: error: msg [SC2148]", "file.sh", 13, "error", "[SC2148"},
+		{"C:\\a\\b.sh:10:1: warning: msg [SC2086]", "C:\\a\\b.sh", 10, "warning", "[SC2086"},
+	}
+	for _, tc := range cases {
+		v := parseGCC(tc.line)
+		if len(v) != 1 {
+			t.Fatalf("expected 1 violation for %q, got %+v", tc.line, v)
+		}
+		if v[0].File != tc.wantFile || v[0].Line != tc.wantLine {
+			t.Errorf("expected file=%q line=%d, got file=%q line=%d", tc.wantFile, tc.wantLine, v[0].File, v[0].Line)
+		}
+		if v[0].Severity != tc.severity {
+			t.Errorf("expected severity %q, got %q (%+v)", tc.severity, v[0].Severity, v[0])
+		}
+		if v[0].SC != tc.sc {
+			t.Errorf("expected SC %q, got %q (%+v)", tc.sc, v[0].SC, v[0])
+		}
 	}
 }
 
