@@ -432,8 +432,8 @@ spec:
 `)
 	var sb strings.Builder
 	total := writeShellcheckExtractionReport(&sb, "", []string{taskFile, deployFile})
-	if total != 2 {
-		t.Fatalf("expected 2 total violations (1 Tekton + 1 embedded), got %d: %s", total, sb.String())
+	if total != 6 {
+		t.Fatalf("expected 6 total violations (3 per script: SC2045, SC2086, SC2250), got %d: %s", total, sb.String())
 	}
 	if !strings.Contains(sb.String(), "[Tekton build/build]") {
 		t.Errorf("expected a Tekton-labeled report line, got: %s", sb.String())
@@ -464,8 +464,8 @@ spec:
 `)
 	var sb strings.Builder
 	total := writeShellcheckExtractionReport(&sb, " (external)", []string{taskFile})
-	if total != 1 {
-		t.Fatalf("expected 1 violation, got %d", total)
+	if total != 3 {
+		t.Fatalf("expected 3 violations (SC2045, SC2086, SC2250), got %d", total)
 	}
 	if !strings.Contains(sb.String(), "(external)") {
 		t.Errorf("expected the label suffix to appear in the report, got: %s", sb.String())

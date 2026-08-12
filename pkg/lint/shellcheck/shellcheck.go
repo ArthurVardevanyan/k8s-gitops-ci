@@ -59,7 +59,7 @@ func Run(files []string) ([]Violation, string, error) {
 	if _, err := exec.LookPath("shellcheck"); err != nil {
 		return nil, "", ErrCLINotFound
 	}
-	args := append([]string{"--format=gcc", "--severity=warning"}, files...)
+	args := append([]string{"--format=gcc", "--enable=all", "--severity=style"}, files...)
 	cmd := exec.CommandContext(context.Background(), "shellcheck", args...)
 	out, err := cmd.CombinedOutput()
 	violations := parseGCC(string(out))
@@ -79,6 +79,7 @@ func parseGCC(output string) []Violation {
 		}
 		file := parts[0]
 		lineNo, _ := strconv.Atoi(parts[1])
+		severity := strings.TrimSpace(parts[3])
 		msg := strings.TrimSpace(parts[4])
 		sc := ""
 		if idx := strings.LastIndex(msg, "["); idx != -1 {
@@ -87,7 +88,7 @@ func parseGCC(output string) []Violation {
 		violations = append(violations, Violation{
 			File:     file,
 			Line:     lineNo,
-			Severity: "warning",
+			Severity: severity,
 			Message:  msg,
 			SC:       sc,
 		})

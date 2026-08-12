@@ -24,9 +24,24 @@ func TestFilterShellScripts(t *testing.T) {
 }
 
 func TestParseGCC(t *testing.T) {
-	v := parseGCC("file.sh:10:1: warning: message [SC1234]")
-	if len(v) != 1 || v[0].File != "file.sh" || v[0].Line != 10 {
-		t.Errorf("unexpected parse: %+v", v)
+	cases := []struct {
+		line     string
+		wantLine int
+		severity string
+	}{
+		{"file.sh:10:1: warning: message [SC1234]", 10, "warning"},
+		{"file.sh:11:2: style: msg [SC2250]", 11, "style"},
+		{"file.sh:12:3: info: msg [SC2312]", 12, "info"},
+		{"file.sh:13:4: error: msg [SC2148]", 13, "error"},
+	}
+	for _, tc := range cases {
+		v := parseGCC(tc.line)
+		if len(v) != 1 || v[0].File != "file.sh" || v[0].Line != tc.wantLine {
+			t.Errorf("unexpected parse: %+v", v)
+		}
+		if v[0].Severity != tc.severity {
+			t.Errorf("expected severity %q, got %q (%+v)", tc.severity, v[0].Severity, v[0])
+		}
 	}
 }
 
