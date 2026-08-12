@@ -79,6 +79,7 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 		"--concurrency=4",
 		"--assume-openshift",
 		"--verbose",
+		"--lint-only",
 		"--app=foo",
 		"--app=bar",
 		"--cluster=prod",
@@ -109,6 +110,8 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 		t.Errorf("Concurrency = %d", opts.Concurrency)
 	case !opts.AssumeOpenShift:
 		t.Errorf("AssumeOpenShift = %v, want true", opts.AssumeOpenShift)
+	case !opts.LintOnly:
+		t.Errorf("LintOnly = %v, want true", opts.LintOnly)
 	case !opts.Verbose:
 		t.Errorf("Verbose = %v, want true", opts.Verbose)
 	case len(opts.Apps) != 2 || opts.Apps[0] != "foo" || opts.Apps[1] != "bar":
@@ -139,8 +142,8 @@ func TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue(t *testing.T) {
 	if opts.Dirs != nil || opts.DisabledChecks != nil || opts.EnabledChecks != nil {
 		t.Errorf("expected nil slices, got Dirs=%v DisabledChecks=%v EnabledChecks=%v", opts.Dirs, opts.DisabledChecks, opts.EnabledChecks)
 	}
-	if opts.Concurrency != 0 || opts.AssumeOpenShift || opts.Verbose {
-		t.Errorf("expected zero values, got Concurrency=%d AssumeOpenShift=%v Verbose=%v", opts.Concurrency, opts.AssumeOpenShift, opts.Verbose)
+	if opts.Concurrency != 0 || opts.AssumeOpenShift || opts.LintOnly || opts.Verbose {
+		t.Errorf("expected zero values, got Concurrency=%d AssumeOpenShift=%v LintOnly=%v Verbose=%v", opts.Concurrency, opts.AssumeOpenShift, opts.LintOnly, opts.Verbose)
 	}
 	if len(opts.Apps) != 0 || len(opts.Clusters) != 0 {
 		t.Errorf("expected empty Apps/Clusters, got %v / %v", opts.Apps, opts.Clusters)
@@ -186,6 +189,7 @@ func TestParseScanAllOptions_SupportsPipelineScopingFlags(t *testing.T) {
 		"--pr=7",
 		"--dirs=kubernetes/",
 		"--disable-checks=avp",
+		"--lint-only",
 	})
 	if err != nil {
 		t.Fatalf("parseScanAllOptions: %v", err)
@@ -198,6 +202,9 @@ func TestParseScanAllOptions_SupportsPipelineScopingFlags(t *testing.T) {
 	}
 	if len(opts.DisabledChecks) != 1 || opts.DisabledChecks[0] != "avp" {
 		t.Errorf("DisabledChecks = %v", opts.DisabledChecks)
+	}
+	if !opts.LintOnly {
+		t.Errorf("LintOnly = %v, want true", opts.LintOnly)
 	}
 }
 
