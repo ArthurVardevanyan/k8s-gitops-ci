@@ -225,17 +225,33 @@ tasks:
         # title_bump_class <title> <new_major>: the bump class implied by a
         # conventional PR title alone, honoring cliff.toml's pre-1.0 rules —
         # on a 0.x target a breaking title bumps MINOR
-        # ("breaking_always_bump_major = false"), not MAJOR; `feat:` bumps
-        # minor; `fix:`/`perf:` bump patch; everything else
+        # ("breaking_always_bump_major = false"), not MAJOR; `feat:` (with or
+        # without a scope) bumps minor; `fix:`/`perf:` (with or without a
+        # scope) bump patch; everything else
         # (docs/chore/ci/build/refactor/style/test, unknown) contributes
         # nothing, matching git-cliff's post-merge sizing of those.
+        #
+        # Breaking detection follows the Conventional Commits spec: a trailing
+        # `!` on the type (or scope) marks a breaking change for ANY type —
+        # `feat!`, `feat(api)!`, `fix!`, `refactor(api)!`, ... — as does a
+        # leading `BREAKING CHANGE:`. Extracting everything before the first
+        # `:` (${1%%:*}) and testing whether it ends in `!` demands the `!`
+        # terminate the type/scope, so a stray `!:` *inside the subject text*
+        # (e.g. a description mentioning "!:" ) can never be mistaken for a
+        # breaking marker. This mirrors git-cliff's own `conventional_commits`
+        # interpretation, so the two arms never disagree on what is breaking.
         title_bump_class() {
-          case "$1" in
-            feat!*|BREAKING\ CHANGE:*)
+          prefix="${1%%:*}"
+          case "${prefix}" in
+            # Breaking: trailing `!` on the type/scope, or `BREAKING CHANGE`.
+            BREAKING\ CHANGE|*\!)
               [ "$2" = "0" ] && echo 2 || echo 3 ;;
-            feat:*|feat\(*\):*) echo 2 ;;
-            fix:*|fix\(*\):*|perf:*|perf\(*\):*) echo 1 ;;
-            *) echo 0 ;;
+            # Non-breaking types.
+            *) case "$1" in
+                 feat:*|feat\(*\):*) echo 2 ;;
+                 fix:*|fix\(*\):*|perf:*|perf\(*\):*) echo 1 ;;
+                 *) echo 0 ;;
+               esac ;;
           esac
         }
         PR_TITLE="${PR_TITLE:-}"

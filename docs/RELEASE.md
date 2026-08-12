@@ -65,7 +65,9 @@ therefore contribute the expected bump, and the _required_ bump is the
 `VERSION` still decides the actual number; git-cliff and the PR title are
 only **advisors** sizing the _minimum_. Only _under_-bumps are rejected
 (over-bumps — a deliberately larger release — are allowed). Pre-1.0,
-breaking changes (`feat!:`/`BREAKING CHANGE:`) map to a **minor** bump
+breaking changes — a trailing `!` on the type or scope for _any_
+Conventional Commits type (`feat!`, `feat(api)!`, `fix!`, `refactor(api)!`,
+...), or a leading `BREAKING CHANGE:` — map to a **minor** bump
 (`cliff.toml`'s `[bump] breaking_always_bump_major = false`), not a jump
 to `1.0.0`. Non-release-relevant types (`docs:`/`chore:`/`ci:`/`build:`/
 `refactor:`/`style:`/`test:`) contribute nothing from either source,
