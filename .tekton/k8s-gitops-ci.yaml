@@ -23,6 +23,8 @@ spec:
       value: "{{ revision }}"
     - name: pull-request-number
       value: "{{ pull_request_number }}"
+    - name: pull-request-title
+      value: "{{ pull_request_title }}"
     - name: event
       value: "{{ event_type }}"
     - name: target-branch
@@ -34,6 +36,9 @@ spec:
       - name: git-commit
         type: string
       - name: pull-request-number
+        type: string
+        default: ""
+      - name: pull-request-title
         type: string
         default: ""
       - name: event
@@ -58,6 +63,8 @@ spec:
             value: $(params.git-commit)
           - name: pull-request-number
             value: $(params.pull-request-number)
+          - name: pull-request-title
+            value: $(params.pull-request-title)
           - name: event
             value: $(params.event)
           - name: target-branch
@@ -69,6 +76,9 @@ spec:
             - name: revision
               type: string
             - name: pull-request-number
+              type: string
+              default: ""
+            - name: pull-request-title
               type: string
               default: ""
             - name: event
@@ -171,6 +181,8 @@ spec:
                   value: $(params.revision)
                 - name: PARAM_PR_NUMBER
                   value: $(params.pull-request-number)
+                - name: PARAM_PR_TITLE
+                  value: $(params.pull-request-title)
                 - name: PARAM_EVENT
                   value: $(params.event)
                 - name: PARAM_TARGET_BRANCH
@@ -187,6 +199,7 @@ spec:
                 : "${PARAM_GIT_URL:=""}"
                 : "${PARAM_REVISION:=""}"
                 : "${PARAM_PR_NUMBER:=""}"
+                : "${PARAM_PR_TITLE:=""}"
                 : "${PARAM_EVENT:=""}"
                 : "${PARAM_TARGET_BRANCH:=""}"
                 : "${AUTH_PATH:=""}"
@@ -340,6 +353,13 @@ spec:
                     export VERSION_CHECK_BASE_REF="FETCH_HEAD"
                   fi
                 fi
+
+                # Feed version:check's Guard 3 the PR title so it sizes the
+                # required VERSION bump from the squash-merge source (the PR
+                # title becomes the squash commit subject) rather than only the
+                # discarded branch commits. Empty on a push (no PR) — the guard
+                # then falls back to commit-based sizing alone.
+                export PR_TITLE="${PARAM_PR_TITLE}"
 
                 # Run the full CI gate, but capture its exit code instead of
                 # letting `set -o errexit` abort here, so that on a PR event we
