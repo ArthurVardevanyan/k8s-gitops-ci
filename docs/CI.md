@@ -357,10 +357,12 @@ applies to Resource Compliance findings (see
 file findings are always direct — they're literally files in the diff.
 
 - **Package:** `pkg/lint/shellcheck`
-- **Flags:** runs `shellcheck --enable=all --severity=style`, enabling every
-  optional check (style, info, warning, error) so optional shellcheck checks
-  are surfaced rather than silently skipped. Violation severity is reported
-  as parsed from shellcheck's output, not normalized.
+- **Flags:** runs `shellcheck --format=gcc --enable=all --severity=style`. The
+  `--enable=all` + `--severity=style` pair surfaces every optional check
+  (style, info, warning, error) that default (`--severity=warning`, no
+  `--enable`) silently filters out. Each parsed `Violation` carries
+  shellcheck's own severity (as emitted, not normalized); the Linting phase's
+  report lines themselves print `file:line: message`.
 - **Default:** on. A missing `shellcheck` binary is a hard failure
   (`StatusError`, blocking) — but only once relevance is established:
   the "any shell-related file at all changed" short-circuit (no `.sh`
