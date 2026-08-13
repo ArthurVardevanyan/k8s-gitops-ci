@@ -221,7 +221,11 @@ Lints changed `.md` files.
 
 - **Package:** `pkg/lint/markdownlint`
 - **Scope:** Only changed markdown files; skips cleanly (`Skipped: true`,
-  `StatusPassed`) when there are none.
+  `StatusPassed`) when there are none. GitHub issue/PR templates
+  (`*_template.md`, `.github/*_template/`) are excluded — their first
+  heading isn't required to be a single top-level `#` (it may be `##`,
+  `###`, or deeper), so they do not have to follow markdownlint's heading
+  conventions.
 - **Default:** on. Like every CLI wrapper in this phase, a **missing
   `markdownlint-cli2` binary is a hard failure** (`StatusError`,
   blocking), not a graceful skip — a missing lint tool means the
