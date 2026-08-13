@@ -246,8 +246,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 		runLintStep("markdownlint", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 			// FilterMarkdown so GitHub issue/PR templates are
 			// excluded: they don't follow markdownlint's heading conventions
-			// (the first heading may be any level, not a single top-level
-			// "#").
+			// (the first heading may be any level, not a single top-level "#").
 			md := markdownlint.FilterMarkdown(changed)
 			if len(md) == 0 {
 				sl.Info("markdownlint: no markdown files changed")
