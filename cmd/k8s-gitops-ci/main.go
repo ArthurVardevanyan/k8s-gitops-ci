@@ -404,7 +404,7 @@ func runScanAll(args []string) error {
 // ── linters ───────────────────────────────────────────────────────────────────
 
 func runMarkdownlint(args []string) error {
-	out, err := markdownlint.Run(args)
+	out, err := markdownlint.Run(markdownlint.FilterMarkdown(args))
 	if out != "" {
 		fmt.Print(out)
 	}

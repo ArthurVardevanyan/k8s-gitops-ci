@@ -23,7 +23,7 @@ func FilterMarkdown(files []string) []string {
 			if strings.HasSuffix(base, "issue_template.md") || strings.HasSuffix(base, "pull_request_template.md") {
 				continue
 			}
-			if strings.Contains(base, ".github/issue_template/") {
+			if strings.Contains(base, ".github/issue_template/") || strings.Contains(base, ".github/pull_request_template/") {
 				continue
 			}
 			if _, err := os.Stat(f); err == nil {
