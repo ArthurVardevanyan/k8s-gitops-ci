@@ -1,4 +1,5 @@
 kind: Task
+apiVersion: v1
 metadata:
   name: clair-action
 spec:
