@@ -349,6 +349,10 @@ func extractImages(node *yaml.Node, parentKey string) []string {
 				imageVal = child.Value
 			case key == "version" && child.Kind == yaml.ScalarNode && strings.HasPrefix(child.Value, "sha256:"):
 				versionDigest = child.Value
+			case key == "image" && child.Kind == yaml.MappingNode:
+				if ref := findKey(child, "reference"); ref != nil && ref.Kind == yaml.ScalarNode {
+					imgs = append(imgs, ref.Value)
+				}
 			}
 		}
 		if imageVal != "" && versionDigest != "" && !strings.Contains(imageVal, "@") {
