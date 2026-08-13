@@ -1,0 +1,14 @@
+kind: Task
+apiVersion: tekton.dev/v1
+metadata:
+  name: clair-action
+spec:
+  volumes:
+    - name: vuln-store
+      image:
+        reference: registry.io/homelab/clair-action-db:latest
+        pullPolicy: Always
+    - name: pinned-artifact
+      image:
+        reference: registry.io/tools@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        pullPolicy: IfNotPresent

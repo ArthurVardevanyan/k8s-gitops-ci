@@ -272,6 +272,19 @@ func TestValidateFile_Mixed(t *testing.T) {
 	}
 }
 
+func TestValidateFile_OCIVolume(t *testing.T) {
+	errs := ValidateFile("testdata/oci-volume.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error (unpinned OCI volume image), got %d: %v", len(errs), errs)
+	}
+	if errs[0].Image != "registry.io/homelab/clair-action-db:latest" {
+		t.Errorf("expected the unpinned volume image to be flagged, got: %q", errs[0].Image)
+	}
+	if errs[0].Kind != "Task" || errs[0].Name != "clair-action" {
+		t.Errorf("expected the finding to identify the owning resource, got: %+v", errs[0])
+	}
+}
+
 func TestValidateFile_NoImages(t *testing.T) {
 	errs := ValidateFile("testdata/no-images.yaml")
 	if len(errs) != 0 {
