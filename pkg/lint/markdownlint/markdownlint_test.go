@@ -65,18 +65,21 @@ func TestFilterMarkdown_SkipsGitHubTemplates(t *testing.T) {
 	// Create real files so they pass the os.Stat check.
 	legacyIssue := filepath.Join(tmp, "ISSUE_TEMPLATE.md")
 	legacyPR := filepath.Join(tmp, "PULL_REQUEST_TEMPLATE.md")
-	dirTemplate := filepath.Join(tmp, ".github", "ISSUE_TEMPLATE", "bug_report.md")
+	dirIssue := filepath.Join(tmp, ".github", "ISSUE_TEMPLATE", "bug_report.md")
+	dirPR := filepath.Join(tmp, ".github", "pull_request_template", "feature.md")
 	regular := filepath.Join(tmp, "README.md")
 
-	mustWriteFile(t, legacyIssue, "# Issue")
-	mustWriteFile(t, legacyPR, "# PR")
-	if err := os.MkdirAll(filepath.Dir(dirTemplate), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	for _, f := range []string{dirIssue, dirPR} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
 	}
-	mustWriteFile(t, dirTemplate, "# Bug")
+	for _, f := range []string{legacyIssue, legacyPR, dirIssue, dirPR} {
+		mustWriteFile(t, f, "# Template")
+	}
 	mustWriteFile(t, regular, "# Readme")
 
-	files := []string{legacyIssue, legacyPR, dirTemplate, regular}
+	files := []string{legacyIssue, legacyPR, dirIssue, dirPR, regular}
 	got := FilterMarkdown(files)
 	if len(got) != 1 {
 		t.Errorf("expected 1 (only README.md), got %d: %v", len(got), got)

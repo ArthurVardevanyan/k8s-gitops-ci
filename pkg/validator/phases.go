@@ -244,12 +244,17 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 
 	if stepEnabled(stepMarkdownlint, disabled, enabled) {
 		runLintStep("markdownlint", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
-			if len(markdownlint.Filter(changed)) == 0 {
+			// FilterMarkdown so GitHub issue/PR templates are
+			// excluded: they don't follow markdownlint's heading conventions
+			// (the first heading may be any level, not a single top-level
+			// "#").
+			md := markdownlint.FilterMarkdown(changed)
+			if len(md) == 0 {
 				sl.Info("markdownlint: no markdown files changed")
 				return lintStepResult{status: StatusPassed, skipped: true, note: "No markdown files changed."}
 			}
 			return runCLILintOutcome(sl, elapsed, "Markdownlint", "markdownlint", func() (string, error) {
-				return markdownlint.Run(changed)
+				return markdownlint.Run(md)
 			}, markdownlint.ErrCLINotFound, "markdownlint not found in PATH.")
 		})
 	} else {
