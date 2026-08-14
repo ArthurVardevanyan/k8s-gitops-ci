@@ -244,7 +244,7 @@ func TestComposeDriftProtectionSection_ListsUnprotectedApps(t *testing.T) {
 
 func TestComposeScaffoldValidationSection_NoErrors(t *testing.T) {
 	t.Parallel()
-	s := ComposeScaffoldValidationSection("", nil, nil, "")
+	s := ComposeScaffoldValidationSection("", nil, nil, "", nil)
 	if s.Status != StatusPassed {
 		t.Errorf("expected StatusPassed, got %v", s.Status)
 	}
@@ -252,7 +252,7 @@ func TestComposeScaffoldValidationSection_NoErrors(t *testing.T) {
 
 func TestComposeScaffoldValidationSection_WithDrift(t *testing.T) {
 	t.Parallel()
-	s := ComposeScaffoldValidationSection("some drift", []string{"exec failed"}, []string{"cluster-a"}, "")
+	s := ComposeScaffoldValidationSection("some drift", []string{"exec failed"}, []string{"cluster-a"}, "", nil)
 	if s.Status != StatusError {
 		t.Error("expected error section")
 	}
@@ -267,7 +267,7 @@ func TestComposeScaffoldValidationSection_WithDrift(t *testing.T) {
 // not StatusError.
 func TestComposeScaffoldValidationSection_PreExistingDriftAloneIsNonBlocking(t *testing.T) {
 	t.Parallel()
-	s := ComposeScaffoldValidationSection("", nil, nil, "myapp: overlay `staging` drifted from its scaffold template/config (pre-existing, not introduced by this PR)")
+	s := ComposeScaffoldValidationSection("", nil, nil, "myapp: overlay `staging` drifted from its scaffold template/config (pre-existing, not introduced by this PR)", nil)
 	if s.Status != StatusWarning {
 		t.Errorf("expected pre-existing drift alone to roll up to StatusWarning (non-blocking), got %v:\n%s", s.Status, s.Body)
 	}
@@ -289,11 +289,33 @@ func TestComposeScaffoldValidationSection_PreExistingDriftAloneIsNonBlocking(t *
 // purely informational FYI), not StatusWarning/StatusError.
 func TestComposeScaffoldValidationSection_MissingClustersAloneIsNonBlocking(t *testing.T) {
 	t.Parallel()
-	s := ComposeScaffoldValidationSection("", nil, []string{"myapp/staging"}, "")
+	s := ComposeScaffoldValidationSection("", nil, []string{"myapp/staging"}, "", nil)
 	if s.Status != StatusInfo {
 		t.Errorf("expected missing clusters alone to roll up to StatusInfo (informational, non-blocking), got %v:\n%s", s.Status, s.Body)
 	}
 	if !strings.Contains(s.Body, "`myapp/staging`") {
 		t.Errorf("expected the missing cluster to be listed, got:\n%s", s.Body)
+	}
+}
+
+// TestComposeScaffoldValidationSection_DisabledOverlaysAloneIsNonBlocking
+// guards that a config-disabled overlay this PR modified rolls the section
+// up to StatusWarning (an "are you sure you meant to edit a disabled
+// overlay?" signal), never StatusError - the overlay is skipped by intent
+// (see scaffold.OverlayConfigDisabled) so the pipeline still passes.
+func TestComposeScaffoldValidationSection_DisabledOverlaysAloneIsNonBlocking(t *testing.T) {
+	t.Parallel()
+	s := ComposeScaffoldValidationSection("", nil, nil, "", []string{"myapp/retired1"})
+	if s.Status != StatusWarning {
+		t.Errorf("expected a modified disabled overlay to roll up to StatusWarning (non-blocking), got %v:\n%s", s.Status, s.Body)
+	}
+	if !strings.Contains(s.Body, "Disabled Overlays") {
+		t.Errorf("expected a Disabled Overlays sub-dropdown, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "`myapp/retired1`") {
+		t.Errorf("expected the disabled overlay to be listed, got:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "disabled") {
+		t.Errorf("expected a message explaining scaffolding was skipped, got:\n%s", s.Body)
 	}
 }

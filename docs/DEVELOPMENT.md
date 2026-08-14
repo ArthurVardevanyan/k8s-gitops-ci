@@ -158,6 +158,13 @@ it would create rather than supporting a directory-diff contract), and
 `ExcludedClusters` (permanently skip named overlays from scaffold-drift
 validation, independent of the per-app
 `IsOverlayDisabled`/`IsChangeGroupDisabled` config-driven opt-outs),
+`pkg/scaffold`'s `OverlayConfigDisabled` (opt a per-overlay entry out of
+scaffold-drift validation via a `disabled: true` flag in its scaffold
+config's override section - the generic default reads the widely-used
+`overlayDefinitions.overrides.<cluster>.disabled` shape; an org whose
+tool lays that section out differently overrides just this lookup, which
+keeps a downstream consumer from hard-failing on a PR that hand-edits a
+by-design-disabled overlay),
 `pkg/validator`'s `ExtraNonAppDirs` (extra top-level repository
 directories - e.g. a vendored example or internal-tooling directory
 whose layout coincidentally matches an app's `base`/`overlays` shape -

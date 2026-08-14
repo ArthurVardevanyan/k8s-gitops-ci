@@ -729,6 +729,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		scaffoldResult.ExecErrors,
 		flattenSkippedClusters(scaffoldResult.SkippedClusters),
 		strings.Join(scaffoldResult.PreExistingDriftLines, "\n"),
+		flattenDisabledClusters(scaffoldResult.DisabledClusters),
 	))
 	res.Sections = append(res.Sections, ComposeDriftProtectionSection(findUnprotectedApps(changed)))
 	buildDur := time.Since(buildStart)
