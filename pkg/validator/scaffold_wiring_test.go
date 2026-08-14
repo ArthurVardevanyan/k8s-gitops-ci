@@ -272,6 +272,29 @@ func TestFlattenSkippedClusters_SortsAppsAndClusters(t *testing.T) {
 	}
 }
 
+func TestFlattenDisabledClusters_Empty(t *testing.T) {
+	if got := flattenDisabledClusters(nil); got != nil {
+		t.Errorf("expected nil for an empty/nil map, got %v", got)
+	}
+}
+
+func TestFlattenDisabledClusters_SortsAppsAndClusters(t *testing.T) {
+	got := flattenDisabledClusters(map[string][]string{
+		"zapp": {"staging", "dev"},
+		"aapp": {"prod"},
+	})
+	want := []string{"aapp/prod", "zapp/dev", "zapp/staging"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got %v, want %v", got, want)
+			break
+		}
+	}
+}
+
 func TestIsOverlayRelatedToChangedFiles(t *testing.T) {
 	// A component change only relates to an overlay whose kustomization
 	// actually references that (version-partitioned) component directory,
