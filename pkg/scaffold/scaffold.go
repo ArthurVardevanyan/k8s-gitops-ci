@@ -338,14 +338,18 @@ func Run(opts RunOptions) *Summary {
 	var toRun []string
 	for _, cluster := range opts.Overlays {
 		switch {
+		// A missing directory (not yet rolled out, or removed by this PR)
+		// takes precedence over a config-disabled flag: such an overlay is a
+		// plain skip, never a DisabledClusters warning - warning about a
+		// deleted overlay would be misleading.
+		case !overlayExists(opts.App, cluster):
+			summary.Skipped++
+			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
 		case OverlayConfigDisabled(opts.App, cluster):
 			summary.Skipped++
 			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
 			summary.DisabledClusters = append(summary.DisabledClusters, cluster)
 		case IsOverlayDisabled(opts.App, cluster), IsChangeGroupDisabled(cluster, opts.ChangeGroups), IsExcludedCluster(cluster):
-			summary.Skipped++
-			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
-		case !overlayExists(opts.App, cluster):
 			summary.Skipped++
 			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
 		default:

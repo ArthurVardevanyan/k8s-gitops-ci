@@ -247,6 +247,37 @@ func TestRun_SkipsConfigDisabledOverlay(t *testing.T) {
 	}
 }
 
+// TestRun_DisabledButMissingOverlayIsPlainSkip guards that a missing on-disk
+// directory takes precedence over a config-disabled flag: an overlay both
+// marked `disabled: true` AND absent from disk (e.g. deleted by this PR) is a
+// plain skip - it must land in SkippedClusters, never in DisabledClusters,
+// because warning about a deleted overlay would be misleading.
+func TestRun_DisabledButMissingOverlayIsPlainSkip(t *testing.T) {
+	dir := t.TempDir()
+	origWD, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "overlayDefinitions:\n  overrides:\n    retired2:\n      disabled: true\n")
+
+	withFakeScafctl(t, func(context.Context, string, string) error {
+		t.Fatal("scafctl should never be invoked when the overlay is missing")
+		return nil
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"retired2"}})
+	if summary.Skipped != 1 {
+		t.Errorf("expected 1 skipped overlay, got %d", summary.Skipped)
+	}
+	if len(summary.SkippedClusters) != 1 || summary.SkippedClusters[0] != "retired2" {
+		t.Errorf("expected SkippedClusters to list the missing overlay, got %v", summary.SkippedClusters)
+	}
+	if len(summary.DisabledClusters) != 0 {
+		t.Errorf("expected no DisabledClusters for a missing overlay, got %v", summary.DisabledClusters)
+	}
+}
+
 func TestRun_SkipsExcludedCluster(t *testing.T) {
 	dir := t.TempDir()
 	origWD, _ := os.Getwd()
