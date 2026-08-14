@@ -128,7 +128,8 @@ type Summary struct {
 	Total, Passed, Skipped, Failed int
 	MismatchFiles                  []string // overlay-relative paths that differ from freshly-scaffolded content
 	Errors                         []string // execution failures (scafctl missing/failed, timeout, ...), distinct from content drift
-	SkippedClusters                []string // overlays skipped: disabled (config/change-group) or no on-disk directory yet
+	SkippedClusters                []string // overlays skipped: disabled (scaffoldDisabled/change-group/excluded) or no on-disk directory yet
+	DisabledClusters               []string // overlays skipped because their scaffold config marks them disabled (`overlayDefinitions.overrides.<cluster>.disabled`); a subset of SkippedClusters, kept distinct so callers can warn on them specifically
 }
 
 // runScafctl is the actual scafctl invocation, factored into a package var
@@ -179,16 +180,29 @@ func HasScaffoldConfig(app string) bool {
 // scaffoldConfigFields is the subset of an app's scafctl config
 // (.scafctl/configs/<app>.yaml) this package reads directly, alongside
 // whatever scafctl's own schema defines - a config file is both scafctl's
-// real input and, via this additional top-level key, this CI tool's own
-// opt-out convention. Unknown keys are ignored by scafctl (config tools
-// universally tolerate this), so adding scaffoldDisabled here doesn't
-// require any scafctl-side change.
+// real input and, via these additional keys, this CI tool's own opt-out /
+// disable convention. Unknown keys are ignored by scafctl (config tools
+// universally tolerate this), so adding scaffoldDisabled and the overlay-
+// definitions override fields here doesn't require any scafctl-side change.
 type scaffoldConfigFields struct {
 	// ScaffoldDisabled lists overlay/cluster names to skip scaffold-drift
 	// validation for, even though their overlay directory exists - e.g. a
 	// cluster mid-migration whose overlay is intentionally hand-maintained
 	// for now. See IsOverlayDisabled.
 	ScaffoldDisabled []string `yaml:"scaffoldDisabled"`
+	// OverlayDefinitions mirrors the config's per-overlay override section,
+	// whose per-cluster `disabled: true` (when set) opts an overlay out of
+	// scaffold-drift validation even though its directory exists - see
+	// IsOverlayConfigDisabled and OverlayConfigDisabled. The nested shape is
+	// read with generic yaml tags only; the exact section/field paths are
+	// the hardcoded scaffold-config schema this repo tracks over time (see
+	// the config-layout seam discussion in the tracker issue) and are
+	// re-consulted by the OverlayConfigDisabled default.
+	OverlayDefinitions struct {
+		Overrides map[string]struct {
+			Disabled bool `yaml:"disabled"`
+		} `yaml:"overrides"`
+	} `yaml:"overlayDefinitions"`
 }
 
 // configFilePath returns the on-disk path to app's scafctl config, or ""
@@ -235,6 +249,40 @@ func IsOverlayDisabled(app, cluster string) bool {
 	return false
 }
 
+// OverlayConfigDisabled reports whether app's scaffold config marks cluster
+// as disabled for overlay generation (e.g. a `disabled: true` flag under
+// the per-overlay override entry), so scaffold-drift validation skips it
+// even though its on-disk overlay directory exists. It is an injected
+// package-var seam (defaulting to defaultOverlayConfigDisabled) so an org
+// whose scaffold tool structures its config differently can override the
+// lookup - the generic default reads the widely-used
+// `overlayDefinitions.overrides.<cluster>.disabled` shape, which is the
+// same schema-layout documented in the tracker issue for the config-layout
+// seam. See IsOverlayConfigDisabled for the raw read.
+var OverlayConfigDisabled = defaultOverlayConfigDisabled
+
+// defaultOverlayConfigDisabled is the generic default for
+// OverlayConfigDisabled: it reads the `overlayDefinitions.overrides.<cluster>.disabled`
+// flag from app's scaffold config. This layout is the de-facto default the
+// rest of the repo already assumes (see pkg/config and pkg/configdiff); a
+// config absent of the overlay-definitions section yields false for every
+// cluster.
+func defaultOverlayConfigDisabled(app, cluster string) bool {
+	return readScaffoldConfigFields(app).
+		OverlayDefinitions.
+		Overrides[cluster].
+		Disabled
+}
+
+// IsOverlayConfigDisabled reports whether app's scaffold config marks
+// cluster disabled via the `overlayDefinitions.overrides.<cluster>.disabled`
+// flag (see defaultOverlayConfigDisabled). It is the non-overridable raw
+// read of that specific shape; callers wanting the seam (org-overridable,
+// documented) should use OverlayConfigDisabled instead.
+func IsOverlayConfigDisabled(app, cluster string) bool {
+	return defaultOverlayConfigDisabled(app, cluster)
+}
+
 // IsChangeGroupDisabled reports whether cluster is mapped to change-group 0
 // in changeGroups - this repo's convention (shared with pkg/configdiff) for
 // "this cluster opted out of change-group-triggered scaffold fan-out".
@@ -267,8 +315,11 @@ func overlayExists(app, cluster string) bool {
 // (up to runtime.NumCPU()*2 at once) since the comparison itself (a
 // recursive directory diff) is independent per overlay. An overlay is
 // skipped - counted in Summary.Skipped/SkippedClusters, never Failed -
-// when it's disabled (IsOverlayDisabled/IsChangeGroupDisabled/
-// IsExcludedCluster) or has no on-disk directory (overlayExists); everything
+// when it's disabled (OverlayConfigDisabled/IsOverlayDisabled/
+// IsChangeGroupDisabled/IsExcludedCluster) or has no on-disk directory
+// (overlayExists); an overlay skipped purely because its config marks it
+// disabled is additionally recorded in Summary.DisabledClusters so callers
+// can distinguish "opted out on purpose" from "not rolled out yet". Everything
 // else is either a content
 // mismatch (Summary.MismatchFiles) or an execution failure
 // (Summary.Errors, e.g. a missing scafctl binary or a run that itself
@@ -287,10 +338,18 @@ func Run(opts RunOptions) *Summary {
 	var toRun []string
 	for _, cluster := range opts.Overlays {
 		switch {
-		case IsOverlayDisabled(opts.App, cluster), IsChangeGroupDisabled(cluster, opts.ChangeGroups), IsExcludedCluster(cluster):
+		// A missing directory (not yet rolled out, or removed by this PR)
+		// takes precedence over a config-disabled flag: such an overlay is a
+		// plain skip, never a DisabledClusters warning - warning about a
+		// deleted overlay would be misleading.
+		case !overlayExists(opts.App, cluster):
 			summary.Skipped++
 			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
-		case !overlayExists(opts.App, cluster):
+		case OverlayConfigDisabled(opts.App, cluster):
+			summary.Skipped++
+			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
+			summary.DisabledClusters = append(summary.DisabledClusters, cluster)
+		case IsOverlayDisabled(opts.App, cluster), IsChangeGroupDisabled(cluster, opts.ChangeGroups), IsExcludedCluster(cluster):
 			summary.Skipped++
 			summary.SkippedClusters = append(summary.SkippedClusters, cluster)
 		default:

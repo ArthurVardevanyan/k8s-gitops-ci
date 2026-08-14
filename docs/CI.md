@@ -629,7 +629,10 @@ overlay actually being checked, **bounded-parallel** (up to
 similarly bounded-parallel across apps). An overlay is skipped rather
 than failed when it's disabled - either explicitly
 (`scaffoldDisabled: [...]` in the app's own scafctl config - see
-`scaffold.IsOverlayDisabled`) or via change-group 0
+`scaffold.IsOverlayDisabled`), via a `disabled: true` flag on its
+override entry (`overlayDefinitions.overrides.<cluster>.disabled` - the
+`scaffold.OverlayConfigDisabled` seam, whose generic default reads that
+widely-used shape), or via change-group 0
 (`scaffold.IsChangeGroupDisabled`) - or has no on-disk directory at all
 (a cluster not yet rolled out, or removed by this PR;
 `scaffold.Summary.SkippedClusters`, aggregated per app by
@@ -667,14 +670,30 @@ deliberately quieter tier than an actual (non-blocking) warning like
 "worth a second look."
 
 Like Kustomize Build, the Scaffold Validation section itself is composed
-from four always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec,
-Pre-Existing Scaffold Drift, Cluster Coverage -
+from five always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec,
+Disabled Overlays, Pre-Existing Scaffold Drift, Cluster Coverage -
 `ComposeScaffoldValidationSection`/`composeParentFromChildren` in
 `pkg/validator/compose_sections.go`), and its own icon inherits the worst
 status among them (StatusError > StatusWarning > StatusInfo >
 StatusPassed) - so, for example, pre-existing drift alone rolls the whole
 section up to ⚠️, and missing clusters alone rolls it up to only ℹ️, never
 a misleading plain ✅ that would hide either.
+
+A **config-disabled** overlay behaves differently from a merely-missing
+one: when this PR **modifies** its files but the overlay is marked
+`disabled: true` in its override entry, scaffolding is skipped (so a
+nil-template/data error from the scaffold tool can't hard-fail a PR that
+is only hand-editing a by-design-disabled overlay) and the overlay is
+surfaced in the "Disabled Overlays" sub-dropdown as a ⚠️ **warning**
+(`scaffold.OverlayConfigDisabled` → `runScaffoldValidation` filters
+`Summary.DisabledClusters` to PR-touched overlays →
+`composeDisabledOverlaysChild`). This is an "are you sure you meant to
+edit a disabled overlay?" signal, never blocking: the pipeline still
+passes, but the author is told to remove the `disabled: true` flag if
+scaffolding was actually intended, or leave it as-is if the hand-edit is
+intentional. A config-disabled overlay the PR does **not** touch is
+skipped silently (only the informational Cluster Coverage list notes it),
+matching the reserved-tone tiering above.
 
 Separately, every app whose overlays or `.scafctl` template/config
 changed is also checked for whether it has drift **coverage** at all:

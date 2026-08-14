@@ -776,17 +776,19 @@ func composeGhostPatchesChild(ghostTable string, ghostBlockingCount int) ReportS
 }
 
 // ComposeScaffoldValidationSection renders scaffold validation results as
-// four always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec,
-// Pre-Existing Scaffold Drift, Cluster Coverage - see the composeXChild
-// helpers below), via the same composeParentFromChildren/ReportSection
+// five always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec, Disabled
+// Overlays, Pre-Existing Scaffold Drift, Cluster Coverage - see the
+// composeXChild helpers below), via the same
+// composeParentFromChildren/ReportSection
 // machinery ComposeKustomizeBuildSection uses, for the same reason: a
 // single icon-bearing <details> line per child, and a parent icon that
 // correctly inherits the worst child status instead of collapsing to a
 // binary ✅/❌.
-func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingClusters []string, preExistingDriftSummary string) ReportSection {
+func ComposeScaffoldValidationSection(driftSummary string, execErrors, missingClusters []string, preExistingDriftSummary string, disabledOverlays []string) ReportSection {
 	children := []ReportSection{
 		composeScaffoldDriftChild(driftSummary),
 		composeScaffoldExecChild(execErrors),
+		composeDisabledOverlaysChild(disabledOverlays),
 		composePreExistingDriftChild(preExistingDriftSummary),
 		composeClusterCoverageChild(missingClusters),
 	}
@@ -813,6 +815,28 @@ func composeScaffoldExecChild(execErrors []string) ReportSection {
 		fmt.Fprintf(&b, "- %s\n", e)
 	}
 	return ReportSection{Name: "Scaffold Exec", Status: StatusError, Body: b.String()}
+}
+
+// composeDisabledOverlaysChild builds the warning "Disabled Overlays"
+// sub-check from disabledOverlays - overlays this PR modified that scaffold
+// validation skipped because their scaffold config marks them disabled
+// (`overlayDefinitions.overrides.<cluster>.disabled`, see
+// scaffold.OverlayConfigDisabled). Deliberately StatusWarning, never
+// StatusError: it is an "are you sure you meant to edit a disabled overlay?"
+// signal, not a blocking finding - the overlay is skipped by intent and the
+// pipeline still passes, but the author is told to check/remove the
+// disabled flag if that wasn't intended.
+func composeDisabledOverlaysChild(disabledOverlays []string) ReportSection {
+	if len(disabledOverlays) == 0 {
+		return ReportSection{Name: "Disabled Overlays", Status: StatusPassed, Summary: "No modified overlay is disabled."}
+	}
+	var b strings.Builder
+	b.WriteString("The following overlay(s) were modified by this PR but are marked `disabled: true` in their scaffold config, so scaffolding ")
+	b.WriteString("was skipped for them. Remove `disabled: true` to enable scaffolding, or leave as-is if intentional:\n\n")
+	for _, o := range disabledOverlays {
+		fmt.Fprintf(&b, "- `%s`\n", o)
+	}
+	return ReportSection{Name: "Disabled Overlays", Status: StatusWarning, Body: b.String()}
 }
 
 // composePreExistingDriftChild builds the non-blocking "Pre-Existing

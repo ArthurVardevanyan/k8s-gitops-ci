@@ -44,6 +44,17 @@ type scaffoldValidationResult struct {
 	// this into ComposeScaffoldValidationSection's informational
 	// missingClusters list.
 	SkippedClusters map[string][]string
+	// DisabledClusters records, per app, every overlay scaffold.Run skipped
+	// because its scaffold config marks it disabled
+	// (scaffold.Summary.DisabledClusters - the
+	// `overlayDefinitions.overrides.<cluster>.disabled` flag), rather than
+	// for any other reason (no directory yet, etc.). Unlike SkippedClusters
+	// this is filtered to overlays the PR itself modified, because a disabled
+	// overlay is only worth a warning when this PR is actively changing its
+	// files - a disabled overlay untouched by the PR is expected and silent.
+	// Never a failure on its own; ComposeScaffoldValidationSection surfaces
+	// it as a warning.
+	DisabledClusters map[string][]string
 }
 
 // runScaffoldValidation drives pkg/scaffold.Run across every app this run
@@ -125,6 +136,18 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 				result.SkippedClusters = map[string][]string{}
 			}
 			result.SkippedClusters[app] = append(result.SkippedClusters[app], summary.SkippedClusters...)
+		}
+		// A config-disabled overlay is only worth a warning when this PR
+		// actually modified it - it's expected (and silent) otherwise.
+		for _, ov := range summary.DisabledClusters {
+			if !isOverlayRelatedToChangedFiles(app, ov, changed) {
+				continue
+			}
+			if result.DisabledClusters == nil {
+				result.DisabledClusters = map[string][]string{}
+			}
+			result.DisabledClusters[app] = append(result.DisabledClusters[app], ov)
+			log.Warn("scaffold: overlay %s/%s is disabled in config; scaffolding skipped (modified in this PR)", app, ov)
 		}
 	}
 	isTested := func(app string) bool {
@@ -251,6 +274,30 @@ func flattenSkippedClusters(skipped map[string][]string) []string {
 	var out []string
 	for _, app := range apps {
 		clusters := append([]string(nil), skipped[app]...)
+		sort.Strings(clusters)
+		for _, c := range clusters {
+			out = append(out, fmt.Sprintf("%s/%s", app, c))
+		}
+	}
+	return out
+}
+
+// flattenDisabledClusters turns a scaffoldValidationResult.DisabledClusters
+// map into ComposeScaffoldValidationSection's flat, deterministically
+// ordered "app/cluster" disabledOverlays list.
+func flattenDisabledClusters(disabled map[string][]string) []string {
+	if len(disabled) == 0 {
+		return nil
+	}
+	apps := make([]string, 0, len(disabled))
+	for app := range disabled {
+		apps = append(apps, app)
+	}
+	sort.Strings(apps)
+
+	var out []string
+	for _, app := range apps {
+		clusters := append([]string(nil), disabled[app]...)
 		sort.Strings(clusters)
 		for _, c := range clusters {
 			out = append(out, fmt.Sprintf("%s/%s", app, c))
