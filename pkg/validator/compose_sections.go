@@ -824,7 +824,7 @@ func composeScaffoldExecChild(execErrors []string) ReportSection {
 // scaffold.OverlayConfigDisabled). Deliberately StatusWarning, never
 // StatusError: it is an "are you sure you meant to edit a disabled overlay?"
 // signal, not a blocking finding - the overlay is skipped by intent and the
-// pipeline still passes, but the author is told so check/remove the
+// pipeline still passes, but the author is told to check/remove the
 // disabled flag if that wasn't intended.
 func composeDisabledOverlaysChild(disabledOverlays []string) ReportSection {
 	if len(disabledOverlays) == 0 {
