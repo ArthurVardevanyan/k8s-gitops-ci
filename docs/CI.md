@@ -37,6 +37,7 @@ package map; this is the detailed, step-by-step reference.
       - [`crb`](#crb)
       - [`sync-options`](#sync-options)
       - [`image-checksum`](#image-checksum)
+      - [`image-fqdn`](#image-fqdn)
       - [`named-ports`](#named-ports)
       - [`podspec-defaults`](#podspec-defaults)
       - [`placeholder`](#placeholder)
@@ -723,6 +724,7 @@ automatically exemptable via its own check ID (see
 | `crb`              | `pkg/validator/crb`         | Doc     | `ClusterRoleBinding` subject namespace sanity                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `sync-options`     | `pkg/validator/syncopts`    | Doc     | Non-builtin API-group resources carry the ArgoCD `SkipDryRunOnMissingResource=true` sync-options annotation (builtin/core groups and OpenShift/OKD-exclusive API groups — e.g. `route.openshift.io`, `config.openshift.io` — are always exempt; OpenShift-_default_-but-portable groups that also ship on non-OpenShift clusters — e.g. Prometheus Operator, OLM, Gateway API, Multus/OVN-Kubernetes CNI — are only exempt with `--assume-openshift`) |
 | `image-checksum`   | `pkg/validator/image`       | Doc     | Every OCI image reference is pinned to a `sha256:` digest, not just a tag                                                                                                                                                                                                                                                                                                                                                                             |
+| `image-fqdn`       | `pkg/validator/image`       | Doc     | Every OCI image reference uses an explicit, fully-qualified registry host (no bare shortnames such as `nginx:latest`)                                                                                                                                                                                                                                                                                                                                 |
 | `named-ports`      | `pkg/validator/namedport`   | Doc     | Container/Service ports are named, not numeric, everywhere they're referenced                                                                                                                                                                                                                                                                                                                                                                         |
 | `podspec-defaults` | `pkg/validator/podspec`     | Doc     | Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...) and container `securityContext`/`resources.requests`/`resources.limits` are all set                                                                                                                                                                                                                                                                                            |
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML (AVP-scheme secret-reference tokens like `<path:...>` are deliberately not flagged — see below)                                                                                                                                                                                                                                 |
@@ -837,6 +839,17 @@ Every OCI image reference is pinned to a `sha256:` digest, not just a
 tag. This includes images referenced indirectly as OCI image-volume
 sources (e.g. Tekton's `spec.volumes[].image.reference`), not only
 container `image:` values.
+
+- **Package:** `pkg/validator/image`
+- **Scope:** Doc
+
+#### `image-fqdn`
+
+Every OCI image reference uses an explicit, fully-qualified registry host.
+A bare shortname such as `nginx:latest` or `alpine` is flagged because its
+registry would otherwise be silently defaulted at resolve time. GCP Compute
+Engine resource self-links (e.g. a disk image reference captured under an
+`image:`-named key) are not container images and are not reported.
 
 - **Package:** `pkg/validator/image`
 - **Scope:** Doc

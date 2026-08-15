@@ -13,17 +13,20 @@ func TestParseImageRef(t *testing.T) {
 	cases := []struct {
 		raw                               string
 		registry, repo, tag, digest, full string
+		bare                              bool
 	}{
-		{"registry.io/ns/repo:tag@sha256:abc", "registry.io", "ns/repo", "tag", "sha256:abc", ""},
-		{"repo:latest", "docker.io", "repo", "latest", "", ""},
+		{"registry.io/ns/repo:tag@sha256:abc", "registry.io", "ns/repo", "tag", "sha256:abc", "", false},
+		{"repo:latest", "docker.io", "repo", "latest", "", "", true},
 		// port-in-registry case.
-		{"myregistry:5000/myimage:v1", "myregistry:5000", "myimage", "v1", "", ""},
+		{"myregistry:5000/myimage:v1", "myregistry:5000", "myimage", "v1", "", "", false},
 		// digest-only, no tag.
-		{"registry.io/repo@sha256:abc", "registry.io", "repo", "", "sha256:abc", ""},
+		{"registry.io/repo@sha256:abc", "registry.io", "repo", "", "sha256:abc", "", false},
+		// explicit docker.io host is not bare.
+		{"docker.io/linuxserver/heimdall:2.8.2", "docker.io", "linuxserver/heimdall", "2.8.2", "", "", false},
 		// Regression for change #3: a bare image with neither tag nor
 		// digest must leave Tag == "" (no more implicit "latest" default -
 		// the SHA-digest pinning enforcement never consulted Tag anyway).
-		{"nginx", "docker.io", "nginx", "", "", ""},
+		{"nginx", "docker.io", "nginx", "", "", "", true},
 	}
 	for _, c := range cases {
 		t.Run(c.raw, func(t *testing.T) {
@@ -34,23 +37,39 @@ func TestParseImageRef(t *testing.T) {
 			if ref.Registry != c.registry || ref.Repo != c.repo || ref.Tag != c.tag || ref.Digest != c.digest {
 				t.Errorf("ParseImageRef(%q) = {%q %q %q %q}", c.raw, ref.Registry, ref.Repo, ref.Tag, ref.Digest)
 			}
+			if ref.Bare != c.bare {
+				t.Errorf("ParseImageRef(%q).Bare = %v, want %v", c.raw, ref.Bare, c.bare)
+			}
 		})
 	}
 }
 
-func TestIsOCIImageRef(t *testing.T) {
-	if isOCIImageRef(ParseImageRef("alpine")) {
-		t.Error("docker shortname is not OCI")
+func TestIsImageRef(t *testing.T) {
+	// Explicit-registry refs (including docker.io) are always enforced.
+	for _, raw := range []string{
+		"registry.io/alpine",
+		"docker.io/linuxserver/heimdall:2.8.2",
+	} {
+		if !isImageRef(ParseImageRef(raw)) {
+			t.Errorf("isImageRef(%q) = false, want true", raw)
+		}
 	}
-	if !isOCIImageRef(ParseImageRef("registry.io/alpine")) {
-		t.Error("registry ref is OCI")
+	// Bare shortname refs are enforced (FQDN/digest checks handle them).
+	for _, raw := range []string{"alpine", "nginx:latest"} {
+		if !isImageRef(ParseImageRef(raw)) {
+			t.Errorf("isImageRef(%q) = false, want true", raw)
+		}
+	}
+	// Templated/placeholder values are never enforced.
+	if isImageRef(ParseImageRef("{{ .Image }}")) {
+		t.Error("isImageRef of a space-containing placeholder = true, want false")
 	}
 }
 
-func TestIsOCIImageRef_GCPDiskImageFalsePositives(t *testing.T) {
+func TestIsImageRef_GCPDiskImageFalsePositives(t *testing.T) {
 	// Cloud-resource path strings (e.g. GCP disk image self-links) must
-	// never be mistaken for an OCI image reference just because they
-	// contain slashes.
+	// never be mistaken for an enforceable OCI image reference just because
+	// they are bare slash-y strings with no tag or digest.
 	cases := []string{
 		"projects/rhcos-cloud/global/images/rhcos-416-94-202406251923-0-gcp-x86-64",
 		"projects/my-project/zones/us-central1-a/disks/my-disk",
@@ -58,9 +77,8 @@ func TestIsOCIImageRef_GCPDiskImageFalsePositives(t *testing.T) {
 	}
 	for _, raw := range cases {
 		t.Run(raw, func(t *testing.T) {
-			ref := ParseImageRef(raw)
-			if isOCIImageRef(ref) {
-				t.Errorf("isOCIImageRef(%q) = true, want false (registry=%q, repo=%q)", raw, ref.Registry, ref.Repo)
+			if isImageRef(ParseImageRef(raw)) {
+				t.Errorf("isImageRef(%q) = true, want false (registry=%q, repo=%q)", raw, ParseImageRef(raw).Registry, ParseImageRef(raw).Repo)
 			}
 		})
 	}
@@ -147,6 +165,85 @@ spec:
 `)
 	if errs := ValidateBytesRaw(data, "x.yaml"); len(errs) != 0 {
 		t.Errorf("expected no findings for a pinned image: %v", errs)
+	}
+}
+
+func TestValidateBytesRaw_DockerIORegistered_RequiresDigest(t *testing.T) {
+	// Regression: an unpinned image with an explicit docker.io host must
+	// no longer be silently skipped. Reported originally against
+	// docker.io/linuxserver/heimdall:2.8.2.
+	pinned := []byte(`kind: StatefulSet
+metadata:
+  name: heimdall
+spec:
+  template:
+    spec:
+      containers:
+      - name: heimdall
+        image: docker.io/linuxserver/heimdall:2.8.2@sha256:abc
+`)
+	if errs := ValidateBytesRaw(pinned, "heimdall.yaml"); len(errs) != 0 {
+		t.Errorf("expected no findings for a pinned docker.io image: %v", errs)
+	}
+
+	unpinned := []byte(`kind: StatefulSet
+metadata:
+  name: heimdall
+spec:
+  template:
+    spec:
+      containers:
+      - name: heimdall
+        image: docker.io/linuxserver/heimdall:2.8.2
+`)
+	errs := ValidateBytesRaw(unpinned, "heimdall.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly 1 finding for an unpinned docker.io image, got: %v", errs)
+	}
+	if errs[0].Image != "docker.io/linuxserver/heimdall:2.8.2" {
+		t.Errorf("unexpected image in finding: %q", errs[0].Image)
+	}
+}
+
+func TestValidateFQDNBytesRaw(t *testing.T) {
+	bare := []byte(`kind: Deployment
+metadata:
+  name: d
+spec:
+  template:
+    spec:
+      containers:
+      - image: nginx:latest
+`)
+	errs := ValidateFQDNBytesRaw(bare, "x.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 FQDN finding for a bare shortname, got: %v", errs)
+	}
+	if errs[0].Image != "nginx:latest" || !strings.Contains(errs[0].Message, "explicit registry") {
+		t.Errorf("unexpected FQDN finding: %+v", errs[0])
+	}
+
+	qualified := []byte(`kind: Deployment
+metadata:
+  name: d
+spec:
+  template:
+    spec:
+      containers:
+      - image: docker.io/nginx:latest
+`)
+	if errs := ValidateFQDNBytesRaw(qualified, "x.yaml"); len(errs) != 0 {
+		t.Errorf("expected no FQDN finding for an explicitly-registered image: %v", errs)
+	}
+
+	gcpLink := []byte(`kind: ConfigMap
+metadata:
+  name: test
+data:
+  image: projects/rhcos-cloud/global/images/rhcos-416-94-202406251923-0-gcp-x86-64
+`)
+	if errs := ValidateFQDNBytesRaw(gcpLink, "x.yaml"); len(errs) != 0 {
+		t.Errorf("expected no FQDN finding for a GCP self-link: %v", errs)
 	}
 }
 

@@ -65,6 +65,7 @@ func init() {
 	check.Register(crbCheck{})
 	check.Register(syncoptsCheck{})
 	check.Register(imageCheck{})
+	check.Register(imageFQDNCheck{})
 	check.Register(namedportCheck{})
 	check.Register(podspecCheck{})
 	check.Register(placeholderCheck{})
@@ -237,6 +238,31 @@ func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
 	for _, e := range errs {
 		out = append(out, check.Finding{
 			CheckID: "image-checksum", File: e.File,
+			Kind: e.Kind, Name: e.Name,
+			Value:       e.Image,
+			Message:     e.Message,
+			Annotations: e.Annotations,
+		})
+	}
+	return out
+}
+
+// ── image-fqdn ────────────────────────────────────────────────────────────────
+
+type imageFQDNCheck struct{}
+
+func (imageFQDNCheck) ID() string            { return "image-fqdn" }
+func (imageFQDNCheck) Title() string         { return "Image Registry FQDN" }
+func (imageFQDNCheck) Section() string       { return "resource-compliance" }
+func (imageFQDNCheck) Blocking() bool        { return true }
+func (imageFQDNCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (imageFQDNCheck) RenderSensitive() bool { return true }
+func (imageFQDNCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := image.ValidateFQDNBytesRaw(data, source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "image-fqdn", File: e.File,
 			Kind: e.Kind, Name: e.Name,
 			Value:       e.Image,
 			Message:     e.Message,

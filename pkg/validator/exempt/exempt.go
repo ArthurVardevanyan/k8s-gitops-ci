@@ -12,6 +12,7 @@ const AnnotationPrefix = "gitops-ci.k8s.io/"
 // Exemptable check identifiers.
 const (
 	IDImageChecksum   = "image-checksum"
+	IDImageFQDN       = "image-fqdn"
 	IDClusterName     = "cluster-name"
 	IDProjectRef      = "project-ref"
 	IDClusterIdentity = "cluster-identity" // non-exemptable structural bucket
@@ -43,6 +44,7 @@ type Applied struct {
 
 var exemptable = map[string]bool{
 	IDImageChecksum: true,
+	IDImageFQDN:     true,
 	IDClusterName:   true,
 	IDProjectRef:    true,
 }
