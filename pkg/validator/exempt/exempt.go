@@ -9,9 +9,17 @@ import (
 // AnnotationPrefix for self-granting exemptions.
 const AnnotationPrefix = "gitops-ci.k8s.io/"
 
-// Exemptable check identifiers.
+// Check identifiers used by the shared engine. Most are exemptable (see
+// the exemptable map below); a couple are deliberately not:
+// IDImageFQDN (an unqualified image reference is almost always a mistake,
+// and the framework's own escape hatches - annotation exact-value and
+// EXEMPTIONS selectors - don't fit it well; a genuine structural exception,
+// e.g. an OpenShift ImageStream-triggered bare reference, should get a
+// targeted skip in the check itself instead) and IDClusterIdentity (a
+// non-exemptable structural bucket, see Exemptable).
 const (
 	IDImageChecksum   = "image-checksum"
+	IDImageFQDN       = "image-fqdn"
 	IDClusterName     = "cluster-name"
 	IDProjectRef      = "project-ref"
 	IDClusterIdentity = "cluster-identity" // non-exemptable structural bucket
@@ -20,6 +28,19 @@ const (
 // Scalar is a generic finding value used for exemption matching.
 type Scalar struct {
 	Value, Path, File, Kind, Name, Namespace, Token string
+
+	// MatchAliases holds additional stable values that should also count
+	// as a match for an annotation or a Value/Match selector, alongside
+	// annotationValue() (Token when set, else Value). This is purely
+	// additive - it never changes what annotationValue() itself resolves
+	// to, so a check that deliberately excludes its own human-readable
+	// Value from matching by setting a Token (see annotationValue) is
+	// unaffected unless it explicitly also sets an alias. Used by
+	// image-checksum for a tag/digest-independent "registry/repo" key, so
+	// an annotation naming just the repo exempts every tag/digest of it,
+	// while an annotation naming the exact tagged/digested reference still
+	// matches too.
+	MatchAliases []string
 }
 
 // Selector configures an EXEMPTIONS entry.
@@ -48,37 +69,61 @@ var exemptable = map[string]bool{
 }
 
 // Exemptable reports whether a check id supports exemptions.
+//
+// IDImageFQDN is deliberately hardcoded to false here, the same way
+// IDClusterIdentity is: check.Register unconditionally calls
+// RegisterExemptable(c.ID()) for every registered check (so that, absent
+// this guard, image-fqdn would still end up selector-exemptable purely by
+// virtue of being registered) - see the doc comment on the ID constants
+// above for why image-fqdn is meant to stay non-exemptable.
 func Exemptable(id string) bool {
-	if id == IDClusterIdentity {
+	if id == IDClusterIdentity || id == IDImageFQDN {
 		return false
 	}
 	return exemptable[id]
 }
 
-// RegisterExemptable marks a check id as exemptable.
+// RegisterExemptable marks a check id as exemptable. A no-op for
+// IDClusterIdentity/IDImageFQDN even if called, since Exemptable hardcodes
+// both to false regardless of this map.
 func RegisterExemptable(id string) {
-	if id == "" || id == IDClusterIdentity {
+	if id == "" || id == IDClusterIdentity || id == IDImageFQDN {
 		return
 	}
 	exemptable[id] = true
 }
 
 // Known reports whether the id has been registered.
-func Known(id string) bool { return exemptable[id] || id == IDClusterIdentity }
+func Known(id string) bool {
+	return exemptable[id] || id == IDClusterIdentity || id == IDImageFQDN
+}
 
 // Key returns the annotation key for an exemption id.
 func Key(id string) string { return AnnotationPrefix + "exempt-" + id }
 
-// Accepts reports whether annotations grant an exact-value exemption.
-// Fails closed: an empty value never matches, even against an empty (but
-// present) annotation - otherwise a finding with an empty
-// annotationValue() (e.g. both Token/Value unset) would be granted a
-// false exemption by any resource with no matching annotation at all.
-func Accepts(annotations map[string]string, id, value string) bool {
-	if len(annotations) == 0 || value == "" {
+// Accepts reports whether annotations grant an exact-value exemption,
+// matching either value or any of the optional aliases. Fails closed: an
+// empty value/alias never matches, even against an empty (but present)
+// annotation - otherwise a finding with an empty annotationValue() (e.g.
+// both Token/Value unset) would be granted a false exemption by any
+// resource with no matching annotation at all.
+func Accepts(annotations map[string]string, id, value string, aliases ...string) bool {
+	if len(annotations) == 0 {
 		return false
 	}
-	return annotations[Key(id)] == value
+	ann := annotations[Key(id)]
+	if ann == "" {
+		return false
+	}
+	if value != "" && ann == value {
+		return true
+	}
+	for _, a := range aliases {
+		if a != "" && ann == a {
+			return true
+		}
+	}
+	return false
 }
 
 // annotationValue returns the value used for exemption matching: Token
@@ -90,6 +135,34 @@ func (s Scalar) annotationValue() string {
 		return s.Token
 	}
 	return s.Value
+}
+
+// matchesValue reports whether target equals this scalar's primary match
+// value (annotationValue()) or any of its MatchAliases.
+func (s Scalar) matchesValue(target string) bool {
+	if target == s.annotationValue() {
+		return true
+	}
+	for _, a := range s.MatchAliases {
+		if a == target {
+			return true
+		}
+	}
+	return false
+}
+
+// containsMatch reports whether sub is a substring of this scalar's
+// primary match value (annotationValue()) or any of its MatchAliases.
+func (s Scalar) containsMatch(sub string) bool {
+	if strings.Contains(s.annotationValue(), sub) {
+		return true
+	}
+	for _, a := range s.MatchAliases {
+		if strings.Contains(a, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // SelectorMatches reports whether a selector matches a scalar finding for id.
@@ -109,10 +182,10 @@ func SelectorMatches(sel Selector, s Scalar, id string) bool {
 	if sel.Namespace != "" && sel.Namespace != s.Namespace {
 		return false
 	}
-	if sel.Value != "" && sel.Value != s.annotationValue() {
+	if sel.Value != "" && !s.matchesValue(sel.Value) {
 		return false
 	}
-	if sel.Match != "" && !strings.Contains(s.annotationValue(), sel.Match) {
+	if sel.Match != "" && !s.containsMatch(sel.Match) {
 		return false
 	}
 	if sel.Path != "" && !pathMatches(sel.Path, s.Path) {
@@ -129,7 +202,7 @@ func Evaluate(id string, s Scalar, annotations map[string]string, selectors []Se
 	if !Exemptable(id) {
 		return false, Applied{}
 	}
-	if Accepts(annotations, id, s.annotationValue()) {
+	if Accepts(annotations, id, s.annotationValue(), s.MatchAliases...) {
 		return true, Applied{CheckID: id, File: s.File, Path: s.Path, Value: s.Value, Token: s.Token, Kind: s.Kind, Name: s.Name}
 	}
 	for _, sel := range selectors {

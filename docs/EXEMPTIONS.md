@@ -41,6 +41,33 @@ enforces normally. `exempt.Accepts` fails closed: an empty annotation
 value, or no annotations at all, never matches, even against an
 empty-valued finding.
 
+`image-checksum` also accepts a **repo-level** value with no tag or
+digest, e.g. `docker.io/linuxserver/heimdall` (registry + repo only). This
+exempts _every_ tag/digest of that repo, so the exemption survives a
+Renovate tag bump instead of needing to be updated every time:
+
+```yaml
+metadata:
+  annotations:
+    gitops-ci.k8s.io/exempt-image-checksum: "docker.io/linuxserver/heimdall"
+```
+
+This matches a finding whose image is `docker.io/linuxserver/heimdall:2.8.2`,
+`docker.io/linuxserver/heimdall:2.9.0`, or any other tag/digest of that
+same repo — but **not** `docker.io/linuxserver/heimdall-extra:1.0` (an
+unrelated repo that merely shares a name prefix); the match is anchored to
+the exact `registry/repo` string, not a substring/prefix check. The exact
+full-reference form (with a tag or digest) still works too — both are
+accepted (see [Value vs. Token](#value-vs-token) for how this is wired via
+`MatchAliases`).
+
+`image-fqdn` (the check that requires an explicit registry host — see
+[CI.md](CI.md#image-fqdn)) is **not** exemptable by either mode: an
+unqualified image reference is almost always a mistake, and the one
+plausible legitimate exception (e.g. an OpenShift ImageStream-triggered
+bare reference) is better handled by a targeted skip in the check itself
+than a manual escape hatch.
+
 ### 2. `EXEMPTIONS=(...)` selector
 
 A `test.sh`'s `EXEMPTIONS=(...)` block (see [HOOKS.md](HOOKS.md) for the
@@ -125,6 +152,7 @@ ID:
 | `project-ref`      | `pkg/validator/clusterid` (a project-identity sub-finding)                                                                                                                 | Yes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `kubeconform`      | The kubeconform lint step (`pkg/validator/phases.go`) — a standalone linter, not a `check.Register` entry                                                                  | Yes — `check=kubeconform,file=...` or `check=kubeconform,dir=...` in a `test.sh` `EXEMPTIONS=(...)` block skips matching files from kubeconform schema validation. Whole non-manifest YAML on the raw path (no root `kind`/`apiVersion`) is now **auto-skipped** by the content gate (`kubeconform.IsManifestYAML`, see [CI.md](CI.md#kubeconform)), so a selector is only needed for a file that _is_ a manifest but whose schema check you deliberately want suppressed. See [Non-app `test.sh` scoping](#non-app-testsh-scoping) below. |
 | `cluster-identity` | `pkg/validator/clusterid` (the fallback bucket for structural findings that don't set a more specific ID — e.g. a hypothetical future infraID-mismatch/invalid-JSON check) | **No — deliberately non-exemptable.** `exempt.Exemptable` hardcodes this ID to always return `false`, and `RegisterExemptable` refuses to register it even if called. This is intentional: a structural finding here means the data itself is malformed/untrustworthy, which isn't the kind of thing a selector or annotation should be able to wave away.                                                                                                                                                                                 |
+| `image-fqdn`       | `pkg/validator/image`                                                                                                                                                      | **No — deliberately non-exemptable.** See [Annotation exemption](#1-annotation-exemption) above for the rationale.                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 `pkg/validator/nad`'s NetworkAttachmentDefinition validation (see
 [CI.md](CI.md#networkattachmentdefinition-nad-validation)) is **not**

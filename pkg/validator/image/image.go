@@ -26,6 +26,10 @@ type ValidationError struct {
 	// evaluate annotation-based exemptions themselves. Only populated by
 	// ValidateBytesRaw.
 	Annotations map[string]string
+	// Repo is the tag/digest-independent "registry/repo" key (Ref.RepoKey)
+	// for Image, so a caller can offer a repo-level exemption match
+	// alongside the exact Image value. Only populated by ValidateBytesRaw.
+	Repo string
 }
 
 func (e ValidationError) String() string {
@@ -82,6 +86,13 @@ func (e ExemptedImage) String() string {
 // Ref parses an OCI image reference.
 type Ref struct {
 	Registry, Repo, Tag, Digest, Raw string
+
+	// Bare is true when the raw reference carried no explicit registry
+	// host (e.g. "nginx:latest" or "alpine"), so the registry had to be
+	// defaulted. Bare references are today acceptable at resolve time only
+	// if a resolve step supplies a registry; for pinning and FQDN
+	// enforcement they are flagged.
+	Bare bool
 }
 
 // ParseImageRef parses a raw image string.
@@ -96,10 +107,16 @@ func ParseImageRef(raw string) *Ref {
 		raw = atParts[0]
 	}
 	parts := strings.SplitN(raw, "/", 2)
-	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
+	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost") {
+		// "localhost" is a valid explicit registry host per OCI/Docker
+		// reference rules even though it contains neither "." nor ":" -
+		// without this it would be misclassified as a bare shortname
+		// (defaulted to docker.io), wrongly flagging e.g.
+		// "localhost/myapp:tag" for image-fqdn.
 		ref.Registry = parts[0]
 		ref.Repo = parts[1]
 	} else {
+		ref.Bare = true
 		ref.Registry = "docker.io"
 		ref.Repo = raw
 	}
@@ -114,9 +131,42 @@ func ParseImageRef(raw string) *Ref {
 	return ref
 }
 
-// isOCIImageRef returns true for non-Docker-Hub refs.
-func isOCIImageRef(ref *Ref) bool {
-	return ref != nil && ref.Registry != "docker.io" && !strings.Contains(ref.Raw, " ")
+// RepoKey returns a tag/digest-independent identifier for the image
+// ("registry/repo"), suitable for a repo-level exemption that should match
+// every tag or digest of that repo rather than one exact reference. Uses
+// the registry as parsed (docker.io when defaulted for a bare shortname).
+func (r *Ref) RepoKey() string {
+	if r == nil {
+		return ""
+	}
+	return r.Registry + "/" + r.Repo
+}
+
+// gcpComputeSelfLinkRe matches GCP Compute Engine resource self-links that
+// legitimately appear under an `image:`-named key (e.g. a GCP disk image
+// reference) but are not container-image references at all. They are bare
+// (no registry host) and carry no tag, so without this guard they would be
+// misclassified as shortname container images and flagged for FQDN/pinning.
+var gcpComputeSelfLinkRe = regexp.MustCompile(`^projects/[^/]+/(?:global/images|zones/[^/]+/disks)/`)
+
+// isImageRef reports whether ref is an OCI image reference that image
+// enforcement (pinning + FQDN) should evaluate. Templated/placeholder
+// values (containing spaces) and GCP Compute Engine self-links are excluded,
+// but bare shortnames and explicit docker.io refs are enforced, so an
+// unpinned docker.io image is no longer silently skipped.
+func isImageRef(ref *Ref) bool {
+	if ref == nil || strings.Contains(ref.Raw, " ") {
+		return false
+	}
+	return !gcpComputeSelfLinkRe.MatchString(ref.Raw)
+}
+
+// isResolvableRef reports whether a ref can be live-resolved against its
+// registry (used only by the offline VerifyFileTagDigests helper). Unlike
+// pinning/FQDN enforcement this still requires an explicit non-Docker-Hub
+// registry and a tag, because resolution talks to a registry.
+func isResolvableRef(ref *Ref) bool {
+	return isImageRef(ref) && !ref.Bare && ref.Registry != "docker.io" && ref.Tag != ""
 }
 
 // ValidateFile validates image pinning in a file.
@@ -169,7 +219,7 @@ func ValidateBytesWithExemptions(data []byte, source string) ([]ValidationError,
 		ann := extractAnnotations(mapping)
 		for _, img := range extractImages(mapping, "") {
 			ref := ParseImageRef(img)
-			if !isOCIImageRef(ref) {
+			if !isImageRef(ref) {
 				continue
 			}
 			if exempt.Accepts(ann, exempt.IDImageChecksum, img) {
@@ -187,18 +237,22 @@ func ValidateBytesWithExemptions(data []byte, source string) ([]ValidationError,
 	return errs, exempted
 }
 
-// ValidateBytesRaw validates image pinning in bytes without applying any
-// exemption filtering - every unpinned image is returned as a finding,
-// including ones that would be annotation-exempted, each carrying the
-// owning resource's annotations. Use this (instead of ValidateBytes /
-// ValidateBytesWithExemptions) when the caller routes findings through the
-// shared pkg/validator/check + pkg/validator/exempt engine, so that engine
-// can apply exemptions (both annotation and EXEMPTIONS-selector modes)
-// uniformly and record an audit-trail entry - matching how every other
-// check in this repo is wired, rather than this package silently deciding
-// exemptions on its own before the finding ever reaches the shared engine.
-func ValidateBytesRaw(data []byte, source string) []ValidationError {
-	var errs []ValidationError
+// imageCandidate is a single image reference extracted from a document,
+// carrying the owning resource's annotation set so the shared exempt engine
+// can evaluate annotation exemptions uniformly.
+type imageCandidate struct {
+	img  string
+	ref  *Ref
+	kind string
+	name string
+	ann  map[string]string
+}
+
+// collectImageCandidates decodes each mapping document in data and returns
+// every parsed image reference it contains, discarding templated values and
+// GCP Compute Engine self-links via isImageRef.
+func collectImageCandidates(data []byte) []imageCandidate {
+	var out []imageCandidate
 	dec := yaml.NewDecoder(newBytesReader(data))
 	for {
 		var doc yaml.Node
@@ -219,17 +273,54 @@ func ValidateBytesRaw(data []byte, source string) []ValidationError {
 		name := quickName(mapping)
 		ann := extractAnnotations(mapping)
 		for _, img := range extractImages(mapping, "") {
-			ref := ParseImageRef(img)
-			if !isOCIImageRef(ref) {
-				continue
+			if ref := ParseImageRef(img); isImageRef(ref) {
+				out = append(out, imageCandidate{img: img, ref: ref, kind: kind, name: name, ann: ann})
 			}
-			if ref.Digest == "" {
-				errs = append(errs, ValidationError{
-					File: source, Kind: kind, Name: name, Image: img,
-					Message:     "image is not pinned to a SHA digest",
-					Annotations: ann,
-				})
-			}
+		}
+	}
+	return out
+}
+
+// ValidateBytesRaw validates image pinning in bytes without applying any
+// exemption filtering - every unpinned image is returned as a finding,
+// including ones that would be annotation-exempted, each carrying the
+// owning resource's annotations. Use this (instead of ValidateBytes /
+// ValidateBytesWithExemptions) when the caller routes findings through the
+// shared pkg/validator/check + pkg/validator/exempt engine, so that engine
+// can apply exemptions (both annotation and EXEMPTIONS-selector modes)
+// uniformly and record an audit-trail entry - matching how every other
+// check in this repo is wired, rather than this package silently deciding
+// exemptions on its own before the finding ever reaches the shared engine.
+func ValidateBytesRaw(data []byte, source string) []ValidationError {
+	var errs []ValidationError
+	for _, c := range collectImageCandidates(data) {
+		if c.ref.Digest == "" {
+			errs = append(errs, ValidationError{
+				File: source, Kind: c.kind, Name: c.name, Image: c.img,
+				Message:     "image is not pinned to a SHA digest",
+				Annotations: c.ann,
+				Repo:        c.ref.RepoKey(),
+			})
+		}
+	}
+	return errs
+}
+
+// ValidateFQDNBytesRaw validates that every image reference uses an explicit
+// registry host, flagging bare shortnames (e.g. "nginx:latest" or "alpine")
+// that would otherwise silently default to a registry at resolve time. It
+// mirrors ValidateBytesRaw: no exemption filtering here - the caller is
+// expected to route findings through the shared check/exempt engine so
+// exemption evaluation and audit-trail recording happen uniformly.
+func ValidateFQDNBytesRaw(data []byte, source string) []ValidationError {
+	var errs []ValidationError
+	for _, c := range collectImageCandidates(data) {
+		if c.ref.Bare {
+			errs = append(errs, ValidationError{
+				File: source, Kind: c.kind, Name: c.name, Image: c.img,
+				Message:     "image uses a bare shortname without an explicit registry",
+				Annotations: c.ann,
+			})
 		}
 	}
 	return errs
@@ -278,7 +369,7 @@ func VerifyFileTagDigests(path string, client *http.Client) []ValidationError {
 	var errs []ValidationError
 	for _, img := range imgs {
 		ref := ParseImageRef(img)
-		if !isOCIImageRef(ref) || ref.Digest == "" {
+		if !isResolvableRef(ref) || ref.Digest == "" {
 			continue
 		}
 		if err := VerifyTagDigest(ref, client); err != nil {

@@ -11,6 +11,17 @@ func TestExemptable(t *testing.T) {
 	}
 }
 
+func TestExemptable_ImageFQDNNotExemptable(t *testing.T) {
+	// image-fqdn is deliberately not exemptable: an unqualified image
+	// reference is almost always a mistake, and a genuine structural
+	// exception (e.g. an OpenShift ImageStream-triggered bare reference)
+	// belongs in a targeted skip in the check itself, not a user-managed
+	// exemption.
+	if Exemptable(IDImageFQDN) {
+		t.Error("image-fqdn should not be exemptable")
+	}
+}
+
 func TestRegisterExemptable(t *testing.T) {
 	RegisterExemptable("custom")
 	if !Exemptable("custom") {
@@ -221,5 +232,71 @@ func TestSelectorMatches_Token(t *testing.T) {
 	selOnDisplay := Selector{Check: IDImageChecksum, Value: "display text (cluster-a)"}
 	if SelectorMatches(selOnDisplay, s, IDImageChecksum) {
 		t.Error("expected selector matching the display Value to NOT match once Token takes precedence")
+	}
+}
+
+func TestAccepts_MatchAlias(t *testing.T) {
+	// A repo-level annotation (docker.io/linuxserver/heimdall) must exempt
+	// a finding whose exact Value is a tagged reference of that repo
+	// (docker.io/linuxserver/heimdall:2.8.2), via MatchAliases, without
+	// needing to be updated on every tag bump.
+	ann := map[string]string{Key(IDImageChecksum): "docker.io/linuxserver/heimdall"}
+	if !Accepts(ann, IDImageChecksum, "docker.io/linuxserver/heimdall:2.8.2", "docker.io/linuxserver/heimdall") {
+		t.Error("expected the repo-level annotation to match via the alias")
+	}
+	// The exact full-ref annotation must still work too (back-compat).
+	annFull := map[string]string{Key(IDImageChecksum): "docker.io/linuxserver/heimdall:2.8.2"}
+	if !Accepts(annFull, IDImageChecksum, "docker.io/linuxserver/heimdall:2.8.2", "docker.io/linuxserver/heimdall") {
+		t.Error("expected the exact full-ref annotation to still match")
+	}
+	// An unrelated repo sharing a prefix must not match - this must be an
+	// anchored, exact-string alias match, not a substring/prefix check.
+	annOther := map[string]string{Key(IDImageChecksum): "docker.io/linuxserver/heimdall-extra"}
+	if Accepts(annOther, IDImageChecksum, "docker.io/linuxserver/heimdall:2.8.2", "docker.io/linuxserver/heimdall") {
+		t.Error("expected an unrelated repo name to NOT match")
+	}
+	// An empty alias must never grant a match, mirroring the fail-closed
+	// behavior for an empty value.
+	if Accepts(map[string]string{Key(IDImageChecksum): ""}, IDImageChecksum, "docker.io/linuxserver/heimdall:2.8.2", "docker.io/linuxserver/heimdall") {
+		t.Error("expected an empty annotation to never match, even with aliases present")
+	}
+}
+
+func TestSelectorMatches_ValueAlias(t *testing.T) {
+	sel := Selector{Check: IDImageChecksum, Value: "docker.io/linuxserver/heimdall"}
+	s := Scalar{Value: "docker.io/linuxserver/heimdall:2.8.2", MatchAliases: []string{"docker.io/linuxserver/heimdall"}}
+	if !SelectorMatches(sel, s, IDImageChecksum) {
+		t.Error("expected a selector Value matching an alias to match")
+	}
+	other := Scalar{Value: "docker.io/linuxserver/heimdall-extra:1.0", MatchAliases: []string{"docker.io/linuxserver/heimdall-extra"}}
+	if SelectorMatches(sel, other, IDImageChecksum) {
+		t.Error("expected a selector Value NOT to match an unrelated repo's alias")
+	}
+}
+
+func TestSelectorMatches_MatchAlias(t *testing.T) {
+	sel := Selector{Check: IDImageChecksum, Match: "linuxserver"}
+	s := Scalar{Value: "docker.io/linuxserver/heimdall:2.8.2", MatchAliases: []string{"docker.io/linuxserver/heimdall"}}
+	if !SelectorMatches(sel, s, IDImageChecksum) {
+		t.Error("expected a substring selector to match against the alias too")
+	}
+}
+
+func TestEvaluate_MatchAlias_HeimdallScenario(t *testing.T) {
+	// End-to-end regression for the reported scenario: an annotation
+	// naming just the repo (no tag) must exempt image-checksum findings
+	// for any tag/digest of that repo.
+	s := Scalar{
+		Value:        "docker.io/linuxserver/heimdall:2.8.2",
+		MatchAliases: []string{"docker.io/linuxserver/heimdall"},
+		File:         "statefulset.yaml",
+	}
+	ann := map[string]string{Key(IDImageChecksum): "docker.io/linuxserver/heimdall"}
+	ok, applied := Evaluate(IDImageChecksum, s, ann, nil)
+	if !ok {
+		t.Fatalf("expected the repo-level annotation to exempt the tagged image finding, got ok=%v", ok)
+	}
+	if applied.Value != "docker.io/linuxserver/heimdall:2.8.2" {
+		t.Errorf("expected Applied.Value to record the full tagged reference, got %q", applied.Value)
 	}
 }

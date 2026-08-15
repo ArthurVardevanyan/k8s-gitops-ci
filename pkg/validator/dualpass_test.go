@@ -40,6 +40,7 @@ func TestRenderSensitiveClassification(t *testing.T) {
 	wantSensitive := map[string]bool{
 		"placeholder":      true,
 		"image-checksum":   true,
+		"image-fqdn":       true,
 		"namespace":        true,
 		"psa-labels":       true,
 		"rbac-readonly":    true,

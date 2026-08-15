@@ -34,6 +34,11 @@ type Finding struct {
 	Container                                                string
 	Extra                                                    map[string]string
 	ForcedDirect                                             bool
+
+	// MatchAliases holds additional stable values that should also count
+	// as an exemption match for this finding, alongside its Value/Token
+	// (see exempt.Scalar.MatchAliases). Purely additive.
+	MatchAliases []string
 }
 
 // Get returns an extra value by key.
@@ -49,6 +54,7 @@ func (f Finding) Scalar() exempt.Scalar {
 	return exempt.Scalar{
 		Value: f.Value, Path: f.Path, File: f.File, Kind: f.Kind,
 		Name: f.Name, Namespace: f.Namespace, Token: f.Token,
+		MatchAliases: f.MatchAliases,
 	}
 }
 

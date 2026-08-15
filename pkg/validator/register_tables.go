@@ -28,6 +28,7 @@ const (
 // composers, not through this ordered list.
 var complianceCheckOrder = []string{
 	exempt.IDImageChecksum,
+	exempt.IDImageFQDN,
 	IDPodspec,
 	IDNamedPorts,
 	IDPSALabels,
@@ -180,6 +181,17 @@ var checkTableSpecs = map[string]check.TableSpec{
 	"image-checksum": {
 		Title:    "Image Digest Pinning",
 		Preamble: "Container images not pinned to a SHA256 digest.",
+		Columns: []check.Column{
+			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
+			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
+			{Header: "Image", Cell: func(f check.Finding) string { return f.Value }},
+		},
+		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
+		ResourceKey: kindNameKey,
+	},
+	"image-fqdn": {
+		Title:    "Image Registry FQDN",
+		Preamble: "Container images using a bare shortname without an explicit registry host.",
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
