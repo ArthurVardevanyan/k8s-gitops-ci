@@ -86,7 +86,7 @@ merged with the built-in selectors (e.g. the `.tekton/` PipelineRun
 default — see `tekton_exemptions.go`) before either the doc-check or
 overlay-check engines run. A real `EXEMPTIONS=(...)` entry therefore
 suppresses matching findings for **any exemptable check** (currently
-`image-checksum`, `image-fqdn`, `cluster-name`, `project-ref` — see
+`image-checksum`, `cluster-name`, `project-ref` — see
 `pkg/validator/exempt.Exemptable`) across the whole run, the same as the
 annotation-based exemption mode
 (`gitops-ci.k8s.io/exempt-<check-id>` — see [EXEMPTIONS.md](EXEMPTIONS.md)).

@@ -26,6 +26,10 @@ type ValidationError struct {
 	// evaluate annotation-based exemptions themselves. Only populated by
 	// ValidateBytesRaw.
 	Annotations map[string]string
+	// Repo is the tag/digest-independent "registry/repo" key (Ref.RepoKey)
+	// for Image, so a caller can offer a repo-level exemption match
+	// alongside the exact Image value. Only populated by ValidateBytesRaw.
+	Repo string
 }
 
 func (e ValidationError) String() string {
@@ -103,7 +107,12 @@ func ParseImageRef(raw string) *Ref {
 		raw = atParts[0]
 	}
 	parts := strings.SplitN(raw, "/", 2)
-	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
+	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost") {
+		// "localhost" is a valid explicit registry host per OCI/Docker
+		// reference rules even though it contains neither "." nor ":" -
+		// without this it would be misclassified as a bare shortname
+		// (defaulted to docker.io), wrongly flagging e.g.
+		// "localhost/myapp:tag" for image-fqdn.
 		ref.Registry = parts[0]
 		ref.Repo = parts[1]
 	} else {
@@ -120,6 +129,17 @@ func ParseImageRef(raw string) *Ref {
 		}
 	}
 	return ref
+}
+
+// RepoKey returns a tag/digest-independent identifier for the image
+// ("registry/repo"), suitable for a repo-level exemption that should match
+// every tag or digest of that repo rather than one exact reference. Uses
+// the registry as parsed (docker.io when defaulted for a bare shortname).
+func (r *Ref) RepoKey() string {
+	if r == nil {
+		return ""
+	}
+	return r.Registry + "/" + r.Repo
 }
 
 // gcpComputeSelfLinkRe matches GCP Compute Engine resource self-links that
@@ -279,6 +299,7 @@ func ValidateBytesRaw(data []byte, source string) []ValidationError {
 				File: source, Kind: c.kind, Name: c.name, Image: c.img,
 				Message:     "image is not pinned to a SHA digest",
 				Annotations: c.ann,
+				Repo:        c.ref.RepoKey(),
 			})
 		}
 	}

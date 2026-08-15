@@ -258,6 +258,126 @@ spec:
 	}
 }
 
+func TestRunDocChecks_ImageChecksumRepoLevelAnnotationExemption(t *testing.T) {
+	// End-to-end regression for a reported false-negative-in-reverse: a
+	// user annotated a resource with a repo-level exemption (no tag) to
+	// survive future Renovate tag bumps
+	// ("docker.io/linuxserver/heimdall"), but the finding's exact Image
+	// value is the tagged reference ("docker.io/linuxserver/heimdall:2.8.2"),
+	// so an exact-only match never applied the exemption. The
+	// image-checksum adapter now also sets MatchAliases to the tag/
+	// digest-independent repo key, so this now exempts correctly.
+	d := t.TempDir()
+	f := filepath.Join(d, "statefulset.yaml")
+	doc := `kind: StatefulSet
+metadata:
+  name: heimdall
+  annotations:
+    gitops-ci.k8s.io/exempt-image-checksum: docker.io/linuxserver/heimdall
+spec:
+  template:
+    spec:
+      containers:
+      - name: heimdall
+        image: docker.io/linuxserver/heimdall:2.8.2
+`
+	if err := os.WriteFile(f, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
+	for _, fnd := range res.Findings {
+		if fnd.CheckID == "image-checksum" {
+			t.Errorf("expected the repo-level-exempted tagged image finding to be excluded, got %+v", fnd)
+		}
+	}
+	found := false
+	for _, ex := range res.Exempted {
+		if ex.CheckID == "image-checksum" && ex.Value == "docker.io/linuxserver/heimdall:2.8.2" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an audit-trail entry for the repo-level image-checksum exemption, got %+v", res.Exempted)
+	}
+
+	// A different repo must NOT be exempted by this same annotation - the
+	// alias match is anchored to the exact repo key, not a prefix/substring.
+	fOther := filepath.Join(d, "other.yaml")
+	docOther := `kind: StatefulSet
+metadata:
+  name: other
+  annotations:
+    gitops-ci.k8s.io/exempt-image-checksum: docker.io/linuxserver/heimdall
+spec:
+  template:
+    spec:
+      containers:
+      - name: other
+        image: docker.io/linuxserver/heimdall-extra:1.0
+`
+	if err := os.WriteFile(fOther, []byte(docOther), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resOther := runDocChecks([]string{fOther}, nil, nil, 1, nil)
+	stillFlagged := false
+	for _, fnd := range resOther.Findings {
+		if fnd.CheckID == "image-checksum" {
+			stillFlagged = true
+		}
+	}
+	if !stillFlagged {
+		t.Error("expected an unrelated repo sharing a name prefix to still be flagged, not exempted")
+	}
+}
+
+func TestRunDocChecks_ImageFQDNNotExemptable_AnnotationAndSelectorIgnored(t *testing.T) {
+	// image-fqdn is deliberately non-exemptable (see exempt.Exemptable),
+	// but check.Register unconditionally calls
+	// exempt.RegisterExemptable(c.ID()) for every registered check - this
+	// is a regression guard proving the hardcoded exception in
+	// exempt.Exemptable actually wins end-to-end through the real
+	// registration in this package's init(), for both an annotation and
+	// an EXEMPTIONS=(...) selector attempt.
+	if exempt.Exemptable("image-fqdn") {
+		t.Fatal("image-fqdn must not be exemptable after real check registration")
+	}
+
+	d := t.TempDir()
+	f := filepath.Join(d, "x.yaml")
+	doc := `kind: Deployment
+metadata:
+  name: d
+  annotations:
+    gitops-ci.k8s.io/exempt-image-fqdn: nginx:latest
+spec:
+  template:
+    spec:
+      containers:
+      - image: nginx:latest
+`
+	if err := os.WriteFile(f, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	selectors := []exempt.Selector{{Check: "image-fqdn", Value: "nginx:latest"}}
+	res := runDocChecks([]string{f}, nil, selectors, 1, nil)
+	found := false
+	for _, fnd := range res.Findings {
+		if fnd.CheckID == "image-fqdn" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected the image-fqdn finding to still fire despite a matching annotation and selector")
+	}
+	for _, ex := range res.Exempted {
+		if ex.CheckID == "image-fqdn" {
+			t.Errorf("expected no image-fqdn exemption to ever be recorded, got %+v", ex)
+		}
+	}
+}
+
 func TestFanOutExemption(t *testing.T) {
 	findings := []check.Finding{{CheckID: "namespace", File: "", Value: "skip-me"}}
 	selectors := []exempt.Selector{{Check: "namespace", Value: "skip-me"}}

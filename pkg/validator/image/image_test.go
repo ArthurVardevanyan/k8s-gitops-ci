@@ -23,6 +23,13 @@ func TestParseImageRef(t *testing.T) {
 		{"registry.io/repo@sha256:abc", "registry.io", "repo", "", "sha256:abc", "", false},
 		// explicit docker.io host is not bare.
 		{"docker.io/linuxserver/heimdall:2.8.2", "docker.io", "linuxserver/heimdall", "2.8.2", "", "", false},
+		// "localhost" is a valid explicit registry host per OCI/Docker
+		// reference rules even though it contains neither "." nor ":" -
+		// must not be misclassified as a bare shortname.
+		{"localhost/myapp:tag", "localhost", "myapp", "tag", "", "", false},
+		// localhost with an explicit port already worked via the ":" rule;
+		// kept here as a regression guard alongside the bare-localhost fix.
+		{"localhost:5000/myapp:v1", "localhost:5000", "myapp", "v1", "", "", false},
 		// Regression for change #3: a bare image with neither tag nor
 		// digest must leave Tag == "" (no more implicit "latest" default -
 		// the SHA-digest pinning enforcement never consulted Tag anyway).
@@ -44,11 +51,37 @@ func TestParseImageRef(t *testing.T) {
 	}
 }
 
+func TestRepoKey(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"docker.io/linuxserver/heimdall:2.8.2", "docker.io/linuxserver/heimdall"},
+		{"docker.io/linuxserver/heimdall:2.8.2@sha256:abc", "docker.io/linuxserver/heimdall"},
+		// bare shortname defaults to docker.io, so its key still carries
+		// that default registry.
+		{"nginx:latest", "docker.io/nginx"},
+		{"myregistry:5000/myimage:v1", "myregistry:5000/myimage"},
+		{"registry.io/repo@sha256:abc", "registry.io/repo"},
+	}
+	for _, c := range cases {
+		t.Run(c.raw, func(t *testing.T) {
+			if got := ParseImageRef(c.raw).RepoKey(); got != c.want {
+				t.Errorf("RepoKey(%q) = %q, want %q", c.raw, got, c.want)
+			}
+		})
+	}
+	if got := (*Ref)(nil).RepoKey(); got != "" {
+		t.Errorf("RepoKey() on nil Ref = %q, want empty", got)
+	}
+}
+
 func TestIsImageRef(t *testing.T) {
 	// Explicit-registry refs (including docker.io) are always enforced.
 	for _, raw := range []string{
 		"registry.io/alpine",
 		"docker.io/linuxserver/heimdall:2.8.2",
+		"localhost/myapp:tag",
 	} {
 		if !isImageRef(ParseImageRef(raw)) {
 			t.Errorf("isImageRef(%q) = false, want true", raw)
@@ -202,6 +235,9 @@ spec:
 	}
 	if errs[0].Image != "docker.io/linuxserver/heimdall:2.8.2" {
 		t.Errorf("unexpected image in finding: %q", errs[0].Image)
+	}
+	if errs[0].Repo != "docker.io/linuxserver/heimdall" {
+		t.Errorf("expected the finding's Repo to be the tag-independent repo key, got %q", errs[0].Repo)
 	}
 }
 

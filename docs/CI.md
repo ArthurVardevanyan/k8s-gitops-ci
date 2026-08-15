@@ -838,7 +838,18 @@ Non-builtin API-group resources carry the ArgoCD
 Every OCI image reference is pinned to a `sha256:` digest, not just a
 tag. This includes images referenced indirectly as OCI image-volume
 sources (e.g. Tekton's `spec.volumes[].image.reference`), not only
-container `image:` values.
+container `image:` values. A reference is parsed with an explicit
+registry host, e.g. `docker.io/linuxserver/heimdall:2.8.2` (its own
+`docker.io` prefix included) - only a bare shortname is treated as an
+implicit `docker.io` default.
+
+Exemptable via `gitops-ci.k8s.io/exempt-image-checksum` (or an
+`EXEMPTIONS=(...)` selector): the annotation value may be the exact
+tagged/digested reference, **or** just the `registry/repo` with no
+tag/digest (e.g. `docker.io/linuxserver/heimdall`), which then exempts
+every tag/digest of that repo - so the exemption survives a Renovate
+tag bump instead of needing to be updated every time. See
+[EXEMPTIONS.md](EXEMPTIONS.md#1-annotation-exemption).
 
 - **Package:** `pkg/validator/image`
 - **Scope:** Doc
@@ -850,6 +861,14 @@ A bare shortname such as `nginx:latest` or `alpine` is flagged because its
 registry would otherwise be silently defaulted at resolve time. GCP Compute
 Engine resource self-links (e.g. a disk image reference captured under an
 `image:`-named key) are not container images and are not reported.
+
+Unlike `image-checksum`, `image-fqdn` is **not exemptable** by either
+annotation or `EXEMPTIONS=(...)` selector (see
+[EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids)) - an unqualified
+image reference is almost always a mistake, and a genuine structural
+exception (e.g. an OpenShift ImageStream-triggered bare reference) should
+get a targeted skip in the check itself rather than a manual escape
+hatch.
 
 - **Package:** `pkg/validator/image`
 - **Scope:** Doc

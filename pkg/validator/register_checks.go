@@ -236,13 +236,22 @@ func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
 	errs := image.ValidateBytesRaw(data, source)
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
-		out = append(out, check.Finding{
+		f := check.Finding{
 			CheckID: "image-checksum", File: e.File,
 			Kind: e.Kind, Name: e.Name,
 			Value:       e.Image,
 			Message:     e.Message,
 			Annotations: e.Annotations,
-		})
+		}
+		// Repo is the tag/digest-independent "registry/repo" key, so an
+		// annotation naming just the repo (e.g.
+		// "docker.io/linuxserver/heimdall") exempts every tag/digest of
+		// it, surviving a Renovate tag bump, while the exact tagged/
+		// digested reference still matches too.
+		if e.Repo != "" && e.Repo != e.Image {
+			f.MatchAliases = []string{e.Repo}
+		}
+		out = append(out, f)
 	}
 	return out
 }
