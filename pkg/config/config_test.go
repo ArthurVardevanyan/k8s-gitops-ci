@@ -88,8 +88,15 @@ func TestSortConfigs_MissingDir(t *testing.T) {
 }
 
 func TestFormatUnsortedError(t *testing.T) {
-	s := FormatUnsortedError([]string{"a.yaml", "b.yaml"})
+	s := FormatUnsortedError([]string{"a.yaml", "b.yaml"}, "")
 	if s == "" || !strings.Contains(s, "sort-configs") {
 		t.Fatalf("unexpected formatted error: %q", s)
+	}
+	if !strings.Contains(s, "k8s-gitops-ci sort-configs") {
+		t.Fatalf("expected default binary in hint, got: %q", s)
+	}
+	custom := FormatUnsortedError([]string{"a.yaml"}, "my-gitops-ci")
+	if !strings.Contains(custom, "my-gitops-ci sort-configs") {
+		t.Fatalf("expected branded binary in hint, got: %q", custom)
 	}
 }

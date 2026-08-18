@@ -185,7 +185,7 @@ func TestFixHints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := fixHints(tt.findings)
+			got := fixHints(tt.findings, "")
 			if len(got) != len(tt.want) {
 				t.Fatalf("fixHints() = %v, want %v", got, tt.want)
 			}
@@ -195,6 +195,31 @@ func TestFixHints(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestFixHints_WithCustomBinaryName verifies that supplying a branded binary
+// name expands the "{bin}" placeholder in every in-binary fix hint.
+func TestFixHints_WithCustomBinaryName(t *testing.T) {
+	t.Parallel()
+	findings := []LintFinding{
+		{Check: "config-sort"},
+		{Check: "kustomize fix", Files: []string{"app/base/kustomization.yaml"}},
+		{Check: "scaffold table"},
+	}
+	got := fixHints(findings, "my-gitops-ci")
+	want := []string{
+		"my-gitops-ci sort-configs",
+		"my-gitops-ci kustomize-fix -dir app/base/kustomization.yaml",
+		"my-gitops-ci update-scaffold-status",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("fixHints() = %v, want %v", got, want)
+	}
+	for i, h := range got {
+		if h != want[i] {
+			t.Errorf("fixHints()[%d] = %q, want %q", i, h, want[i])
+		}
 	}
 }
 
@@ -228,7 +253,7 @@ func TestFixHints_EveryHintedCommandIsARegisteredSubcommand(t *testing.T) {
 		if len(fields) < 2 {
 			t.Fatalf("check %q: unexpected command shape %q", check, hint.command)
 		}
-		if fields[0] != "k8s-gitops-ci" {
+		if fields[0] != "{bin}" {
 			// Third-party tool (e.g. "prettier", "markdownlint") - not this
 			// binary's own subcommand list, nothing to verify here.
 			continue

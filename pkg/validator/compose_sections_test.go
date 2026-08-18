@@ -193,7 +193,7 @@ func TestComposePRChecksSectionFromResult_DefaultMessages(t *testing.T) {
 func TestComposeLintingSection(t *testing.T) {
 	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "golangci", Status: StatusError}}
-	s := ComposeLintingSection(outcomes, map[string]string{"golangci": "issues"})
+	s := ComposeLintingSection(outcomes, map[string]string{"golangci": "issues"}, "")
 	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
@@ -211,7 +211,7 @@ func TestComposeLintingSection_AllPassedStillShowsFullBreakdown(t *testing.T) {
 		{Name: "golangci", Status: StatusPassed},
 		{Name: "kubeconform", Status: StatusPassed},
 	}
-	s := ComposeLintingSection(outcomes, map[string]string{})
+	s := ComposeLintingSection(outcomes, map[string]string{}, "")
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
@@ -230,7 +230,7 @@ func TestComposeLintingSection_MissingOutcomeRendersAsNotRun(t *testing.T) {
 	// No outcomes recorded at all (e.g. lint phase didn't run) - every check
 	// must still render, as a non-failing "Not run." child, rather than
 	// silently vanishing from the report.
-	s := ComposeLintingSection(nil, map[string]string{})
+	s := ComposeLintingSection(nil, map[string]string{}, "")
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
@@ -241,7 +241,7 @@ func TestComposeLintingSection_MissingOutcomeRendersAsNotRun(t *testing.T) {
 
 func TestComposeStaticChecksSection(t *testing.T) {
 	t.Parallel()
-	s := ComposeStaticChecksSection(nil, map[string]string{})
+	s := ComposeStaticChecksSection(nil, map[string]string{}, "")
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
@@ -250,7 +250,7 @@ func TestComposeStaticChecksSection(t *testing.T) {
 func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
 	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "config-sort", Status: StatusError}}
-	s := ComposeStaticChecksSection(outcomes, map[string]string{"config-sort": "some.yaml is unsorted"})
+	s := ComposeStaticChecksSection(outcomes, map[string]string{"config-sort": "some.yaml is unsorted"}, "")
 	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
@@ -268,7 +268,7 @@ func TestComposeStaticChecksSection_FailureIncludesFixHint(t *testing.T) {
 func TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint(t *testing.T) {
 	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusError}}
-	s := ComposeStaticChecksSection(outcomes, map[string]string{"scaffold table": "stale entries no longer on disk: myapp/removed"})
+	s := ComposeStaticChecksSection(outcomes, map[string]string{"scaffold table": "stale entries no longer on disk: myapp/removed"}, "")
 	if s.Status != StatusError {
 		t.Errorf("expected error section")
 	}
@@ -288,7 +288,7 @@ func TestComposeStaticChecksSection_ScaffoldTableFailureIncludesFixHint(t *testi
 func TestComposeStaticChecksSection_ScaffoldTableDisabledByDefault(t *testing.T) {
 	t.Parallel()
 	outcomes := []CheckOutcome{{Name: "scaffold table", Status: StatusPassed, Skipped: true, Note: "Disabled."}}
-	s := ComposeStaticChecksSection(outcomes, map[string]string{})
+	s := ComposeStaticChecksSection(outcomes, map[string]string{}, "")
 	if s.Status == StatusError {
 		t.Errorf("expected no error section")
 	}
