@@ -67,7 +67,7 @@ func TestSanitizeCell(t *testing.T) {
 
 func TestComposeKustomizeBuildSection_NoErrors(t *testing.T) {
 	t.Parallel()
-	s := ComposeKustomizeBuildSection(3, nil, "", false, nil, nil, true, "", 0)
+	s := ComposeKustomizeBuildSection(3, nil, "", false, nil, nil, true, "", 0, "")
 	if s.Status != StatusPassed {
 		t.Errorf("expected StatusPassed, got %v", s.Status)
 	}
@@ -82,7 +82,7 @@ func TestComposeKustomizeBuildSection_GroupsBuildErrorsByRootCause(t *testing.T)
 		"kustomize build app/overlays/a: accumulating components: no such file or directory",
 		"kustomize build app/overlays/b: accumulating components: no such file or directory",
 	}
-	s := ComposeKustomizeBuildSection(2, buildErrs, "", false, nil, nil, true, "", 0)
+	s := ComposeKustomizeBuildSection(2, buildErrs, "", false, nil, nil, true, "", 0, "")
 	if s.Status != StatusError {
 		t.Error("expected an error section")
 	}
@@ -95,7 +95,7 @@ func TestComposeKustomizeBuildSection_HookTable(t *testing.T) {
 	t.Parallel()
 	hookTable := "| App | PRE_BUILD |\n| --- | --- |\n| `app` | ✅ defined |"
 
-	passed := ComposeKustomizeBuildSection(1, nil, hookTable, false, nil, nil, true, "", 0)
+	passed := ComposeKustomizeBuildSection(1, nil, hookTable, false, nil, nil, true, "", 0, "")
 	if passed.Status != StatusPassed {
 		t.Errorf("expected a passing hook table not to mark the section as an error, got %v", passed.Status)
 	}
@@ -106,7 +106,7 @@ func TestComposeKustomizeBuildSection_HookTable(t *testing.T) {
 		t.Errorf("expected the hook table to render, got:\n%s", passed.Body)
 	}
 
-	failed := ComposeKustomizeBuildSection(1, nil, hookTable, true, nil, nil, true, "", 0)
+	failed := ComposeKustomizeBuildSection(1, nil, hookTable, true, nil, nil, true, "", 0, "")
 	if failed.Status != StatusError {
 		t.Error("expected a failing hook to mark the section as an error")
 	}
@@ -128,7 +128,7 @@ func TestComposeKustomizeBuildSection_KustomizeFix(t *testing.T) {
 		"okd/okd-configuration/overlays/sandbox/kustomization.yaml",
 		"okd/okd-configuration/overlays/prod/kustomization.yaml",
 	}
-	s := ComposeKustomizeBuildSection(2, nil, "", false, fixNeeded, nil, true, "", 0)
+	s := ComposeKustomizeBuildSection(2, nil, "", false, fixNeeded, nil, true, "", 0, "")
 	if s.Status != StatusError {
 		t.Error("expected a Kustomize Fix finding to mark the section as an error")
 	}
@@ -153,7 +153,7 @@ func TestComposeKustomizeBuildSection_KustomizeFix(t *testing.T) {
 // never actually ran would be worse than surfacing the failure.
 func TestComposeKustomizeBuildSection_KustomizeFixCheckError(t *testing.T) {
 	t.Parallel()
-	s := ComposeKustomizeBuildSection(1, nil, "", false, nil, errors.New("kustomize not found in PATH"), true, "", 0)
+	s := ComposeKustomizeBuildSection(1, nil, "", false, nil, errors.New("kustomize not found in PATH"), true, "", 0, "")
 	if s.Status != StatusError {
 		t.Error("expected a CheckFix failure to mark the section as an error")
 	}
@@ -171,7 +171,7 @@ func TestComposeKustomizeBuildSection_KustomizeFixCheckError(t *testing.T) {
 // check never actually ran, so it must not claim a clean bill of health.
 func TestComposeKustomizeBuildSection_KustomizeFixDisabled(t *testing.T) {
 	t.Parallel()
-	s := ComposeKustomizeBuildSection(1, nil, "", false, nil, nil, false, "", 0)
+	s := ComposeKustomizeBuildSection(1, nil, "", false, nil, nil, false, "", 0, "")
 	if s.Status == StatusError {
 		t.Error("expected a disabled check not to mark the section as an error")
 	}
@@ -197,7 +197,7 @@ func TestComposeKustomizeBuildSection_GhostPatches(t *testing.T) {
 	// Non-blocking (warning-only) ghost: no blocking rows, so this must
 	// roll the parent up to StatusWarning, not StatusError (and not stay
 	// StatusPassed either, which would hide it entirely).
-	warn := ComposeKustomizeBuildSection(1, nil, "", false, nil, nil, true, ghostTable, 0)
+	warn := ComposeKustomizeBuildSection(1, nil, "", false, nil, nil, true, ghostTable, 0, "")
 	if warn.Status != StatusWarning {
 		t.Errorf("expected a non-blocking-only ghost patch to roll the section up to StatusWarning, got %v", warn.Status)
 	}
@@ -209,7 +209,7 @@ func TestComposeKustomizeBuildSection_GhostPatches(t *testing.T) {
 	}
 
 	// Blocking ghost: must fail the section and show ❌.
-	blocking := ComposeKustomizeBuildSection(1, nil, "", false, nil, nil, true, ghostTable, 1)
+	blocking := ComposeKustomizeBuildSection(1, nil, "", false, nil, nil, true, ghostTable, 1, "")
 	if blocking.Status != StatusError {
 		t.Error("expected a blocking ghost patch to mark the section as an error")
 	}

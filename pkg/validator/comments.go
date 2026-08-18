@@ -5,7 +5,15 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 )
+
+// defaultProviderBinary returns the configured binary name, falling back to
+// the provider package's own default when no branding override is set.
+func defaultProviderBinary() string {
+	return provider.Providers{}.BinaryName()
+}
 
 // LintFinding records a single lint/static-check finding: which check
 // produced it and which file(s) it applies to. fixHints uses this to
@@ -99,7 +107,8 @@ func formatBuildErrors(sb *strings.Builder, groups []buildErrorGroup) {
 
 // lintFixHint describes an actionable fix command for a lint/static check.
 type lintFixHint struct {
-	command string // command template ("%s" substitutes the file list, or static)
+	command string // command template ("%s" substitutes the file list, "{}" the binary, or static)
+	binary  bool   // whether the leading "{bin}" placeholder is present for the invoked executable
 }
 
 // hintByCheck maps a check name (matching LintFinding.Check, and the keys
@@ -108,21 +117,31 @@ type lintFixHint struct {
 // cmd/k8s-gitops-ci/main.go) or a real third-party CLI this repo already
 // wraps - no hint is added for a command that doesn't exist.
 var hintByCheck = map[string]lintFixHint{
-	"config-sort":    {command: "k8s-gitops-ci sort-configs"},
-	"kustomize fix":  {command: "k8s-gitops-ci kustomize-fix -dir %s"},
+	"config-sort":    {command: "{bin} sort-configs", binary: true},
+	"kustomize fix":  {command: "{bin} kustomize-fix -dir %s", binary: true},
 	"prettier":       {command: "prettier --write %s"},
 	"markdownlint":   {command: "markdownlint %s"},
-	"scaffold table": {command: "k8s-gitops-ci update-scaffold-status"},
+	"scaffold table": {command: "{bin} update-scaffold-status", binary: true},
 }
 
 // fixHints returns actionable fix commands for the given lint findings,
-// keyed by their Check field. Findings with files produce file-specific
-// commands; findings without files fall back to a "<file>" placeholder.
-// Findings for checks with no known fix command (e.g. "shellcheck",
-// "golangci-lint" - there's no single mechanical fix for those) are skipped.
-// Order is preserved (first-seen), and repeated identical hints are
-// deduplicated.
-func fixHints(findings []LintFinding) []string {
+// keyed by their Check field. binaryName is the invoked executable name used
+// to expand any "{bin}" placeholder; when empty it falls back to the default
+// binary name. Findings with files produce file-specific commands; findings
+// without files fall back to a "<file>" placeholder. Findings for checks with
+// no known fix command (e.g. "shellcheck", "golangci-lint" - there's no single
+// mechanical fix for those) are skipped. Order is preserved (first-seen), and
+// repeated identical hints are deduplicated.
+func fixHints(findings []LintFinding, binaryName string) []string {
+	if binaryName == "" {
+		binaryName = defaultProviderBinary()
+	}
+	bin := func(h lintFixHint) string {
+		if !h.binary {
+			return h.command
+		}
+		return strings.ReplaceAll(h.command, "{bin}", binaryName)
+	}
 	var hints []string
 	seen := map[string]bool{}
 	for _, f := range findings {
@@ -130,14 +149,15 @@ func fixHints(findings []LintFinding) []string {
 		if !ok {
 			continue
 		}
+		command := bin(h)
 		var hint string
 		switch {
-		case len(f.Files) > 0 && strings.Contains(h.command, "%s"):
-			hint = fmt.Sprintf(h.command, strings.Join(f.Files, " "))
-		case strings.Contains(h.command, "%s"):
-			hint = strings.ReplaceAll(h.command, "%s", "<file>")
+		case len(f.Files) > 0 && strings.Contains(command, "%s"):
+			hint = fmt.Sprintf(command, strings.Join(f.Files, " "))
+		case strings.Contains(command, "%s"):
+			hint = strings.ReplaceAll(command, "%s", "<file>")
 		default:
-			hint = h.command
+			hint = command
 		}
 		if !seen[hint] {
 			hints = append(hints, hint)

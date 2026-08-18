@@ -184,12 +184,12 @@ func displayName(name string) string {
 // fixHints can generate for that check. A missing outcome (the check didn't
 // run at all, e.g. disabled) renders as a non-failing "Not run" child
 // instead of silently vanishing from the report.
-func composeCheckChild(rawName string, outcomes map[string]CheckOutcome, reports map[string]string) ReportSection {
+func composeCheckChild(rawName string, outcomes map[string]CheckOutcome, reports map[string]string, binaryName string) ReportSection {
 	display := displayName(rawName)
 	if report := reports[rawName]; report != "" {
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "```\n%s\n```\n", strings.TrimSpace(truncateDetails(report, 4000)))
-		if hints := fixHints([]LintFinding{{Check: rawName}}); len(hints) > 0 {
+		if hints := fixHints([]LintFinding{{Check: rawName}}, binaryName); len(hints) > 0 {
 			sb.WriteString("\n**Fix command:**\n")
 			for _, h := range hints {
 				fmt.Fprintf(&sb, "- `%s`\n", h)
@@ -236,7 +236,7 @@ func composeParentFromChildren(name string, children []ReportSection) ReportSect
 // (driven by outcomes), so the full breakdown is visible even when
 // everything passed - not just a flat bullet list that disappears once a
 // check is clean.
-func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string) ReportSection {
+func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string, binaryName string) ReportSection {
 	byName := make(map[string]CheckOutcome, len(outcomes))
 	for _, o := range outcomes {
 		byName[o.Name] = o
@@ -244,7 +244,7 @@ func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string) R
 	order := []string{"markdownlint", "prettier", "shellcheck", "golangci", "kubeconform"}
 	children := make([]ReportSection, 0, len(order))
 	for _, name := range order {
-		children = append(children, composeCheckChild(name, byName, reports))
+		children = append(children, composeCheckChild(name, byName, reports, binaryName))
 	}
 	return composeParentFromChildren("Linting", children)
 }
@@ -252,7 +252,7 @@ func ComposeLintingSection(outcomes []CheckOutcome, reports map[string]string) R
 // ComposeStaticChecksSection renders the Static Checks section the same way
 // ComposeLintingSection does: every check always shown as its own nested
 // sub-dropdown, driven by outcomes.
-func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]string) ReportSection {
+func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]string, binaryName string) ReportSection {
 	byName := make(map[string]CheckOutcome, len(outcomes))
 	for _, o := range outcomes {
 		byName[o.Name] = o
@@ -260,7 +260,7 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 	order := []string{"large-file", "YAML-syntax", "config-sort", "startingCSV", "scaffold table"}
 	children := make([]ReportSection, 0, len(order))
 	for _, name := range order {
-		children = append(children, composeCheckChild(name, byName, reports))
+		children = append(children, composeCheckChild(name, byName, reports, binaryName))
 	}
 	return composeParentFromChildren("Static Checks", children)
 }
@@ -655,11 +655,11 @@ func renderAcceptedExemptions(b *strings.Builder, exemptions []exempt.Applied) {
 // the *worst* child status: a non-blocking-only Ghost Patches finding rolls
 // the parent up to ⚠️, not plain ✅ (which would hide it) or ❌ (which would
 // overstate it) - see docs/CI.md's "Ghost Patch Detection".
-func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, hookFailed bool, fixNeeded []string, fixCheckErr error, fixCheckEnabled bool, ghostTable string, ghostBlockingCount int) ReportSection {
+func ComposeKustomizeBuildSection(overlayCount int, buildErrs []string, hookTable string, hookFailed bool, fixNeeded []string, fixCheckErr error, fixCheckEnabled bool, ghostTable string, ghostBlockingCount int, binaryName string) ReportSection {
 	children := []ReportSection{
 		composeOverlayBuildChild(overlayCount, buildErrs),
 		composeHooksChild(hookTable, hookFailed),
-		composeKustomizeFixChild(fixNeeded, fixCheckErr, fixCheckEnabled),
+		composeKustomizeFixChild(fixNeeded, fixCheckErr, fixCheckEnabled, binaryName),
 		composeGhostPatchesChild(ghostTable, ghostBlockingCount),
 	}
 	return composeParentFromChildren("Kustomize Build", children)
@@ -727,7 +727,7 @@ func composeHooksChild(hookTable string, hookFailed bool) ReportSection {
 // "Disabled." summary matching the same convention golangci/scaffold
 // table use, rather than a misleading "up to date" nothing actually
 // checked.
-func composeKustomizeFixChild(fixNeeded []string, checkErr error, enabled bool) ReportSection {
+func composeKustomizeFixChild(fixNeeded []string, checkErr error, enabled bool, binaryName string) ReportSection {
 	if !enabled {
 		return ReportSection{Name: "Kustomize Fix", Status: StatusPassed, Summary: "Disabled."}
 	}
@@ -736,6 +736,9 @@ func composeKustomizeFixChild(fixNeeded []string, checkErr error, enabled bool) 
 	}
 	if len(fixNeeded) == 0 {
 		return ReportSection{Name: "Kustomize Fix", Status: StatusPassed, Summary: "All kustomization.yaml files are up to date."}
+	}
+	if binaryName == "" {
+		binaryName = defaultProviderBinary()
 	}
 	var b strings.Builder
 	b.WriteString("The following files need `kustomize edit fix --vars`:\n\n")
@@ -750,7 +753,7 @@ func composeKustomizeFixChild(fixNeeded []string, checkErr error, enabled bool) 
 			continue
 		}
 		seenDir[dir] = true
-		fmt.Fprintf(&b, "- `k8s-gitops-ci kustomize-fix -dir %s`\n", dir)
+		fmt.Fprintf(&b, "- `%s kustomize-fix -dir %s`\n", binaryName, dir)
 	}
 	return ReportSection{Name: "Kustomize Fix", Status: StatusError, Body: b.String()}
 }
