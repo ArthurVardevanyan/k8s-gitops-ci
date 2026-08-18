@@ -2,22 +2,61 @@
 name: exemptions
 description: >
   How to add, scope, and audit CI exemptions in this repository.
-  Activate when asked to exempt a check, suppress a finding, or add a
-  test.sh EXEMPTIONS block.
+  Activate when asked to exempt a check, suppress a finding, make a CI
+  check pass, or add a test.sh EXEMPTIONS block.
 ---
 
 # Exemption Handling Skill
 
 Full reference: [`docs/EXEMPTIONS.md`](../../../docs/EXEMPTIONS.md) and
-[`docs/HOOKS.md`](../../../docs/HOOKS.md). This skill is a decision-oriented
-quick-reference — read the docs for authoritative detail.
+[`docs/HOOKS.md`](../../../docs/HOOKS.md). This skill is a self-contained
+decision guide — the docs are for deep dives only.
+
+**Prefer annotation when possible** — it ships with the PR so it takes
+effect immediately without the PR trust-model gotcha. Use `EXEMPTIONS=(...)`
+only when: the check doesn't support annotation mode, the resource is
+outside the repo, or you need to exempt a whole directory.
 
 ## Pick the right mode
 
-| Situation                                                                                   | Use                             |
-| ------------------------------------------------------------------------------------------- | ------------------------------- |
-| You control the manifest and want a single-resource exemption visible next to the field     | Annotation on the resource      |
-| Exempting every file in a directory, a resource you don't control, or a non-Kubernetes YAML | `EXEMPTIONS=(...)` in `test.sh` |
+| Situation                                                                                   | Use                             | Visible in your own PR run?           |
+| ------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------- |
+| You control the manifest and want a single-resource exemption visible next to the field     | Annotation on the resource      | Yes (ships with the PR)               |
+| Exempting every file in a directory, a resource you don't control, or a non-Kubernetes YAML | `EXEMPTIONS=(...)` in `test.sh` | Only after merge, or via `/hook-test` |
+
+## Complete table of exemptable check IDs
+
+Every check registered via `check.Register` (`namespace`, `psa-labels`,
+`rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`, `image-checksum`,
+`named-ports`, `podspec-defaults`, `placeholder`) becomes exemptable via
+the **selector** mode automatically (under its own ID). `cluster-identity`
+is also registered but is **deliberately non-exemptable** (infraID mismatch,
+invalid JSON — structural findings that should not be waved away).
+Annotation-mode support is separate: a check only honors
+`gitops-ci.k8s.io/exempt-<id>` if it sets both `Finding.Value` **and**
+`Finding.Annotations` on its findings (see [Value vs. Token](../../../docs/EXEMPTIONS.md#value-vs-token)).
+
+| ID                 | Annotation mode? | What the annotation or `value=` must equal                                  |
+| ------------------ | ---------------- | --------------------------------------------------------------------------- |
+| `image-checksum`   | yes              | The exact image reference (report's `Image` column)                         |
+| `cluster-name`     | yes              | The foreign cluster-name token (report's `Value` column)                    |
+| `project-ref`      | yes              | The foreign project number or project ID                                    |
+| `rbac-wildcards`   | yes              | The wildcarded rule field (`verbs`/`resources`/`apiGroups`)                 |
+| `named-ports`      | yes              | The numeric port as a string                                                |
+| `podspec-defaults` | yes              | The joined missing-fields list (e.g. `securityContext, resources.requests`) |
+| `namespace`        | no               | — (selector-only: `kind`/`name`/`file`)                                     |
+| `psa-labels`       | no               | — (selector-only)                                                           |
+| `rbac-readonly`    | no               | — (selector-only)                                                           |
+| `crb`              | no               | — (selector-only)                                                           |
+| `sync-options`     | no               | — (selector-only: `kind`/`name`/`file`)                                     |
+| `placeholder`      | no               | — (selector-only; `value=`/`match=` match the flagged token)                |
+| `kubeconform`      | no               | — (file-level only: `file=`)                                                |
+| `cluster-identity` | **never**        | Deliberately non-exemptable (infraID mismatch, invalid JSON)                |
+
+**NAD validation** (`pkg/validator/nad`) is not part of the `check.Register`
+framework at all — hard-error NAD findings are never exemptable.
+`cluster-identity` is a deliberately non-exemptable structural bucket;
+never attempt to exempt it.
 
 ## Annotation exemption
 
@@ -29,26 +68,49 @@ metadata:
     gitops-ci.k8s.io/exempt-<check-id>: "<value>"
 ```
 
-`<value>` must exactly match the finding's `Value` (or `Token` when the
-check sets one — see [Value vs. Token](../../../docs/EXEMPTIONS.md#value-vs-token)).
+`<value>` must exactly match the entry's "what it must equal" column above.
+`exempt.Accepts` fails closed: an empty annotation value, or no annotations
+at all, never matches — even against an empty-valued finding.
 
 ## `EXEMPTIONS=(...)` in `test.sh`
 
 ### Syntax
 
+Use the **multi-line array form only**. Each quoted line is **one entry**;
+the `key=value` pairs within the line are comma-separated:
+
 ```sh
 export EXEMPTIONS=(
-  "check=<id>,file=<path-suffix>"
-  "check=<id>,kind=<Kind>,name=<name>"
+  "check=image-checksum,value=registry.example.com/app:latest"
+  "check=sync-options,kind=ArgoCD,name=my-argocd-instance"
 )
 ```
 
-Each entry is a comma-separated set of `key=value` pairs. `check=` is
-required; all other keys are optional narrowing filters. Quote each entry.
-`export` prefix is supported and recommended. See the
-[selector reference](../../../docs/EXEMPTIONS.md#selector-reference) for all
-available keys (`file`, `kind`, `name`, `namespace`, `match`, `value`,
-`path`).
+**Never use** `EXEMPTIONS="check=x,file=y"` (single-line, multi-key form):
+the parser (`parseExemptionSingle`) splits on commas into **entries**, not
+keys — this produces a wide-open `check=x` selector (exempts the entire
+check for the whole run) **plus** a blocking "missing check" error for
+`file=y`. Only single-key single-line entries work (`EXEMPTIONS="check=sync-options"`).
+
+**`dir=` is not a recognized key** in `EXEMPTIONS=(...)`. Writing
+`dir=...` is a blocking "unknown exemption key" error. Use per-file
+`file=` entries or a shared-parent `test.sh` to cover directories.
+
+### Selector key semantics
+
+| Key          | Match                                                                                               |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `check=`     | Required — the check ID this selector exempts                                                       |
+| `file=`      | Exact basename, **or** suffix match with `/` prepended (the selector value must NOT start with `/`) |
+| `kind=`      | Exact match                                                                                         |
+| `name=`      | Exact match                                                                                         |
+| `namespace=` | Exact match                                                                                         |
+| `value=`     | Exact match against the finding's `Value`/`Token`                                                   |
+| `match=`     | Substring match against the finding's `Value`/`Token`                                               |
+| `path=`      | Suffix-aligned dot/bracket path; `[]` wildcards the index, `[N]` pins it                            |
+
+Selectors are merged **flatly across all apps** in a run, not scoped to the
+app that declared them — keep selectors narrow.
 
 ### Where to put `test.sh`
 
@@ -62,29 +124,50 @@ Resolution walks upward from a changed file's own directory toward the
 repository root during the Linting phase (`resolveNonAppHookConfigs`),
 stopping at the **nearest ancestor that declares a `test.sh`**
 (closest-match-wins — like `.gitignore`/`.editorconfig` cascading, not a
-merge across ancestors). This means **one `test.sh` at a shared parent
-directory can cover multiple non-app subdirectories** that have no
-`test.sh` of their own — you don't need a `test.sh` in every leaf
-directory. If a subdirectory has its own `test.sh`, that one applies
-instead and the parent's is never consulted for those files. Only
-`check=kubeconform` selectors take effect from non-app `test.sh` files
-today.
+merge across ancestors). Only `check=kubeconform` selectors take effect
+from non-app `test.sh` files today.
 
-### Exemptable check IDs
+**PR runs read `test.sh` from main** — `SourceMain` is the default for
+pull_request events. A new `EXEMPTIONS` entry added in the PR has no
+effect on the PR's own CI run until it merges, or until you trigger
+SourcePR via a `/hook-test` comment. Annotation exemptions are unaffected
+because they ship with the manifest in the PR.
 
-See the full table in
-[`docs/EXEMPTIONS.md#exemptable-check-ids`](../../../docs/EXEMPTIONS.md#exemptable-check-ids).
-Commonly used IDs:
+### Built-in Tekton-PaC exemption
 
-| ID               | When to use                                                                 |
-| ---------------- | --------------------------------------------------------------------------- |
-| `sync-options`   | Resource in a non-builtin API group that ArgoCD manages without dry-run     |
-| `image-checksum` | Image that cannot be pinned to a digest (e.g. `:latest` by upstream design) |
-| `kubeconform`    | Non-Kubernetes YAML (no `kind`/`apiVersion`) in a directory under `--dirs`  |
-| `namespace`      | Cluster-scoped resource that a check misclassifies as namespace-scoped      |
+`PipelineRun` resources under a `.tekton/` directory are **already exempt**
+from `sync-options`/`namespace` by default (built-in selectors in
+`pkg/validator/tekton_exemptions.go`). You do not need a `test.sh` for this.
+To disable the default, set `validator.TektonPACDir = ""` at process startup.
 
-`cluster-identity` is deliberately **non-exemptable** — never attempt to
-exempt it.
+## What the finding's `File` actually is
+
+This is the most common reason exemptions "don't work." All resource-compliance
+doc-checks are **render-sensitive**: for files composed into a rendered overlay,
+the finding's `File` is the **overlay directory** (e.g.
+`apps/foo/overlays/prod`), **not** the raw source manifest (`base/deployment.yaml`).
+
+**What to do:** read `Kind`/`Name`/`Image`/`Value` straight off the
+failing report row, and build the selector from those columns. Prefer
+`value=` (exact match on the image, cluster name, port, etc.) or
+`kind=`+`name=` (resource identity) for rendered-path findings. Using
+`file=` on an overlay basename (e.g. `file=prod`) is fragile — many
+overlays share the same name and the selector is merged across all apps.
+
+## Verify locally
+
+1. Build: `task build` (in this repo) → `bin/k8s-gitops-ci`.
+2. In the GitOps repo being fixed, run one of:
+   - `bin/k8s-gitops-ci scan-all` — uncommitted working-tree diff (fastest iteration)
+   - `bin/k8s-gitops-ci test-all <changed-dir>` — full tree walk under a directory
+   - `bin/k8s-gitops-ci build-yaml --app <app> --cluster <cluster>` — single app/overlay
+   - Append `--lint-only` to skip build checks, `--verbose` for details.
+3. Local runs **automatically resolve test.sh from the working tree** (`SourceLocal`)
+   — no flag needed. Annotation exemptions are always visible because they
+   ship with the manifest.
+4. Success: the failed row disappears, the "Accepted Exemptions" block lists
+   the applied exemption (except kubeconform, which is silent), and the
+   process exits 0.
 
 ## Common patterns
 
@@ -112,18 +195,21 @@ export EXEMPTIONS=(
 
 ### Exempt an image from digest pinning
 
-In the app's `test.sh`, or as an annotation on the resource:
-
-```sh
-export EXEMPTIONS=(
-  "check=image-checksum,file=<app>/base/deployment.yaml"
-)
-```
-
-Or annotation (scoped to the exact image on that resource only):
+**Using an annotation** (recommended for single-resource exemptions):
 
 ```yaml
 gitops-ci.k8s.io/exempt-image-checksum: "registry.example.com/app:latest"
+```
+
+The value is the exact image reference from the report's `Image` column.
+
+**Using EXEMPTIONS selector** (e.g. for images across many resources):
+
+```sh
+# Prefer value= for rendered-path findings (see "What the finding's File actually is")
+export EXEMPTIONS=(
+  "check=image-checksum,value=registry.example.com/app:latest"
+)
 ```
 
 ### Exempt a CRD-backed resource from sync-options
@@ -134,13 +220,33 @@ export EXEMPTIONS=(
 )
 ```
 
+## Things that can't be exempted / when exemptions are the wrong tool
+
+- **`cluster-identity`** — deliberately non-exemptable (infraID mismatch,
+  invalid JSON). These are structural findings about malformed data.
+- **NAD hard errors** — outside the `check.Register` framework; never exemptable.
+- **`--disable-checks <id>`** — disables an entire check across the whole
+  run. This is a different mechanism from exemptions. Use it when an
+  environment genuinely can't provision a given tool (a missing lint tool
+  means the pipeline didn't actually check what it claims to have checked).
+  Each check/step has a string ID for this mechanism (`DisabledChecks`/
+  `EnabledChecks` in `Options`).
+
 ## Verification checklist
 
-- [ ] Selector is as narrow as possible (prefer `file=path/to/file.yaml`
-      over bare `file=filename.yaml` to avoid basename collisions).
-- [ ] `check=` value is a valid exemptable ID (confirm in
-      [`docs/EXEMPTIONS.md`](../../../docs/EXEMPTIONS.md#exemptable-check-ids)).
+- [ ] Selector is as narrow as possible (`value=` or `kind=`+`name=`
+      preferred for rendered-path findings; `file=` on overlay basenames
+      is fragile because selectors merge across all apps).
+- [ ] `check=` value is one of the IDs in the full table above (not
+      `cluster-identity` or a NAD error).
 - [ ] Entry is quoted; `export` prefix present.
-- [ ] A malformed entry causes a **blocking build error** — run the
-      pipeline locally to confirm the entry parses cleanly before merging.
-- [ ] Exemption is documented with an inline comment explaining why.
+- [ ] Multi-line array form used — never `EXEMPTIONS="check=x,file=y"`
+      (comma-splitting produces a wide-open selector + blocking error).
+- [ ] `dir=` not used (blocking "unknown exemption key" error).
+- [ ] Annotation value copied verbatim from the report row (check the
+      `Image`/`Value` column of the failed row).
+- [ ] Local verification done: `task build` then `scan-all` or `test-all <dir>`
+      (local runs auto-resolve `test.sh` from the working tree — no flag
+      needed). PR runs use `SourceMain`; test PR-branch `test.sh` via
+      `/hook-test` or after merge.
+- [ ] Exemption documented with an inline comment explaining why.

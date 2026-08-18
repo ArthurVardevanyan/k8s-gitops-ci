@@ -53,18 +53,13 @@ The mis-declared form is **never auto-run** — it is only detected and reported
 
 ### `EXEMPTIONS=(...)` selector syntax
 
-Both the multi-line bash-array form and the single-line comma-separated
-form parse identically:
+Use the **multi-line bash-array form** — each quoted line is **one entry**:
 
 ```sh
 export EXEMPTIONS=(
   "check=image-checksum,file=foo.yaml"
   "check=sync-options,kind=ArgoCD,name=my-argocd-instance"
 )
-```
-
-```sh
-EXEMPTIONS="check=image-checksum,file=foo.yaml"
 ```
 
 Each entry is a comma-separated set of `key=value` pairs. Recognized
@@ -77,6 +72,12 @@ malformed entry (no `=`, an unknown key, an empty value, or a missing
 `check=`) is collected into `Config.ExemptErrors` rather than silently
 dropped or applied.
 
+**Never use** `EXEMPTIONS="check=x,file=y"` (single-line, multi-key form):
+`parseExemptionSingle` splits on commas into **entries**, not keys — this
+produces a wide-open `check=x` selector (exempts the entire check for the
+whole run) **plus** a blocking "missing check" error for `file=y`. Only
+single-key single-line entries work (e.g. `EXEMPTIONS="check=sync-options"`).
+
 ### `EXEMPTIONS=(...)` wiring
 
 Every app whose test.sh is resolved during the Build YAML phase
@@ -85,10 +86,9 @@ parsed `ExemptSelectors` bridged into `pkg/validator/exempt.Selector` and
 merged with the built-in selectors (e.g. the `.tekton/` PipelineRun
 default — see `tekton_exemptions.go`) before either the doc-check or
 overlay-check engines run. A real `EXEMPTIONS=(...)` entry therefore
-suppresses matching findings for **any exemptable check** (currently
-`image-checksum`, `cluster-name`, `project-ref` — see
-`pkg/validator/exempt.Exemptable`) across the whole run, the same as the
-annotation-based exemption mode
+suppresses matching findings for **any exemptable check** across the whole
+run (see [EXEMPTIONS.md](EXEMPTIONS.md) for the full table), the same as
+the annotation-based exemption mode
 (`gitops-ci.k8s.io/exempt-<check-id>` — see [EXEMPTIONS.md](EXEMPTIONS.md)).
 
 Selectors are merged flatly across every app in the run, not scoped to
