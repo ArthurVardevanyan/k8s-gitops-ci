@@ -10,11 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 )
-
-// defaultBinaryName is the executable name used in fix hints when the caller
-// does not supply a branded binary name.
-const defaultBinaryName = "k8s-gitops-ci"
 
 // Dir returns the scaffold configs directory.
 func Dir() string {
@@ -82,13 +79,13 @@ func CheckSortOrder() ([]string, error) {
 
 // FormatUnsortedError formats the list of unsorted config files. binaryName
 // is the invoked executable name used in the runnable fix hint; when empty it
-// falls back to the default binary name.
+// falls back to the provider's default binary name.
 func FormatUnsortedError(files []string, binaryName string) string {
 	if len(files) == 0 {
 		return ""
 	}
 	if binaryName == "" {
-		binaryName = defaultBinaryName
+		binaryName = provider.Providers{}.BinaryName()
 	}
 	var b strings.Builder
 	b.WriteString("Config override keys are not sorted in the following files:\n")

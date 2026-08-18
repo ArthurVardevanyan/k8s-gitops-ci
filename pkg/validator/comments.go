@@ -107,7 +107,7 @@ func formatBuildErrors(sb *strings.Builder, groups []buildErrorGroup) {
 
 // lintFixHint describes an actionable fix command for a lint/static check.
 type lintFixHint struct {
-	command string // command template ("%s" substitutes the file list, "{}" the binary, or static)
+	command string // command template ("%s" substitutes the file list, "{bin}" the binary, or static)
 	binary  bool   // whether the leading "{bin}" placeholder is present for the invoked executable
 }
 
