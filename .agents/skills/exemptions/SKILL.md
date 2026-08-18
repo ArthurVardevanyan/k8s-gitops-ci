@@ -28,9 +28,11 @@ outside the repo, or you need to exempt a whole directory.
 
 Every check registered via `check.Register` (`namespace`, `psa-labels`,
 `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`, `image-checksum`,
-`named-ports`, `podspec-defaults`, `placeholder`, `cluster-identity`)
-becomes exemptable via the **selector** mode automatically (under its own
-ID or sub-ID). Annotation-mode support is separate: a check only honors
+`named-ports`, `podspec-defaults`, `placeholder`) becomes exemptable via
+the **selector** mode automatically (under its own ID). `cluster-identity`
+is also registered but is **deliberately non-exemptable** (infraID mismatch,
+invalid JSON — structural findings that should not be waved away).
+Annotation-mode support is separate: a check only honors
 `gitops-ci.k8s.io/exempt-<id>` if it sets both `Finding.Value` **and**
 `Finding.Annotations` on its findings (see [Value vs. Token](../../../docs/EXEMPTIONS.md#value-vs-token)).
 
@@ -96,16 +98,16 @@ check for the whole run) **plus** a blocking "missing check" error for
 
 ### Selector key semantics
 
-| Key         | Match                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------- |
-| `check=`    | Required — the check ID this selector exempts                                           |
-| `file=`     | Exact basename, **or** `/`-prefixed suffix (a leading `/` is required before the value) |
-| `kind=`     | Exact match                                                                             |
-| `name=`     | Exact match                                                                             |
-| `namespace` | Exact match                                                                             |
-| `value=`    | Exact match against the finding's `Value`/`Token`                                       |
-| `match=`    | Substring match against the finding's `Value`/`Token`                                   |
-| `path=`     | Suffix-aligned dot/bracket path; `[]` wildcards the index, `[N]` pins it                |
+| Key          | Match                                                                                               |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `check=`     | Required — the check ID this selector exempts                                                       |
+| `file=`      | Exact basename, **or** suffix match with `/` prepended (the selector value must NOT start with `/`) |
+| `kind=`      | Exact match                                                                                         |
+| `name=`      | Exact match                                                                                         |
+| `namespace=` | Exact match                                                                                         |
+| `value=`     | Exact match against the finding's `Value`/`Token`                                                   |
+| `match=`     | Substring match against the finding's `Value`/`Token`                                               |
+| `path=`      | Suffix-aligned dot/bracket path; `[]` wildcards the index, `[N]` pins it                            |
 
 Selectors are merged **flatly across all apps** in a run, not scoped to the
 app that declared them — keep selectors narrow.

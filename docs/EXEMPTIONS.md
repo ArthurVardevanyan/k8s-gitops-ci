@@ -140,9 +140,10 @@ through from the underlying validator). Of the checks above,
 `rbac-wildcards`, `named-ports`, and `podspec-defaults` do both today
 (`Value` is the wildcarded rule field, the numeric port, and the
 joined missing-fields list, respectively). `namespace`, `psa-labels`,
-`rbac-readonly`, and `crb` don't populate either. `sync-options` doesn't
-populate `Annotations` (annotations map is empty, so `exempt.Accepts` fails
-closed), but its `Value` is set. `placeholder` populates `Value` (the
+`rbac-readonly`, `crb`, and `sync-options` don't populate either (no
+`Value`/`Token`/`Annotations` set on their findings), so annotation
+mode and `value=`/`match=` selectors don't work for them — only
+`kind`/`name`/`file` narrowing. `placeholder` populates `Value` (the
 matched token) but not `Annotations` — its annotation form fails closed
 too (no annotations to match against), but its `value=`/`match=` selectors
 do work.
