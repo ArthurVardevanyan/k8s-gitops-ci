@@ -3,7 +3,7 @@ module github.com/ArthurVardevanyan/k8s-gitops-ci
 go 1.26.6
 
 require (
-	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260818093908-0522888b44fe
+	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260818170214-ec2cdf3f41bd
 	github.com/yannh/kubeconform v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.21.4
@@ -26,7 +26,7 @@ require (
 	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
@@ -62,7 +62,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/openshift/api v0.0.0-20260813212709-d4bb0b443cb8 // indirect
+	github.com/openshift/api v0.0.0-20260818150932-fea75cc5ba59 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
