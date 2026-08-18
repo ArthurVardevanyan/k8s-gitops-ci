@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 )
 
 // Dir returns the scaffold configs directory.
@@ -76,10 +77,15 @@ func CheckSortOrder() ([]string, error) {
 	return unsorted, nil
 }
 
-// FormatUnsortedError formats the list of unsorted config files.
-func FormatUnsortedError(files []string) string {
+// FormatUnsortedError formats the list of unsorted config files. binaryName
+// is the invoked executable name used in the runnable fix hint; when empty it
+// falls back to the provider's default binary name.
+func FormatUnsortedError(files []string, binaryName string) string {
 	if len(files) == 0 {
 		return ""
+	}
+	if binaryName == "" {
+		binaryName = provider.Providers{}.BinaryName()
 	}
 	var b strings.Builder
 	b.WriteString("Config override keys are not sorted in the following files:\n")
@@ -88,7 +94,7 @@ func FormatUnsortedError(files []string) string {
 		b.WriteString(f)
 		b.WriteByte('\n')
 	}
-	b.WriteString("Run 'sort-configs' to fix.")
+	fmt.Fprintf(&b, "Run '%s sort-configs' to fix.", binaryName)
 	return b.String()
 }
 

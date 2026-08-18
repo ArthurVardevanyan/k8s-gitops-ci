@@ -411,7 +411,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 
 	lintWg.Wait()
 
-	res.Sections = append(res.Sections, ComposeLintingSection(lintOutcomes, lintReports))
+	res.Sections = append(res.Sections, ComposeLintingSection(lintOutcomes, lintReports, opts.Providers.BinaryName()))
 	tc.Record("Linting", time.Since(lintStart), true)
 
 	// ── static checks ────────────────────────────────────────────────────────
@@ -445,7 +445,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	runStaticStep("config-sort", func(sl *logger.ScopedLogger, elapsed func() time.Duration) lintStepResult {
 		if sorted, err := config.CheckSortOrder(); err == nil && len(sorted) > 0 {
 			sl.ErrorInSection("ConfigSort", "%d unsorted config file(s)", len(sorted))
-			return lintStepResult{report: config.FormatUnsortedError(sorted), status: StatusError}
+			return lintStepResult{report: config.FormatUnsortedError(sorted, opts.Providers.BinaryName()), status: StatusError}
 		}
 		sl.Info("config-sort check: passed (%s)", elapsed().Round(time.Millisecond))
 		return lintStepResult{status: StatusPassed}
@@ -487,7 +487,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 
 	staticWg.Wait()
 
-	res.Sections = append(res.Sections, ComposeStaticChecksSection(staticOutcomes, staticReports))
+	res.Sections = append(res.Sections, ComposeStaticChecksSection(staticOutcomes, staticReports, opts.Providers.BinaryName()))
 	tc.Record("Static Checks", time.Since(staticStart), true)
 }
 
@@ -719,7 +719,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	ghostDur := time.Since(ghostStart)
 	tc.RecordStep("Build YAML", "ghost-patch", ghostDur)
 	log.Debug("ghost-patch: %s", ghostDur.Round(time.Millisecond))
-	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, fixCheckErr, kustomizeFixEnabled, ghostTable, ghostBlockingCount))
+	res.Sections = append(res.Sections, ComposeKustomizeBuildSection(len(overlays), buildErrs, hookTable, hookFailed, fixNeeded, fixCheckErr, kustomizeFixEnabled, ghostTable, ghostBlockingCount, opts.Providers.BinaryName()))
 	if ghostBlockingCount > 0 {
 		log.ErrorInSection("KustomizeBuild", "%d blocking ghost patch(es)", ghostBlockingCount)
 	}
