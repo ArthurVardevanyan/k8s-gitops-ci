@@ -12,6 +12,11 @@ Full reference: [`docs/EXEMPTIONS.md`](../../../docs/EXEMPTIONS.md) and
 [`docs/HOOKS.md`](../../../docs/HOOKS.md). This skill is a self-contained
 decision guide — the docs are for deep dives only.
 
+**Prefer annotation when possible** — it ships with the PR so it takes
+effect immediately without the PR trust-model gotcha. Use `EXEMPTIONS=(...)`
+only when: the check doesn't support annotation mode, the resource is
+outside the repo, or you need to exempt a whole directory.
+
 ## Pick the right mode
 
 | Situation                                                                                   | Use                             | Visible in your own PR run?           |
