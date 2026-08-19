@@ -431,28 +431,72 @@ func extractImages(node *yaml.Node, parentKey string) []string {
 		// not "whichever image was found most recently during the
 		// recursive walk" - otherwise a digest can misattach to an
 		// unrelated image found earlier elsewhere in the document.
-		var imageVal, versionDigest string
+		//
+		// operator split-repository pairing (NVIDIA GPU operator, Arriketo,
+		// KubeVirt, etc.): an `image:` key combined with a sibling
+		// `repository:` key (the registry/repo prefix) and an optional
+		// `version:` or `tag:` sibling form the full image reference
+		// "{repository}/{image}:{version}".
+		var imageVal, versionDigest, versionTag, tagVal, repoVal string
 		for i := 0; i < len(node.Content); i += 2 {
 			key := node.Content[i].Value
 			child := node.Content[i+1]
 			switch {
 			case key == "image" && child.Kind == yaml.ScalarNode:
 				imageVal = child.Value
-			case key == "version" && child.Kind == yaml.ScalarNode && strings.HasPrefix(child.Value, "sha256:"):
-				versionDigest = child.Value
+			case key == "version" && child.Kind == yaml.ScalarNode:
+				if strings.HasPrefix(child.Value, "sha256:") {
+					versionDigest = child.Value
+				} else {
+					versionTag = child.Value
+				}
+			case key == "tag" && child.Kind == yaml.ScalarNode:
+				tagVal = child.Value
+			case key == "repository" && child.Kind == yaml.ScalarNode:
+				repoVal = child.Value
 			case key == "image" && child.Kind == yaml.MappingNode:
 				if ref := findKey(child, "reference"); ref != nil && ref.Kind == yaml.ScalarNode {
 					imgs = append(imgs, ref.Value)
 				}
 			}
 		}
-		if imageVal != "" && versionDigest != "" && !strings.Contains(imageVal, "@") {
-			imgs = append(imgs, imageVal+"@"+versionDigest)
+		// Build the effective image value: repository + image combined.
+		var effectiveImage string
+		if repoVal != "" && imageVal != "" {
+			effectiveImage = repoVal + "/" + imageVal
+		} else if imageVal != "" {
+			effectiveImage = imageVal
+		}
+		if effectiveImage != "" {
+			// When repository is present, combine it with the image and
+			// append version/tag suffix.  Without a repository, only
+			// combine with a sha256 digest (the ArgoCD split-version
+			// pattern) — plain version tags on a bare image are left
+			// for the recursive walk to extract as-is.
+			if repoVal != "" {
+				// Prefer sha256 digest, then explicit "tag" field,
+				// then plain "version" tag, then bare image.
+				switch {
+				case versionDigest != "" && !strings.Contains(effectiveImage, "@"):
+					imgs = append(imgs, effectiveImage+"@"+versionDigest)
+				case tagVal != "" && !strings.Contains(effectiveImage, "@"):
+					imgs = append(imgs, effectiveImage+":"+tagVal)
+				case versionTag != "" && !strings.Contains(effectiveImage, "@"):
+					imgs = append(imgs, effectiveImage+":"+versionTag)
+				default:
+					imgs = append(imgs, effectiveImage)
+				}
+			} else if versionDigest != "" && !strings.Contains(effectiveImage, "@") {
+				// ArgoCD-style: image + version sha256 → pinned reference.
+				imgs = append(imgs, effectiveImage+"@"+versionDigest)
+			}
+			// When no repository and no digest, the bare image is
+			// extracted by the recursive walk below (parentKey == "image").
 		}
 		for i := 0; i < len(node.Content); i += 2 {
 			key := node.Content[i].Value
 			child := node.Content[i+1]
-			if key == "image" && versionDigest != "" {
+			if key == "image" && (versionDigest != "" || repoVal != "") {
 				continue // already emitted combined above
 			}
 			imgs = append(imgs, extractImages(child, key)...)
