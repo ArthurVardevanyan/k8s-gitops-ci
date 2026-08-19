@@ -39,6 +39,15 @@ type Finding struct {
 	// as an exemption match for this finding, alongside its Value/Token
 	// (see exempt.Scalar.MatchAliases). Purely additive.
 	MatchAliases []string
+
+	// ExemptAnnotationValues holds values that the exemption annotation
+	// should match against, independently of Value/Token. Unlike
+	// MatchAliases (which are checked alongside Value for the same
+	// finding), each ExemptAnnotationValues entry is an alternate
+	// "what this finding represents" that the annotation should be
+	// allowed to match. Used by image-checksum so an annotation like
+	// "cuda,nvidia/driver" exempts individual images.
+	ExemptAnnotationValues []string
 }
 
 // Get returns an extra value by key.
@@ -52,9 +61,15 @@ func (f Finding) Get(key string) string {
 // Scalar returns the exempt.Scalar for this finding.
 func (f Finding) Scalar() exempt.Scalar {
 	return exempt.Scalar{
-		Value: f.Value, Path: f.Path, File: f.File, Kind: f.Kind,
-		Name: f.Name, Namespace: f.Namespace, Token: f.Token,
-		MatchAliases: f.MatchAliases,
+		Value:                f.Value,
+		Path:                 f.Path,
+		File:                 f.File,
+		Kind:                 f.Kind,
+		Name:                 f.Name,
+		Namespace:            f.Namespace,
+		Token:                f.Token,
+		MatchAliases:         f.MatchAliases,
+		ExemptAnnotationVals: f.ExemptAnnotationValues,
 	}
 }
 
