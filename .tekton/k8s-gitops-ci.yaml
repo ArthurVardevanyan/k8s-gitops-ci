@@ -339,6 +339,20 @@ spec:
                 # "does v${VERSION} already exist?" idempotency check reflects
                 # what's actually published, not a stale local-only tag.
                 git fetch --tags --force --prune --prune-tags origin
+                # Fetch tags from upstream for the version check. Fork PRs
+                # clone from the fork URL, which may not carry upstream's
+                # release tags — without this, LATEST is empty and Guard 3
+                # (bump-correctness) is silently skipped. Set UPSTREAM_GIT_URL
+                # in the CI environment (toolbox image or pipeline env) to
+                # the upstream repo URL.
+                UPSTREAM="${UPSTREAM_GIT_URL:-}"
+                if [ -n "${UPSTREAM}" ] && [ "${UPSTREAM}" != "${PARAM_GIT_URL}" ]; then
+                  if git remote add upstream "${UPSTREAM}" 2>/dev/null || true; then
+                    git fetch upstream --tags 2>/dev/null && \
+                      echo "Fetched upstream tags for version check"
+                    git remote remove upstream 2>/dev/null || true
+                  fi
+                fi
 
                 # Make version:check's "not behind main's VERSION" downgrade
                 # guard (Guard 2) actually work in the pipeline. The clone above
