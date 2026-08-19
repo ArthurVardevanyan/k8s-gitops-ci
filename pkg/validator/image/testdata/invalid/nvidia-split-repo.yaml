@@ -1,0 +1,38 @@
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu-cluster-policy
+spec:
+  operator:
+    initContainer:
+      image: cuda
+      repository: nvcr.io/nvidia
+      version: 13.0.0-base-ubi9
+  driver:
+    repository: my-registry.example.com/homelab
+    image: nvidia/driver
+    version: 580.173.02
+  toolkit:
+    image: toolkit
+    repository: nvcr.io/nvidia
+    tag: latest
+---
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu-pinned
+spec:
+  driver:
+    repository: nvcr.io/nvidia
+    image: driver
+    version: sha256:abcdef1234567890
+---
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu-no-tag
+spec:
+  driver:
+    repository: nvcr.io/nvidia
+    image: driver
+    version: sha256:deadbeefdeadbeef

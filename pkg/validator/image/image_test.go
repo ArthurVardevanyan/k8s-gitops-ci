@@ -514,6 +514,234 @@ spec:
 	}
 }
 
+func TestValidateBytes_SplitRepository_Version(t *testing.T) {
+	// NVIDIA-style: image + repository + version (non-digest tag).
+	// Should combine to FQDN image with tag; pinning check flags it.
+	const y = `apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu
+spec:
+  operator:
+    initContainer:
+      image: cuda
+      repository: nvcr.io/nvidia
+      version: 13.0.0-base-ubi9
+`
+	errs := ValidateBytes([]byte(y), "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 pinning error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Image != "nvcr.io/nvidia/cuda:13.0.0-base-ubi9" {
+		t.Errorf("unexpected combined image: %q", errs[0].Image)
+	}
+}
+
+func TestValidateBytes_SplitRepository_Tag(t *testing.T) {
+	// NVIDIA-style with explicit "tag" field instead of "version".
+	const y = `apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu
+spec:
+  toolkit:
+    image: toolkit
+    repository: nvcr.io/nvidia
+    tag: latest
+`
+	errs := ValidateBytes([]byte(y), "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 pinning error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Image != "nvcr.io/nvidia/toolkit:latest" {
+		t.Errorf("unexpected combined image: %q", errs[0].Image)
+	}
+}
+
+func TestValidateBytes_SplitRepository_Digest(t *testing.T) {
+	// NVIDIA-style with version containing sha256 digest — should be pinned.
+	const digest = "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	const y = `apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu
+spec:
+  driver:
+    repository: nvcr.io/nvidia
+    image: driver
+    version: ` + digest + "\n"
+	errs := ValidateBytes([]byte(y), "test.yaml")
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors for pinned image, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateBytes_SplitRepository_RepoImageBothTagged(t *testing.T) {
+	// Both repository and image carry tags — version digest should win.
+	const digest = "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+	const y = `apiVersion: example.com/v1
+kind: App
+metadata:
+  name: app
+spec:
+  image: myapp:v1
+  repository: registry.io/repo:v2
+  version: ` + digest + "\n"
+	errs := ValidateBytes([]byte(y), "test.yaml")
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateFQDNBytesRaw_SplitRepository(t *testing.T) {
+	// FQDN check should pass when repository provides the registry.
+	const y = `apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu
+spec:
+  operator:
+    initContainer:
+      image: cuda
+      repository: nvcr.io/nvidia
+      version: 13.0.0-base-ubi9
+  driver:
+    repository: my-registry.example.com/homelab
+    image: nvidia/driver
+    version: 580.173.02
+`
+	errs := ValidateFQDNBytesRaw([]byte(y), "test.yaml")
+	if len(errs) != 0 {
+		t.Fatalf("expected no FQDN findings, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateFQDNBytesRaw_SplitRepository_BareRepo(t *testing.T) {
+	// repository without a registry host → combined image still bare.
+	const y = `apiVersion: example.com/v1
+kind: App
+metadata:
+  name: app
+spec:
+  repository: homelab
+  image: myapp
+`
+	errs := ValidateFQDNBytesRaw([]byte(y), "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 FQDN finding, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Image != "homelab/myapp" {
+		t.Errorf("unexpected combined image: %q", errs[0].Image)
+	}
+}
+
+func TestValidateBytes_SplitRepository_OnlyRepository_NoImage(t *testing.T) {
+	// repository without image — no image extracted.
+	const y = `apiVersion: example.com/v1
+kind: App
+metadata:
+  name: app
+spec:
+  repository: nvcr.io/nvidia
+`
+	errs := ValidateBytes([]byte(y), "test.yaml")
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateBytes_SplitRepository_Precedence_DigestOverVersionOverTag(t *testing.T) {
+	// When version (non-digest) and tag both exist, tag takes precedence.
+	// When version is a digest, digest takes precedence over tag.
+	const digest = "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+
+	t.Run("digest wins over tag", func(t *testing.T) {
+		y := `apiVersion: example.com/v1
+kind: App
+metadata:
+  name: app
+spec:
+  image: myapp
+  repository: registry.io/repo
+  version: ` + digest + `
+  tag: latest
+`
+		errs := ValidateBytes([]byte(y), "test.yaml")
+		if len(errs) != 0 {
+			t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+		}
+	})
+
+	t.Run("tag used when version is non-digest", func(t *testing.T) {
+		y := `apiVersion: example.com/v1
+kind: App
+metadata:
+  name: app
+spec:
+  image: myapp
+  repository: registry.io/repo
+  version: v1.2.3
+  tag: latest
+`
+		errs := ValidateBytes([]byte(y), "test.yaml")
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+		if errs[0].Image != "registry.io/repo/myapp:latest" {
+			t.Errorf("unexpected image: %q", errs[0].Image)
+		}
+	})
+}
+
+func TestValidateBytesWithExemptions_SplitRepository(t *testing.T) {
+	// Annotation exemption should work with combined image.
+	key := exempt.Key(exempt.IDImageChecksum)
+	y := `apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu
+  annotations:
+    ` + key + `: "nvcr.io/nvidia/cuda:13.0.0-base-ubi9"
+spec:
+  operator:
+    initContainer:
+      image: cuda
+      repository: nvcr.io/nvidia
+      version: 13.0.0-base-ubi9
+`
+	errs, exempted := ValidateBytesWithExemptions([]byte(y), "test.yaml")
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+	if len(exempted) != 1 || exempted[0].Image != "nvcr.io/nvidia/cuda:13.0.0-base-ubi9" {
+		t.Errorf("unexpected exempted: %v", exempted)
+	}
+}
+
+func TestValidateBytesRaw_IgnoresAnnotationExemption_SplitRepository(t *testing.T) {
+	// ValidateBytesRaw returns unfiltered findings even with annotation exemption.
+	const y = `apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu
+  annotations:
+    gitops-ci.k8s.io/exempt-image-checksum: "nvcr.io/nvidia/cuda:13.0.0-base-ubi9"
+spec:
+  operator:
+    initContainer:
+      image: cuda
+      repository: nvcr.io/nvidia
+      version: 13.0.0-base-ubi9
+`
+	errs := ValidateBytesRaw([]byte(y), "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 unfiltered finding, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Image != "nvcr.io/nvidia/cuda:13.0.0-base-ubi9" {
+		t.Errorf("unexpected image: %q", errs[0].Image)
+	}
+}
+
 func TestValidateBytesWithExemptions(t *testing.T) {
 	const unpinned = "registry.io/caas/test:latest"
 	key := exempt.Key(exempt.IDImageChecksum)
