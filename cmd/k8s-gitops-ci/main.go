@@ -186,7 +186,7 @@ func runBuildYAML(args []string) error {
 // printRunFooter prints the run's TimingCollector.Summary() table (the
 // "Step/Duration/Mode" timing breakdown - see pkg/validator/timing.go,
 // fully implemented but previously never invoked outside tests) followed by
-// Logger.Summary(), for test-all/build-yaml/scan-all - the same footer
+// Logger.Summary(), for test/build-yaml - the same footer
 // pipeline.Run already prints (there via vr.Logger directly), giving all
 // four entry points parity instead of only "pipeline" showing timing/
 // summary detail. start is the time.Time captured before RunAll was
@@ -210,7 +210,7 @@ func printRunFooter(res *validator.Result, start time.Time) {
 // full console-sanitized (see pipeline.SanitizeSectionBodyForConsole) Body
 // under a log.SubHeader box for failing ones, matching the "====\n Title\n
 // ===="/"----\n Title\n----" banner family log already uses for phases -
-// this is the build-yaml/test-all rendering. Split out from its callers so
+// this is the build-yaml/test rendering. Split out from its callers so
 // the console-vs-PR-markdown handling is unit-testable without invoking
 // validator.RunAll (which shells out to git).
 func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
@@ -220,19 +220,6 @@ func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSect
 			continue
 		}
 		printPassedSectionConsole(log, s.Name)
-	}
-}
-
-// printFailedSectionsConsole prints only the failed and warned sections' full
-// detail (see printAllSectionsConsole) - the scan-all rendering, which (unlike
-// test-all/build-yaml) omits passing sections entirely rather than even a
-// one-line summary. See printAllSectionsConsole for why this is split out
-// from its caller.
-func printFailedSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
-	for _, s := range sections {
-		if pipeline.SectionHasConsoleDetail(s) {
-			printFailedSectionConsole(log, s)
-		}
 	}
 }
 
@@ -251,8 +238,8 @@ func printPassedSectionConsole(log *logger.Logger, name string) {
 }
 
 // printFailedSectionConsole prints a section's console-sanitized Body under
-// a log.SubHeader(s.Name) box, so every console entry point (test-all,
-// scan-all, build-yaml, and pipeline --verbose's printFailedSectionDetail)
+// a log.SubHeader(s.Name) box, so every console entry point (test,
+// build-yaml, and pipeline --verbose's printFailedSectionDetail)
 // shares one consistent header style instead of each inventing its own.
 func printFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
 	body := pipeline.SanitizeSectionBodyForConsole(s.Body)
@@ -370,7 +357,7 @@ func runTest(args []string) error {
 	// ever recorded itself via res.Logger.ErrorInSection, the same gap
 	// "pipeline"'s validatorResultFailed exists to close - still exited 0
 	// here even with a real ❌ in the printed sections above.
-	// Quiet mode always exits 0 (like the former scan-all), matching its
+	// Quiet mode always exits 0 (like the old scan-all), matching its
 	// purpose as a "did I break anything?" pre-commit check.
 	if !opts.Quiet && res.Failed() {
 		return fmt.Errorf("test: validation failed")
@@ -381,7 +368,7 @@ func runTest(args []string) error {
 // printQuietSectionsConsole prints only the failed and warned sections'
 // full detail — no passing sections are shown at all (not even a one-line
 // summary). This is the rendering used by --quiet mode, matching the
-// former scan-all behavior.
+// old scan-all behavior.
 func printQuietSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
 	for _, s := range sections {
 		if pipeline.SectionHasConsoleDetail(s) {
@@ -504,7 +491,7 @@ func runKubeconform(args []string) error {
 
 // runKustomizeFix actually applies kustomize.Fix (writes every non-
 // normalized kustomization.yaml under -dir/-all back to disk), unlike the
-// read-only Kustomize Fix check the "pipeline"/"test-all"/"scan-all"
+// read-only Kustomize Fix check the "pipeline"/"test"
 // commands already run as part of the Kustomize Build section - this is
 // the fix hintByCheck's "kustomize fix" entry (comments.go) actually
 // points a reviewer at. -dir and -all are mutually exclusive; passing
@@ -666,14 +653,11 @@ func printUsage() {
 Pipeline:
   pipeline          Run the full CI pipeline (aliases: ci)
   build-yaml        Build YAML for a specific app/cluster
-  test-all          Run all validators; accepts positional [dirs...] (full-tree
-                    walk) or the same --url/--pr/--dirs/--disable-checks/
+  test              Run all validators; accepts positional [dirs...] (full-tree
+                    walk), --all (full-repo scan), --quiet (failure-only output),
+                    or the same --url/--pr/--dirs/--disable-checks/
                     --enable-checks/--lint-only/etc. flags as "pipeline"
                     (default: working-tree git diff)
-  scan-all          Like test-all, but only prints failing sections; defaults to
-                    an uncommitted working-tree diff (git diff + git diff
-                    --cached) - NOT a full-repo scan unless --dirs/--url/--pr
-                    is given (use "test-all ." for that)
 
 Linters:
   markdownlint      Run markdownlint on changed files
@@ -686,7 +670,7 @@ Linters:
 Static Checks:
   kustomize-fix     Normalize (write) kustomization.yaml field ordering;
                     -dir <path> (recursive) or -all (whole working tree) -
-                    the "pipeline"/"test-all"/"scan-all" commands already
+                    the "pipeline"/"test" commands already
                     report which files need this via the Kustomize Build
                     section, without writing anything themselves
   check-starting-csv Validate startingCSV folder version matches

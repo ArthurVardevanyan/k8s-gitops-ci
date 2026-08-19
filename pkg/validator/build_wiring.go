@@ -50,9 +50,8 @@ func detectOverlaysForChanges(changed []string) []overlayRef {
 // detectAllOverlays finds every overlay in the repository, regardless of
 // changeset. Walks all app roots (directories containing base/, components/,
 // or overlays/ subdirectories), then collects all overlays under each app
-// via GetOverlaysToTest with an empty changed list (which returns all
-// overlays for that app). This is the overlay discovery source for FullScan
-// mode.
+// via FindAllOverlays (the simple overlay enumeration function). This is the
+// overlay discovery source for FullScan mode.
 func detectAllOverlays() []overlayRef {
 	allFiles, err := getAllRepoFiles()
 	if err != nil {
@@ -64,8 +63,7 @@ func detectAllOverlays() []overlayRef {
 	seen := map[string]bool{}
 	var refs []overlayRef
 	for _, app := range apps {
-		overlays, _, _ := overlay.GetOverlaysToTest(app, nil, false)
-		for _, ov := range overlays {
+		for _, ov := range overlay.FindAllOverlays(app) {
 			ov = filepath.ToSlash(ov)
 			if seen[ov] {
 				continue
