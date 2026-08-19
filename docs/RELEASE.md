@@ -50,13 +50,16 @@ the change warrants — you can't ship a `feat:` as a patch bump. Because
 PRs are **squash-merged**, the PR title _is_ the squash commit's subject
 and so the change that actually lands on `main` — the change the release
 step's git-cliff bump/changelog will see — is the **PR title**, not the
-branch's individual commits (which are discarded on squash). Two sources
+branch's individual commits (which are discarded on squash). Three sources
 therefore contribute the expected bump, and the _required_ bump is the
-**max** of the two:
+**max** of the three:
 
 - **`PR_TITLE` (preferred)** — the PR title is read from the environment;
   the Tekton PR run sets it (via PAC) to `{{ pull_request_title }}`. Its
   conventional type sizes the bump exactly as git-cliff will post-merge.
+- **PR branch commits** — `git log base..HEAD` parsed for conventional
+  types. Catches features from other merged PRs that the `PR_TITLE` (of
+  a separate VERSION bump PR) can't see; works without git-cliff.
 - **the branch's conventional commits** via
   [git-cliff](https://git-cliff.org/) (configured by `cliff.toml`) — still
   computed so the check covers rebase/non-squash workflows and catches an
@@ -70,8 +73,8 @@ Conventional Commits type (`feat!`, `feat(api)!`, `fix!`, `refactor(api)!`,
 ...), or a leading `BREAKING CHANGE:` — map to a **minor** bump
 (`cliff.toml`'s `[bump] breaking_always_bump_major = false`), not a jump
 to `1.0.0`. Non-release-relevant types (`docs:`/`chore:`/`ci:`/`build:`/
-`refactor:`/`style:`/`test:`) contribute nothing from either source,
-matching what git-cliff sizes them as post-merge, so the two arms never
+`refactor:`/`style:`/`test:`) contribute nothing from any source,
+matching what git-cliff sizes them as post-merge, so the three arms never
 disagree spuriously. This check is skipped for non-release PRs (`VERSION`
 unchanged); with `PR_TITLE` unset (local `task version:check`) it falls
 back to commit-based sizing alone, and the git-cliff arm additionally
