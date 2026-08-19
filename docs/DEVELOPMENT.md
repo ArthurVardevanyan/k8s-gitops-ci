@@ -365,7 +365,7 @@ Concurrency                                8  (4 CPUs × 2)
 ```
 
 Setup (in `pkg/pipeline`, when running the full `pipeline` command rather
-than `test-all`/`build-yaml`/`scan-all`) additionally records `clone`,
+than `test`/`build-yaml`) additionally records `clone`,
 `schemas`, and `policies` sub-steps - schemas are always prefetched once,
 up front (a cheap, pure embedded-archive extraction reused by the
 Linting phase's kubeconform step instead of extracting lazily on every
@@ -461,7 +461,7 @@ that instead via `Result.Failed()` (`pkg/validator/types.go`): `Blocking`
 (set from Resource Compliance direct findings, or a blocking ghost patch)
 OR the run's own `Logger.HasFailures()` (sees any `Error`/`ErrorInSection`
 call across every phase — Linting, Static Checks, Kustomize Build, ...).
-`pipeline.Run`'s `validatorResultFailed` helper (and `test-all`'s own exit
+`pipeline.Run`'s `validatorResultFailed` helper (and `test`'s own exit
 check in `cmd/k8s-gitops-ci/main.go`) both delegate to `Result.Failed()`
 rather than keeping their own copies of this OR, so they can't drift apart
 the way they once did: `Result.Failed()` was added specifically because
@@ -470,10 +470,10 @@ the report (`composeKustomizeFixChild`) but `runBuildAndPostBuild` never
 called `log.ErrorInSection` for them — unlike every sibling check in that
 same section (Overlay Build errors, blocking Ghost Patches) — so neither
 `Blocking` nor `Logger.HasFailures()` ever saw them, and both `pipeline`
-and `test-all` reported success despite a real ❌ in the printed report.
+and `test` reported success despite a real ❌ in the printed report.
 `Run` returns a non-nil error (and the CLI exits non-zero) whenever
 `Result.Failed()` is true, in addition to the PR-validation error fields
-(`TitleErr`/`UnsignedErr`) it already checked. `scan-all` is deliberately
+(`TitleErr`/`UnsignedErr`) it already checked. `test --quiet` is deliberately
 exempt from all of this — it's a pure reporting tool (prints only failing
 sections, never returns a failing exit code).
 
@@ -877,7 +877,7 @@ was scoped for this (and can be revived on demand):
 - Drive it offline through the real pipeline via
   `pipeline --target-branch <base-sha>` (no `--url`/`--pr`), which falls
   through to a local `git diff <base>...HEAD` in `pkg/changeset` — no
-  remote, no PR, no GitHub — plus optionally `test-all <dir>` for the
+  remote, no PR, no GitHub — plus optionally `test <dir>` for the
   standalone whole-repo path.
 - Normalize the console output down to the stable result surface (strip
   the version banner, `[HH:MM:SS]` timestamps, `(…ms)`/`(…s)` durations,

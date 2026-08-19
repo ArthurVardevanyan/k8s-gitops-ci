@@ -42,10 +42,8 @@ func main() {
 		err = runPipeline(args)
 	case "build-yaml":
 		err = runBuildYAML(args)
-	case "test-all":
-		err = runTestAll(args)
-	case "scan-all":
-		err = runScanAll(args)
+	case "test":
+		err = runTest(args)
 	case "markdownlint":
 		err = runMarkdownlint(args)
 	case "prettier":
@@ -267,18 +265,18 @@ func printFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
 	fmt.Printf("\n--- %s ---\n%s\n", s.Name, body)
 }
 
-// ── test-all / scan-all ───────────────────────────────────────────────────────
+// ── test ──────────────────────────────────────────────────────────────────────
 
-// validatorFlagSet holds the flags shared by test-all and scan-all: the same
+// validatorFlagSet holds the flags shared by "test": the same
 // changeset-scoping and check-enablement flags "pipeline" exposes, so a
-// failing pipeline run can be reproduced with test-all/scan-all (and vice
-// versa) using an equivalent flag set, instead of test-all/scan-all only
-// exposing --verbose.
+// failing pipeline run can be reproduced with "test" using an equivalent
+// flag set.
 type validatorFlagSet struct {
 	url, pr, targetBranch, hookSource  string
 	dirs, disableChecks, enableChecks  string
 	concurrency                        int
 	assumeOpenshift, verbose, lintOnly bool
+	quiet, all                         bool
 	apps, clusters                     []string
 }
 
@@ -297,13 +295,15 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.BoolVar(&v.assumeOpenshift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
 	fs.BoolVar(&v.verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&v.lintOnly, "lint-only", false, "lint only, skip build checks")
+	fs.BoolVar(&v.quiet, "quiet", false, "quiet: only print failed/warned sections, exit 0")
+	fs.BoolVar(&v.all, "all", false, "full repository scan: lint all files on disk and build all overlays (takes priority over --dirs)")
 	fs.Var(newStringSliceFlag(&v.apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
 	fs.Var(newStringSliceFlag(&v.clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
 	return v
 }
 
 // applyTo copies the parsed flags onto opts, including Dirs from --dirs.
-// For test-all, which also supports positional [dirs...], parseTestAllOptions
+// For test, which also supports positional [dirs...], parseTestOptions
 // overwrites opts.Dirs with the positional args when present, since both are
 // the same full-tree-walk changeset source and positional args take
 // precedence over the flag.
@@ -319,17 +319,19 @@ func (v *validatorFlagSet) applyTo(opts *validator.Options) {
 	opts.AssumeOpenShift = v.assumeOpenshift
 	opts.LintOnly = v.lintOnly
 	opts.Verbose = v.verbose
+	opts.FullScan = v.all
+	opts.Quiet = v.quiet
 	opts.Apps = v.apps
 	opts.Clusters = v.clusters
 }
 
-// parseTestAllOptions parses test-all's flags (a superset of scan-all's:
-// same scoping/check-enablement flags as "pipeline", plus positional
-// [dirs...]) into a validator.Options, without running anything - split out
-// from runTestAll so the flag-to-Options wiring is unit-testable without
-// invoking validator.RunAll (which shells out to git).
-func parseTestAllOptions(args []string) (validator.Options, error) {
-	fs := flag.NewFlagSet("test-all", flag.ExitOnError)
+// parseTestOptions parses test's flags (same scoping/check-enablement
+// flags as "pipeline", plus positional [dirs...]) into a validator.Options,
+// without running anything - split out from runTest so the flag-to-Options
+// wiring is unit-testable without invoking validator.RunAll (which shells
+// out to git).
+func parseTestOptions(args []string) (validator.Options, error) {
+	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	vf := bindValidatorFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return validator.Options{}, err
@@ -337,17 +339,16 @@ func parseTestAllOptions(args []string) (validator.Options, error) {
 	var opts validator.Options
 	vf.applyTo(&opts)
 	// Positional [dirs...] args are a full-tree walk under those paths
-	// (bypassing git diff entirely) - kept for backward compatibility
-	// alongside the new --dirs flag (also folded into Dirs by applyTo).
-	// Positional args take precedence when present.
+	// (bypassing git diff entirely) - alongside the --dirs flag (also folded
+	// into Dirs by applyTo). Positional args take precedence when present.
 	if len(fs.Args()) > 0 {
 		opts.Dirs = fs.Args()
 	}
 	return opts, nil
 }
 
-func runTestAll(args []string) error {
-	opts, err := parseTestAllOptions(args)
+func runTest(args []string) error {
+	opts, err := parseTestOptions(args)
 	if err != nil {
 		return err
 	}
@@ -357,48 +358,36 @@ func runTestAll(args []string) error {
 	if err != nil {
 		return err
 	}
-	printAllSectionsConsole(res.Logger, res.Sections)
+	if opts.Quiet {
+		printQuietSectionsConsole(res.Logger, res.Sections)
+	} else {
+		printAllSectionsConsole(res.Logger, res.Sections)
+	}
 	printRunFooter(res, start)
-	// res.Failed() (not just res.Blocking) - test-all used to only check
+	// res.Failed() (not just res.Blocking) - test used to only check
 	// res.Blocking (Resource Compliance direct findings), so any failed
 	// Linting/Static Checks/Kustomize Build section - anything that only
 	// ever recorded itself via res.Logger.ErrorInSection, the same gap
 	// "pipeline"'s validatorResultFailed exists to close - still exited 0
 	// here even with a real ❌ in the printed sections above.
-	if res.Failed() {
-		return fmt.Errorf("test-all: validation failed")
+	// Quiet mode always exits 0 (like the former scan-all), matching its
+	// purpose as a "did I break anything?" pre-commit check.
+	if !opts.Quiet && res.Failed() {
+		return fmt.Errorf("test: validation failed")
 	}
 	return nil
 }
 
-// parseScanAllOptions parses scan-all's flags (the same scoping/check-
-// enablement flags as "pipeline", minus positional dirs) into a
-// validator.Options, without running anything - see parseTestAllOptions.
-func parseScanAllOptions(args []string) (validator.Options, error) {
-	fs := flag.NewFlagSet("scan-all", flag.ExitOnError)
-	vf := bindValidatorFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return validator.Options{}, err
+// printQuietSectionsConsole prints only the failed and warned sections'
+// full detail — no passing sections are shown at all (not even a one-line
+// summary). This is the rendering used by --quiet mode, matching the
+// former scan-all behavior.
+func printQuietSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
+	for _, s := range sections {
+		if pipeline.SectionHasConsoleDetail(s) {
+			printFailedSectionConsole(log, s)
+		}
 	}
-	var opts validator.Options
-	vf.applyTo(&opts)
-	return opts, nil
-}
-
-func runScanAll(args []string) error {
-	opts, err := parseScanAllOptions(args)
-	if err != nil {
-		return err
-	}
-	start := time.Now()
-	fmt.Println(version.String())
-	res, err := validator.RunAll(opts)
-	if err != nil {
-		return err
-	}
-	printFailedSectionsConsole(res.Logger, res.Sections)
-	printRunFooter(res, start)
-	return nil
 }
 
 // ── linters ───────────────────────────────────────────────────────────────────
