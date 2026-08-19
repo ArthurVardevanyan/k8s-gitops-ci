@@ -606,7 +606,7 @@ spec:
       repository: nvcr.io/nvidia
       version: 13.0.0-base-ubi9
   driver:
-    repository: registry.arthurvardevanyan.com/homelab
+    repository: my-registry.example.com/homelab
     image: nvidia/driver
     version: 580.173.02
 `
@@ -695,7 +695,6 @@ spec:
 
 func TestValidateBytesWithExemptions_SplitRepository(t *testing.T) {
 	// Annotation exemption should work with combined image.
-	const digest = "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	key := exempt.Key(exempt.IDImageChecksum)
 	y := `apiVersion: nvidia.com/v1
 kind: ClusterPolicy
