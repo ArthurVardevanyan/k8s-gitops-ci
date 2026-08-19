@@ -286,12 +286,11 @@ func ciNotesSection(t *testing.T, res *Result, opts Options) string {
 }
 
 // TestComposeSections_CINotesIncludesToolVersion guards that the CI Notes
-// section always reports the tool build version (version.String()) on every
-// run, generic or org-branded - it previously rendered a hardcoded
-// "Pipeline completed." placeholder.
+// section always reports the tool version (version.Short()) on every run,
+// generic or org-branded.
 func TestComposeSections_CINotesIncludesToolVersion(t *testing.T) {
 	body := ciNotesSection(t, &Result{}, Options{})
-	if !strings.Contains(body, "Tool version: "+version.String()) {
+	if !strings.Contains(body, "Tool version: "+version.Short()) {
 		t.Errorf("expected the CI Notes body to include the tool version, got:\n%s", body)
 	}
 	if strings.Contains(body, "Org version:") {
@@ -305,7 +304,7 @@ func TestComposeSections_CINotesIncludesToolVersion(t *testing.T) {
 func TestComposeSections_CINotesIncludesOrgVersion(t *testing.T) {
 	opts := Options{Providers: provider.Providers{Branding: fakeBranding{orgVersion: "acme-1.2.3"}}}
 	body := ciNotesSection(t, &Result{}, opts)
-	if !strings.Contains(body, "Tool version: "+version.String()) {
+	if !strings.Contains(body, "Tool version: "+version.Short()) {
 		t.Errorf("expected the CI Notes body to include the tool version, got:\n%s", body)
 	}
 	if !strings.Contains(body, "Org version: acme-1.2.3") {

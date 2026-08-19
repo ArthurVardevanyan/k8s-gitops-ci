@@ -564,7 +564,7 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 	}
 
 	// CI Notes
-	body := "Pipeline completed.\n\n- Tool version: " + version.String()
+	body := "Pipeline completed.\n\n- Tool version: " + version.Short()
 	if orgVersion := opts.Providers.OrgVersion(); orgVersion != "" {
 		body += "\n- Org version: " + orgVersion
 	}
