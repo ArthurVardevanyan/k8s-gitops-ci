@@ -21,7 +21,7 @@ const DefaultMaxSize int64 = 1 * 1024 * 1024
 // rather than forking Check to get its own allowlist.
 var DefaultIgnorePatterns = []string{
 	"*.tar.gz", "*.woff", "*.woff2", "*.ttf", "*.eot", "*.png", "*.ico",
-	"customresourcedefinition*.yaml",
+	"customresourcedefinition*.yaml", "crd*.yaml", "crd*.yml",
 }
 
 // Violation records a binary or oversized file finding.
