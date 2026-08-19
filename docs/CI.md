@@ -95,26 +95,41 @@ flowchart TD
 
 ## Modes
 
-| Mode                  | Command                                                            | Changeset source                                                                                                                                                                                                                                                                                                                                                                                                |
-| --------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full pipeline         | `k8s-gitops-ci pipeline --url <repo> --pr <n>` (alias: `ci`)       | PR's changed files via the GitHub API                                                                                                                                                                                                                                                                                                                                                                           |
-| Local PR check        | `k8s-gitops-ci pipeline --revision <sha> --target-branch <branch>` | `git diff <target>...<revision>`                                                                                                                                                                                                                                                                                                                                                                                |
-| Working-tree scan     | `k8s-gitops-ci test-all [dirs...]`                                 | every file under the given positional directories (not a diff — the full tree under each path); with no positional dirs, falls back to the same changeset resolution as `pipeline` (see below)                                                                                                                                                                                                                  |
-| Uncommitted-diff scan | `k8s-gitops-ci scan-all`                                           | **`git diff` + `git diff --cached`** in the current working tree — despite the name, this does **not** scan every file in the repository; it only sees uncommitted changes, since it passes no `--dirs`/`--url`/`--pr`/`--revision` and `resolveChangeset` falls back to a working-tree diff when none of those are set. To validate the _entire_ repository regardless of git state, use `test-all .` instead. |
-| Ad-hoc overlay build  | `k8s-gitops-ci build-yaml --app <app> --cluster <cluster>`         | Targeted, git-independent: the given app(s)/cluster(s)' `base/` + matching `overlays/<cluster>` directories only — see `--app`/`--cluster` below.                                                                                                                                                                                                                                                               |
+| Mode                 | Command                                                            | Changeset source                                                                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Full pipeline        | `k8s-gitops-ci pipeline --url <repo> --pr <n>` (alias: `ci`)       | PR's changed files via the GitHub API                                                                                                                                                                                    |
+| Local PR check       | `k8s-gitops-ci pipeline --revision <sha> --target-branch <branch>` | `git diff <target>...<revision>`                                                                                                                                                                                         |
+| Full repo scan       | `k8s-gitops-ci test --all`                                         | **every file on disk**, every overlay — ignores git state entirely (see `--all` below)                                                                                                                                   |
+| Directory scan       | `k8s-gitops-ci test [dirs...]` or `test --dirs kubernetes/`        | every file under the given positional directories (not a diff — the full tree under each path); with no positional dirs or `--dirs`, falls back to the same changeset resolution as `pipeline` (working-tree `git diff`) |
+| Working-tree diff    | `k8s-gitops-ci test` (no args)                                     | **`git diff` + `git diff --cached`** in the current working tree — uncommitted changes only                                                                                                                              |
+| Ad-hoc overlay build | `k8s-gitops-ci build-yaml --app <app> --cluster <cluster>`         | Targeted, git-independent: the given app(s)/cluster(s)' `base/` + matching `overlays/<cluster>` directories only — see `--app`/`--cluster` below.                                                                        |
 
-`test-all` and `scan-all` accept the same changeset-scoping and
+`test` accepts the same changeset-scoping and
 check-enablement flags as `pipeline` — `--url`/`--pr`/`--target-branch`
 (PR/diff source), `--dirs` (a full-tree walk of exactly the given path
 prefixes, replacing the diff/PR-derived changeset entirely — the same
-underlying behavior as `test-all`'s positional `[dirs...]`; when
-`test-all` is given both, the positional args take precedence),
+underlying behavior as `test`'s positional `[dirs...]`; when
+`test` is given both, the positional args take precedence),
 `--disable-checks`/`--enable-checks`, `--hook-source`, `--concurrency`,
 `--assume-openshift`, and `--app`/`--cluster` (below). This lets a
 failing `pipeline --url ... --pr ...` run be reproduced locally with
-`test-all`/`scan-all` using an equivalent flag set, and vice versa.
+`test` using an equivalent flag set.
 
-`--lint-only` (pipeline mode only) skips the Build Overlays + Resource
+**`--all`** — Full repository scan. Walks every file on disk (respecting
+the same `ExtraNonAppDirs` and scaffold template exclusions as overlay
+discovery) and builds every overlay in the repository. Ignores git state
+entirely. Takes priority over `--dirs` when both are set. This is
+useful for a 100% repo-wide validation run — `test --all --lint-only`
+for linting everything without overlay rendering, `test --all` for
+everything including overlay builds and Post-Build Validation.
+
+**`--quiet`** — Quiet output. Only prints failed/warned sections' full
+detail; passing sections are suppressed entirely (no one-line summary).
+Always exits 0, regardless of findings. This is useful for pre-commit
+checks where you only want to see what you broke, not a full pass/fail
+report.
+
+**`--lint-only`** (pipeline mode only) skips the Build Overlays + Resource
 Compliance phase entirely — useful for a fast Linting/Static-Checks-only
 pass.
 
@@ -470,7 +485,7 @@ couldn't actually verify kustomization.yaml files must not report a
 clean bill of health it never checked. A finding (or a check failure) is
 blocking - `log.ErrorInSection` is called either way, so this is treated
 exactly like any other hard failure (a run with only this finding still
-exits non-zero from `pipeline`/`test-all`; see
+exits non-zero from `pipeline`/`test`; see
 [DEVELOPMENT.md](DEVELOPMENT.md#pipeline-exit-code-pipelinerun-resultfailed)).
 It's gated behind the **`kustomize-fix`** step ID (default **on**, unlike
 `kyverno`/`scaffold-readme`) purely so a repo (or a test) with no
@@ -651,7 +666,7 @@ version directory - resolved via `overlay.RefsChangedDir` over the
 overlay pinned to a different, unaffected version); otherwise
 it's checked against the merge-base template/config
 (`computeBaselineMismatches`, gated on `Options.BaseRef` being set - i.e.
-an actual CI/PR run, never a local `test-all` run against a live working
+an actual CI/PR run, never a local `test` run against a live working
 tree, which always has an empty `BaseRef`) and downgraded to a
 non-blocking "Pre-Existing Scaffold Drift" entry (⚠️) when it mismatches
 there too - this accounts for drift caused by something external to the

@@ -47,6 +47,37 @@ func detectOverlaysForChanges(changed []string) []overlayRef {
 	return refs
 }
 
+// detectAllOverlays finds every overlay in the repository, regardless of
+// changeset. Walks all app roots (directories containing base/, components/,
+// or overlays/ subdirectories), then collects all overlays under each app
+// via GetOverlaysToTest with an empty changed list (which returns all
+// overlays for that app). This is the overlay discovery source for FullScan
+// mode.
+func detectAllOverlays() []overlayRef {
+	allFiles, err := getAllRepoFiles()
+	if err != nil {
+		// If the walk fails, fall back to empty (the caller will
+		// handle the error appropriately).
+		return nil
+	}
+	apps := detectAppRoots(allFiles)
+	seen := map[string]bool{}
+	var refs []overlayRef
+	for _, app := range apps {
+		overlays, _, _ := overlay.GetOverlaysToTest(app, nil, false)
+		for _, ov := range overlays {
+			ov = filepath.ToSlash(ov)
+			if seen[ov] {
+				continue
+			}
+			seen[ov] = true
+			refs = append(refs, overlayRef{path: ov, cluster: filepath.Base(ov)})
+		}
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].path < refs[j].path })
+	return refs
+}
+
 // appFromOverlayPath extracts the app root from an overlay path detected by
 // detectOverlaysForChanges (e.g. "apps/myapp/overlays/mycluster" -> "apps/myapp").
 func appFromOverlayPath(ovPath string) string {
