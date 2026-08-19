@@ -222,7 +222,7 @@ func ValidateBytesWithExemptions(data []byte, source string) ([]ValidationError,
 			if !isImageRef(ref) {
 				continue
 			}
-			if exempt.Accepts(ann, exempt.IDImageChecksum, img) {
+			if exempt.Accepts(ann, exempt.IDImageChecksum, img, nil, nil) {
 				exempted = append(exempted, ExemptedImage{File: source, Kind: kind, Name: name, Image: img})
 				continue
 			}

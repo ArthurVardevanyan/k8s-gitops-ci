@@ -239,9 +239,10 @@ func (imageCheck) CheckDoc(data []byte, source string) []check.Finding {
 		f := check.Finding{
 			CheckID: "image-checksum", File: e.File,
 			Kind: e.Kind, Name: e.Name,
-			Value:       e.Image,
-			Message:     e.Message,
-			Annotations: e.Annotations,
+			Value:                  e.Image,
+			Message:                e.Message,
+			Annotations:            e.Annotations,
+			ExemptAnnotationValues: []string{e.Image},
 		}
 		// Repo is the tag/digest-independent "registry/repo" key, so an
 		// annotation naming just the repo (e.g.

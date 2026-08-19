@@ -61,6 +61,21 @@ full-reference form (with a tag or digest) still works too — both are
 accepted (see [Value vs. Token](#value-vs-token) for how this is wired via
 `MatchAliases`).
 
+`image-checksum` also supports **comma-separated** values to exempt
+multiple images in a single annotation:
+
+```yaml
+metadata:
+  annotations:
+    gitops-ci.k8s.io/exempt-image-checksum: "cuda,nvidia/driver,toolkit.image"
+```
+
+Each entry is checked independently against the annotation value. Whitespace
+is trimmed (`"cuda, nvidia/driver"` works the same as `"cuda,nvidia/driver"`).
+Each entry matches against the finding's value **and** its repo-level alias,
+so the same annotation can mix tagged images (`cuda`) with repo-level
+references (`docker.io/nvidia/driver`).
+
 `image-fqdn` (the check that requires an explicit registry host — see
 [CI.md](CI.md#image-fqdn)) is **not** exemptable by either mode: an
 unqualified image reference is almost always a mistake, and the one

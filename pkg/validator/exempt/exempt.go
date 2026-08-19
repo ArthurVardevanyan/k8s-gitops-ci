@@ -41,6 +41,15 @@ type Scalar struct {
 	// while an annotation naming the exact tagged/digested reference still
 	// matches too.
 	MatchAliases []string
+
+	// ExemptAnnotationVals holds values that the exemption annotation
+	// should match against, independently of Value/Token. Unlike
+	// MatchAliases (which are checked alongside Value for the same
+	// finding), each ExemptAnnotationVals entry is an alternate
+	// "what this finding represents" that the annotation should be
+	// allowed to match. Used by image-checksum so an annotation like
+	// "cuda,nvidia/driver" exempts individual images.
+	ExemptAnnotationVals []string
 }
 
 // Selector configures an EXEMPTIONS entry.
@@ -102,12 +111,16 @@ func Known(id string) bool {
 func Key(id string) string { return AnnotationPrefix + "exempt-" + id }
 
 // Accepts reports whether annotations grant an exact-value exemption,
-// matching either value or any of the optional aliases. Fails closed: an
-// empty value/alias never matches, even against an empty (but present)
-// annotation - otherwise a finding with an empty annotationValue() (e.g.
-// both Token/Value unset) would be granted a false exemption by any
-// resource with no matching annotation at all.
-func Accepts(annotations map[string]string, id, value string, aliases ...string) bool {
+// matching either value, any of the optional aliases, or any of the
+// exempt annotation values. When exemptAnnotationValues is set, the
+// annotation value is split by comma so each entry is checked
+// independently (e.g. "img1,img2" exempts individual images). When
+// exemptAnnotationValues is empty, the annotation value is compared as a
+// single string. Fails closed: an empty value/alias never matches, even
+// against an empty (but present) annotation - otherwise a finding with an
+// empty annotationValue() (e.g. both Token/Value unset) would be granted
+// a false exemption by any resource with no matching annotation at all.
+func Accepts(annotations map[string]string, id, value string, aliases, exemptAnnotationValues []string) bool {
 	if len(annotations) == 0 {
 		return false
 	}
@@ -115,11 +128,50 @@ func Accepts(annotations map[string]string, id, value string, aliases ...string)
 	if ann == "" {
 		return false
 	}
-	if value != "" && ann == value {
-		return true
+	var entries []string
+	if len(exemptAnnotationValues) > 0 {
+		entries = splitComma(ann)
 	}
-	for _, a := range aliases {
-		if a != "" && ann == a {
+	// Build the full list of targets to check (value + aliases + exemptAnnotationValues).
+	targets := make([]string, 0, 1+len(aliases)+len(exemptAnnotationValues))
+	if value != "" {
+		targets = append(targets, value)
+	}
+	targets = append(targets, aliases...)
+	targets = append(targets, exemptAnnotationValues...)
+	for _, target := range targets {
+		if target == "" {
+			continue
+		}
+		if len(entries) > 0 {
+			if contains(entries, target) {
+				return true
+			}
+		} else if ann == target {
+			return true
+		}
+	}
+	return false
+}
+
+// splitComma splits a comma-separated annotation value into trimmed,
+// non-empty entries. Empty entries (from trailing commas or multiple
+// consecutive commas) are dropped.
+func splitComma(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		entry := strings.TrimSpace(part)
+		if entry != "" {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// contains reports whether sl contains target.
+func contains(sl []string, target string) bool {
+	for _, s := range sl {
+		if s == target {
 			return true
 		}
 	}
@@ -202,7 +254,7 @@ func Evaluate(id string, s Scalar, annotations map[string]string, selectors []Se
 	if !Exemptable(id) {
 		return false, Applied{}
 	}
-	if Accepts(annotations, id, s.annotationValue(), s.MatchAliases...) {
+	if Accepts(annotations, id, s.annotationValue(), s.MatchAliases, s.ExemptAnnotationVals) {
 		return true, Applied{CheckID: id, File: s.File, Path: s.Path, Value: s.Value, Token: s.Token, Kind: s.Kind, Name: s.Name}
 	}
 	for _, sel := range selectors {
