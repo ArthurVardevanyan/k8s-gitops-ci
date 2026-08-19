@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/syncopts"
 )
@@ -48,55 +47,43 @@ func TestResolveChangeset_NoDirs(t *testing.T) {
 	}
 }
 
-// TestResolveChangeset_ScanAll guards that Options.ScanAll takes the
-// changeset.GetAllFiles path - every git-tracked file, not just changed
-// ones - matching changeset.GetAllFiles's own output exactly.
-func TestResolveChangeset_ScanAll(t *testing.T) {
+// TestResolveChangeset_FullScan guards that Options.FullScan returns all
+// files on disk (via getAllRepoFiles), not just changed ones.
+func TestResolveChangeset_FullScan(t *testing.T) {
 	t.Parallel()
-	want, err := changeset.GetAllFiles()
+	got, err := resolveChangeset(Options{FullScan: true})
 	if err != nil {
-		t.Fatalf("changeset.GetAllFiles: %v", err)
+		t.Fatalf("resolveChangeset(FullScan): %v", err)
 	}
-	got, err := resolveChangeset(Options{ScanAll: true})
-	if err != nil {
-		t.Fatalf("resolveChangeset: %v", err)
+	if len(got) == 0 {
+		t.Fatal("expected full-scan to return at least one file")
 	}
-	if len(got) != len(want) {
-		t.Fatalf("expected resolveChangeset(ScanAll) to match changeset.GetAllFiles(), got %d files, want %d", len(got), len(want))
+	// FullScan walks the entire repo, so it should return significantly
+	// more files than a single-directory walk.
+	if len(got) < 10 {
+		t.Errorf("expected full-scan to return many files, got %d", len(got))
 	}
 }
 
-// TestResolveChangeset_ScanAllCombinesWithDirsAsAFilter guards the
-// switch-case ordering (ScanAll's changeset.GetAllFiles path wins over
-// Dirs's changeset.GetFilesUnderDirs path when both are set) while also
-// confirming the shared post-switch filter still applies: since Dirs is the
-// same field used to restrict a diff-derived changeset, combining
-// ScanAll+Dirs means "every git-tracked file, restricted to these path
-// prefixes" - not an unfiltered full-repo walk that ignores Dirs outright.
-func TestResolveChangeset_ScanAllCombinesWithDirsAsAFilter(t *testing.T) {
+// TestResolveChangeset_FullScanTakesPriorityOverDirs guards the
+// switch-case ordering (FullScan wins over Dirs) - when both are set,
+// FullScan walks the entire repo and Dirs is completely ignored.
+func TestResolveChangeset_FullScanTakesPriorityOverDirs(t *testing.T) {
 	t.Parallel()
-	all, err := changeset.GetAllFiles()
+	// FullScan walks from CWD, so it will always return many files.
+	// Even when Dirs is set to a non-existent path, FullScan should
+	// still return repo-wide files (not be restricted by Dirs).
+	got, err := resolveChangeset(Options{
+		FullScan: true,
+		Dirs:     []string{"/nonexistent/path/that/does/not/exist"},
+	})
 	if err != nil {
-		t.Fatalf("changeset.GetAllFiles: %v", err)
+		t.Fatalf("resolveChangeset(FullScan+Dirs): %v", err)
 	}
-	if len(all) == 0 {
-		t.Fatal("expected at least one git-tracked file under pkg/validator")
-	}
-
-	got, err := resolveChangeset(Options{ScanAll: true, Dirs: []string{"check/"}})
-	if err != nil {
-		t.Fatalf("resolveChangeset: %v", err)
-	}
+	// FullScan ignores Dirs entirely, so we should get repo-wide files,
+	// not zero files from the nonexistent path.
 	if len(got) == 0 {
-		t.Fatal("expected at least one file under check/")
-	}
-	if len(got) >= len(all) {
-		t.Fatalf("expected Dirs to filter down GetAllFiles's result, got %d of %d total files", len(got), len(all))
-	}
-	for _, f := range got {
-		if !strings.HasPrefix(f, "check/") {
-			t.Errorf("expected every file to be under check/ (GetFilesUnderDirs must not have run instead), got: %s", f)
-		}
+		t.Fatal("expected FullScan to ignore Dirs and return repo files")
 	}
 }
 

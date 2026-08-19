@@ -143,7 +143,7 @@ touches the filesystem for this.
 before `ResolveSource` is called, applying one rule first:
 
 - **No explicit `--hook-source` and no PR context** (`opts.PR` empty, i.e.
-  `test-all`/`scan-all`/`build-yaml` local runs) → **`SourceLocal`**,
+  `test`/`build-yaml` local runs) → **`SourceLocal`**,
   so uncommitted working-tree `test.sh` changes are picked up
   automatically without needing `--hook-source local`.
 

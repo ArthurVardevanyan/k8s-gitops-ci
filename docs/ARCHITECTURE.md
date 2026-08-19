@@ -31,9 +31,9 @@ flowchart LR
 ```
 
 - **Clone / Resolve Changeset** — `pkg/git`/`pkg/github` clone the repo
-  and resolve the PR's changed-file list (or, for `test-all`/`--dirs`,
+  and resolve the PR's changed-file list (or, for `test`/`--dirs`,
   every file under the given directories, replacing the diff entirely;
-  or, for `scan-all`, the current working tree's uncommitted git diff —
+  or, for `test` with no arguments, the current working tree's uncommitted git diff —
   see [CI.md](CI.md)'s Modes table for the exact, non-obvious semantics
   of each); `pkg/changeset` narrows that list by extension.
 - **Linting** and **Static Checks** — a fixed set of independent,

@@ -61,7 +61,7 @@ func TestStringSliceFlag_EmptyString(t *testing.T) {
 	}
 }
 
-// TestBindValidatorFlags_ParsesAndApplies guards test-all/scan-all's flag
+// TestBindValidatorFlags_ParsesAndApplies guards test's flag
 // parity with "pipeline": every scoping/check-enablement flag pipeline
 // exposes must parse here and land on the corresponding validator.Options
 // field via applyTo.
@@ -80,6 +80,8 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 		"--assume-openshift",
 		"--verbose",
 		"--lint-only",
+		"--quiet",
+		"--all",
 		"--app=foo",
 		"--app=bar",
 		"--cluster=prod",
@@ -114,6 +116,10 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 		t.Errorf("LintOnly = %v, want true", opts.LintOnly)
 	case !opts.Verbose:
 		t.Errorf("Verbose = %v, want true", opts.Verbose)
+	case !opts.Quiet:
+		t.Errorf("Quiet = %v, want true", opts.Quiet)
+	case !opts.FullScan:
+		t.Errorf("FullScan = %v, want true", opts.FullScan)
 	case len(opts.Apps) != 2 || opts.Apps[0] != "foo" || opts.Apps[1] != "bar":
 		t.Errorf("Apps = %v", opts.Apps)
 	case len(opts.Clusters) != 1 || opts.Clusters[0] != "prod":
@@ -142,35 +148,35 @@ func TestBindValidatorFlags_DefaultsLeaveOptionsZeroValue(t *testing.T) {
 	if opts.Dirs != nil || opts.DisabledChecks != nil || opts.EnabledChecks != nil {
 		t.Errorf("expected nil slices, got Dirs=%v DisabledChecks=%v EnabledChecks=%v", opts.Dirs, opts.DisabledChecks, opts.EnabledChecks)
 	}
-	if opts.Concurrency != 0 || opts.AssumeOpenShift || opts.LintOnly || opts.Verbose {
-		t.Errorf("expected zero values, got Concurrency=%d AssumeOpenShift=%v LintOnly=%v Verbose=%v", opts.Concurrency, opts.AssumeOpenShift, opts.LintOnly, opts.Verbose)
+	if opts.Concurrency != 0 || opts.AssumeOpenShift || opts.LintOnly || opts.Verbose || opts.Quiet || opts.FullScan {
+		t.Errorf("expected zero values, got Concurrency=%d AssumeOpenShift=%v LintOnly=%v Verbose=%v Quiet=%v FullScan=%v", opts.Concurrency, opts.AssumeOpenShift, opts.LintOnly, opts.Verbose, opts.Quiet, opts.FullScan)
 	}
 	if len(opts.Apps) != 0 || len(opts.Clusters) != 0 {
 		t.Errorf("expected empty Apps/Clusters, got %v / %v", opts.Apps, opts.Clusters)
 	}
 }
 
-// TestParseTestAllOptions_PositionalDirsAndFlagDirsCoexist guards that
+// TestParseTestOptions_PositionalDirsAndFlagDirsCoexist guards that
 // positional [dirs...] take precedence over the --dirs flag now that both
 // map to the single opts.Dirs field.
-func TestParseTestAllOptions_PositionalDirsAndFlagDirsCoexist(t *testing.T) {
-	opts, err := parseTestAllOptions([]string{"--dirs=kubernetes/,tekton/", "appA", "appB"})
+func TestParseTestOptions_PositionalDirsAndFlagDirsCoexist(t *testing.T) {
+	opts, err := parseTestOptions([]string{"--dirs=kubernetes/,tekton/", "appA", "appB"})
 	if err != nil {
-		t.Fatalf("parseTestAllOptions: %v", err)
+		t.Fatalf("parseTestOptions: %v", err)
 	}
 	if len(opts.Dirs) != 2 || opts.Dirs[0] != "appA" || opts.Dirs[1] != "appB" {
 		t.Errorf("Dirs = %v, want [appA appB] (positional precedence)", opts.Dirs)
 	}
 }
 
-// TestParseTestAllOptions_NoPositionalDirsLeavesDirsNil ensures test-all
+// TestParseTestOptions_NoPositionalDirsLeavesDirsNil ensures test
 // without positional args doesn't grow a spurious non-nil-but-empty Dirs,
 // which would otherwise change resolveChangeset's branch (Dirs vs.
 // git-diff) per pkg/validator/validator.go.
-func TestParseTestAllOptions_NoPositionalDirsLeavesDirsNil(t *testing.T) {
-	opts, err := parseTestAllOptions([]string{"--verbose"})
+func TestParseTestOptions_NoPositionalDirsLeavesDirsNil(t *testing.T) {
+	opts, err := parseTestOptions([]string{"--verbose"})
 	if err != nil {
-		t.Fatalf("parseTestAllOptions: %v", err)
+		t.Fatalf("parseTestOptions: %v", err)
 	}
 	if len(opts.Dirs) != 0 {
 		t.Errorf("Dirs = %v, want empty", opts.Dirs)
@@ -180,31 +186,18 @@ func TestParseTestAllOptions_NoPositionalDirsLeavesDirsNil(t *testing.T) {
 	}
 }
 
-// TestParseScanAllOptions_SupportsPipelineScopingFlags guards scan-all's
-// flag parity with pipeline/test-all (the original gap this test file is
-// protecting against regressing).
-func TestParseScanAllOptions_SupportsPipelineScopingFlags(t *testing.T) {
-	opts, err := parseScanAllOptions([]string{
-		"--url=https://example.com/org/repo",
-		"--pr=7",
-		"--dirs=kubernetes/",
-		"--disable-checks=avp",
-		"--lint-only",
-	})
+// TestParseTestOptions_QuietAndAllFlags ensures --quiet and --all parse
+// correctly into opts.Quiet and opts.FullScan.
+func TestParseTestOptions_QuietAndAllFlags(t *testing.T) {
+	opts, err := parseTestOptions([]string{"--quiet", "--all"})
 	if err != nil {
-		t.Fatalf("parseScanAllOptions: %v", err)
+		t.Fatalf("parseTestOptions: %v", err)
 	}
-	if opts.RepoURL != "https://example.com/org/repo" || opts.PR != "7" {
-		t.Errorf("RepoURL/PR = %q/%q", opts.RepoURL, opts.PR)
+	if !opts.Quiet {
+		t.Errorf("Quiet = %v, want true", opts.Quiet)
 	}
-	if len(opts.Dirs) != 1 || opts.Dirs[0] != "kubernetes/" {
-		t.Errorf("Dirs = %v", opts.Dirs)
-	}
-	if len(opts.DisabledChecks) != 1 || opts.DisabledChecks[0] != "avp" {
-		t.Errorf("DisabledChecks = %v", opts.DisabledChecks)
-	}
-	if !opts.LintOnly {
-		t.Errorf("LintOnly = %v, want true", opts.LintOnly)
+	if !opts.FullScan {
+		t.Errorf("FullScan = %v, want true", opts.FullScan)
 	}
 }
 
@@ -299,26 +292,26 @@ func TestPrintAllSectionsConsole_PassingSectionIsOneLine(t *testing.T) {
 	}
 }
 
-// TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing
-// mirrors TestPrintAllSectionsConsole_StripsGitHubMarkdown for scan-all's
-// renderer, and additionally checks that passing (non-Error) sections are
-// omitted entirely (not even a one-line summary - scan-all only reports
-// failures).
-func TestPrintFailedSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *testing.T) {
+// TestPrintQuietSectionsConsole_StripsGitHubMarkdownAndFiltersPassing
+// mirrors TestPrintAllSectionsConsole_StripsGitHubMarkdown for quiet
+// mode's renderer, and additionally checks that passing (non-Error) sections
+// are omitted entirely (not even a one-line summary - quiet mode only
+// reports failures).
+func TestPrintQuietSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *testing.T) {
 	sections := []validator.ReportSection{
 		markdownSection("Passing", false),
 		markdownSection("Failing", true),
 	}
 
-	out := captureStdout(t, func() { printFailedSectionsConsole(nil, sections) })
+	out := captureStdout(t, func() { printQuietSectionsConsole(nil, sections) })
 
 	for _, unwanted := range []string{"<details>", "</details>", "<summary>", "&nbsp;", "**", "Passing"} {
 		if strings.Contains(out, unwanted) {
-			t.Errorf("printFailedSectionsConsole output must not contain %q, got: %s", unwanted, out)
+			t.Errorf("printQuietSectionsConsole output must not contain %q, got: %s", unwanted, out)
 		}
 	}
 	if !strings.Contains(out, "--- Failing ---") {
-		t.Errorf("printFailedSectionsConsole output missing %q, got: %s", "--- Failing ---", out)
+		t.Errorf("printQuietSectionsConsole output missing %q, got: %s", "--- Failing ---", out)
 	}
 }
 
@@ -365,24 +358,24 @@ func TestPrintAllSectionsConsole_WarningSectionEmptyBodyIsTerse(t *testing.T) {
 	}
 }
 
-// TestPrintFailedSectionsConsole_PrintsWarnings mirrors
-// TestPrintAllSectionsConsole_WarningSectionPrintsDetail for scan-all's
-// renderer, confirming warning detail is surfaced there too (scan-all only
+// TestPrintQuietSectionsConsole_PrintsWarnings mirrors
+// TestPrintAllSectionsConsole_WarningSectionPrintsDetail for quiet mode's
+// renderer, confirming warning detail is surfaced there too (quiet mode only
 // prints failed/warned sections, omitting passing ones entirely).
-func TestPrintFailedSectionsConsole_PrintsWarnings(t *testing.T) {
+func TestPrintQuietSectionsConsole_PrintsWarnings(t *testing.T) {
 	sections := []validator.ReportSection{
 		markdownSectionStatus("Passing", validator.StatusPassed),
 		markdownSectionStatus("ResourceCompliance", validator.StatusWarning),
 	}
 
-	out := captureStdout(t, func() { printFailedSectionsConsole(nil, sections) })
+	out := captureStdout(t, func() { printQuietSectionsConsole(nil, sections) })
 
 	if strings.Contains(out, "Passing") {
-		t.Errorf("printFailedSectionsConsole must omit passing section, got: %q", out)
+		t.Errorf("printQuietSectionsConsole must omit passing section, got: %q", out)
 	}
 	for _, want := range []string{"--- ResourceCompliance ---", "| Deployment | example |"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("printFailedSectionsConsole warning output missing %q, got: %s", want, out)
+			t.Errorf("printQuietSectionsConsole warning output missing %q, got: %s", want, out)
 		}
 	}
 }

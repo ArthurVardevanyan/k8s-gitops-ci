@@ -43,14 +43,21 @@ type Options struct {
 	Concurrency      int
 	Apps, Clusters   []string
 	// Dirs is the single changeset-scoping source for path prefixes:
-	// populated from either the --dirs flag or (for test-all) positional
+	// populated from either the --dirs flag or (for test) positional
 	// [dirs...] args, both of which do the same full recursive walk of
 	// exactly these paths, replacing diff/PR-based changeset resolution
 	// entirely - see resolveChangeset and docs/CI.md's Modes section for
 	// the exact semantics (and cmd/k8s-gitops-ci/main.go's
-	// parseTestAllOptions for how positional args take precedence over the
+	// parseTestOptions for how positional args take precedence over the
 	// flag when both are given).
-	Dirs      []string
+	Dirs []string
+	// FullScan validates every file on disk and every overlay in the
+	// repository, ignoring git diff entirely. Takes priority over Dirs
+	// when both are set.
+	FullScan bool
+	// Quiet suppresses passing sections entirely (like the former
+	// scan-all mode) and always exits 0, regardless of findings.
+	Quiet     bool
 	Providers provider.Providers
 	// PostComment controls whether the validator/pipeline posts a PR
 	// comment summarizing the run. Contract field threaded through to the
@@ -58,8 +65,7 @@ type Options struct {
 	PostComment bool
 	// RepoDir is the repository directory path (cloned repo working dir).
 	RepoDir string
-	// ScanAll validates all files in the repo, not just changed files.
-	ScanAll bool
+
 	// PRValidation carries results from pre-validation PR checks (title,
 	// signing, checklist) so they can be included in the unified report.
 	PRValidation *PRValidationResult

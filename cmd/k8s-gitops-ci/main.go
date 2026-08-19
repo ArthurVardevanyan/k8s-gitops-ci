@@ -42,10 +42,8 @@ func main() {
 		err = runPipeline(args)
 	case "build-yaml":
 		err = runBuildYAML(args)
-	case "test-all":
-		err = runTestAll(args)
-	case "scan-all":
-		err = runScanAll(args)
+	case "test":
+		err = runTest(args)
 	case "markdownlint":
 		err = runMarkdownlint(args)
 	case "prettier":
@@ -188,7 +186,7 @@ func runBuildYAML(args []string) error {
 // printRunFooter prints the run's TimingCollector.Summary() table (the
 // "Step/Duration/Mode" timing breakdown - see pkg/validator/timing.go,
 // fully implemented but previously never invoked outside tests) followed by
-// Logger.Summary(), for test-all/build-yaml/scan-all - the same footer
+// Logger.Summary(), for test/build-yaml - the same footer
 // pipeline.Run already prints (there via vr.Logger directly), giving all
 // four entry points parity instead of only "pipeline" showing timing/
 // summary detail. start is the time.Time captured before RunAll was
@@ -212,7 +210,7 @@ func printRunFooter(res *validator.Result, start time.Time) {
 // full console-sanitized (see pipeline.SanitizeSectionBodyForConsole) Body
 // under a log.SubHeader box for failing ones, matching the "====\n Title\n
 // ===="/"----\n Title\n----" banner family log already uses for phases -
-// this is the build-yaml/test-all rendering. Split out from its callers so
+// this is the build-yaml/test rendering. Split out from its callers so
 // the console-vs-PR-markdown handling is unit-testable without invoking
 // validator.RunAll (which shells out to git).
 func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
@@ -222,19 +220,6 @@ func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSect
 			continue
 		}
 		printPassedSectionConsole(log, s.Name)
-	}
-}
-
-// printFailedSectionsConsole prints only the failed and warned sections' full
-// detail (see printAllSectionsConsole) - the scan-all rendering, which (unlike
-// test-all/build-yaml) omits passing sections entirely rather than even a
-// one-line summary. See printAllSectionsConsole for why this is split out
-// from its caller.
-func printFailedSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
-	for _, s := range sections {
-		if pipeline.SectionHasConsoleDetail(s) {
-			printFailedSectionConsole(log, s)
-		}
 	}
 }
 
@@ -253,8 +238,8 @@ func printPassedSectionConsole(log *logger.Logger, name string) {
 }
 
 // printFailedSectionConsole prints a section's console-sanitized Body under
-// a log.SubHeader(s.Name) box, so every console entry point (test-all,
-// scan-all, build-yaml, and pipeline --verbose's printFailedSectionDetail)
+// a log.SubHeader(s.Name) box, so every console entry point (test,
+// build-yaml, and pipeline --verbose's printFailedSectionDetail)
 // shares one consistent header style instead of each inventing its own.
 func printFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
 	body := pipeline.SanitizeSectionBodyForConsole(s.Body)
@@ -267,18 +252,18 @@ func printFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
 	fmt.Printf("\n--- %s ---\n%s\n", s.Name, body)
 }
 
-// ── test-all / scan-all ───────────────────────────────────────────────────────
+// ── test ──────────────────────────────────────────────────────────────────────
 
-// validatorFlagSet holds the flags shared by test-all and scan-all: the same
+// validatorFlagSet holds the flags shared by "test": the same
 // changeset-scoping and check-enablement flags "pipeline" exposes, so a
-// failing pipeline run can be reproduced with test-all/scan-all (and vice
-// versa) using an equivalent flag set, instead of test-all/scan-all only
-// exposing --verbose.
+// failing pipeline run can be reproduced with "test" using an equivalent
+// flag set.
 type validatorFlagSet struct {
 	url, pr, targetBranch, hookSource  string
 	dirs, disableChecks, enableChecks  string
 	concurrency                        int
 	assumeOpenshift, verbose, lintOnly bool
+	quiet, all                         bool
 	apps, clusters                     []string
 }
 
@@ -297,13 +282,15 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.BoolVar(&v.assumeOpenshift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
 	fs.BoolVar(&v.verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&v.lintOnly, "lint-only", false, "lint only, skip build checks")
+	fs.BoolVar(&v.quiet, "quiet", false, "quiet: only print failed/warned sections, exit 0")
+	fs.BoolVar(&v.all, "all", false, "full repository scan: lint all files on disk and build all overlays (takes priority over --dirs)")
 	fs.Var(newStringSliceFlag(&v.apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
 	fs.Var(newStringSliceFlag(&v.clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
 	return v
 }
 
 // applyTo copies the parsed flags onto opts, including Dirs from --dirs.
-// For test-all, which also supports positional [dirs...], parseTestAllOptions
+// For test, which also supports positional [dirs...], parseTestOptions
 // overwrites opts.Dirs with the positional args when present, since both are
 // the same full-tree-walk changeset source and positional args take
 // precedence over the flag.
@@ -319,17 +306,19 @@ func (v *validatorFlagSet) applyTo(opts *validator.Options) {
 	opts.AssumeOpenShift = v.assumeOpenshift
 	opts.LintOnly = v.lintOnly
 	opts.Verbose = v.verbose
+	opts.FullScan = v.all
+	opts.Quiet = v.quiet
 	opts.Apps = v.apps
 	opts.Clusters = v.clusters
 }
 
-// parseTestAllOptions parses test-all's flags (a superset of scan-all's:
-// same scoping/check-enablement flags as "pipeline", plus positional
-// [dirs...]) into a validator.Options, without running anything - split out
-// from runTestAll so the flag-to-Options wiring is unit-testable without
-// invoking validator.RunAll (which shells out to git).
-func parseTestAllOptions(args []string) (validator.Options, error) {
-	fs := flag.NewFlagSet("test-all", flag.ExitOnError)
+// parseTestOptions parses test's flags (same scoping/check-enablement
+// flags as "pipeline", plus positional [dirs...]) into a validator.Options,
+// without running anything - split out from runTest so the flag-to-Options
+// wiring is unit-testable without invoking validator.RunAll (which shells
+// out to git).
+func parseTestOptions(args []string) (validator.Options, error) {
+	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	vf := bindValidatorFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return validator.Options{}, err
@@ -337,17 +326,16 @@ func parseTestAllOptions(args []string) (validator.Options, error) {
 	var opts validator.Options
 	vf.applyTo(&opts)
 	// Positional [dirs...] args are a full-tree walk under those paths
-	// (bypassing git diff entirely) - kept for backward compatibility
-	// alongside the new --dirs flag (also folded into Dirs by applyTo).
-	// Positional args take precedence when present.
+	// (bypassing git diff entirely) - alongside the --dirs flag (also folded
+	// into Dirs by applyTo). Positional args take precedence when present.
 	if len(fs.Args()) > 0 {
 		opts.Dirs = fs.Args()
 	}
 	return opts, nil
 }
 
-func runTestAll(args []string) error {
-	opts, err := parseTestAllOptions(args)
+func runTest(args []string) error {
+	opts, err := parseTestOptions(args)
 	if err != nil {
 		return err
 	}
@@ -357,48 +345,36 @@ func runTestAll(args []string) error {
 	if err != nil {
 		return err
 	}
-	printAllSectionsConsole(res.Logger, res.Sections)
+	if opts.Quiet {
+		printQuietSectionsConsole(res.Logger, res.Sections)
+	} else {
+		printAllSectionsConsole(res.Logger, res.Sections)
+	}
 	printRunFooter(res, start)
-	// res.Failed() (not just res.Blocking) - test-all used to only check
+	// res.Failed() (not just res.Blocking) - test used to only check
 	// res.Blocking (Resource Compliance direct findings), so any failed
 	// Linting/Static Checks/Kustomize Build section - anything that only
 	// ever recorded itself via res.Logger.ErrorInSection, the same gap
 	// "pipeline"'s validatorResultFailed exists to close - still exited 0
 	// here even with a real ❌ in the printed sections above.
-	if res.Failed() {
-		return fmt.Errorf("test-all: validation failed")
+	// Quiet mode always exits 0 (like the old scan-all), matching its
+	// purpose as a "did I break anything?" pre-commit check.
+	if !opts.Quiet && res.Failed() {
+		return fmt.Errorf("test: validation failed")
 	}
 	return nil
 }
 
-// parseScanAllOptions parses scan-all's flags (the same scoping/check-
-// enablement flags as "pipeline", minus positional dirs) into a
-// validator.Options, without running anything - see parseTestAllOptions.
-func parseScanAllOptions(args []string) (validator.Options, error) {
-	fs := flag.NewFlagSet("scan-all", flag.ExitOnError)
-	vf := bindValidatorFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return validator.Options{}, err
+// printQuietSectionsConsole prints only the failed and warned sections'
+// full detail — no passing sections are shown at all (not even a one-line
+// summary). This is the rendering used by --quiet mode, matching the
+// old scan-all behavior.
+func printQuietSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
+	for _, s := range sections {
+		if pipeline.SectionHasConsoleDetail(s) {
+			printFailedSectionConsole(log, s)
+		}
 	}
-	var opts validator.Options
-	vf.applyTo(&opts)
-	return opts, nil
-}
-
-func runScanAll(args []string) error {
-	opts, err := parseScanAllOptions(args)
-	if err != nil {
-		return err
-	}
-	start := time.Now()
-	fmt.Println(version.String())
-	res, err := validator.RunAll(opts)
-	if err != nil {
-		return err
-	}
-	printFailedSectionsConsole(res.Logger, res.Sections)
-	printRunFooter(res, start)
-	return nil
 }
 
 // ── linters ───────────────────────────────────────────────────────────────────
@@ -515,7 +491,7 @@ func runKubeconform(args []string) error {
 
 // runKustomizeFix actually applies kustomize.Fix (writes every non-
 // normalized kustomization.yaml under -dir/-all back to disk), unlike the
-// read-only Kustomize Fix check the "pipeline"/"test-all"/"scan-all"
+// read-only Kustomize Fix check the "pipeline"/"test"
 // commands already run as part of the Kustomize Build section - this is
 // the fix hintByCheck's "kustomize fix" entry (comments.go) actually
 // points a reviewer at. -dir and -all are mutually exclusive; passing
@@ -677,14 +653,11 @@ func printUsage() {
 Pipeline:
   pipeline          Run the full CI pipeline (aliases: ci)
   build-yaml        Build YAML for a specific app/cluster
-  test-all          Run all validators; accepts positional [dirs...] (full-tree
-                    walk) or the same --url/--pr/--dirs/--disable-checks/
+  test              Run all validators; accepts positional [dirs...] (full-tree
+                    walk), --all (full-repo scan), --quiet (failure-only output),
+                    or the same --url/--pr/--dirs/--disable-checks/
                     --enable-checks/--lint-only/etc. flags as "pipeline"
                     (default: working-tree git diff)
-  scan-all          Like test-all, but only prints failing sections; defaults to
-                    an uncommitted working-tree diff (git diff + git diff
-                    --cached) - NOT a full-repo scan unless --dirs/--url/--pr
-                    is given (use "test-all ." for that)
 
 Linters:
   markdownlint      Run markdownlint on changed files
@@ -697,7 +670,7 @@ Linters:
 Static Checks:
   kustomize-fix     Normalize (write) kustomization.yaml field ordering;
                     -dir <path> (recursive) or -all (whole working tree) -
-                    the "pipeline"/"test-all"/"scan-all" commands already
+                    the "pipeline"/"test" commands already
                     report which files need this via the Kustomize Build
                     section, without writing anything themselves
   check-starting-csv Validate startingCSV folder version matches

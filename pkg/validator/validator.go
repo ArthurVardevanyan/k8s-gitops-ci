@@ -2,7 +2,10 @@ package validator
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
+	"sort"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
@@ -82,10 +85,13 @@ func resolveChangeset(opts Options) ([]string, error) {
 		// neither scopes nor filters targeted overlays).
 		files, err = resolveTargetOverlays(opts)
 		return files, err
-	case opts.ScanAll:
-		// Scan-all mode validates every file in the repo, not just changed
-		// files.
-		files, err = changeset.GetAllFiles()
+	case opts.FullScan:
+		// Full-scan mode validates every file on disk, ignoring git
+		// state entirely. Takes priority over Dirs (the user explicitly
+		// asked for everything). Respects ExtraNonAppDirs and scaffold
+		// template exclusions just like detectAppRoots does for overlay
+		// discovery.
+		files, err = getAllRepoFiles()
 	case len(opts.Dirs) > 0:
 		files, err = changeset.GetFilesUnderDirs(opts.Dirs)
 	default:
@@ -99,5 +105,47 @@ func resolveChangeset(opts Options) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// When FullScan is set, Dirs is ignored (FullScan takes priority
+	// as confirmed by the user) — the user explicitly asked for
+	// everything, not a subset. Dirs is only applied as a filter for
+	// non-FullScan modes.
+	if opts.FullScan {
+		return files, nil
+	}
 	return changeset.FilterByPrefixes(files, opts.Dirs), nil
+}
+
+// getAllRepoFiles walks the entire repository from the current working
+// directory, collecting all files while filtering out scaffold templates
+// and any ExtraNonAppDirs prefixes (the same exclusions detectAppRoots
+// uses for overlay discovery). This is the changeset source for FullScan
+// mode, giving a 100% repo-wide file list independent of git state.
+func getAllRepoFiles() ([]string, error) {
+	var files []string
+	if err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if isExtraNonAppPath(path) {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	// Deduplicate and sort for deterministic ordering.
+	seen := make(map[string]bool, len(files))
+	var deduped []string
+	for _, f := range files {
+		if !seen[f] {
+			seen[f] = true
+			deduped = append(deduped, f)
+		}
+	}
+	sort.Strings(deduped)
+	return deduped, nil
 }

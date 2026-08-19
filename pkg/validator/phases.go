@@ -514,7 +514,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// test.sh is resolved exactly once here, its EXEMPTIONS=(...) merged
 	// into selectors below, and the same *hook.Config reused for every one
 	// of that app's overlay builds plus its single POST_VALIDATE_HOOK call.
-	overlays := detectOverlaysForChanges(changed)
+	var overlays []overlayRef
+	if opts.FullScan {
+		overlays = detectAllOverlays()
+	} else {
+		overlays = detectOverlaysForChanges(changed)
+	}
 	apps := uniqueApps(overlays)
 
 	disabled := toIDSet(opts.DisabledChecks)
