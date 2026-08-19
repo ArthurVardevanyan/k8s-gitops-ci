@@ -57,6 +57,27 @@ func TestCheck_DefaultIgnorePatterns_LargeCRDAllowed(t *testing.T) {
 	}
 }
 
+func TestCheck_DefaultIgnorePatterns_LargeCRDAliasedAllowed(t *testing.T) {
+	dir := t.TempDir()
+	tests := []string{
+		"crd.yaml",
+		"crd.yml",
+		"crds.yaml",
+		"crds.yml",
+		"crd-someapp.yaml",
+		"crd-someapp.yml",
+		"crd-controllers.yaml",
+	}
+	for _, name := range tests {
+		f := filepath.Join(dir, name)
+		_ = os.WriteFile(f, make([]byte, DefaultMaxSize+1), 0o644)
+		v := Check([]string{f}, 0, DefaultIgnorePatterns)
+		if len(v) != 0 {
+			t.Fatalf("expected large %s to be ignored by default, got: %v", name, v)
+		}
+	}
+}
+
 func TestCheck_DefaultIgnorePatterns_LargeArchiveAllowed(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "schemas.tar.gz")
