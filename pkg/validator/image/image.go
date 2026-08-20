@@ -149,16 +149,30 @@ func (r *Ref) RepoKey() string {
 // misclassified as shortname container images and flagged for FQDN/pinning.
 var gcpComputeSelfLinkRe = regexp.MustCompile(`^projects/[^/]+/(?:global/images|zones/[^/]+/disks)/`)
 
+// tektonParamRefRe matches Tekton substitution syntax for parameter/context
+// references (e.g. "$(params.image)", "$(context.pipelineRun.name)"). These
+// are runtime values resolved at PipelineRun execution time, not concrete
+// image references — the FQDN/pinning check cannot validate what it cannot
+// resolve.
+var tektonParamRefRe = regexp.MustCompile(`^\$\((?:params|context|tasks|steps|resources)\.`)
+
 // isImageRef reports whether ref is an OCI image reference that image
 // enforcement (pinning + FQDN) should evaluate. Templated/placeholder
-// values (containing spaces) and GCP Compute Engine self-links are excluded,
-// but bare shortnames and explicit docker.io refs are enforced, so an
-// unpinned docker.io image is no longer silently skipped.
+// values (containing spaces), GCP Compute Engine self-links, and Tekton
+// parameter/context references are excluded, but bare shortnames and
+// explicit docker.io refs are enforced, so an unpinned docker.io image is
+// no longer silently skipped.
 func isImageRef(ref *Ref) bool {
 	if ref == nil || strings.Contains(ref.Raw, " ") {
 		return false
 	}
-	return !gcpComputeSelfLinkRe.MatchString(ref.Raw)
+	if gcpComputeSelfLinkRe.MatchString(ref.Raw) {
+		return false
+	}
+	if tektonParamRefRe.MatchString(ref.Raw) {
+		return false
+	}
+	return true
 }
 
 // isResolvableRef reports whether a ref can be live-resolved against its

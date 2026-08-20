@@ -97,6 +97,19 @@ func TestIsImageRef(t *testing.T) {
 	if isImageRef(ParseImageRef("{{ .Image }}")) {
 		t.Error("isImageRef of a space-containing placeholder = true, want false")
 	}
+	// Tekton parameter/context references are never enforced.
+	for _, raw := range []string{
+		"$(params.image)",
+		"$(params.registry)/myimage:$(params.tag)",
+		"$(context.pipelineRun.name)",
+		"$(tasks.clone-results.steps.clones.status)",
+		"$(steps.build.outputs.commit.image)",
+		"$(resources.git.source.url)",
+	} {
+		if isImageRef(ParseImageRef(raw)) {
+			t.Errorf("isImageRef(%q) = true, want false (Tekton ref)", raw)
+		}
+	}
 }
 
 func TestIsImageRef_GCPDiskImageFalsePositives(t *testing.T) {
@@ -280,6 +293,25 @@ data:
 `)
 	if errs := ValidateFQDNBytesRaw(gcpLink, "x.yaml"); len(errs) != 0 {
 		t.Errorf("expected no FQDN finding for a GCP self-link: %v", errs)
+	}
+}
+
+func TestValidateFQDNBytesRaw_SkipsTektonParamRefs(t *testing.T) {
+	data := []byte(`apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: build-task
+spec:
+  params:
+    - name: image
+      type: string
+  steps:
+    - image: $(params.image)
+      name: build
+`)
+	errs := ValidateFQDNBytesRaw(data, "x.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no FQDN findings for Tekton param refs, got: %v", errs)
 	}
 }
 
