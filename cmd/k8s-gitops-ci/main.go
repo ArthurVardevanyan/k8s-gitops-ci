@@ -357,7 +357,7 @@ func runTest(args []string) error {
 	// ever recorded itself via res.Logger.ErrorInSection, the same gap
 	// "pipeline"'s validatorResultFailed exists to close - still exited 0
 	// here even with a real ❌ in the printed sections above.
-	// Quiet mode always exits 0 (like the old scan-all), matching its
+	// Quiet mode always exits 0 (like test --all), matching its
 	// purpose as a "did I break anything?" pre-commit check.
 	if !opts.Quiet && res.Failed() {
 		return fmt.Errorf("test: validation failed")
@@ -368,7 +368,7 @@ func runTest(args []string) error {
 // printQuietSectionsConsole prints only the failed and warned sections'
 // full detail — no passing sections are shown at all (not even a one-line
 // summary). This is the rendering used by --quiet mode, matching the
-// old scan-all behavior.
+// old test --all behavior.
 func printQuietSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
 	for _, s := range sections {
 		if pipeline.SectionHasConsoleDetail(s) {

@@ -472,7 +472,7 @@ func TestComposeSections_OmitsBuildSectionsWhenAbsent(t *testing.T) {
 // (see nad_wiring.go's runNADValidation), but composeSections used to only
 // relay a hardcoded name whitelist that never included it - so the actual PR
 // comment silently never showed NAD findings even though validator.RunAll
-// (and thus the build-yaml/test-all CLI commands, which print every
+// (and thus the build-yaml/test CLI commands, which print every
 // res.Sections entry directly) produced them. When present it must be
 // relayed verbatim, like Kustomize Build/Scaffold Validation/Resource
 // Compliance.

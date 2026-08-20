@@ -158,8 +158,8 @@ overlays share the same name and the selector is merged across all apps.
 
 1. Build: `task build` (in this repo) → `bin/k8s-gitops-ci`.
 2. In the GitOps repo being fixed, run one of:
-   - `bin/k8s-gitops-ci scan-all` — uncommitted working-tree diff (fastest iteration)
-   - `bin/k8s-gitops-ci test-all <changed-dir>` — full tree walk under a directory
+   - `bin/k8s-gitops-ci test --all` — uncommitted working-tree diff (fastest iteration)
+   - `bin/k8s-gitops-ci test <changed-dir>` — full tree walk under a directory
    - `bin/k8s-gitops-ci build-yaml --app <app> --cluster <cluster>` — single app/overlay
    - Append `--lint-only` to skip build checks, `--verbose` for details.
 3. Local runs **automatically resolve test.sh from the working tree** (`SourceLocal`)
@@ -245,7 +245,7 @@ export EXEMPTIONS=(
 - [ ] `dir=` not used (blocking "unknown exemption key" error).
 - [ ] Annotation value copied verbatim from the report row (check the
       `Image`/`Value` column of the failed row).
-- [ ] Local verification done: `task build` then `scan-all` or `test-all <dir>`
+- [ ] Local verification done: `task build` then `test --all` or `test <dir>`
       (local runs auto-resolve `test.sh` from the working tree — no flag
       needed). PR runs use `SourceMain`; test PR-branch `test.sh` via
       `/hook-test` or after merge.

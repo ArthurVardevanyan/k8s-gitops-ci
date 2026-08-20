@@ -40,8 +40,8 @@ var blankRunRe = regexp.MustCompile(`\n{3,}`)
 // indentation since GitHub strips inline CSS, **bold** emphasis) - into
 // plain text suitable for a terminal. Section.Body itself is never mutated;
 // this only applies to the copy printed to the console (by
-// printFailedSectionDetail here, and by cmd/k8s-gitops-ci's test-all/
-// scan-all/build-yaml handlers), so the PR comment's actual rendering is
+// printFailedSectionDetail here, and by cmd/k8s-gitops-ci's test/
+// build-yaml handlers), so the PR comment's actual rendering is
 // unaffected. Exported so any console-output path outside this package can
 // reuse it instead of dumping raw PR-comment markdown to stdout.
 func SanitizeSectionBodyForConsole(body string) string {
@@ -54,7 +54,7 @@ func SanitizeSectionBodyForConsole(body string) string {
 // SectionHasConsoleDetail reports whether a section should print its full
 // (console-sanitized) Body to the terminal: errored (❌) or warning (⚠️)
 // sections with a non-empty body. Single source of truth shared by pipeline,
-// test-all, and scan-all so their console rendering can't drift on the
+// test and build-yaml so their console rendering can't drift on the
 // "which sections get per-finding detail" rule.
 func SectionHasConsoleDetail(s validator.ReportSection) bool {
 	return (s.Status == validator.StatusError || s.Status == validator.StatusWarning) &&

@@ -56,7 +56,7 @@ type Options struct {
 	// when both are set.
 	FullScan bool
 	// Quiet suppresses passing sections entirely (like the former
-	// scan-all mode) and always exits 0, regardless of findings.
+	// test --all mode) and always exits 0, regardless of findings.
 	Quiet     bool
 	Providers provider.Providers
 	// PostComment controls whether the validator/pipeline posts a PR
@@ -82,7 +82,7 @@ type Options struct {
 	// which prefetches schemas once up front (see docs/DEVELOPMENT.md's
 	// timing-table section) rather than paying the extraction cost lazily,
 	// inside the concurrent Linting phase, on every run. Left empty by
-	// callers that don't prefetch (e.g. test-all/build-yaml/scan-all), in
+	// callers that don't prefetch (e.g. test/build-yaml), in
 	// which case the kubeconform step falls back to its own lazy extraction
 	// exactly as before this field existed.
 	SchemaDir string
