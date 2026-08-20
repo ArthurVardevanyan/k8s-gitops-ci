@@ -501,14 +501,65 @@ func hasFindings(sections []validator.ReportSection) bool {
 // or a passing check that ran and produced output) survive the filter
 // so the PR comment still carries useful metadata even when everything
 // is green.
+//
+// Sections composed by composeParentFromChildren (PR Checks, Linting,
+// Static Checks, etc.) always have a non-empty Body because children
+// are rendered into it. When all children pass, the Body contains only
+// <details> dropdown blocks with no additional detail — treat those
+// as "empty body" for filtering purposes so they get dropped in quiet
+// mode. Sections with real detail text (e.g. "CI Notes: Pipeline
+// completed.") have content outside <details> tags and survive.
 func filterSections(sections []validator.ReportSection) []validator.ReportSection {
 	filtered := make([]validator.ReportSection, 0, len(sections))
 	for _, s := range sections {
-		if s.Status != validator.StatusPassed || s.Body != "" {
+		if s.Status != validator.StatusPassed || (s.Body != "" && !isRenderedOnly(s.Body)) {
 			filtered = append(filtered, s)
 		}
 	}
 	return filtered
+}
+
+// isRenderedOnly reports whether s consists entirely of <details>
+// blocks (as produced by renderSubDropdown) with no other content.
+// This distinguishes "passing section with rendered children only"
+// from "section with actual detail text."
+func isRenderedOnly(s string) bool {
+	if s == "" {
+		return true
+	}
+	// Strip all <details>...</details> blocks (nested recursively).
+	// If anything remains, the string has non-rendered content.
+	// We use a simple counter-based approach rather than regex to
+	// correctly handle nested <details> tags.
+	depth := 0
+	inDetails := false
+	i := 0
+	for i < len(s) {
+		if i+8 <= len(s) && s[i:i+8] == "<details>" {
+			depth++
+			inDetails = true
+			i += 8
+		} else if i+10 <= len(s) && s[i:i+10] == "</details>" {
+			depth--
+			if depth == 0 {
+				inDetails = false
+			}
+			i += 10
+		} else if inDetails || depth > 0 {
+			// Inside a <details> block, skip content
+			i++
+		} else {
+			// Outside any <details> block — not whitespace-only
+			c := s[i]
+			if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+				return false
+			}
+			i++
+		}
+	}
+	// Valid only if we ended inside a details block (all content was
+	// wrapped in <details>) and never went below depth 0.
+	return inDetails && depth >= 0
 }
 
 func postComment(res *Result, opts Options) error {
