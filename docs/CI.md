@@ -768,7 +768,8 @@ Resource-compliance checks split by which input decides their verdict:
 
 - **Render-sensitive checks** — `namespace`, `psa-labels`,
   `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`,
-  `image-checksum`, `named-ports`, `podspec-defaults`, and `placeholder`
+  `image-checksum`, `image-fqdn`, `named-ports`, `podspec-defaults`,
+  and `placeholder`
   — opt in via `check.RenderSensitive`
   (`pkg/validator/register_checks.go`). Their verdict comes from the
   kustomize/AVP-**rendered** overlay output (`runDocChecksRendered`,

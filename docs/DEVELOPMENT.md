@@ -446,7 +446,7 @@ finding, not just the count — without requiring `--verbose` or
 comment's `<details>`/`<summary>` dropdown renderer (literal HTML tags,
 `&nbsp;` indentation, `**bold**`), which would show up as raw markup on a
 plain terminal. `printFailedSectionDetail` runs each errored section's
-`Body` through `sanitizeSectionBodyForConsole`
+`Body` through `SanitizeSectionBodyForConsole`
 (`pkg/pipeline/console_format.go`) first — converting `<summary>X</summary>`
 to a plain `X:` label and stripping the rest — and prints the result via
 `Logger.Raw` rather than `Info`, since it's a pre-formatted block, not a
@@ -490,8 +490,9 @@ Body, Error}` type for the top level, which meant a section could only
 ever render ✅ or ❌ and had no way to represent "worth a look, but not
 blocking" (see the "Regression: worst-case status must roll up to the
 parent" note below for exactly what that caused). `Status` is a
-`SectionStatus`: `StatusPassed` / `StatusInfo` / `StatusWarning` /
-`StatusError`, ordered least-to-most-severe and each with its own icon —
+`SectionStatus` (`pkg/validator/unified_report.go`): `StatusPassed` /
+`StatusInfo` / `StatusWarning` / `StatusError`, ordered least-to-most-severe
+and each with its own icon —
 `✅`/`ℹ️`/`⚠️`/`❌` — via `SectionStatus.Icon()`; `Report.Render()` uses a
 section's own `Status.Icon()` directly for its `<summary>` line, falling
 back to `Summary` when `Body` is empty (the "passed, nothing more to
