@@ -20,6 +20,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+	defer r.Close() //nolint:errcheck
 	orig := os.Stdout
 	os.Stdout = w
 	defer func() { os.Stdout = orig }()

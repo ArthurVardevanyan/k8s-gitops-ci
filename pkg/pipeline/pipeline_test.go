@@ -773,6 +773,7 @@ func TestRun_UsesProviderPipelineHeaderForLogHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+	defer r.Close() //nolint:errcheck
 	os.Stdout = w
 
 	runErr := Run(Options{
@@ -812,6 +813,7 @@ func TestRun_PrintsVersionLineAndSetupHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+	defer r.Close() //nolint:errcheck
 	os.Stdout = w
 
 	runErr := Run(Options{URL: filepath.Join(t.TempDir(), "does-not-exist")})

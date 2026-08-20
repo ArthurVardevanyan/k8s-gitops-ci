@@ -102,8 +102,11 @@ func RunTest(opts validator.Options) error {
 // PrintRunFooter prints the run's TimingCollector.Summary() table (the
 // "Step/Duration/Mode" timing breakdown) followed by Logger.Summary(), for
 // RunTest — the same footer pipeline.Run already prints via its own Logger.
-// start is the time.Time captured before RunAll was called, used as the
-// timing table's wall-clock total.
+// Both are written via res.Logger.Raw (not fmt.Println) so they go through
+// the same console/logFile handling as the rest of a run's output, matching
+// pipeline.Run's footer (see pipeline.go's Run). start is the time.Time
+// captured before RunAll was called, used as the timing table's wall-clock
+// total.
 func PrintRunFooter(res *validator.Result, start time.Time) {
 	if res == nil || res.Logger == nil {
 		return
@@ -113,7 +116,7 @@ func PrintRunFooter(res *validator.Result, start time.Time) {
 			res.Logger.Raw(summary)
 		}
 	}
-	fmt.Println(res.Logger.Summary(len(res.Sections), res.WarnedSectionCount(), res.FailedSectionCount()))
+	res.Logger.Raw(res.Logger.Summary(len(res.Sections), res.WarnedSectionCount(), res.FailedSectionCount()))
 }
 
 // PrintAllSectionsConsole prints every section's result to the console: a
@@ -133,8 +136,8 @@ func PrintAllSectionsConsole(log *logger.Logger, sections []validator.ReportSect
 
 // PrintQuietSectionsConsole prints only the failed and warned sections'
 // full detail — no passing sections are shown at all (not even a one-line
-// summary). This is the rendering used by --quiet mode, matching the old
-// test --all behavior.
+// summary). This is the rendering used by --quiet mode, which prints only
+// failed/warned sections and always exits 0 regardless of findings.
 func PrintQuietSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
 	for _, s := range sections {
 		if SectionHasConsoleDetail(s) {
