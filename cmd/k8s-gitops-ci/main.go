@@ -87,7 +87,11 @@ func main() {
 
 // ── pipeline ──────────────────────────────────────────────────────────────────
 
-func runPipeline(args []string) error {
+// parsePipelineOptions parses pipeline's flags into a pipeline.Options
+// struct without running anything — split out from runPipeline so the
+// flag-to-Options wiring is unit-testable without invoking pipeline.Run
+// (which would clone a repo).
+func parsePipelineOptions(args []string) (pipeline.Options, error) {
 	fs := flag.NewFlagSet("pipeline", flag.ExitOnError)
 	opts := pipeline.EnvOptions()
 	opts.Providers = provider.Providers{}
@@ -101,6 +105,7 @@ func runPipeline(args []string) error {
 	fs.StringVar(&opts.TriggerComment, "trigger-comment", opts.TriggerComment, "trigger comment text")
 	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to validate in full, replacing the diff/PR-derived changeset entirely (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.BoolVar(&opts.LintOnly, "lint-only", false, "lint only, skip build checks")
+	fs.BoolVar(&opts.Quiet, "quiet", false, "quiet mode: skip comment when all checks pass, show only non-passing sections in PR comments")
 	fs.BoolVar(&opts.PostComment, "comment", false, "post PR comment (default: off)")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
@@ -110,12 +115,20 @@ func runPipeline(args []string) error {
 	fs.Var(newStringSliceFlag(&opts.Apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
 	fs.Var(newStringSliceFlag(&opts.Clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return pipeline.Options{}, err
 	}
 	opts.Dirs = splitCommaList(dirs)
 	opts.HookSource = hook.Source(hookSource)
 	opts.DisabledChecks = splitCommaList(disableChecks)
 	opts.EnabledChecks = splitCommaList(enableChecks)
+	return opts, nil
+}
+
+func runPipeline(args []string) error {
+	opts, err := parsePipelineOptions(args)
+	if err != nil {
+		return err
+	}
 	return pipeline.Run(opts)
 }
 
