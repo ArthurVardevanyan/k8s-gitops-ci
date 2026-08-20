@@ -76,6 +76,20 @@ Each entry matches against the finding's value **and** its repo-level alias,
 so the same annotation can mix tagged images (`cuda`) with repo-level
 references (`docker.io/nvidia/driver`).
 
+`rbac-wildcards` also supports **comma-separated** values to exempt
+wildcards in multiple fields in a single annotation:
+
+```yaml
+metadata:
+  annotations:
+    gitops-ci.k8s.io/exempt-rbac-wildcards: "apiGroups,resources"
+```
+
+Whitespace is trimmed (`"apiGroups, resources"` works the same as
+`"apiGroups,resources"`). Each entry matches independently — only the
+wildcarded fields listed in the annotation are exempted; any wildcard
+field not listed still produces a finding.
+
 `image-fqdn` (the check that requires an explicit registry host — see
 [CI.md](CI.md#image-fqdn)) is **not** exemptable by either mode: an
 unqualified image reference is almost always a mistake, and the one

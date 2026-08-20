@@ -234,6 +234,70 @@ rules:
 	}
 }
 
+func TestRbacWildcardCheck_CommaSeparatedAnnotationExemptionEndToEnd(t *testing.T) {
+	// A single annotation with comma-separated values ("apiGroups,resources,verbs")
+	// must exempt all three wildcard fields in a single rule.
+	dir := t.TempDir()
+	data := `kind: ClusterRole
+metadata:
+  name: admin
+  annotations:
+    gitops-ci.k8s.io/exempt-rbac-wildcards: "apiGroups,resources,verbs"
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+`
+	f := filepath.Join(dir, "clusterrole.yaml")
+	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
+	for _, finding := range res.Findings {
+		if finding.CheckID == "rbac-wildcards" {
+			t.Errorf("expected the rbac-wildcards finding to be excluded by comma-separated annotation, got %+v", finding)
+		}
+	}
+	// Two findings (apiGroups wildcard + resources wildcard) should both be exempted.
+	if len(res.Exempted) != 3 {
+		t.Errorf("expected 3 exempted entries for comma-separated annotation, got %d: %+v", len(res.Exempted), res.Exempted)
+	}
+}
+
+func TestRbacWildcardCheck_CommaSeparatedPartialExemption(t *testing.T) {
+	// Comma-separated annotation exempts only the listed fields; other wildcards
+	// should still appear as findings.
+	dir := t.TempDir()
+	data := `kind: ClusterRole
+metadata:
+  name: admin
+  annotations:
+    gitops-ci.k8s.io/exempt-rbac-wildcards: "resources"
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+`
+	f := filepath.Join(dir, "clusterrole.yaml")
+	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
+	// Should still have 2 findings (apiGroups + verbs), resources is exempted.
+	var wildcardFindings int
+	for _, finding := range res.Findings {
+		if finding.CheckID == "rbac-wildcards" {
+			wildcardFindings++
+		}
+	}
+	if wildcardFindings != 2 {
+		t.Errorf("expected 2 non-exempted rbac-wildcards findings (apiGroups + verbs), got %d", wildcardFindings)
+	}
+	if len(res.Exempted) != 1 {
+		t.Errorf("expected 1 exempted entry (resources only), got %d: %+v", len(res.Exempted), res.Exempted)
+	}
+}
+
 func TestNamedportCheck_AnnotationExemptionEndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	data := `kind: Service

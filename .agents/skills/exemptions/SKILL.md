@@ -41,7 +41,7 @@ Annotation-mode support is separate: a check only honors
 | `image-checksum`   | yes              | The exact image reference (report's `Image` column)                         |
 | `cluster-name`     | yes              | The foreign cluster-name token (report's `Value` column)                    |
 | `project-ref`      | yes              | The foreign project number or project ID                                    |
-| `rbac-wildcards`   | yes              | The wildcarded rule field (`verbs`/`resources`/`apiGroups`)                 |
+| `rbac-wildcards`   | yes              | One or more wildcarded rule fields, comma-separated (`verbs,resources`)     |
 | `named-ports`      | yes              | The numeric port as a string                                                |
 | `podspec-defaults` | yes              | The joined missing-fields list (e.g. `securityContext, resources.requests`) |
 | `namespace`        | no               | — (selector-only: `kind`/`name`/`file`)                                     |
