@@ -533,28 +533,25 @@ func isRenderedOnly(s string) bool {
 	// correctly handle nested <details> tags.
 	depth := 0
 	inDetails := false
-	i := 0
-	for i < len(s) {
-		if i+8 <= len(s) && s[i:i+8] == "<details>" {
+	for i := 0; i < len(s); i++ {
+		switch {
+		case i+8 <= len(s) && s[i:i+8] == "<details>":
 			depth++
 			inDetails = true
-			i += 8
-		} else if i+10 <= len(s) && s[i:i+10] == "</details>" {
+			i += 7
+		case i+10 <= len(s) && s[i:i+10] == "</details>":
 			depth--
 			if depth == 0 {
 				inDetails = false
 			}
-			i += 10
-		} else if inDetails || depth > 0 {
-			// Inside a <details> block, skip content
-			i++
-		} else {
-			// Outside any <details> block — not whitespace-only
+			i += 9
+		case inDetails || depth > 0:
+			continue
+		default:
 			c := s[i]
 			if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
 				return false
 			}
-			i++
 		}
 	}
 	// Valid only if we ended inside a details block (all content was
