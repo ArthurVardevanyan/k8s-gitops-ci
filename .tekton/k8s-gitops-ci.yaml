@@ -454,11 +454,28 @@ spec:
                   # delete_rcs <base>: remove every v<base>-rc.* GitHub release
                   # AND its tag, locally and on the remote. Best-effort — a
                   # cleanup hiccup must never fail a publish.
+                  # Uses the GitHub REST API directly (curl) instead of `gh release
+                  # delete` — `gh`'s --cleanup-tag is version-dependent and can
+                  # silently fail depending on the installed `gh` version, token
+                  # scopes, and API rate limits; curl + the REST API is
+                  # deterministic and gives the same permissions as the existing
+                  # GITHUB_TOKEN used throughout this step.
                   delete_rcs() {
                     _base="$1"
+                    _repo="${PARAM_GIT_URL##*github.com/}"
+                    _repo="${_repo%.git}"
                     for _t in $(git tag -l "v${_base}-rc.*"); do
-                      gh release delete "${_t}" --repo "${PARAM_GIT_URL##*github.com/}" --cleanup-tag --yes 2>/dev/null \
-                        || git push origin ":refs/tags/${_t}" 2>/dev/null || true
+                      # Delete the GitHub Release (which also removes the tag
+                      # from GitHub's side). -sf = silent + fail on HTTP error;
+                      # || true so cleanup never fails a publish.
+                      curl -sf -X DELETE \
+                        -H "Authorization: token ${GITHUB_TOKEN}" \
+                        "https://api.github.com/repos/${_repo}/releases/tags/${_t}" \
+                        2>/dev/null || true
+                      # Fallback: push deletion to the remote (no-op if the tag
+                      # was already deleted via the API above).
+                      git push origin ":refs/tags/${_t}" 2>/dev/null || true
+                      # Local cleanup.
                       git tag -d "${_t}" 2>/dev/null || true
                     done
                   }
