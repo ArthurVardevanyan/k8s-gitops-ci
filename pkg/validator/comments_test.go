@@ -242,7 +242,7 @@ func TestFixHints_EveryHintedCommandIsARegisteredSubcommand(t *testing.T) {
 		"ghost-patches":          true,
 		"yaml-syntax":            true,
 		"build-yaml":             true,
-		"test":                    true,
+		"test":                   true,
 		"pipeline":               true,
 		"ci":                     true,
 		"version":                true,

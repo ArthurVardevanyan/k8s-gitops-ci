@@ -1,9 +1,13 @@
 package pipeline
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
 )
 
@@ -59,4 +63,107 @@ func SanitizeSectionBodyForConsole(body string) string {
 func SectionHasConsoleDetail(s validator.ReportSection) bool {
 	return (s.Status == validator.StatusError || s.Status == validator.StatusWarning) &&
 		strings.TrimSpace(s.Body) != ""
+}
+
+// RunTest is the "test" command's full run: it runs validator.RunAll(opts)
+// and renders the result to the console exactly as cmd/k8s-gitops-ci's own
+// "test" subcommand used to render it in-process (version banner, per-section
+// console output, timing/summary footer, exit rule) — exported here so any
+// consumer CLI (e.g. an org layer wrapping this core with its own
+// provider.Providers seam via opts.Providers) gets identical "test" behavior
+// without reimplementing the renderer. opts.Quiet selects between full
+// section output (PrintAllSectionsConsole) and failure-only output
+// (PrintQuietSectionsConsole); opts.FullScan ("--all") is handled inside
+// validator.RunAll itself (see validator.Options.FullScan).
+//
+// The returned error is non-nil only when the run should be treated as a
+// failure: opts.Quiet always returns nil (matching test --quiet's "did I
+// break anything?" pre-commit contract of always exiting 0), otherwise a
+// non-nil error is returned whenever res.Failed() reports true.
+func RunTest(opts validator.Options) error {
+	start := time.Now()
+	fmt.Println(version.String())
+	res, err := validator.RunAll(opts)
+	if err != nil {
+		return err
+	}
+	if opts.Quiet {
+		PrintQuietSectionsConsole(res.Logger, res.Sections)
+	} else {
+		PrintAllSectionsConsole(res.Logger, res.Sections)
+	}
+	PrintRunFooter(res, start)
+	if !opts.Quiet && res.Failed() {
+		return fmt.Errorf("test: validation failed")
+	}
+	return nil
+}
+
+// PrintRunFooter prints the run's TimingCollector.Summary() table (the
+// "Step/Duration/Mode" timing breakdown) followed by Logger.Summary(), for
+// RunTest — the same footer pipeline.Run already prints via its own Logger.
+// start is the time.Time captured before RunAll was called, used as the
+// timing table's wall-clock total.
+func PrintRunFooter(res *validator.Result, start time.Time) {
+	if res == nil || res.Logger == nil {
+		return
+	}
+	if res.Timing != nil {
+		if summary := res.Timing.Summary(time.Since(start)); summary != "" {
+			res.Logger.Raw(summary)
+		}
+	}
+	fmt.Println(res.Logger.Summary(len(res.Sections), res.WarnedSectionCount(), res.FailedSectionCount()))
+}
+
+// PrintAllSectionsConsole prints every section's result to the console: a
+// compact "✅ Name: passed" line for passing sections (full detail was
+// already streamed live by log during RunAll - see phases.go - so repeating
+// it here would just duplicate that output in a different style), and the
+// full console-sanitized Body under a log.SubHeader box for failing ones.
+func PrintAllSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
+	for _, s := range sections {
+		if SectionHasConsoleDetail(s) {
+			PrintFailedSectionConsole(log, s)
+			continue
+		}
+		PrintPassedSectionConsole(log, s.Name)
+	}
+}
+
+// PrintQuietSectionsConsole prints only the failed and warned sections'
+// full detail — no passing sections are shown at all (not even a one-line
+// summary). This is the rendering used by --quiet mode, matching the old
+// test --all behavior.
+func PrintQuietSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
+	for _, s := range sections {
+		if SectionHasConsoleDetail(s) {
+			PrintFailedSectionConsole(log, s)
+		}
+	}
+}
+
+// PrintPassedSectionConsole prints a single-line "✅ Name: passed" summary
+// for a section that produced no errors and no warnings to render.
+func PrintPassedSectionConsole(log *logger.Logger, name string) {
+	line := "✅ " + name + ": passed"
+	if log != nil {
+		log.Raw(line)
+		return
+	}
+	fmt.Println(line)
+}
+
+// PrintFailedSectionConsole prints a section's console-sanitized Body under
+// a log.SubHeader(s.Name) box, so every console entry point sharing this
+// renderer gets a consistent header style.
+func PrintFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
+	body := SanitizeSectionBodyForConsole(s.Body)
+	if log != nil {
+		log.Raw("")
+		log.SubHeader(s.Name)
+		log.Raw(body)
+		return
+	}
+	fmt.Printf("\n--- %s ---\n%s\n", s.Name, body)
 }
