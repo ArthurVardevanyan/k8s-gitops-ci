@@ -950,6 +950,121 @@ func TestFilterSections_KeepsAllWhenQuietFalse(t *testing.T) {
 	}
 }
 
+func TestIsRenderedOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{
+			name: "empty string",
+			body: "",
+			want: true,
+		},
+		{
+			name: "whitespace only",
+			body: "  \n\t  \n",
+			want: true,
+		},
+		{
+			name: "single details block",
+			body: "<details>\n<summary>Check</summary>\nPassed.\n</details>",
+			want: true,
+		},
+		{
+			name: "multiple sibling details blocks",
+			body: "<details>\n<summary>A</summary>\nA passed.\n</details>\n<details>\n<summary>B</summary>\nB passed.\n</details>",
+			want: true,
+		},
+		{
+			name: "nested details blocks",
+			body: "<details>\n<summary>Parent</summary>\n<details>\n<summary>Child</summary>\nChild passed.\n</details>\n</details>",
+			want: true,
+		},
+		{
+			name: "deeply nested details",
+			body: "<details><details><details>\n<summary>X</summary>\nX.\n</details></details></details>",
+			want: true,
+		},
+		{
+			name: "trailing newline after details",
+			body: "<details>\n<summary>A</summary>\nA.\n</details>\n",
+			want: true,
+		},
+		{
+			name: "real detail text outside details",
+			body: "Pipeline completed.\n- Tool version: 1.0",
+			want: false,
+		},
+		{
+			name: "detail text before details",
+			body: "All checks passed.\n<details>\n<summary>A</summary>\nA.\n</details>",
+			want: false,
+		},
+		{
+			name: "detail text after details",
+			body: "<details>\n<summary>A</summary>\nA.\n</details>\nPipeline completed.",
+			want: false,
+		},
+		{
+			name: "mixed details and text",
+			body: "Summary.\n<details>\n<summary>A</summary>\nA.\n</details>\nEnd.",
+			want: false,
+		},
+		{
+			name: "unbalanced unclosed details",
+			body: "<details>\n<summary>A</summary>\nA.",
+			want: false,
+		},
+		{
+			name: "unbalanced extra close",
+			body: "<details>\n<summary>A</summary>\nA.\n</details>\n</details>",
+			want: false,
+		},
+		{
+			name: "only close tag",
+			body: "</details>",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isRenderedOnly(tt.body)
+			if got != tt.want {
+				t.Errorf("isRenderedOnly(%q) = %v, want %v", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilterSections_DropsPassingRenderedChildrenOnly(t *testing.T) {
+	renderedChild := "<details>\n<summary>\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0✅ PR Title</summary>\n\nPassed.\n\n</details>\n"
+	sections := []validator.ReportSection{
+		{Name: "PR Checks", Status: validator.StatusPassed, Body: renderedChild + "<details>\n<summary>\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0✅ Signed Commits</summary>\n\nPassed.\n\n</details>"},
+		{Name: "Linting", Status: validator.StatusPassed, Body: "<details>\n<summary>\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0✅ Prettier</summary>\n\nPassed.\n\n</details>"},
+		{Name: "Static Checks", Status: validator.StatusPassed, Body: "<details>\n<summary>\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0✅ Large File</summary>\n\nPassed.\n\n</details>"},
+		{Name: "CI Notes", Status: validator.StatusPassed, Body: "Pipeline completed.\n\n- Tool version: k8s-gitops-ci version 0.57.0"},
+		{Name: "Resource Compliance", Status: validator.StatusInfo, Body: "<details>\n<summary>Accepted Exemptions</summary>\n\n| Resource | Value |\n| --- | --- |\n| PipelineRun x | y | pre-existing |\n"},
+	}
+	got := filterSections(sections)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 sections after filtering, got %d: %v", len(got), got)
+	}
+	names := []string{got[0].Name, got[1].Name}
+	for _, want := range []string{"CI Notes", "Resource Compliance"} {
+		found := false
+		for _, n := range names {
+			if n == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected %q to survive filter, got: %v", want, names)
+		}
+	}
+}
+
 func TestBuildReport_QuietFiltersPassingSections(t *testing.T) {
 	// buildReport filters sections when opts.Quiet is true.
 	// The actual filtering is tested by TestFilterSections above.

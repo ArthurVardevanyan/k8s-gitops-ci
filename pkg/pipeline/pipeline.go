@@ -532,20 +532,18 @@ func isRenderedOnly(s string) bool {
 	// We use a simple counter-based approach rather than regex to
 	// correctly handle nested <details> tags.
 	depth := 0
-	inDetails := false
 	for i := 0; i < len(s); i++ {
 		switch {
-		case i+8 <= len(s) && s[i:i+8] == "<details>":
+		case i+9 <= len(s) && s[i:i+9] == "<details>":
 			depth++
-			inDetails = true
-			i += 7
+			i += 8
 		case i+10 <= len(s) && s[i:i+10] == "</details>":
 			depth--
-			if depth == 0 {
-				inDetails = false
+			if depth < 0 {
+				return false
 			}
 			i += 9
-		case inDetails || depth > 0:
+		case depth > 0:
 			continue
 		default:
 			c := s[i]
@@ -554,9 +552,7 @@ func isRenderedOnly(s string) bool {
 			}
 		}
 	}
-	// Valid only if we ended inside a details block (all content was
-	// wrapped in <details>) and never went below depth 0.
-	return inDetails && depth >= 0
+	return depth == 0
 }
 
 func postComment(res *Result, opts Options) error {
