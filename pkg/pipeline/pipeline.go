@@ -504,7 +504,7 @@ func hasFindings(sections []validator.ReportSection) bool {
 func filterSections(sections []validator.ReportSection) []validator.ReportSection {
 	filtered := make([]validator.ReportSection, 0, len(sections))
 	for _, s := range sections {
-		if !(s.Status == validator.StatusPassed && s.Body == "") {
+		if s.Status != validator.StatusPassed || s.Body != "" {
 			filtered = append(filtered, s)
 		}
 	}
