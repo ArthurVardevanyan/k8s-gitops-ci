@@ -1116,11 +1116,11 @@ func filterKubeconformExemptions(files []string, selectors []exempt.Selector) []
 	return out
 }
 
-// filterLargeFileExemptions drops files that match any check=largefile
+// filterLargeFileExemptions drops files that match any check=large-file
 // selector from selectors, reusing the same exempt.Evaluate path that doc
 // and overlay checks use. A file is excluded when at least one selector
 // matches — the caller logs nothing for exempted files; the exemption is
-// silently skipped in the largefile step.
+// silently skipped in the large-file step.
 func filterLargeFileExemptions(files []string, selectors []exempt.Selector) []string {
 	if len(selectors) == 0 {
 		return files
@@ -1128,7 +1128,7 @@ func filterLargeFileExemptions(files []string, selectors []exempt.Selector) []st
 	out := make([]string, 0, len(files))
 	for _, f := range files {
 		scalar := exempt.Scalar{File: f}
-		if ok, _ := exempt.Evaluate("largefile", scalar, nil, selectors); ok {
+		if ok, _ := exempt.Evaluate(exempt.IDLargeFile, scalar, nil, selectors); ok {
 			continue
 		}
 		out = append(out, f)

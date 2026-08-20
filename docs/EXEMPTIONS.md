@@ -7,17 +7,20 @@ for the tradeoffs between them.
 
 ## Table of Contents
 
-- [The two modes](#the-two-modes)
-  - [1. Annotation exemption](#1-annotation-exemption)
-  - [2. `EXEMPTIONS=(...)` selector](#2-exemptions-selector)
-  - [The built-in Tekton-PaC exemption](#the-built-in-tekton-pac-exemption)
-- [Which one do I use?](#which-one-do-i-use)
-- [Exemptable check IDs](#exemptable-check-ids)
-- [Non-app `test.sh` scoping](#non-app-testsh-scoping)
-- [Value vs. Token](#value-vs-token)
-- [Adding exemption support to a new check](#adding-exemption-support-to-a-new-check)
-- [How exemptions surface in the PR comment](#how-exemptions-surface-in-the-pr-comment)
-- [Selector reference](#selector-reference)
+- [Exemptions](#exemptions)
+  - [Table of Contents](#table-of-contents)
+  - [The two modes](#the-two-modes)
+    - [1. Annotation exemption](#1-annotation-exemption)
+    - [2. `EXEMPTIONS=(...)` selector](#2-exemptions-selector)
+    - [The built-in Tekton-PaC exemption](#the-built-in-tekton-pac-exemption)
+  - [Which one do I use?](#which-one-do-i-use)
+  - [Exemptable check IDs](#exemptable-check-ids)
+    - [Check ID naming convention](#check-id-naming-convention)
+  - [Non-app `test.sh` scoping](#non-app-testsh-scoping)
+  - [Value vs. Token](#value-vs-token)
+  - [Adding exemption support to a new check](#adding-exemption-support-to-a-new-check)
+  - [How exemptions surface in the PR comment](#how-exemptions-surface-in-the-pr-comment)
+  - [Selector reference](#selector-reference)
 
 ## The two modes
 
@@ -187,7 +190,32 @@ ID:
 | `kubeconform`      | The kubeconform lint step (`pkg/validator/phases.go`) — a standalone linter, not a `check.Register` entry                                                                  | Yes — `check=kubeconform,file=...` in a `test.sh` `EXEMPTIONS=(...)` block skips matching files from kubeconform schema validation. The `Selector.Dir` field is reachable only from the built-in Go selectors (`pkg/validator/tekton_exemptions.go`), not from `EXEMPTIONS=` — writing `dir=...` is a blocking parse error. Whole non-manifest YAML on the raw path (no root `kind`/`apiVersion`) is now **auto-skipped** by the content gate (`kubeconform.IsManifestYAML`, see [CI.md](CI.md#kubeconform)), so a selector is only needed for a file that _is_ a manifest but whose schema check you deliberately want suppressed. See [Non-app `test.sh` scoping](#non-app-testsh-scoping) below. |
 | `cluster-identity` | `pkg/validator/clusterid` (the fallback bucket for structural findings that don't set a more specific ID — e.g. a hypothetical future infraID-mismatch/invalid-JSON check) | **No — deliberately non-exemptable.** `exempt.Exemptable` hardcodes this ID to always return `false`, and `RegisterExemptable` refuses to register it even if called. This is intentional: a structural finding here means the data itself is malformed/untrustworthy, which isn't the kind of thing a selector or annotation should be able to wave away.                                                                                                                                                                                                                                                                                                                                          |
 | `image-fqdn`       | `pkg/validator/image`                                                                                                                                                      | **No — deliberately non-exemptable.** See [Annotation exemption](#1-annotation-exemption) above for the rationale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `largefile`        | The large file/binary check (`pkg/largefile`)                                                                                                                              | Yes — `check=largefile,file=...` in a `test.sh` `EXEMPTIONS=(...)` block skips matching files from the large file check. The `Selector.Dir` field is reachable only from the built-in Go selectors (`pkg/validator/tekton_exemptions.go`), not from `EXEMPTIONS=` — writing `dir=...` is a blocking parse error.                                                                                                                                                                                                                                                                                                                                                                                    |
+| `large-file`       | The large file/binary check (`pkg/largefile`)                                                                                                                              | Yes — `check=large-file,file=...` in a `test.sh` `EXEMPTIONS=(...)` block skips matching files from the large file check. The `Selector.Dir` field is reachable only from the built-in Go selectors (`pkg/validator/tekton_exemptions.go`), not from `EXEMPTIONS=` — writing `dir=...` is a blocking parse error.                                                                                                                                                                                                                                                                                                                                                                                   |
+
+### Check ID naming convention
+
+All check IDs that consist of multiple words use **kebab-case**
+(lowercase words separated by hyphens):
+
+| Example IDs        | Pattern               |
+| ------------------ | --------------------- |
+| `image-checksum`   | word-word             |
+| `image-fqdn`       | word-acronym          |
+| `cluster-identity` | word-word             |
+| `podspec-defaults` | word-word             |
+| `named-ports`      | word-word             |
+| `sync-options`     | word-word             |
+| `rbac-wildcards`   | acronym-word          |
+| `large-file`       | word-word             |
+| `kubeconform`      | single word           |
+| `namespace`        | single word           |
+| `crb`              | acronym (single word) |
+
+When adding a new exemptable check, use kebab-case for multi-word IDs
+and lowercase throughout. Use `exempt.RegisterExemptable(id)` to register
+the ID as exemptable (or rely on `check.Register` which does this
+automatically for `check.Check` implementations). Single-word IDs and
+acronyms are left unhyphenated.
 
 `pkg/validator/nad`'s NetworkAttachmentDefinition validation (see
 [CI.md](CI.md#networkattachmentdefinition-nad-validation)) is **not**

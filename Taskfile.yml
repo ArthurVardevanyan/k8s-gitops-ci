@@ -671,31 +671,34 @@ tasks:
         echo "🚀 Starting CI Pipeline"
         echo "=========================================="
         echo ""
-        echo "▶ Step 1/8  Version Check"
+        echo "▶ Step 1/9  Version Check"
       - task: version:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/8  Version Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 2/8  Module Dependencies Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/9  Version Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 2/9  Module Dependencies Check"
       - task: mod:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/8  Module Dependencies Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 3/8  Code Formatting Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/9  Module Dependencies Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 3/9  Code Formatting Check"
       - task: format:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/8  Code Formatting Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 4/8  Schemas & Policies"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/9  Code Formatting Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 4/9  Schemas & Policies"
       - task: schemas:pull
       - task: policies:pull
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/8  Schemas & Policies" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 5/8  Linting"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/9  Schemas & Policies" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 5/9  Linting"
       - task: lint
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/8  Linting" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 6/8  Vulnerability Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/9  Linting" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 6/9  Vulnerability Check"
       - task: vulncheck
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/8  Vulnerability Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 7/8  Tests (coverage + race)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/9  Vulnerability Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 7/9  Tests (coverage + race)"
       - task: test:cover
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/8  Tests (coverage + race)" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 8/8  Build"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/9  Tests (coverage + race)" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 8/9  Build"
       - task: build
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/8  Build" >> "{{.TIMEFILE}}"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/9  Build" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 9/9  Smoke Gate (engine against this repo's own data)"
+      - "{{.ROOT_DIR}}/bin/k8s-gitops-ci test --disable-checks golangci"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 9/9  Smoke Gate (engine against this repo's own data)" >> "{{.TIMEFILE}}"
       - |
         set -euo pipefail
         echo ""

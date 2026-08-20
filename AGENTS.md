@@ -149,10 +149,14 @@ After making a code change, before considering it done:
    documented behavior (flags, report structure, hook/exemption syntax,
    embedded-resource sourcing) — don't let docs drift silently.
 4. Update `.agents/skills/exemptions/SKILL.md` if you add, remove, or
-   change any exemptable check ID (like `largefile`, `kubeconform`,
+   change any exemptable check ID (like `large-file`, `kubeconform`,
    `image-checksum`) — the skill's table and common patterns must stay
    in sync with `pkg/validator/exempt/exempt.go` and `docs/EXEMPTIONS.md`.
-5. Run `task format` before committing.
+5. Before committing, run `./bin/k8s-gitops-ci test` (or the
+   relevant subset of dirs) to verify the engine still passes against
+   this repo's own data — this catches regressions that `task test`
+   (unit tests only) won't surface.
+6. Run `task format` before committing.
 
 ## Security
 

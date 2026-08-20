@@ -23,7 +23,7 @@ const (
 	IDClusterName     = "cluster-name"
 	IDProjectRef      = "project-ref"
 	IDClusterIdentity = "cluster-identity" // non-exemptable structural bucket
-	IDLargeFile       = "largefile"
+	IDLargeFile       = "large-file"
 )
 
 // Scalar is a generic finding value used for exemption matching.
