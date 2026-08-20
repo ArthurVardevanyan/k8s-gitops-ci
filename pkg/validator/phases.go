@@ -755,7 +755,15 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// resources are deliberately non-compliant CLI test data, not real
 	// workloads) - this doesn't affect kubeconform/Kyverno validation,
 	// which run over `changed`/rendered overlays through their own paths.
-	yamlFiles := filterKyvernoTestFixtureDirs(excludeScaffoldArtifacts(filterYAML(changed)))
+	// Well-known non-manifest tooling configs (Taskfile.yml, .golangci.yml,
+	// etc.) are also excluded - they never carry Kubernetes manifests, so
+	// sentinel words in their descriptions (e.g. "placeholder") would
+	// otherwise produce false-positive findings.
+	yamlFiles := filterKyvernoTestFixtureDirs(
+		excludeScaffoldArtifacts(
+			excludeKnownNonManifestFiles(filterYAML(changed)),
+		),
+	)
 	log.Info("running doc checks over %d YAML file(s)...", len(yamlFiles))
 
 	// Dual-pass compliance (raw + rendered). Render-sensitive checks (see
