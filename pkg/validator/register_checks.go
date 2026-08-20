@@ -165,8 +165,12 @@ func (rbacWildcardCheck) CheckDoc(data []byte, source string) []check.Finding {
 			// shared across every rule index on the same
 			// ClusterRole/Role that wildcards the same field, so one
 			// annotation/selector exempts all of them at once.
-			Value:       e.Field,
-			Annotations: e.Annotations,
+			// ExemptAnnotationValues enables comma-splitting in the
+			// annotation (e.g. "apiGroups,resources") so a single
+			// annotation can exempt wildcards in multiple fields.
+			Value:                  e.Field,
+			Annotations:            e.Annotations,
+			ExemptAnnotationValues: []string{e.Field},
 		})
 	}
 	return out
