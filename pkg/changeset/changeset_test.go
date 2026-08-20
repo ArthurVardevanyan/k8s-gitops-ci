@@ -291,19 +291,43 @@ func TestGitDiffAdded_ModifiedFileNotIncluded(t *testing.T) {
 	}
 }
 
-func TestGetAllFiles_UsesLsFiles(t *testing.T) {
+func TestGetAllFiles_IncludesUntrackedNonIgnored(t *testing.T) {
 	dir := newGitFixture(t)
 	writeFile(dir, "second.txt", "v1\n")
 	runGit(t, dir, "add", "second.txt")
 	runGit(t, dir, "commit", "-q", "-m", "add second")
-	writeFile(dir, "untracked.txt", "nope\n") // untracked, must not appear
+	writeFile(dir, "untracked.txt", "nope\n") // untracked but not ignored - should appear
 
 	t.Chdir(dir)
 	got, err := GetAllFiles()
 	if err != nil {
 		t.Fatalf("GetAllFiles: %v", err)
 	}
-	assertFiles(t, got, []string{"committed.txt", "second.txt"})
+	assertFiles(t, got, []string{"committed.txt", "second.txt", "untracked.txt"})
+}
+
+func TestGetAllFiles_ExcludesIgnoredFiles(t *testing.T) {
+	dir := newGitFixture(t)
+	writeFile(dir, "second.txt", "v1\n")
+	runGit(t, dir, "add", "second.txt")
+	runGit(t, dir, "commit", "-q", "-m", "add second")
+	// Create a .gitignore that ignores build artifacts and .log files.
+	writeFile(dir, ".gitignore", "build/\n*.log\n")
+	// Stage the .gitignore so it's tracked.
+	runGit(t, dir, "add", ".gitignore")
+	runGit(t, dir, "commit", "-q", "-m", "add gitignore")
+	// Now create ignored + non-ignored untracked files.
+	writeFile(dir, "build/output.txt", "secret\n")
+	writeFile(dir, "debug.log", "trace\n")
+	writeFile(dir, "kept.txt", "safe\n") // not ignored
+
+	t.Chdir(dir)
+	got, err := GetAllFiles()
+	if err != nil {
+		t.Fatalf("GetAllFiles: %v", err)
+	}
+	// .gitignore is tracked (committed), build/* and *.log are ignored.
+	assertFiles(t, got, []string{".gitignore", "committed.txt", "kept.txt", "second.txt"})
 }
 
 func TestGhResponseHint(t *testing.T) {

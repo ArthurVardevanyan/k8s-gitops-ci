@@ -75,17 +75,44 @@ func getAddedFilesFromPR(opts Options) ([]string, error) {
 	return result, nil
 }
 
-// GetAllFiles returns every git-tracked file in the repository (via
-// `git ls-files`), falling back to a plain directory walk only when git
-// itself is unavailable or the current directory isn't a git repo.
+// GetAllFiles returns all git-tracked files plus untracked files that are
+// not ignored by .gitignore (via `git ls-files` + `git ls-files
+// --others --exclude-standard`), falling back to a plain directory walk only
+// when git itself is unavailable or the current directory isn't a git repo.
 func GetAllFiles() ([]string, error) {
-	out, err := exec.CommandContext(context.Background(), "git", "ls-files").Output()
-	if err != nil {
+	var files []string
+
+	// Tracked files.
+	trackedOut, trackedErr := exec.CommandContext(context.Background(), "git", "ls-files").Output()
+	if trackedErr == nil {
+		files = append(files, splitLines(trackedOut)...)
+	}
+
+	// Untracked files that are not .gitignore-d.
+	untrackedOut, untrackedErr := exec.CommandContext(context.Background(), "git", "ls-files", "--others", "--exclude-standard").Output()
+	if untrackedErr == nil {
+		files = append(files, splitLines(untrackedOut)...)
+	}
+
+	// If both git commands failed, fall back to a plain directory walk.
+	if trackedErr != nil && untrackedErr != nil {
 		return walkDir(".")
 	}
-	files := splitLines(out)
+
 	sort.Strings(files)
-	return files, nil
+
+	// De-duplicate (a file can theoretically appear in both outputs
+	// if it was just staged — ls-files without flags lists tracked,
+	// --others lists untracked, but there's no harm in deduplicating).
+	seen := make(map[string]bool, len(files))
+	var deduped []string
+	for _, f := range files {
+		if !seen[f] {
+			seen[f] = true
+			deduped = append(deduped, f)
+		}
+	}
+	return deduped, nil
 }
 
 // GetFilesUnderDirs walks each of the given directories and returns all files

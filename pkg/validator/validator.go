@@ -2,10 +2,7 @@ package validator
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
-	"sort"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
@@ -115,37 +112,20 @@ func resolveChangeset(opts Options) ([]string, error) {
 	return changeset.FilterByPrefixes(files, opts.Dirs), nil
 }
 
-// getAllRepoFiles walks the entire repository from the current working
-// directory, collecting all files while filtering out scaffold templates
-// and any ExtraNonAppDirs prefixes (the same exclusions detectAppRoots
-// uses for overlay discovery). This is the changeset source for FullScan
-// mode, giving a 100% repo-wide file list independent of git state.
+// getAllRepoFiles delegates to changeset.GetAllFiles() (which respects
+// .gitignore) and filters out scaffold templates and any ExtraNonAppDirs
+// prefixes (the same exclusions detectAppRoots uses for overlay discovery).
+// This is the changeset source for FullScan mode.
 func getAllRepoFiles() ([]string, error) {
-	var files []string
-	if err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		if isExtraNonAppPath(path) {
-			return nil
-		}
-		files = append(files, path)
-		return nil
-	}); err != nil {
+	files, err := changeset.GetAllFiles()
+	if err != nil {
 		return nil, err
 	}
-	// Deduplicate and sort for deterministic ordering.
-	seen := make(map[string]bool, len(files))
-	var deduped []string
+	var filtered []string
 	for _, f := range files {
-		if !seen[f] {
-			seen[f] = true
-			deduped = append(deduped, f)
+		if !isExtraNonAppPath(f) {
+			filtered = append(filtered, f)
 		}
 	}
-	sort.Strings(deduped)
-	return deduped, nil
+	return filtered, nil
 }
