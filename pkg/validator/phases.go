@@ -135,7 +135,8 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 	// ── large file check (standalone phase, sequential) ─────────────────────
 	largeFileStart := time.Now()
 	log.Header("Large File Check")
-	if violations := largefile.Check(changed, largefile.DefaultMaxSize, largefile.DefaultIgnorePatterns); len(violations) > 0 {
+	filtered := filterLargeFileExemptions(changed, earlySelectors)
+	if violations := largefile.Check(filtered, largefile.DefaultMaxSize, largefile.DefaultIgnorePatterns); len(violations) > 0 {
 		var sb strings.Builder
 		for _, v := range violations {
 			sb.WriteString(v.String() + "\n")
@@ -1108,6 +1109,26 @@ func filterKubeconformExemptions(files []string, selectors []exempt.Selector) []
 	for _, f := range files {
 		scalar := exempt.Scalar{File: f}
 		if ok, _ := exempt.Evaluate("kubeconform", scalar, nil, selectors); ok {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// filterLargeFileExemptions drops files that match any check=largefile
+// selector from selectors, reusing the same exempt.Evaluate path that doc
+// and overlay checks use. A file is excluded when at least one selector
+// matches — the caller logs nothing for exempted files; the exemption is
+// silently skipped in the largefile step.
+func filterLargeFileExemptions(files []string, selectors []exempt.Selector) []string {
+	if len(selectors) == 0 {
+		return files
+	}
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		scalar := exempt.Scalar{File: f}
+		if ok, _ := exempt.Evaluate("largefile", scalar, nil, selectors); ok {
 			continue
 		}
 		out = append(out, f)

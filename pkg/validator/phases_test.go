@@ -10,6 +10,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
 func TestToIDSet_Empty(t *testing.T) {
@@ -688,5 +689,65 @@ func TestFilterYAML_ExcludesInvalidTestdata(t *testing.T) {
 		if isInvalidTestdata(f) {
 			t.Errorf("filterYAML leaked an invalid fixture: %q", f)
 		}
+	}
+}
+
+func TestFilterLargeFileExemptions_FileSelector(t *testing.T) {
+	t.Parallel()
+	files := []string{"a.bin", "b.bin", "c.bin"}
+	selectors := []exempt.Selector{
+		{Check: "largefile", File: "b.bin"},
+	}
+	got := filterLargeFileExemptions(files, selectors)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 files after filtering, got %d: %v", len(got), got)
+	}
+	if got[0] != "a.bin" || got[1] != "c.bin" {
+		t.Errorf("unexpected files: %v", got)
+	}
+}
+
+func TestFilterLargeFileExemptions_DirSelector(t *testing.T) {
+	t.Parallel()
+	files := []string{"machineConfigs/a.bin", "machineConfigs/b.bin", "other/c.bin"}
+	selectors := []exempt.Selector{
+		{Check: "largefile", Dir: "machineConfigs"},
+	}
+	got := filterLargeFileExemptions(files, selectors)
+	if len(got) != 1 || got[0] != "other/c.bin" {
+		t.Fatalf("expected 1 file after Dir filtering, got: %v", got)
+	}
+}
+
+func TestFilterLargeFileExemptions_NoSelectors(t *testing.T) {
+	t.Parallel()
+	files := []string{"a.bin", "b.bin"}
+	got := filterLargeFileExemptions(files, nil)
+	if len(got) != 2 || got[0] != "a.bin" || got[1] != "b.bin" {
+		t.Errorf("expected all files when no selectors, got: %v", got)
+	}
+}
+
+func TestFilterLargeFileExemptions_NoMatch(t *testing.T) {
+	t.Parallel()
+	files := []string{"a.bin", "b.bin"}
+	selectors := []exempt.Selector{
+		{Check: "largefile", File: "c.bin"},
+	}
+	got := filterLargeFileExemptions(files, selectors)
+	if len(got) != 2 {
+		t.Errorf("expected all files when selector doesn't match, got: %v", got)
+	}
+}
+
+func TestFilterLargeFileExemptions_PathSuffix(t *testing.T) {
+	t.Parallel()
+	files := []string{"machineConfigs/desktop/a/gwe.db", "other/b.db"}
+	selectors := []exempt.Selector{
+		{Check: "largefile", File: "gwe.db"},
+	}
+	got := filterLargeFileExemptions(files, selectors)
+	if len(got) != 1 || got[0] != "other/b.db" {
+		t.Fatalf("expected suffix match to work, got: %v", got)
 	}
 }
