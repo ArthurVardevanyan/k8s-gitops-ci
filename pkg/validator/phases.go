@@ -979,13 +979,13 @@ func excludeInvalidTestdata(files []string) []string {
 
 // excludeKnownNonManifestFiles drops well-known non-Kubernetes tooling
 // config files (Taskfile.yml, .golangci.yml, ...) from kubeconform's input
-// set - see kubeconform.KnownNonManifestFiles's doc comment for why this
+// set - see convention.KnownNonManifestFiles's doc comment for why this
 // is a permanent, structural exclusion rather than a per-file
 // EXEMPTIONS=(...) entry.
 func excludeKnownNonManifestFiles(files []string) []string {
 	var out []string
 	for _, f := range files {
-		if kubeconform.IsKnownNonManifestFile(f) {
+		if convention.IsKnownNonManifestFile(f) {
 			continue
 		}
 		out = append(out, f)

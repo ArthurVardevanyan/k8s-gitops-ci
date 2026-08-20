@@ -5,6 +5,47 @@ import (
 	"strings"
 )
 
+// KnownNonManifestFiles lists YAML/YML basenames that, by strong
+// ecosystem convention, are never Kubernetes manifests - they're
+// configuration files for common Go-ecosystem tooling (Task, golangci-lint,
+// GoReleaser, pre-commit) that happen to live at a repo root alongside
+// real Kubernetes YAML. Without this, any changeset touching one of these
+// (e.g. this repo's own Taskfile.yml) trips a permanent, unavoidable
+// "missing 'kind' key" error in manifest validators - not a one-off
+// exemption case, but a structural fact about the file that's permanently
+// true.
+//
+// Exported (not a plain unexported constant list) so an org/consumer layer
+// can extend it for its own tooling's YAML config files - e.g. from a
+// Configure()-equivalent in its own main() - following the same
+// core-data-plus-override-var shape used elsewhere in this repo (see
+// docs/DEVELOPMENT.md's "core data + org-injectable override" pattern),
+// even though here it's one shared map an org adds to directly rather than
+// a separate override map consulted alongside a core one - there's no
+// risk of an org's addition shadowing or conflicting with a core entry,
+// since basenames are simply either known-non-manifest or not.
+var KnownNonManifestFiles = map[string]bool{
+	"Taskfile.yml":            true,
+	"Taskfile.yaml":           true,
+	".golangci.yml":           true,
+	".golangci.yaml":          true,
+	".goreleaser.yaml":        true,
+	".goreleaser.yml":         true,
+	"dependabot.yml":          true,
+	"dependabot.yaml":         true,
+	".pre-commit-config.yaml": true,
+	".bulldozer.yml":          true,
+	".bulldozer.yaml":         true,
+	".policy.yml":             true,
+	".policy.yaml":            true,
+}
+
+// IsKnownNonManifestFile reports whether path's basename is a known
+// non-Kubernetes-manifest tooling config file (see KnownNonManifestFiles).
+func IsKnownNonManifestFile(path string) bool {
+	return KnownNonManifestFiles[filepath.Base(path)]
+}
+
 // ScaffoldDir is the root directory for scaffold-tool configs/templates.
 // Org layers may override this at startup.
 var ScaffoldDir = ".scafctl"
