@@ -358,6 +358,27 @@ func TestRunAll_KubeconformSkipsKnownNonManifestFiles(t *testing.T) {
 	}
 }
 
+// TestRunAll_DocChecksSkipKnownNonManifestFiles guards that well-known
+// non-Kubernetes tooling config files (Taskfile.yml, .golangci.yml, ...)
+// are excluded from compliance doc-checks (placeholder, namespace-scope,
+// RBAC, image-check, etc.), not just from kubeconform - sentinel words in
+// their descriptions (e.g. "placeholder" in a Taskfile.yml `desc:`) would
+// otherwise produce false-positive findings.
+func TestRunAll_DocChecksSkipKnownNonManifestFiles(t *testing.T) {
+	d := t.TempDir()
+	// A desc field containing the word "placeholder" would trigger the
+	// sentinel check if Taskfile.yml reached the doc-checks pipeline.
+	mustWrite(t, filepath.Join(d, "Taskfile.yml"), "version: '3'\ntasks:\n  build:\n    desc: Pull embedded kyverno policies (placeholder) into policies.tar.gz\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, DisabledChecks: []string{"kustomize-fix", "markdownlint", "prettier", "shellcheck", "golangci"}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if res.Logger != nil && res.Logger.HasFailures() {
+		t.Errorf("expected known non-manifest tooling config files to be skipped by doc checks, not fail with placeholder findings")
+	}
+}
+
 // TestRunAll_KubeconformSkipsNonManifestFlatYAML guards the content-aware
 // gate: flat, non-kustomize/helm YAML with no root apiVersion/kind (an
 // Ansible inventory, an NMState config) must be skipped by kubeconform

@@ -329,7 +329,7 @@ is no rendered output to validate.
   sub-check (and in `--dir`/standalone summary output) — never silent — so
   a genuinely header-less manifest in a flat directory stays visible for a
   human to catch. This is the content-aware complement to the
-  unconditional `KnownNonManifestFiles` basename fast-path (`Taskfile.yml`,
+  unconditional `convention.KnownNonManifestFiles` basename fast-path (`Taskfile.yml`,
   `.golangci.yml`, …).
 - **Default:** on. **Disable:** `--disable-checks kubeconform` — a genuine
   wholesale opt-out (unlike the CLI-wrapper checks above, there's no
