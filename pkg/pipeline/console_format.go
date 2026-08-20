@@ -56,12 +56,14 @@ func SanitizeSectionBodyForConsole(body string) string {
 }
 
 // SectionHasConsoleDetail reports whether a section should print its full
-// (console-sanitized) Body to the terminal: errored (❌) or warning (⚠️)
-// sections with a non-empty body. Single source of truth shared by pipeline,
-// test and build-yaml so their console rendering can't drift on the
-// "which sections get per-finding detail" rule.
+// (console-sanitized) Body to the terminal: errored (❌), warned (⚠️), or
+// info (ℹ️) sections with a non-empty body. Info covers accepted exemptions
+// - "nothing wrong, but here's an audit trail" - which should surface in
+// quiet mode alongside errors and warnings. Single source of truth shared
+// by pipeline, test and build-yaml so their console rendering can't drift
+// on the "which sections get per-finding detail" rule.
 func SectionHasConsoleDetail(s validator.ReportSection) bool {
-	return (s.Status == validator.StatusError || s.Status == validator.StatusWarning) &&
+	return (s.Status == validator.StatusError || s.Status == validator.StatusWarning || s.Status == validator.StatusInfo) &&
 		strings.TrimSpace(s.Body) != ""
 }
 

@@ -33,6 +33,10 @@ type Options struct {
 	HookSource     hook.Source
 	TriggerComment string
 	LintOnly       bool
+	// Quiet suppresses passing sections from the PR comment and skips
+	// posting a new comment when all checks pass (deleting any existing
+	// comment instead). Off by default.
+	Quiet bool
 	// PostComment controls whether a PR-comment summary is posted after the
 	// run. Off by default; the CLI's --comment flag opts in. Comment
 	// posting is also independently gated by github.Client.IsAvailable()
@@ -465,20 +469,66 @@ func buildReport(res *Result, opts Options) validator.Report {
 	if marker == "" {
 		marker = "<!-- gitops-ci-report -->"
 	}
+	sections := composeSections(res, opts)
+	if opts.Quiet {
+		sections = filterSections(sections)
+	}
 	return validator.Report{
 		Marker:    marker,
 		Title:     opts.Providers.ReportTitle(),
 		Header:    opts.Providers.PipelineHeader(),
 		Timestamp: time.Now(),
-		Sections:  composeSections(res, opts),
+		Sections:  sections,
 		Body:      "```bash\n" + res.ReproduceCommand + "\n```",
 	}
+}
+
+// hasFindings reports whether any section has a non-passing status
+// (Error, Warning, or Info). Info covers accepted exemptions -
+// "nothing wrong, but here's an audit trail of what was excused" -
+// which should show in quiet mode so reviewers know exemptions were applied.
+func hasFindings(sections []validator.ReportSection) bool {
+	for _, s := range sections {
+		if s.Status == validator.StatusError || s.Status == validator.StatusWarning || s.Status == validator.StatusInfo {
+			return true
+		}
+	}
+	return false
+}
+
+// filterSections drops purely-passing sections with no detail when
+// quiet mode is enabled. Sections with a non-empty Body (e.g. CI Notes,
+// or a passing check that ran and produced output) survive the filter
+// so the PR comment still carries useful metadata even when everything
+// is green.
+func filterSections(sections []validator.ReportSection) []validator.ReportSection {
+	filtered := make([]validator.ReportSection, 0, len(sections))
+	for _, s := range sections {
+		if s.Status != validator.StatusPassed || s.Body != "" {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
 }
 
 func postComment(res *Result, opts Options) error {
 	client := github.NewClient(opts.URL, opts.PR)
 	if !client.IsAvailable() {
 		return nil
+	}
+	sections := composeSections(res, opts)
+	if opts.Quiet && !hasFindings(sections) {
+		// Quiet mode with no findings: don't post a new comment, but
+		// delete any existing report comment + legacy markers so a
+		// prior run's comment (which may have had findings) gets
+		// cleaned up when those issues are resolved.
+		if err := github.DeleteComments(client, "<!-- gitops-ci-report -->"); err != nil {
+			return err
+		}
+		if err := github.DeleteComments(client, validator.LegacyMarkers()...); err != nil {
+			return err
+		}
+		return github.DeleteComments(client, opts.Providers.ForeignMarkers()...)
 	}
 	report := buildReport(res, opts)
 	if err := github.UpsertComment(client, report.Marker, report.Render()); err != nil {

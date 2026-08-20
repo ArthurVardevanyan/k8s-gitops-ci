@@ -102,9 +102,11 @@ func TestSanitizeSectionBodyForConsole_CollapsesBlankRuns(t *testing.T) {
 
 // TestSectionHasConsoleDetail verifies the single rule all console entry
 // points (pipeline, test) share for deciding which sections
-// print their full per-finding Body: errored (❌) or warning (⚠️) sections
-// with a non-empty body. Anything else (passed/info, or an empty/whitespace
-// body) must render as a terse summary or be omitted.
+// print their full per-finding Body: errored (❌), warned (⚠️), or info (ℹ️)
+// sections with a non-empty body. Info covers accepted exemptions - "nothing
+// wrong, but here's an audit trail" - which should surface in quiet mode.
+// Anything else (passed, or empty/whitespace body) must render as a terse
+// summary or be omitted.
 func TestSectionHasConsoleDetail(t *testing.T) {
 	cases := []struct {
 		name string
@@ -139,7 +141,7 @@ func TestSectionHasConsoleDetail(t *testing.T) {
 		{
 			name: "info with body",
 			s:    validator.ReportSection{Name: "RC", Status: validator.StatusInfo, Body: "table"},
-			want: false,
+			want: true,
 		},
 	}
 	for _, tc := range cases {

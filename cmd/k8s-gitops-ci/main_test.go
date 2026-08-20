@@ -318,3 +318,118 @@ func TestRunKustomizeFix_NoFilesNeedFixing(t *testing.T) {
 		t.Errorf("expected the up-to-date message, got: %s", out)
 	}
 }
+
+// ── Pipeline Flag Parsing ────────────────────────────────────────────────
+
+func TestParsePipelineOptions_Quiet(t *testing.T) {
+	opts, err := parsePipelineOptions([]string{"--quiet"})
+	if err != nil {
+		t.Fatalf("parsePipelineOptions: %v", err)
+	}
+	if !opts.Quiet {
+		t.Errorf("Quiet = %v, want true", opts.Quiet)
+	}
+	if opts.PostComment {
+		t.Errorf("PostComment = %v, want false", opts.PostComment)
+	}
+}
+
+func TestParsePipelineOptions_QuietAndComment(t *testing.T) {
+	opts, err := parsePipelineOptions([]string{"--quiet", "--comment"})
+	if err != nil {
+		t.Fatalf("parsePipelineOptions: %v", err)
+	}
+	if !opts.Quiet {
+		t.Errorf("Quiet = %v, want true", opts.Quiet)
+	}
+	if !opts.PostComment {
+		t.Errorf("PostComment = %v, want true", opts.PostComment)
+	}
+}
+
+func TestParsePipelineOptions_NoQuietByDefault(t *testing.T) {
+	opts, err := parsePipelineOptions([]string{"--url=https://github.com/example/repo", "--pr=42"})
+	if err != nil {
+		t.Fatalf("parsePipelineOptions: %v", err)
+	}
+	if opts.Quiet {
+		t.Errorf("Quiet = %v, want false", opts.Quiet)
+	}
+}
+
+func TestParsePipelineOptions_AllFlags(t *testing.T) {
+	opts, err := parsePipelineOptions([]string{
+		"--url=https://github.com/org/repo",
+		"--pr=42",
+		"--revision=abc123",
+		"--target-branch=main",
+		"--hook-source=pr",
+		"--trigger-comment=/hook-pipeline",
+		"--dirs=kubernetes/,tekton/",
+		"--lint-only",
+		"--quiet",
+		"--comment",
+		"--verbose",
+		"--assume-openshift",
+		"--disable-checks=sync-options,golangci",
+		"--enable-checks=kyverno",
+		"--concurrency=4",
+		"--app=appA",
+		"--app=appB",
+		"--cluster=prod",
+	})
+	if err != nil {
+		t.Fatalf("parsePipelineOptions: %v", err)
+	}
+	if opts.URL != "https://github.com/org/repo" {
+		t.Errorf("URL = %q, want %q", opts.URL, "https://github.com/org/repo")
+	}
+	if opts.PR != "42" {
+		t.Errorf("PR = %q, want %q", opts.PR, "42")
+	}
+	if opts.Revision != "abc123" {
+		t.Errorf("Revision = %q, want %q", opts.Revision, "abc123")
+	}
+	if opts.TargetBranch != "main" {
+		t.Errorf("TargetBranch = %q, want %q", opts.TargetBranch, "main")
+	}
+	if opts.HookSource != "pr" {
+		t.Errorf("HookSource = %q, want %q", opts.HookSource, "pr")
+	}
+	if opts.TriggerComment != "/hook-pipeline" {
+		t.Errorf("TriggerComment = %q, want %q", opts.TriggerComment, "/hook-pipeline")
+	}
+	if !opts.LintOnly {
+		t.Error("LintOnly = false, want true")
+	}
+	if !opts.Quiet {
+		t.Error("Quiet = false, want true")
+	}
+	if !opts.PostComment {
+		t.Error("PostComment = false, want true")
+	}
+	if !opts.Verbose {
+		t.Error("Verbose = false, want true")
+	}
+	if !opts.AssumeOpenShift {
+		t.Error("AssumeOpenShift = false, want true")
+	}
+	if opts.Concurrency != 4 {
+		t.Errorf("Concurrency = %d, want 4", opts.Concurrency)
+	}
+	if len(opts.Dirs) != 2 || opts.Dirs[0] != "kubernetes/" || opts.Dirs[1] != "tekton/" {
+		t.Errorf("Dirs = %v, want [kubernetes/ tekton/]", opts.Dirs)
+	}
+	if len(opts.DisabledChecks) != 2 {
+		t.Errorf("DisabledChecks = %v, want [sync-options golangci]", opts.DisabledChecks)
+	}
+	if len(opts.EnabledChecks) != 1 || opts.EnabledChecks[0] != "kyverno" {
+		t.Errorf("EnabledChecks = %v, want [kyverno]", opts.EnabledChecks)
+	}
+	if len(opts.Apps) != 2 || opts.Apps[0] != "appA" || opts.Apps[1] != "appB" {
+		t.Errorf("Apps = %v, want [appA appB]", opts.Apps)
+	}
+	if len(opts.Clusters) != 1 || opts.Clusters[0] != "prod" {
+		t.Errorf("Clusters = %v, want [prod]", opts.Clusters)
+	}
+}
