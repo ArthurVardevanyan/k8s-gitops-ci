@@ -591,10 +591,6 @@ spec:
                 fi
 
       - name: lint
-        # Only run for pull_request events - a push (i.e. a merge to main)
-        # has no PR left to comment on, and everything --lint-only checks
-        # was already checked on the PR that merged. Skipped cleanly by
-        # Tekton (no pod spun up) rather than the script itself no-op'ing.
         when:
           - input: "$(params.event)"
             operator: in
@@ -694,7 +690,8 @@ spec:
                   --revision "${PARAM_REVISION}" \
                   --target-branch "${PARAM_TARGET_BRANCH}" \
                   --disable-checks golangci \
-                  --comment
+                  --comment \
+                  --quiet
 
       # TODO: clair scan (re-enable once image build is wired up)
       # - name: clair-action
