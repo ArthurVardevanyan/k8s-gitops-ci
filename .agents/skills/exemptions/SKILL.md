@@ -30,7 +30,7 @@ Every check registered via `check.Register` (`namespace`, `psa-labels`,
 `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`, `image-checksum`,
 `named-ports`, `podspec-defaults`, `placeholder`) becomes exemptable via
 the **selector** mode automatically (under its own ID). The large file
-check (`largefile`) and the kubeconform lint step (`kubeconform`) are
+check (`large-file`) and the kubeconform lint step (`kubeconform`) are
 registered as exemptable manually via `exempt.RegisterExemptable`.
 `cluster-identity` is also registered but is **deliberately non-exemptable** (infraID mismatch,
 invalid JSON — structural findings that should not be waved away).
@@ -53,7 +53,7 @@ Annotation-mode support is separate: a check only honors
 | `sync-options`     | no               | — (selector-only: `kind`/`name`/`file`)                                     |
 | `placeholder`      | no               | — (selector-only; `value=`/`match=` match the flagged token)                |
 | `kubeconform`      | no               | — (file-level only: `file=`)                                                |
-| `largefile`        | no               | — (file-level only: `file=`)                                                |
+| `large-file`       | no               | — (file-level only: `file=`)                                                |
 | `cluster-identity` | **never**        | Deliberately non-exemptable (infraID mismatch, invalid JSON)                |
 
 **NAD validation** (`pkg/validator/nad`) is not part of the `check.Register`
@@ -227,8 +227,8 @@ export EXEMPTIONS=(
 
 ```sh
 export EXEMPTIONS=(
-  "check=largefile,file=gwe.db"
-  "check=largefile,file=High_Speed.curaprofile"
+  "check=large-file,file=gwe.db"
+  "check=large-file,file=High_Speed.curaprofile"
 )
 ```
 

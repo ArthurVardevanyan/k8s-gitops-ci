@@ -129,9 +129,8 @@ Always exits 0, regardless of findings. This is useful for pre-commit
 checks where you only want to see what you broke, not a full pass/fail
 report.
 
-**`--lint-only`** (pipeline mode only) skips the Build Overlays + Resource
-Compliance phase entirely — useful for a fast Linting/Static-Checks-only
-pass.
+**`--lint-only`** skips the Build Overlays + Resource Compliance phase
+entirely — useful for a fast Linting/Static-Checks-only pass.
 
 **`--app`/`--cluster` targeting** (`Options.Apps`/`Options.Clusters`,
 repeatable flags) is resolved by `resolveTargetOverlays`

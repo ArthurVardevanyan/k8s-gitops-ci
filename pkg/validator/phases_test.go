@@ -696,7 +696,7 @@ func TestFilterLargeFileExemptions_FileSelector(t *testing.T) {
 	t.Parallel()
 	files := []string{"a.bin", "b.bin", "c.bin"}
 	selectors := []exempt.Selector{
-		{Check: "largefile", File: "b.bin"},
+		{Check: exempt.IDLargeFile, File: "b.bin"},
 	}
 	got := filterLargeFileExemptions(files, selectors)
 	if len(got) != 2 {
@@ -711,7 +711,7 @@ func TestFilterLargeFileExemptions_DirSelector(t *testing.T) {
 	t.Parallel()
 	files := []string{"machineConfigs/a.bin", "machineConfigs/b.bin", "other/c.bin"}
 	selectors := []exempt.Selector{
-		{Check: "largefile", Dir: "machineConfigs"},
+		{Check: exempt.IDLargeFile, Dir: "machineConfigs"},
 	}
 	got := filterLargeFileExemptions(files, selectors)
 	if len(got) != 1 || got[0] != "other/c.bin" {
@@ -732,7 +732,7 @@ func TestFilterLargeFileExemptions_NoMatch(t *testing.T) {
 	t.Parallel()
 	files := []string{"a.bin", "b.bin"}
 	selectors := []exempt.Selector{
-		{Check: "largefile", File: "c.bin"},
+		{Check: exempt.IDLargeFile, File: "c.bin"},
 	}
 	got := filterLargeFileExemptions(files, selectors)
 	if len(got) != 2 {
@@ -744,7 +744,7 @@ func TestFilterLargeFileExemptions_PathSuffix(t *testing.T) {
 	t.Parallel()
 	files := []string{"machineConfigs/desktop/a/gwe.db", "other/b.db"}
 	selectors := []exempt.Selector{
-		{Check: "largefile", File: "gwe.db"},
+		{Check: exempt.IDLargeFile, File: "gwe.db"},
 	}
 	got := filterLargeFileExemptions(files, selectors)
 	if len(got) != 1 || got[0] != "other/b.db" {

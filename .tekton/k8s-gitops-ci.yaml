@@ -693,7 +693,6 @@ spec:
                   --pr "${PARAM_PR_NUMBER}" \
                   --revision "${PARAM_REVISION}" \
                   --target-branch "${PARAM_TARGET_BRANCH}" \
-                  --lint-only \
                   --disable-checks golangci \
                   --comment
 
