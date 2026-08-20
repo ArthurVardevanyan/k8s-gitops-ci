@@ -153,7 +153,7 @@ non-colliding** comments identified by distinct markers, so neither
 overwrites the other:
 
 - **`lint`** posts the product's manifest-validation report
-  (`<!-- ci-unified-report -->`) by running
+  (`<!-- gitops-ci-report -->`) by running
   `k8s-gitops-ci pipeline … --comment` — dogfooding this repo's own
   manifests.
 - **`build`** posts a **self-CI status comment**
@@ -231,16 +231,17 @@ build`/`install`'s scratch work dirs (`os.TempDir()`, default `/tmp`)
 
 ### Parallelism (`GOMAXPROCS`)
 
-The build task pins `GOMAXPROCS: "6"` in its `stepTemplate` env,
-matching the pod's CPU `limit`. Go 1.25+ otherwise derives `GOMAXPROCS`
-from the pod's cgroup CPU allocation, and a fractional CPU `request`
-(this task previously used `500m`) rounds down to **`GOMAXPROCS=1`** —
-silently serializing every Go step (`go test ./...`, `golangci-lint`,
-`govulncheck`, and the release build's compiles) onto a single core.
-Pinning it explicitly keeps those steps multi-core regardless of the
-request. The CPU `request` is set to `1` (was `500m`) to match the
-observed ~1-core average and keep scheduling honest; the `limit` stays
-at `6` for burst headroom now that the steps actually parallelize.
+The build task pins `GOMAXPROCS: "12"` in its `stepTemplate` env (the
+pod's CPU `limit` is `"6"`, so this is higher than the cgroup-derived
+value). Go 1.25+ otherwise derives `GOMAXPROCS` from the pod's cgroup
+CPU allocation, and a fractional CPU `request` (this task previously
+used `500m`) rounds down to **`GOMAXPROCS=1`** — silently serializing
+every Go step (`go test ./...`, `golangci-lint`, `govulncheck`, and the
+release build's compiles) onto a single core. Pinning it explicitly
+keeps those steps multi-core regardless of the request. The CPU
+`request` is set to `1` (was `500m`) to match the observed ~1-core
+average and keep scheduling honest; the `limit` stays at `6` for burst
+headroom now that the steps actually parallelize.
 
 ## Known limitations
 

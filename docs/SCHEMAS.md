@@ -39,7 +39,9 @@ default for a bare `go build ./cmd/k8s-gitops-ci`, and how downstream Go
 module consumers import these packages as a library - no archive is
 compiled in at all, keeping the package importable without needing the
 (large, gitignored) archive to be present.
-`Extract()`/`EnsureArchive()` return `ErrNoEmbeddedArchive` in that case,
+`Extract()`/`EnsureArchive()` return `ErrNoEmbeddedArchive` in that case
+(the `//go:embed` files are `embed_archive.go` / `embed_stub.go`, not
+`embed.go`),
 and callers (`kubeconform.ExtractSchemas`, `kyverno.PreparePolicies`,
 `pkg/pipeline`'s Setup phase, `pkg/validator/phases.go`) fall back
 gracefully rather than failing the run - kubeconform/Kyverno then rely on

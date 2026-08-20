@@ -56,8 +56,9 @@ flowchart LR
   > etc. placeholders the way ArgoCD's AVP plugin does at sync time). This
   > is real, implemented, unit-tested code — but no current CLI flag or
   > pipeline phase actually selects it; every real call site
-  > (`pkg/validator/build_wiring.go`, `pkg/validator/kubeconform_overlay.go`,
-  > `pkg/ghostpatch/ghostpatch.go`) calls `RenderKustomize` directly. Don't
+  > (`pkg/validator/build_wiring.go`,
+  > `pkg/validator/hook_wiring.go`, `pkg/ghostpatch/ghostpatch.go`) calls
+  > `RenderKustomize` directly. Don't
   > assume AVP/Helm rendering happens today just because the code exists to
   > do it — this is a prepared-but-unwired capability, the same class of
   > gap as the Kyverno step noted below.
