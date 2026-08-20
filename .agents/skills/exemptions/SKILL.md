@@ -29,8 +29,10 @@ outside the repo, or you need to exempt a whole directory.
 Every check registered via `check.Register` (`namespace`, `psa-labels`,
 `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`, `image-checksum`,
 `named-ports`, `podspec-defaults`, `placeholder`) becomes exemptable via
-the **selector** mode automatically (under its own ID). `cluster-identity`
-is also registered but is **deliberately non-exemptable** (infraID mismatch,
+the **selector** mode automatically (under its own ID). The large file
+check (`largefile`) and the kubeconform lint step (`kubeconform`) are
+registered as exemptable manually via `exempt.RegisterExemptable`.
+`cluster-identity` is also registered but is **deliberately non-exemptable** (infraID mismatch,
 invalid JSON — structural findings that should not be waved away).
 Annotation-mode support is separate: a check only honors
 `gitops-ci.k8s.io/exempt-<id>` if it sets both `Finding.Value` **and**
@@ -51,6 +53,7 @@ Annotation-mode support is separate: a check only honors
 | `sync-options`     | no               | — (selector-only: `kind`/`name`/`file`)                                     |
 | `placeholder`      | no               | — (selector-only; `value=`/`match=` match the flagged token)                |
 | `kubeconform`      | no               | — (file-level only: `file=`)                                                |
+| `largefile`        | no               | — (file-level only: `file=`)                                                |
 | `cluster-identity` | **never**        | Deliberately non-exemptable (infraID mismatch, invalid JSON)                |
 
 **NAD validation** (`pkg/validator/nad`) is not part of the `check.Register`
@@ -219,6 +222,18 @@ export EXEMPTIONS=(
   "check=sync-options,kind=MyCustomKind,name=my-instance"
 )
 ```
+
+### Exempt binary/large files from the LargeFile check
+
+```sh
+export EXEMPTIONS=(
+  "check=largefile,file=gwe.db"
+  "check=largefile,file=High_Speed.curaprofile"
+)
+```
+
+The `file=` key matches by basename or `/`-prefix suffix. For files in a
+shared directory, use a partial suffix (e.g. `cura/High_Speed.curaprofile`).
 
 ## Things that can't be exempted / when exemptions are the wrong tool
 

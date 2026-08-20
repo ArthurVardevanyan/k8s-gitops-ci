@@ -148,7 +148,11 @@ After making a code change, before considering it done:
 3. Update the relevant doc under `docs/` if the change affects
    documented behavior (flags, report structure, hook/exemption syntax,
    embedded-resource sourcing) — don't let docs drift silently.
-4. Run `task format` before committing.
+4. Update `.agents/skills/exemptions/SKILL.md` if you add, remove, or
+   change any exemptable check ID (like `largefile`, `kubeconform`,
+   `image-checksum`) — the skill's table and common patterns must stay
+   in sync with `pkg/validator/exempt/exempt.go` and `docs/EXEMPTIONS.md`.
+5. Run `task format` before committing.
 
 ## Security
 
