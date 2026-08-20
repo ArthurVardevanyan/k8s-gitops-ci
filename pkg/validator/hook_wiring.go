@@ -16,7 +16,7 @@ import (
 
 // resolveHookSource decides which test.sh source to trust for this run.
 // When no explicit source is set and there is no PR context (i.e. a local
-// test-all/scan-all run), it defaults to SourceLocal so uncommitted
+// test run), it defaults to SourceLocal so uncommitted
 // test.sh changes in the working tree are picked up automatically.  In
 // pipeline/PR mode (opts.PR non-empty) it falls through to
 // hook.ResolveSource's fail-closed SourceMain default, preventing a PR

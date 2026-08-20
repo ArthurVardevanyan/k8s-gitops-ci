@@ -50,7 +50,7 @@ func isKustomizationFile(path string) bool {
 //
 // policyPath, when non-empty, is a policy path already prepared once by
 // pkg/pipeline's Setup phase (see validator.Options.PolicyPath's doc
-// comment) - callers that don't prefetch (test-all/build-yaml/scan-all, or
+// comment) - callers that don't prefetch (test/build-yaml, or
 // a "pipeline" run where the kyverno step isn't enabled) leave this empty,
 // falling back to preparing policies here exactly as before this
 // parameter existed.

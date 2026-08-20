@@ -362,7 +362,7 @@ func TestResult_WarnedSectionCount(t *testing.T) {
 
 // TestResult_Failed guards the single source of truth every CLI entry
 // point's exit code is now based on (pipeline's validatorResultFailed,
-// test-all's runTestAll) - see the real bug this closed: Kustomize Fix
+// test's run) - see the real bug this closed: Kustomize Fix
 // findings rendered as a StatusError report section but never set
 // Blocking nor called log.ErrorInSection, so Failed() (and, before it
 // existed, both entry points' own hand-written checks) would have missed

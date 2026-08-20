@@ -43,7 +43,7 @@ assumption.
   point: runtime flow, package map, and a "Where do I find X?" table
   pointing to every doc below.
 - [docs/CI.md](docs/CI.md) — the detailed pipeline reference: phases,
-  every mode (`pipeline`/`test-all`/`scan-all`/`build-yaml`) with its
+  every mode (`pipeline`/`test`/`build-yaml`) with its
   exact changeset source, the full registered-check table, and the
   direct-vs-external finding classification.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — build/test/lint commands,

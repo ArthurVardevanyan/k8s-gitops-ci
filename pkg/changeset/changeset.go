@@ -323,7 +323,7 @@ func ghResponseHint(out []byte) string {
 // gitDiff returns changed files for local (non-PR) mode. When baseRef is
 // empty (the common local-dev case), it diffs the working tree - the union
 // of unstaged and staged changes - which is what a developer running
-// test-all locally against uncommitted work expects to see. When baseRef is
+// test locally against uncommitted work expects to see. When baseRef is
 // explicitly set (e.g. merge-queue runs comparing against the target
 // branch), it diffs baseRef...HEAD instead.
 func gitDiff(baseRef string, includeDeletions bool) ([]string, error) {

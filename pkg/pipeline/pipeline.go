@@ -256,7 +256,7 @@ func Run(opts Options) error {
 // Checks/Build section, still exited 0 and printed "All checks passed!".
 // Kept as its own named function (rather than inlining vr.Failed() at the
 // one call site) purely for the doc comment/historical-context anchor;
-// test-all's exit code (cmd/k8s-gitops-ci/main.go) calls vr.Failed()
+// test's exit code (cmd/k8s-gitops-ci/main.go) calls vr.Failed()
 // directly for the same reason, so both entry points share one
 // implementation instead of two copies that could drift apart the way
 // Kustomize Fix findings did before Result.Failed existed.
@@ -273,7 +273,7 @@ func validatorResultFailed(vr *validator.Result) bool {
 // tables) reviewers see in the comment, rather than only a terse count line.
 // Uses log.SubHeader for each section's header so this shares the same
 // "----\n Title\n----" banner family as the phase headers (log.Header/
-// log.SubHeader) and cmd/k8s-gitops-ci's test-all/scan-all/build-yaml
+// log.SubHeader) and cmd/k8s-gitops-ci's test/build-yaml
 // failed-section rendering, instead of inventing its own style.
 func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 	if vr == nil {
@@ -285,7 +285,7 @@ func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 		// Resource Compliance detail (per-check tables) the PR comment does -
 		// not just a terse count line. StatusPassed/StatusInfo sections have no
 		// actionable body worth dumping here. SectionHasConsoleDetail is the
-		// shared rule so pipeline, test-all, and scan-all can't drift.
+		// shared rule so pipeline and test can't drift.
 		if !SectionHasConsoleDetail(s) {
 			continue
 		}
@@ -300,7 +300,7 @@ func printFailedSectionDetail(vr *validator.Result, log *logger.Logger) {
 // the caller must defer regardless of whether an error is also returned
 // (cleanup is always safe to call and never itself errors). When opts.URL
 // is empty - a local run against the current working directory, as used by
-// the test-all/build-yaml/scan-all subcommands, or a bare `pipeline`
+// the test/build-yaml subcommands, or a bare `pipeline`
 // invocation with no --url - this is a no-op: cleanup does nothing and no
 // chdir happens, so Run behaves exactly as it did before this function
 // existed.

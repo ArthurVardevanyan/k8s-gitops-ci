@@ -254,7 +254,7 @@ func markdownSectionStatus(name string, status validator.SectionStatus) validato
 }
 
 // TestPrintAllSectionsConsole_StripsGitHubMarkdown guards against a
-// regression (see docs/CI.md) where test-all/build-yaml dumped raw
+// regression (see docs/CI.md) where test/build-yaml dumped raw
 // PR-comment markdown - literal <details>/<summary> tags, &nbsp;, and **bold**
 // - straight into the terminal instead of console-sanitized plain text,
 // interleaved unreadably with the plain "[INFO]/[ERROR]" logger lines.
@@ -316,11 +316,11 @@ func TestPrintQuietSectionsConsole_StripsGitHubMarkdownAndFiltersPassing(t *test
 }
 
 // TestPrintAllSectionsConsole_WarningSectionPrintsDetail guards against a
-// regression where test-all's console output reduced warning (⚠️) Resource
+// regression where test's console output reduced warning (⚠️) Resource
 // Compliance sections to only the terse aggregate "[WARN] … N finding(s)
-// (non-blocking, pre-existing)" line, never showing which files/resources
+// non-blocking, pre-existing)" line, never showing which files/resources
 // triggered each finding - even though pipeline mode already printed the
-// per-check detail tables and the same body is built for test-all. Warning
+// per-check detail tables and the same body is built for test. Warning
 // sections with a non-empty body must now print their full (sanitized)
 // detail, matching the failing-section path.
 func TestPrintAllSectionsConsole_WarningSectionPrintsDetail(t *testing.T) {

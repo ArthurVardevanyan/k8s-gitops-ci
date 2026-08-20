@@ -78,7 +78,7 @@ type scaffoldValidationResult struct {
 // scaffold-tool execution failure, is always treated as blocking. A
 // drifted overlay this PR does NOT touch is checked against the
 // merge-base template/config (computeBaselineMismatches - opts.BaseRef
-// must be set, i.e. an actual CI/PR run, never a local test-all run
+// must be set, i.e. an actual CI/PR run, never a local test run
 // against a live working tree, which always has an empty BaseRef - see
 // gitDiff's own doc comment) and downgraded to a non-blocking,
 // PreExistingDriftLines entry when it drifts there too: this is
@@ -358,7 +358,7 @@ func isOverlayRelatedToChangedFiles(app, cluster string, changedFiles []string) 
 // rather than by the PR's own template/config edits. Returns the set of
 // mismatched overlay names that also mismatch at the baseline.
 //
-// Best-effort and conservative: opts.BaseRef being empty (a local test-all
+// Best-effort and conservative: opts.BaseRef being empty (a local test
 // run against a live working tree - see gitDiff's own doc comment) skips
 // baseline diffing entirely, and any git failure (no repo, no merge-base,
 // a git-show failure) returns an empty set - "couldn't compute a

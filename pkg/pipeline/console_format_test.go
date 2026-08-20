@@ -74,7 +74,7 @@ func TestSanitizeSectionBodyForConsole_CollapsesBlankRuns(t *testing.T) {
 }
 
 // TestSectionHasConsoleDetail verifies the single rule all console entry
-// points (pipeline, test-all, scan-all) share for deciding which sections
+// points (pipeline, test) share for deciding which sections
 // print their full per-finding Body: errored (❌) or warning (⚠️) sections
 // with a non-empty body. Anything else (passed/info, or an empty/whitespace
 // body) must render as a terse summary or be omitted.

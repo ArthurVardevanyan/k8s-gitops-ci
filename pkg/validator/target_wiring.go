@@ -12,7 +12,7 @@ import (
 // synthetic "changed files" list covering the targeted app(s)/cluster(s)'
 // overlay and base directories, for ad-hoc targeted validation (the
 // build-yaml CLI command's --app/--cluster flags, and equally usable from
-// pipeline/test-all/scan-all - see docs/CI.md's "Ad-hoc overlay build"
+// pipeline/test - see docs/CI.md's "Ad-hoc overlay build"
 // row) - independent of git history/diffing entirely, unlike every other
 // resolveChangeset path.
 //

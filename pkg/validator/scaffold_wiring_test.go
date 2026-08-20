@@ -330,7 +330,7 @@ func TestIsOverlayRelatedToChangedFiles(t *testing.T) {
 }
 
 func TestComputeBaselineMismatches_EmptyBaseRefSkipsEntirely(t *testing.T) {
-	// A local test-all run against a live working tree always has an
+	// A local test run against a live working tree always has an
 	// empty BaseRef (see gitDiff's own doc comment) - this must be an
 	// instant no-op, never attempting a git call or touching any file,
 	// regardless of whether the CWD is even a git repo.

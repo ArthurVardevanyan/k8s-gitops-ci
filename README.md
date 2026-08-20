@@ -35,10 +35,10 @@ One example per subcommand:
 k8s-gitops-ci pipeline --url https://github.com/<org>/<repo> --pr 123
 
 # Run every validator against the working tree (no PR/remote needed).
-k8s-gitops-ci test-all ./kubernetes
+k8s-gitops-ci test ./kubernetes
 
 # Full-repo scan, printing only failing sections.
-k8s-gitops-ci scan-all
+k8s-gitops-ci test --all
 
 # Build rendered YAML for a specific app/cluster overlay.
 k8s-gitops-ci build-yaml --app my-app --cluster my-cluster
@@ -83,15 +83,15 @@ Run `k8s-gitops-ci <command> --help` for per-command flags.
 - `--verbose` — streams every check's start/pass/fail as it runs (via an
   internal `logger.Logger`), plus a final `Summary: info=N, warn=N,
 error=N` line and per-phase timing, instead of only the aggregated
-  pass/fail result at the end. Also available on `test-all`,
-  `build-yaml`, and `scan-all`.
+  pass/fail result at the end. Also available on `test`,
+  `build-yaml`.
 - `--dirs`, `--disable-checks`, `--enable-checks`, `--hook-source`,
   `--concurrency`, `--assume-openshift`, `--app`, `--cluster` — every
   changeset-scoping and check-enablement flag `pipeline` accepts is also
-  accepted by `test-all` and `scan-all`, so a failing `pipeline --url ...
---pr ...` run can be reproduced locally without a remote/PR (e.g.
-  `k8s-gitops-ci test-all --dirs=kubernetes/ --disable-checks=avp`).
-  `--dirs` and `test-all`'s positional `[dirs...]` do the same
+  accepted by `test`, so a failing `pipeline --url ... --pr ...` run can
+  be reproduced locally without a remote/PR (e.g.
+  `k8s-gitops-ci test --dirs=kubernetes/ --disable-checks=avp`).
+  `--dirs` and `test`'s positional `[dirs...]` do the same
   full-tree walk, replacing the diff/PR-derived changeset source
   entirely — the positional form just takes precedence when both are
   given — see [`docs/CI.md`](docs/CI.md) for the details.
@@ -115,7 +115,7 @@ pattern, and the generic check-enablement mechanism).
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the top-level entry
   point: runtime flow, package map, and a "Where do I find X?" table
 - [`docs/CI.md`](docs/CI.md) — pipeline phases, every mode
-  (`pipeline`/`test-all`/`scan-all`/`build-yaml`), the full registered-
+  (`pipeline`/`test`/`build-yaml`), the full registered-
   check list, and the direct-vs-external finding classification
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — build/test/lint,
   repository structure, design conventions, how to add a new validator
