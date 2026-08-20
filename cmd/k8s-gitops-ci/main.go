@@ -20,7 +20,6 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/prettier"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/shellcheck"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/yamlsyntax"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/pipeline"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
@@ -178,78 +177,9 @@ func runBuildYAML(args []string) error {
 	if err != nil {
 		return err
 	}
-	printAllSectionsConsole(res.Logger, res.Sections)
-	printRunFooter(res, start)
+	pipeline.PrintAllSectionsConsole(res.Logger, res.Sections)
+	pipeline.PrintRunFooter(res, start)
 	return nil
-}
-
-// printRunFooter prints the run's TimingCollector.Summary() table (the
-// "Step/Duration/Mode" timing breakdown - see pkg/validator/timing.go,
-// fully implemented but previously never invoked outside tests) followed by
-// Logger.Summary(), for test/build-yaml - the same footer
-// pipeline.Run already prints (there via vr.Logger directly), giving all
-// four entry points parity instead of only "pipeline" showing timing/
-// summary detail. start is the time.Time captured before RunAll was
-// called, used as the timing table's wall-clock total.
-func printRunFooter(res *validator.Result, start time.Time) {
-	if res == nil || res.Logger == nil {
-		return
-	}
-	if res.Timing != nil {
-		if summary := res.Timing.Summary(time.Since(start)); summary != "" {
-			res.Logger.Raw(summary)
-		}
-	}
-	fmt.Println(res.Logger.Summary(len(res.Sections), res.WarnedSectionCount(), res.FailedSectionCount()))
-}
-
-// printAllSectionsConsole prints every section's result to the console: a
-// compact "✅ Name: passed" line for passing sections (full detail was
-// already streamed live by log during RunAll - see phases.go - so repeating
-// it here would just duplicate that output in a different style), and the
-// full console-sanitized (see pipeline.SanitizeSectionBodyForConsole) Body
-// under a log.SubHeader box for failing ones, matching the "====\n Title\n
-// ===="/"----\n Title\n----" banner family log already uses for phases -
-// this is the build-yaml/test rendering. Split out from its callers so
-// the console-vs-PR-markdown handling is unit-testable without invoking
-// validator.RunAll (which shells out to git).
-func printAllSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
-	for _, s := range sections {
-		if pipeline.SectionHasConsoleDetail(s) {
-			printFailedSectionConsole(log, s)
-			continue
-		}
-		printPassedSectionConsole(log, s.Name)
-	}
-}
-
-// printPassedSectionConsole prints a single-line "✅ Name: passed" summary
-// for a section that produced no errors and no warnings to render. The
-// per-check detail for errored/warned sections is printed separately via
-// printFailedSectionConsole (see pipeline.SectionHasConsoleDetail), so this
-// is intentionally terse rather than repeating that detail a second time.
-func printPassedSectionConsole(log *logger.Logger, name string) {
-	line := "✅ " + name + ": passed"
-	if log != nil {
-		log.Raw(line)
-		return
-	}
-	fmt.Println(line)
-}
-
-// printFailedSectionConsole prints a section's console-sanitized Body under
-// a log.SubHeader(s.Name) box, so every console entry point (test,
-// build-yaml, and pipeline --verbose's printFailedSectionDetail)
-// shares one consistent header style instead of each inventing its own.
-func printFailedSectionConsole(log *logger.Logger, s validator.ReportSection) {
-	body := pipeline.SanitizeSectionBodyForConsole(s.Body)
-	if log != nil {
-		log.Raw("")
-		log.SubHeader(s.Name)
-		log.Raw(body)
-		return
-	}
-	fmt.Printf("\n--- %s ---\n%s\n", s.Name, body)
 }
 
 // ── test ──────────────────────────────────────────────────────────────────────
@@ -339,42 +269,12 @@ func runTest(args []string) error {
 	if err != nil {
 		return err
 	}
-	start := time.Now()
-	fmt.Println(version.String())
-	res, err := validator.RunAll(opts)
-	if err != nil {
-		return err
-	}
-	if opts.Quiet {
-		printQuietSectionsConsole(res.Logger, res.Sections)
-	} else {
-		printAllSectionsConsole(res.Logger, res.Sections)
-	}
-	printRunFooter(res, start)
-	// res.Failed() (not just res.Blocking) - test used to only check
-	// res.Blocking (Resource Compliance direct findings), so any failed
-	// Linting/Static Checks/Kustomize Build section - anything that only
-	// ever recorded itself via res.Logger.ErrorInSection, the same gap
-	// "pipeline"'s validatorResultFailed exists to close - still exited 0
-	// here even with a real ❌ in the printed sections above.
-	// Quiet mode always exits 0 (like test --all), matching its
-	// purpose as a "did I break anything?" pre-commit check.
-	if !opts.Quiet && res.Failed() {
-		return fmt.Errorf("test: validation failed")
-	}
-	return nil
-}
-
-// printQuietSectionsConsole prints only the failed and warned sections'
-// full detail — no passing sections are shown at all (not even a one-line
-// summary). This is the rendering used by --quiet mode, matching the
-// old test --all behavior.
-func printQuietSectionsConsole(log *logger.Logger, sections []validator.ReportSection) {
-	for _, s := range sections {
-		if pipeline.SectionHasConsoleDetail(s) {
-			printFailedSectionConsole(log, s)
-		}
-	}
+	// pipeline.RunTest owns the full run: RunAll, version banner, console
+	// rendering (all sections, or failure-only under --quiet), the timing/
+	// summary footer, and the exit rule (--quiet always succeeds; otherwise
+	// a failed run returns an error) — exported so any consumer CLI wrapping
+	// this core gets identical "test" behavior. See pkg/pipeline/console_format.go.
+	return pipeline.RunTest(opts)
 }
 
 // ── linters ───────────────────────────────────────────────────────────────────
