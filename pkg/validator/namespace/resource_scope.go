@@ -611,6 +611,7 @@ var resourceScope = map[string]bool{
 	"operator.victoriametrics.com/VMUser":                                     false,
 	"operator.victoriametrics.com/VTCluster":                                  false,
 	"operator.victoriametrics.com/VTSingle":                                   false,
+	"operator.external-secrets.io/OperatorConfig":                             false,
 	"operators.coreos.com/CatalogSource":                                      false,
 	"operators.coreos.com/ClusterServiceVersion":                              false,
 	"operators.coreos.com/InstallPlan":                                        false,
