@@ -127,8 +127,10 @@ Resolution walks upward from a changed file's own directory toward the
 repository root during the Linting phase (`resolveNonAppHookConfigs`),
 stopping at the **nearest ancestor that declares a `test.sh`**
 (closest-match-wins — like `.gitignore`/`.editorconfig` cascading, not a
-merge across ancestors). Only `check=kubeconform` selectors take effect
-from non-app `test.sh` files today.
+merge across ancestors). All check selectors take effect from non-app
+`test.sh` files — they are merged into both the Linting and Post-Build
+phases, covering `kubeconform`, `placeholder`, `named-ports`, and all
+other exemptable checks.
 
 **PR runs read `test.sh` from main** — `SourceMain` is the default for
 pull_request events. A new `EXEMPTIONS` entry added in the PR has no

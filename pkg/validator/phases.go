@@ -506,7 +506,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 // since both need the same per-overlay worker-pool parallelism and neither
 // result feeds the other within a single iteration - see runOverlayChecks/
 // buildOverlayWithHooks's respective doc comments.
-func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector) {
+func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logger.Logger, tc *TimingCollector, earlySelectors []exempt.Selector) {
 	w := Workers(opts)
 
 	// Overlays/apps are resolved up front (rather than after the doc/
@@ -539,11 +539,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	// Built-in selectors (e.g. the Tekton Pipelines-as-code .tekton/
 	// default, see tekton_exemptions.go) plus every app's hook-provided
-	// EXEMPTIONS=(...) selectors (see docs/HOOKS.md). A malformed
-	// EXEMPTIONS entry exempts nothing (fail-closed) and is surfaced as a
-	// blocking build error below rather than silently dropped.
+	// EXEMPTIONS=(...) selectors (see docs/HOOKS.md) plus non-app test.sh
+	// selectors (earlySelectors from directories like okd/node-config/).
+	// A malformed EXEMPTIONS entry exempts nothing (fail-closed) and is
+	// surfaced as a blocking build error below rather than silently dropped.
 	hookSelectors, hookExemptErrs := hookExemptSelectorsAndErrors(hookCfgs)
-	selectors := append(builtinExemptSelectors(), hookSelectors...)
+	selectors := append(append(builtinExemptSelectors(), hookSelectors...), earlySelectors...)
 
 	// ── Build YAML ───────────────────────────────────────────────────────────
 	buildStart := time.Now()

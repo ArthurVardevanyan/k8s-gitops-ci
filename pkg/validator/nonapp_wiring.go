@@ -19,8 +19,8 @@ import (
 // directory. Directories like okd/node-config/ — which have no base/,
 // overlays/, or components/ structure and are therefore never detected as
 // kustomize apps — still benefit from this: their EXEMPTIONS=(...) apply to
-// standalone lint steps such as kubeconform (check=kubeconform) that run
-// before the Build YAML phase's normal app-hook resolution.
+// all checks: standalone lint steps (kubeconform) and Post-Build Validation
+// checks (placeholder, named-ports, namespace, psa-labels, etc.).
 //
 // The returned map is keyed by the directory whose test.sh was actually
 // used (which may be an ancestor of, not equal to, some changed files'
