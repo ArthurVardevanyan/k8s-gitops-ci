@@ -299,6 +299,42 @@ func TestValidateReaderWithOptions_BlockScalarEndsOnDedent(t *testing.T) {
 	}
 }
 
+func TestValidateReaderWithOptions_InlineCommentStripsSentinel(t *testing.T) {
+	// Inline comments must be stripped before sentinel/placeholder checking.
+	// A sentinel word appearing purely inside an inline comment must NOT
+	// be flagged, while a real value on a different line IS flagged.
+	doc := "apiVersion: external-secrets.io/v1\nkind: ExternalSecret\nmetadata:\n  name: internal-cert\nspec:\n  data:\n    - secretKey: tls.crt\n      remoteRef: # checkov:skip=CKV_SECRET_6 PlaceHolder Values\n        key: homelab/unifi\n        property: tls.crt\n    - secretKey: password\n      remoteRef: CHANGEME\n"
+	errs := ValidateReaderWithOptions(strings.NewReader(doc), "secret.yaml", Options{})
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 finding (CHANGEME only; PlaceHolder in inline comment must be stripped), got %d: %v", len(errs), errs)
+	}
+	if errs[0].Match != "CHANGEME" {
+		t.Errorf("expected CHANGEME, got %q", errs[0].Match)
+	}
+	if errs[0].Line != 12 {
+		t.Errorf("expected finding on line 12, got line %d", errs[0].Line)
+	}
+}
+
+func TestValidateReaderWithOptions_InlineCommentStripsAngleBracket(t *testing.T) {
+	// An angle-bracket placeholder inside an inline comment must also be
+	// stripped and NOT flagged.
+	doc := "metadata:\n  name: my-secret\n  annotations:\n    # namespace: <NAMESPACE> is the target\n"
+	errs := ValidateReaderWithOptions(strings.NewReader(doc), "x.yaml", Options{})
+	if len(errs) != 0 {
+		t.Errorf("expected no findings (angle-bracket in inline comment), got %d: %v", len(errs), errs)
+	}
+}
+
+func TestValidateFile_InlineCommentFixture(t *testing.T) {
+	// Regression: ExternalSecret files that use inline comments to mark
+	// placeholder values for RemoteRef keys must not be flagged.
+	errs := ValidateFile("testdata/inline-comment.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no findings for inline-comment fixture, got: %v", errs)
+	}
+}
+
 func TestValidateFile_MissingFile(t *testing.T) {
 	errs := ValidateFile("testdata/does-not-exist.yaml")
 	if errs != nil {
