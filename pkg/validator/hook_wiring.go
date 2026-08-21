@@ -242,7 +242,13 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 	out, err := overlay.RenderWithStrategy(app, ov.path, strategy.Strategy, strategy.Exclude)
 	renderDur = time.Since(renderStart)
 	if err != nil {
-		return fmt.Sprintf("kustomize build %s: %s", ov.path, err), pre, post, nil
+		// RenderWithStrategy already wraps render errors in the canonical
+		// "kustomize build <overlay>: <cause>" form (see
+		// overlay.renderKustomize), so pass it through verbatim instead of
+		// re-prefixing here. Re-wrapping produced a duplicated
+		// "kustomize build <overlay>: kustomize build <overlay>: ..." message
+		// that wasted comment/console budget and obscured the real cause.
+		return err.Error(), pre, post, nil
 	}
 
 	if cfg != nil && cfg.HasPostBuild {
