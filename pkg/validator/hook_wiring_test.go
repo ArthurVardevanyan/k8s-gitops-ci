@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -419,6 +420,54 @@ func TestBuildOverlayWithHooks_NonKustomizeRenderErrorIsWrapped(t *testing.T) {
 	_, other := groupBuildErrors([]string{buildErr})
 	if len(other) != 0 {
 		t.Errorf("expected the wrapped Helm error to be groupable, got other=%v", other)
+	}
+}
+
+// TestRenderBuildError covers renderBuildError's pass-through-vs-wrap decision
+// table for every error class overlay.RenderWithStrategy can return: kustomize
+// render errors that already embed the overlay (both the "kustomize build" and
+// "kustomize render" prefixes) are returned verbatim to avoid a doubly-wrapped
+// message, while Helm/AVP/unknown-strategy errors - which carry no kustomize
+// prefix - are wrapped with the overlay path so comments.go's groupBuildErrors
+// can still attribute them.
+func TestRenderBuildError(t *testing.T) {
+	t.Parallel()
+	const ov = "app/overlays/foo"
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "kustomize build error passes through",
+			in:   "kustomize build app/overlays/foo: accumulating components: no such file or directory",
+			want: "kustomize build app/overlays/foo: accumulating components: no such file or directory",
+		},
+		{
+			name: "kustomize render error passes through",
+			in:   "kustomize render app/overlays/foo: cannot marshal resource map to YAML",
+			want: "kustomize render app/overlays/foo: cannot marshal resource map to YAML",
+		},
+		{
+			name: "helm error is wrapped",
+			in:   "missing values.yaml: no such file or directory",
+			want: "kustomize build app/overlays/foo: missing values.yaml: no such file or directory",
+		},
+		{
+			name: "unknown strategy error is wrapped",
+			in:   `unknown strategy "bogus"`,
+			want: `kustomize build app/overlays/foo: unknown strategy "bogus"`,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := renderBuildError(ov, errors.New(tt.in))
+			if got != tt.want {
+				t.Errorf("renderBuildError(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

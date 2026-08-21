@@ -242,22 +242,21 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 	out, err := overlay.RenderWithStrategy(app, ov.path, strategy.Strategy, strategy.Exclude)
 	renderDur = time.Since(renderStart)
 	if err != nil {
-		// RenderWithStrategy's kustomize path already wraps errors in the
-		// canonical comments.go groupBuildErrors form ("kustomize build
-		// <overlay>: <cause>", see overlay.renderKustomize), so pass those
-		// through verbatim instead of re-prefixing. Re-wrapping produced a
-		// duplicated "kustomize build <overlay>: kustomize build <overlay>: ..."
-		// message that wasted comment/console budget and obscured the real
-		// cause. Other render paths - Helm strategies (overlay.renderHelm's
-		// "helm load chart ..."/"helm template ..." errors), the AVP pass
-		// (overlay.runAVP), and "unknown strategy" - emit errors without that
-		// prefix, so wrap those here to keep every overlay-build failure
-		// attributable to its overlay by groupBuildErrors.
-		renderErr := err.Error()
-		if !strings.HasPrefix(renderErr, "kustomize build ") {
-			renderErr = fmt.Sprintf("kustomize build %s: %s", ov.path, renderErr)
-		}
-		return renderErr, pre, post, nil
+		// overlay.RenderWithStrategy's kustomize renderer (see
+		// overlay.renderKustomize) already emits errors that embed the overlay
+		// path in comments.go's groupBuildErrors-recognizable form ("kustomize
+		// build <overlay>: <cause>" for a build failure, "kustomize render
+		// <overlay>: <cause>" when the resolved manifest map fails to marshal
+		// to YAML), so pass those through verbatim instead of re-prefixing.
+		// Re-wrapping produced a duplicated "kustomize build <overlay>:
+		// kustomize build <overlay>: ..." (or "kustomize render ...") message
+		// that wasted comment/console budget and obscured the real cause. Other
+		// render paths - Helm strategies (overlay.renderHelm's "helm load
+		// chart ..."/"helm template ..." errors), the AVP pass (overlay.runAVP),
+		// and "unknown strategy" - emit errors without any kustomize prefix, so
+		// wrap those here to keep every overlay-build failure attributable to
+		// its overlay by groupBuildErrors.
+		return renderBuildError(ov.path, err), pre, post, nil
 	}
 
 	if cfg != nil && cfg.HasPostBuild {
@@ -283,6 +282,28 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 	}
 
 	return "", pre, post, out
+}
+
+// renderBuildError normalizes an overlay.RenderWithStrategy failure into the
+// canonical "kustomize build <overlay>: <cause>" build-error format that
+// comments.go's groupBuildErrors parses to attribute the failure to its
+// overlay.
+//
+// renderKustomize already returns errors carrying that attribution - either
+// with the "kustomize build <overlay>: " prefix (krusty build failure) or the
+// "kustomize render <overlay>: " prefix (resMap.AsYaml failure) - so those are
+// returned verbatim; re-prefixing them would produce a duplicated
+// "kustomize build <overlay>: kustomize build <overlay>: ..." (or
+// "kustomize render ...") message. Every other render path (Helm strategies,
+// the AVP pass via runAVP, and unknown strategies) emits an error with no
+// kustomize prefix, so those are wrapped here to keep the failure attributed
+// to its overlay.
+func renderBuildError(overlayPath string, err error) string {
+	renderErr := err.Error()
+	if strings.HasPrefix(renderErr, "kustomize build ") || strings.HasPrefix(renderErr, "kustomize render ") {
+		return renderErr
+	}
+	return fmt.Sprintf("kustomize build %s: %s", overlayPath, renderErr)
 }
 
 // runAppPostValidateHooks runs each app's POST_VALIDATE_HOOK (once, after
