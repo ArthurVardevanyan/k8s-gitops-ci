@@ -123,9 +123,9 @@ func TestFormatBuildErrors_LongCauseIsTruncated(t *testing.T) {
 func TestFormatBuildErrors_LongCauseTruncatedAtWordBoundary(t *testing.T) {
 	t.Parallel()
 	// A long cause with whitespace before the cap must be cut back to the last
-	// whitespace so a path/word is never split mid-token. Here the cap (600
-	// chars) lands well inside the trailing "y" run, but a space at char 4
-	// means the cut backs off to just "word".
+	// whitespace so a path/word is never split mid-token. "word " occupies chars
+	// 0-4, so once truncateCause slides the cut back to the last whitespace the
+	// result is just "word" - a clean whole token rather than a split run.
 	groups := []buildErrorGroup{{Cause: "word " + strings.Repeat("x", 600) + strings.Repeat("y", 200), Overlays: []string{"app/overlays/a"}}}
 	var sb strings.Builder
 	formatBuildErrors(&sb, groups)

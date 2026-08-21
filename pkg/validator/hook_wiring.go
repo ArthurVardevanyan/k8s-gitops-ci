@@ -242,13 +242,22 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 	out, err := overlay.RenderWithStrategy(app, ov.path, strategy.Strategy, strategy.Exclude)
 	renderDur = time.Since(renderStart)
 	if err != nil {
-		// RenderWithStrategy already wraps render errors in the canonical
-		// "kustomize build <overlay>: <cause>" form (see
-		// overlay.renderKustomize), so pass it through verbatim instead of
-		// re-prefixing here. Re-wrapping produced a duplicated
-		// "kustomize build <overlay>: kustomize build <overlay>: ..." message
-		// that wasted comment/console budget and obscured the real cause.
-		return err.Error(), pre, post, nil
+		// RenderWithStrategy's kustomize path already wraps errors in the
+		// canonical comments.go groupBuildErrors form ("kustomize build
+		// <overlay>: <cause>", see overlay.renderKustomize), so pass those
+		// through verbatim instead of re-prefixing. Re-wrapping produced a
+		// duplicated "kustomize build <overlay>: kustomize build <overlay>: ..."
+		// message that wasted comment/console budget and obscured the real
+		// cause. Other render paths - Helm strategies (overlay.renderHelm's
+		// "helm load chart ..."/"helm template ..." errors), the AVP pass
+		// (overlay.runAVP), and "unknown strategy" - emit errors without that
+		// prefix, so wrap those here to keep every overlay-build failure
+		// attributable to its overlay by groupBuildErrors.
+		renderErr := err.Error()
+		if !strings.HasPrefix(renderErr, "kustomize build ") {
+			renderErr = fmt.Sprintf("kustomize build %s: %s", ov.path, renderErr)
+		}
+		return renderErr, pre, post, nil
 	}
 
 	if cfg != nil && cfg.HasPostBuild {

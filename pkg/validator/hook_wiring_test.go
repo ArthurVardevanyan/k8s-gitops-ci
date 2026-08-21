@@ -386,6 +386,42 @@ func TestBuildOverlayWithHooks_NoRenderedYAMLOnBuildFailure(t *testing.T) {
 	}
 }
 
+// TestBuildOverlayWithHooks_NonKustomizeRenderErrorIsWrapped asserts that a
+// render failure whose error does NOT already carry the canonical
+// "kustomize build <overlay>: " prefix (Helm/AVP/unknown-strategy errors) is
+// wrapped with the overlay path, so comments.go's groupBuildErrors can still
+// attribute it. Passing a Helm-strategy error through verbatim (as the code
+// used to for every render error) dropped the attribution and pushed the
+// failure into the ungrouped "other" bucket - see
+// https://github.com/ArthurVardevanyan/k8s-gitops-ci/pull/237#discussion_r3832425372.
+func TestBuildOverlayWithHooks_NonKustomizeRenderErrorIsWrapped(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	// A Helm render failure: renderHelm emits "missing values.yaml: ...",
+	// which has no "kustomize build <overlay>:" prefix.
+	ov := filepath.Join(d, "missing-values-overlay")
+	helmStrategy := appBuildStrategy{Strategy: overlay.StrategyHelm}
+
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "foo"}, nil, helmStrategy, testLogger())
+	if buildErr == "" {
+		t.Fatal("expected a build error for a Helm overlay without values.yaml")
+	}
+	if pre != hookNotDefined || post != hookNotDefined {
+		t.Errorf("expected no hooks to have run for a render-time failure, got pre=%v post=%v", pre, post)
+	}
+	want := "kustomize build " + ov + ": missing values.yaml"
+	if !strings.HasPrefix(buildErr, want) {
+		t.Errorf("expected the Helm render error to be wrapped with the overlay prefix, want prefix %q, got %q", want, buildErr)
+	}
+
+	// The wrapped error must be recognizable (and thus groupable) by the
+	// PR-comment builder, not dumped into the ungrouped "other" bucket.
+	_, other := groupBuildErrors([]string{buildErr})
+	if len(other) != 0 {
+		t.Errorf("expected the wrapped Helm error to be groupable, got other=%v", other)
+	}
+}
+
 // Deliberately not t.Parallel(): writes the package-level hookBuildRoot var
 // (see the matching comment on TestBuildOverlayWithHooks_PostBuildHookRunsWithRenderedYAML above).
 func TestRunAppPostValidateHooks(t *testing.T) {
