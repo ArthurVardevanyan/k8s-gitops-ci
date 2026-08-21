@@ -98,6 +98,49 @@ func ValidateFileWithOptions(path string, opts Options) []ValidationError {
 	return ValidateReaderWithOptions(f, path, opts)
 }
 
+// stripInlineComment strips an inline YAML comment (the first unquoted `#`)
+// from a line.  It understands single-quoted strings (everything is literal)
+// and double-quoted strings (backslash-escaped characters are honoured) so
+// that `#` inside quotes is NOT treated as a comment marker.  This prevents
+// sentinel words that appear purely inside inline comments (for example
+// `# checkov:skip=CKV_SECRET_6 PlaceHolder Values`) from being reported as
+// unresolved placeholders.
+func stripInlineComment(line string) string {
+	var inSingleQuote, inDoubleQuote, inAngleBracket bool
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		switch {
+		case inSingleQuote:
+			if ch == '\'' {
+				inSingleQuote = false
+			}
+			continue
+		case inDoubleQuote:
+			if ch == '\\' && i+1 < len(line) {
+				i++
+				continue
+			}
+			if ch == '"' {
+				inDoubleQuote = false
+			}
+			continue
+		case ch == '#':
+			if !inAngleBracket {
+				return line[:i]
+			}
+		case ch == '<':
+			inAngleBracket = true
+		case ch == '>':
+			inAngleBracket = false
+		case ch == '\'':
+			inSingleQuote = true
+		case ch == '"':
+			inDoubleQuote = true
+		}
+	}
+	return line
+}
+
 // ValidateReaderWithOptions validates placeholders from a reader. r is a
 // plain io.Reader (not *os.File) so callers with in-memory content (e.g.
 // the check-engine adapters in pkg/validator, which have already-decoded
@@ -136,6 +179,9 @@ func ValidateReaderWithOptions(r io.Reader, source string, opts Options) []Valid
 		if strings.HasPrefix(trimmed, "#") {
 			continue
 		}
+
+		// Strip inline comments before checking for placeholders.
+		line = stripInlineComment(line)
 
 		if m := blockScalarHeaderRe.FindStringSubmatch(line); m != nil {
 			blockScalarIndent = len(m[1])
