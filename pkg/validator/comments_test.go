@@ -108,16 +108,72 @@ func TestFormatBuildErrors_ManyOverlaysAreTruncated(t *testing.T) {
 
 func TestFormatBuildErrors_LongCauseIsTruncated(t *testing.T) {
 	t.Parallel()
-	groups := []buildErrorGroup{{Cause: strings.Repeat("x", 300), Overlays: []string{"app/overlays/a"}}}
+	// >maxBuildErrorCauseCap characters with no whitespace - truncated at the
+	// cap (truncateCause has no boundary to fall back to).
+	groups := []buildErrorGroup{{Cause: strings.Repeat("x", maxBuildErrorCauseCap+100), Overlays: []string{"app/overlays/a"}}}
 	var sb strings.Builder
 	formatBuildErrors(&sb, groups)
 	got := sb.String()
 
-	if !strings.Contains(got, strings.Repeat("x", 200)+"...") {
-		t.Errorf("expected the cause to be truncated at 200 chars, got:\n%s", got)
+	if !strings.Contains(got, strings.Repeat("x", maxBuildErrorCauseCap)+" ... (truncated)") {
+		t.Errorf("expected the cause to be truncated at %d chars, got:\n%s", maxBuildErrorCauseCap, got)
 	}
-	if strings.Contains(got, strings.Repeat("x", 201)) {
-		t.Errorf("expected the cause not to exceed 200 chars before the ellipsis, got:\n%s", got)
+}
+
+func TestFormatBuildErrors_LongCauseTruncatedAtWordBoundary(t *testing.T) {
+	t.Parallel()
+	// A long cause with whitespace before the cap must be cut back to the last
+	// whitespace so a path/word is never split mid-token. "word " occupies chars
+	// 0-4, so once truncateCause slides the cut back to the last whitespace the
+	// result is just "word" - a clean whole token rather than a split run.
+	groups := []buildErrorGroup{{Cause: "word " + strings.Repeat("x", 600) + strings.Repeat("y", 200), Overlays: []string{"app/overlays/a"}}}
+	var sb strings.Builder
+	formatBuildErrors(&sb, groups)
+	got := sb.String()
+
+	want := "word ... (truncated)"
+	if !strings.Contains(got, want) {
+		t.Errorf("expected cause truncated back to last word boundary, want substring %q, got:\n%s", want, got)
+	}
+}
+
+func TestKustomizeMissingFileHint(t *testing.T) {
+	t.Parallel()
+	realistic := `accumulateDirectory: "recursed accumulation of path `
+	realistic += `'/tmp/k8s-gitops-ci-1342782310/app/components/inst/1.11.0/loki': accumulating resources: `
+	realistic += `accumulation err='accumulating resources from './netobserv.yaml': evalsymlink failure on `
+	realistic += `'.../loki/netobserv.yaml' : lstat .../loki/netobserv.yaml: no such file or directory'`
+
+	if hint := kustomizeMissingFileHint(realistic); hint == "" {
+		t.Fatal("expected a hint for the accumulateDirectory/recursed-accumulation error class")
+	}
+
+	if hint := kustomizeMissingFileHint("accumulateDirectory: some other error"); hint != "" {
+		t.Errorf("expected no hint for a non-missing-file accumulateDirectory error, got %q", hint)
+	}
+
+	if hint := kustomizeMissingFileHint("resource not found"); hint != "" {
+		t.Errorf("expected no hint for an unrelated error, got %q", hint)
+	}
+}
+
+func TestFormatBuildErrors_AddsKustomizeMissingFileHint(t *testing.T) {
+	t.Parallel()
+	groups := []buildErrorGroup{{
+		Cause:    `accumulating components: accumulateDirectory: "recursed accumulation of path '.../loki': evalsymlink failure on '.../netobserv.yaml': no such file or directory"`,
+		Overlays: []string{"app/overlays/a"},
+	}}
+	var sb strings.Builder
+	formatBuildErrors(&sb, groups)
+	got := sb.String()
+
+	const hint = "Hint: a component's kustomization.yaml references a resource file"
+	if strings.Count(got, hint) != 1 {
+		t.Errorf("expected the kustomize missing-file hint exactly once in output, got:\n%s", got)
+	}
+	const overlayGroup = "> - **"
+	if strings.Count(got, overlayGroup) != 1 {
+		t.Errorf("expected each overlay group to be reported exactly once, got:\n%s", got)
 	}
 }
 

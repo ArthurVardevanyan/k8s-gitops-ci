@@ -74,18 +74,63 @@ func groupBuildErrors(errs []string) (groups []buildErrorGroup, other []string) 
 	return groups, other
 }
 
+// maxBuildErrorCauseCap is the largest build-error cause string rendered into
+// the PR comment before it is truncated. It is generous enough to surface the
+// meaningful part of nested kustomize errors (e.g. the "accumulateDirectory:
+// '...recursed accumulation of path ...'" chain), which can easily exceed a
+// few hundred characters once the full paths from a CI scratch clone are
+// included. Truncation still happens (see truncateCause) so the comment stays
+// readable, but only when truly necessary.
+const maxBuildErrorCauseCap = 600
+
+// truncateCause shortens a build-error cause for the PR comment. The cut point
+// is moved back to the last whitespace before the cap so an error is never
+// split mid-path/mid-token, and a clear "(truncated)" marker is appended.
+func truncateCause(cause string) string {
+	if len(cause) <= maxBuildErrorCauseCap {
+		return cause
+	}
+	cut := cause[:maxBuildErrorCauseCap]
+	if idx := strings.LastIndexAny(cut, " \n\t"); idx > 0 {
+		cut = cut[:idx]
+	}
+	return cut + " ... (truncated)"
+}
+
+// kustomizeMissingFileHint returns a short, org-neutral, actionable hint for
+// common kustomize component-accumulation failures where a referenced resource
+// file does not exist in the checkout (the error the kustomize SDK emits as
+// "accumulateDirectory: '...recursed accumulation of path ...'" wrapping an
+// "evalsymlink failure ... no such file or directory"). These are inherently
+// hard to read (long absolute paths in a scratch clone + nested quoting), so an
+// explicit hint makes the fix obvious instead of leaving the user to parse the
+// raw krusty stack trace. Returns "" when the cause does not match this class.
+func kustomizeMissingFileHint(cause string) string {
+	if strings.Contains(cause, "recursed accumulation of path") ||
+		strings.Contains(cause, "accumulateDirectory") {
+		if strings.Contains(cause, "no such file or directory") ||
+			strings.Contains(cause, "not found") ||
+			strings.Contains(cause, "evalsymlink") {
+			return "a component's kustomization.yaml references a resource file " +
+				"that does not exist in this checkout; check the referenced path " +
+				"for a typo, a moved/renamed file, or a stale component or git ref."
+		}
+	}
+	return ""
+}
+
 // formatBuildErrors renders grouped build errors as a compact markdown
 // blockquote. Overlays sharing the same root cause are listed together
 // instead of repeating the error once per overlay.
 func formatBuildErrors(sb *strings.Builder, groups []buildErrorGroup) {
 	sb.WriteString("> **Build Errors:**\n")
 	for _, g := range groups {
-		cause := g.Cause
-		if len(cause) > 200 {
-			cause = cause[:200] + "..."
-		}
+		cause := truncateCause(g.Cause)
 		fmt.Fprintf(sb, "> - **%d overlay(s)** failed:\n", len(g.Overlays))
 		fmt.Fprintf(sb, ">   ```\n>   %s\n>   ```\n", cause)
+		if hint := kustomizeMissingFileHint(g.Cause); hint != "" {
+			fmt.Fprintf(sb, ">   Hint: %s\n", hint)
+		}
 
 		const maxShow = 5
 		if len(g.Overlays) <= maxShow {

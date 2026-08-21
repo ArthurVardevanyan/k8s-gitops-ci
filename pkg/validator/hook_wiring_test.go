@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -383,6 +384,100 @@ func TestBuildOverlayWithHooks_NoRenderedYAMLOnBuildFailure(t *testing.T) {
 	}
 	if rendered != nil {
 		t.Errorf("expected no rendered YAML on build failure, got: %s", rendered)
+	}
+}
+
+// TestBuildOverlayWithHooks_NonKustomizeRenderErrorIsWrapped asserts that a
+// render failure whose error does NOT already carry the canonical
+// "kustomize build <overlay>: " prefix (Helm/AVP/unknown-strategy errors) is
+// wrapped with the overlay path, so comments.go's groupBuildErrors can still
+// attribute it. Passing a Helm-strategy error through verbatim (as the code
+// used to for every render error) dropped the attribution and pushed the
+// failure into the ungrouped "other" bucket - see
+// https://github.com/ArthurVardevanyan/k8s-gitops-ci/pull/237#discussion_r3832425372.
+func TestBuildOverlayWithHooks_NonKustomizeRenderErrorIsWrapped(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	// A Helm render failure: renderHelm emits "missing values.yaml: ...",
+	// which has no "kustomize build <overlay>:" prefix.
+	ov := filepath.Join(d, "missing-values-overlay")
+	helmStrategy := appBuildStrategy{Strategy: overlay.StrategyHelm}
+
+	buildErr, pre, post, _ := buildOverlayWithHooks(overlayRef{path: ov, cluster: "foo"}, nil, helmStrategy, testLogger())
+	if buildErr == "" {
+		t.Fatal("expected a build error for a Helm overlay without values.yaml")
+	}
+	if pre != hookNotDefined || post != hookNotDefined {
+		t.Errorf("expected no hooks to have run for a render-time failure, got pre=%v post=%v", pre, post)
+	}
+	want := "kustomize build " + ov + ": missing values.yaml"
+	if !strings.HasPrefix(buildErr, want) {
+		t.Errorf("expected the Helm render error to be wrapped with the overlay prefix, want prefix %q, got %q", want, buildErr)
+	}
+
+	// The wrapped error must be recognizable (and thus groupable) by the
+	// PR-comment builder, not dumped into the ungrouped "other" bucket.
+	_, other := groupBuildErrors([]string{buildErr})
+	if len(other) != 0 {
+		t.Errorf("expected the wrapped Helm error to be groupable, got other=%v", other)
+	}
+}
+
+// TestRenderBuildError covers renderBuildError's normalization decision table
+// for every error class overlay.RenderWithStrategy can return. A kustomize
+// build failure already carrying the canonical "kustomize build <overlay>:"
+// prefix is returned verbatim to avoid a doubly-wrapped message. The rarer
+// "kustomize render <overlay>:" form (resMap.AsYaml failure) is NOT
+// groupBuildErrors-recognizable, so it's rewritten to the canonical
+// "kustomize build" form rather than passed through - otherwise it would fall
+// into the ungrouped "other" bucket and lose truncateCause / missing-file-hint
+// formatting. Helm/AVP/unknown-strategy errors - which carry no kustomize
+// prefix - are wrapped with the overlay path so groupBuildErrors can still
+// attribute them.
+func TestRenderBuildError(t *testing.T) {
+	t.Parallel()
+	const ov = "app/overlays/foo"
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "kustomize build error passes through",
+			in:   "kustomize build app/overlays/foo: accumulating components: no such file or directory",
+			want: "kustomize build app/overlays/foo: accumulating components: no such file or directory",
+		},
+		{
+			name: "kustomize render error is normalized to kustomize build",
+			in:   "kustomize render app/overlays/foo: cannot marshal resource map to YAML",
+			want: "kustomize build app/overlays/foo: cannot marshal resource map to YAML",
+		},
+		{
+			name: "helm error is wrapped",
+			in:   "missing values.yaml: no such file or directory",
+			want: "kustomize build app/overlays/foo: missing values.yaml: no such file or directory",
+		},
+		{
+			name: "unknown strategy error is wrapped",
+			in:   `unknown strategy "bogus"`,
+			want: `kustomize build app/overlays/foo: unknown strategy "bogus"`,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := renderBuildError(ov, errors.New(tt.in))
+			if got != tt.want {
+				t.Errorf("renderBuildError(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+			// Every produced error must be groupable (recognized by
+			// groupBuildErrors), not dumped into the ungrouped "other" bucket.
+			_, other := groupBuildErrors([]string{got})
+			if len(other) != 0 {
+				t.Errorf("expected renderBuildError(%q) output %q to be groupable, got other=%v", tt.in, got, other)
+			}
+		})
 	}
 }
 
