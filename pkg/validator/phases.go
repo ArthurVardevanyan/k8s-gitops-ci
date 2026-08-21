@@ -539,9 +539,10 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	// Built-in selectors (e.g. the Tekton Pipelines-as-code .tekton/
 	// default, see tekton_exemptions.go) plus every app's hook-provided
-	// EXEMPTIONS=(...) selectors (see docs/HOOKS.md). A malformed
-	// EXEMPTIONS entry exempts nothing (fail-closed) and is surfaced as a
-	// blocking build error below rather than silently dropped.
+	// EXEMPTIONS=(...) selectors (see docs/HOOKS.md) plus non-app test.sh
+	// selectors (earlySelectors from directories like okd/node-config/).
+	// A malformed EXEMPTIONS entry exempts nothing (fail-closed) and is
+	// surfaced as a blocking build error below rather than silently dropped.
 	hookSelectors, hookExemptErrs := hookExemptSelectorsAndErrors(hookCfgs)
 	selectors := append(append(builtinExemptSelectors(), hookSelectors...), earlySelectors...)
 
