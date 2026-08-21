@@ -423,13 +423,17 @@ func TestBuildOverlayWithHooks_NonKustomizeRenderErrorIsWrapped(t *testing.T) {
 	}
 }
 
-// TestRenderBuildError covers renderBuildError's pass-through-vs-wrap decision
-// table for every error class overlay.RenderWithStrategy can return: kustomize
-// render errors that already embed the overlay (both the "kustomize build" and
-// "kustomize render" prefixes) are returned verbatim to avoid a doubly-wrapped
-// message, while Helm/AVP/unknown-strategy errors - which carry no kustomize
-// prefix - are wrapped with the overlay path so comments.go's groupBuildErrors
-// can still attribute them.
+// TestRenderBuildError covers renderBuildError's normalization decision table
+// for every error class overlay.RenderWithStrategy can return. A kustomize
+// build failure already carrying the canonical "kustomize build <overlay>:"
+// prefix is returned verbatim to avoid a doubly-wrapped message. The rarer
+// "kustomize render <overlay>:" form (resMap.AsYaml failure) is NOT
+// groupBuildErrors-recognizable, so it's rewritten to the canonical
+// "kustomize build" form rather than passed through - otherwise it would fall
+// into the ungrouped "other" bucket and lose truncateCause / missing-file-hint
+// formatting. Helm/AVP/unknown-strategy errors - which carry no kustomize
+// prefix - are wrapped with the overlay path so groupBuildErrors can still
+// attribute them.
 func TestRenderBuildError(t *testing.T) {
 	t.Parallel()
 	const ov = "app/overlays/foo"
@@ -444,9 +448,9 @@ func TestRenderBuildError(t *testing.T) {
 			want: "kustomize build app/overlays/foo: accumulating components: no such file or directory",
 		},
 		{
-			name: "kustomize render error passes through",
+			name: "kustomize render error is normalized to kustomize build",
 			in:   "kustomize render app/overlays/foo: cannot marshal resource map to YAML",
-			want: "kustomize render app/overlays/foo: cannot marshal resource map to YAML",
+			want: "kustomize build app/overlays/foo: cannot marshal resource map to YAML",
 		},
 		{
 			name: "helm error is wrapped",
@@ -466,6 +470,12 @@ func TestRenderBuildError(t *testing.T) {
 			got := renderBuildError(ov, errors.New(tt.in))
 			if got != tt.want {
 				t.Errorf("renderBuildError(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+			// Every produced error must be groupable (recognized by
+			// groupBuildErrors), not dumped into the ungrouped "other" bucket.
+			_, other := groupBuildErrors([]string{got})
+			if len(other) != 0 {
+				t.Errorf("expected renderBuildError(%q) output %q to be groupable, got other=%v", tt.in, got, other)
 			}
 		})
 	}

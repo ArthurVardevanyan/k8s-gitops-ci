@@ -242,20 +242,15 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 	out, err := overlay.RenderWithStrategy(app, ov.path, strategy.Strategy, strategy.Exclude)
 	renderDur = time.Since(renderStart)
 	if err != nil {
-		// overlay.RenderWithStrategy's kustomize renderer (see
-		// overlay.renderKustomize) already emits errors that embed the overlay
-		// path in comments.go's groupBuildErrors-recognizable form ("kustomize
-		// build <overlay>: <cause>" for a build failure, "kustomize render
-		// <overlay>: <cause>" when the resolved manifest map fails to marshal
-		// to YAML), so pass those through verbatim instead of re-prefixing.
-		// Re-wrapping produced a duplicated "kustomize build <overlay>:
-		// kustomize build <overlay>: ..." (or "kustomize render ...") message
-		// that wasted comment/console budget and obscured the real cause. Other
-		// render paths - Helm strategies (overlay.renderHelm's "helm load
-		// chart ..."/"helm template ..." errors), the AVP pass (overlay.runAVP),
-		// and "unknown strategy" - emit errors without any kustomize prefix, so
-		// wrap those here to keep every overlay-build failure attributable to
-		// its overlay by groupBuildErrors.
+		// renderBuildError normalizes the failure into the single
+		// "kustomize build <overlay>: <cause>" form comments.go's
+		// groupBuildErrors recognizes, so every overlay-build failure is
+		// attributed to its overlay and gets the same PR-report treatment
+		// (grouping by root cause, truncateCause, missing-file hint). The
+		// kustomize renderer's errors already embed the overlay path and are
+		// passed through (or rewritten in place) rather than re-prefixed, so
+		// they don't end up doubly-wrapped; Helm/AVP/unknown-strategy errors
+		// carry no kustomize prefix and are wrapped here.
 		return renderBuildError(ov.path, err), pre, post, nil
 	}
 
@@ -289,21 +284,28 @@ func buildOverlayWithHooks(ov overlayRef, cfg *hook.Config, strategy appBuildStr
 // comments.go's groupBuildErrors parses to attribute the failure to its
 // overlay.
 //
-// renderKustomize already returns errors carrying that attribution - either
-// with the "kustomize build <overlay>: " prefix (krusty build failure) or the
-// "kustomize render <overlay>: " prefix (resMap.AsYaml failure) - so those are
-// returned verbatim; re-prefixing them would produce a duplicated
-// "kustomize build <overlay>: kustomize build <overlay>: ..." (or
-// "kustomize render ...") message. Every other render path (Helm strategies,
-// the AVP pass via runAVP, and unknown strategies) emits an error with no
-// kustomize prefix, so those are wrapped here to keep the failure attributed
-// to its overlay.
+// renderKustomize returns errors in one of two forms. A krusty build failure
+// already carries the canonical "kustomize build <overlay>: " prefix and is
+// returned verbatim - re-prefixing it would produce a duplicated
+// "kustomize build <overlay>: kustomize build <overlay>: ..." message. The
+// rarer resMap.AsYaml failure instead carries "kustomize render <overlay>: ",
+// which groupBuildErrors would not recognize (it only groups the
+// "kustomize build " prefix, falling back to the ungrouped "other" bucket that
+// loses truncateCause / missing-file-hint formatting), so it is rewritten to
+// the canonical form rather than passed through. Every other render path (Helm
+// strategies, the AVP pass via runAVP, and unknown strategies) emits an error
+// with no kustomize prefix, so those are wrapped here to keep the failure
+// attributed to its overlay.
 func renderBuildError(overlayPath string, err error) string {
 	renderErr := err.Error()
-	if strings.HasPrefix(renderErr, "kustomize build ") || strings.HasPrefix(renderErr, "kustomize render ") {
+	switch {
+	case strings.HasPrefix(renderErr, "kustomize build "):
 		return renderErr
+	case strings.HasPrefix(renderErr, "kustomize render "):
+		return "kustomize build " + strings.TrimPrefix(renderErr, "kustomize render ")
+	default:
+		return fmt.Sprintf("kustomize build %s: %s", overlayPath, renderErr)
 	}
-	return fmt.Sprintf("kustomize build %s: %s", overlayPath, renderErr)
 }
 
 // runAppPostValidateHooks runs each app's POST_VALIDATE_HOOK (once, after
