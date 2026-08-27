@@ -165,7 +165,7 @@ func TestValidateFile_GoodFixtures(t *testing.T) {
 	for _, f := range []string{
 		"testdata/good-deployment.yaml",
 		"testdata/good-service.yaml",
-		"testdata/good-ingress.yaml",
+		"testdata/invalid/good-ingress.yaml",
 	} {
 		t.Run(f, func(t *testing.T) {
 			errs := ValidateFile(f)
@@ -237,7 +237,7 @@ func TestValidateFile_MultiDoc(t *testing.T) {
 }
 
 func TestValidateBytes_NonTarget(t *testing.T) {
-	data, err := readTestdata("testdata/non-target.yaml")
+	data, err := readTestdata("testdata/invalid/non-target.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

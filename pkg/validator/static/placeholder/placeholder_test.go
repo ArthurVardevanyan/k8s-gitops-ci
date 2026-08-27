@@ -146,7 +146,7 @@ func TestKnownNonPlaceholders_Map(t *testing.T) {
 // --- testdata-fixture-driven tests --------------------------------------
 
 func TestValidateFile_Clean(t *testing.T) {
-	errs := ValidateFile("testdata/clean.yaml")
+	errs := ValidateFile("testdata/invalid/clean.yaml")
 	if len(errs) != 0 {
 		t.Errorf("expected no findings, got: %v", errs)
 	}
@@ -212,7 +212,7 @@ func TestValidateFile_EnvVarReferences(t *testing.T) {
 }
 
 func TestValidateFile_NFDGoTemplate(t *testing.T) {
-	errs := ValidateFile("testdata/nfd-go-template.yaml")
+	errs := ValidateFile("testdata/invalid/nfd-go-template.yaml")
 	if len(errs) != 0 {
 		t.Errorf("expected no findings for {{ .Name }}-style Go templates, got: %v", errs)
 	}

@@ -290,7 +290,7 @@ func TestValidateFile_GoodFixtures(t *testing.T) {
 func TestValidateFile_BadDeployment(t *testing.T) {
 	// The fixture has no pod-level fields, no securityContext, and no
 	// resources at all - 3 distinct findings.
-	errs := ValidateFile("testdata/bad-deployment.yaml")
+	errs := ValidateFile("testdata/invalid/bad-deployment.yaml")
 	if len(errs) != 3 {
 		t.Fatalf("expected 3 findings (pod fields + container securityContext + resources), got %d: %v", len(errs), errs)
 	}
@@ -336,7 +336,7 @@ func TestValidateFile_BadDeployment(t *testing.T) {
 }
 
 func TestValidateFile_BadCronJob(t *testing.T) {
-	errs := ValidateFile("testdata/bad-cronjob.yaml")
+	errs := ValidateFile("testdata/invalid/bad-cronjob.yaml")
 	if len(errs) == 0 {
 		t.Fatal("expected findings for a noncompliant CronJob")
 	}

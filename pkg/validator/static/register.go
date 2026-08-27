@@ -9,9 +9,9 @@
 package static
 
 import (
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 )
 
 // RegisterAll registers all static check adapters with the check registry.

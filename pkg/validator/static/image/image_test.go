@@ -344,7 +344,7 @@ func TestDeduplicate_Empty(t *testing.T) {
 }
 
 func TestExtractImagesFromFile(t *testing.T) {
-	images := ExtractImagesFromFile("testdata/good-pinned.yaml")
+	images := ExtractImagesFromFile("testdata/invalid/good-pinned.yaml")
 	if len(images) != 2 {
 		t.Fatalf("expected 2 images, got %d: %v", len(images), images)
 	}
@@ -400,7 +400,7 @@ func TestVerifyTagDigest_NoTag(t *testing.T) {
 func TestVerifyFileTagDigests_SkipsUnpinned(t *testing.T) {
 	// Regression for change #3: removing the Tag="latest" default must not
 	// affect this skip - it keys off Digest, not Tag.
-	errs := VerifyFileTagDigests("testdata/bad-no-digest.yaml", http.DefaultClient)
+	errs := VerifyFileTagDigests("testdata/invalid/bad-no-digest.yaml", http.DefaultClient)
 	if len(errs) != 0 {
 		t.Errorf("expected no digest-verification errors for images with no digest at all, got: %v", errs)
 	}
@@ -409,14 +409,14 @@ func TestVerifyFileTagDigests_SkipsUnpinned(t *testing.T) {
 // --- testdata-fixture-driven tests -------------------------------------
 
 func TestValidateFile_AllPinned(t *testing.T) {
-	errs := ValidateFile("testdata/good-pinned.yaml")
+	errs := ValidateFile("testdata/invalid/good-pinned.yaml")
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors for fully pinned images, got: %v", errs)
 	}
 }
 
 func TestValidateFile_NoPinning(t *testing.T) {
-	errs := ValidateFile("testdata/bad-no-digest.yaml")
+	errs := ValidateFile("testdata/invalid/bad-no-digest.yaml")
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 errors for unpinned images, got %d: %v", len(errs), errs)
 	}
@@ -428,7 +428,7 @@ func TestValidateFile_NoPinning(t *testing.T) {
 }
 
 func TestValidateFile_Mixed(t *testing.T) {
-	errs := ValidateFile("testdata/mixed-tekton.yaml")
+	errs := ValidateFile("testdata/invalid/mixed-tekton.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error (unpinned step), got %d: %v", len(errs), errs)
 	}
@@ -472,7 +472,7 @@ func TestValidateFile_ArgoCDSplitVersion_SiblingScoping(t *testing.T) {
 	// (spec.image), not "whichever image string was most recently seen
 	// during the recursive walk" (which would misattach the digest to the
 	// sidecar instead and leave spec.image looking unpinned).
-	errs := ValidateFile("testdata/argocd-split-version.yaml")
+	errs := ValidateFile("testdata/invalid/argocd-split-version.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected exactly 1 finding (the genuinely-unpinned sidecar), got %d: %v", len(errs), errs)
 	}
