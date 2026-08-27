@@ -1,7 +1,12 @@
+---
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: has-init
+  name: good
 spec:
+  selector:
+    matchLabels:
+      app: good
   template:
     spec:
       enableServiceLinks: false
@@ -9,9 +14,6 @@ spec:
       schedulerName: default
       dnsPolicy: ClusterFirst
       automountServiceAccountToken: false
-      initContainers:
-        - name: init
-          image: example.com/init@sha256:deadbeef
       containers:
         - name: c
           image: example.com/app@sha256:deadbeef

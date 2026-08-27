@@ -1,6 +1,8 @@
-kind: Deployment
+---
+apiVersion: apps/v1
+kind: StatefulSet
 metadata:
-  name: good
+  name: partial
 spec:
   template:
     spec:
@@ -20,10 +22,6 @@ spec:
             capabilities:
               drop:
                 - ALL
-            seccompProfile:
-              type: RuntimeDefault
           resources:
             requests:
               cpu: 10m
-            limits:
-              cpu: 100m

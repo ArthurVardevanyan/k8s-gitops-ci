@@ -918,11 +918,6 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	tc.Record("Post-Build Validation", time.Since(postBuildStart), true)
 }
 
-// overlayRef pairs an overlay path with its cluster name.
-type overlayRef struct {
-	path, cluster string
-}
-
 // toIDSet converts a slice of IDs (from DisabledChecks or EnabledChecks)
 // into a lookup set. Reading a missing key from a nil map is a safe
 // zero-value (false) in Go, so callers can use the result directly without

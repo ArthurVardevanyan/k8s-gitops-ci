@@ -1,8 +1,12 @@
+---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: partial
+  name: has-init
 spec:
+  selector:
+    matchLabels:
+      app: has-init
   template:
     spec:
       enableServiceLinks: false
@@ -10,6 +14,9 @@ spec:
       schedulerName: default
       dnsPolicy: ClusterFirst
       automountServiceAccountToken: false
+      initContainers:
+        - name: init
+          image: example.com/init@sha256:deadbeef
       containers:
         - name: c
           image: example.com/app@sha256:deadbeef
@@ -21,6 +28,10 @@ spec:
             capabilities:
               drop:
                 - ALL
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 10m
+            limits:
+              cpu: 100m

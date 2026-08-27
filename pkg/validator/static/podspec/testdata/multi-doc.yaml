@@ -1,13 +1,19 @@
+---
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: d1
 spec:
+  selector:
+    matchLabels:
+      app: d1
   template:
     spec:
       containers:
         - name: c
           image: example.com/app@sha256:deadbeef
 ---
+apiVersion: v1
 kind: Pod
 metadata:
   name: p1
