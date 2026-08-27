@@ -10,15 +10,22 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static"
 )
 
-// withClusterIndex temporarily overrides ClusterIndexProvider for the
-// duration of a test, restoring the original afterward.
+// withClusterIndex temporarily overrides ClusterIndexProvider (and
+// static.ClusterIndexProvider, so the adapter can read it) for the
+// duration of a test, restoring the originals afterward.
 func withClusterIndex(t *testing.T, idx clusterid.ClusterIndex) {
 	t.Helper()
 	orig := ClusterIndexProvider
+	staticOrig := static.ClusterIndexProvider
 	ClusterIndexProvider = func() clusterid.ClusterIndex { return idx }
-	t.Cleanup(func() { ClusterIndexProvider = orig })
+	static.ClusterIndexProvider = ClusterIndexProvider
+	t.Cleanup(func() {
+		ClusterIndexProvider = orig
+		static.ClusterIndexProvider = staticOrig
+	})
 }
 
 func TestClusterIdentityAdapter_UsesFindingsOwnCheckID(t *testing.T) {
@@ -34,7 +41,7 @@ func TestClusterIdentityAdapter_UsesFindingsOwnCheckID(t *testing.T) {
 		NumberToCluster: map[string]string{"123456": "other-cluster"},
 	})
 
-	findings := (clusterIdentityAdapter{}).CheckOverlay(dir, "my-cluster")
+	findings := (static.ClusterIdentityAdapter{}).CheckOverlay(dir, "my-cluster")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
 	}
@@ -80,7 +87,7 @@ func TestClusterIdentityAdapter_ProjectRefFindingIsExemptableEndToEnd(t *testing
 // Flagging them made every AVP-managed secret a blocking false positive.
 func TestPlaceholderCheck_DoesNotFlagAVPReferences(t *testing.T) {
 	data := []byte("apiVersion: v1\nkind: Secret\nmetadata:\n  name: x\nstringData:\n  password: <path:secret/data/foo#password>\n")
-	findings := (placeholderCheck{}).CheckDoc(data, "secret.yaml")
+	findings := (static.PlaceholderCheck{}).CheckDoc(data, "secret.yaml")
 	if len(findings) != 0 {
 		t.Fatalf("expected AVP references to NOT be flagged, got %d: %+v", len(findings), findings)
 	}
@@ -90,14 +97,14 @@ func TestPlaceholderCheck_DoesNotFlagAVPReferences(t *testing.T) {
 // template placeholders (sentinels, angle-bracket tokens) ARE still flagged.
 func TestPlaceholderCheck_FlagsGenuinePlaceholders(t *testing.T) {
 	data := []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\ndata:\n  a: CHANGEME\n  b: <NAMESPACE>\n")
-	findings := (placeholderCheck{}).CheckDoc(data, "cm.yaml")
+	findings := (static.PlaceholderCheck{}).CheckDoc(data, "cm.yaml")
 	if len(findings) != 2 {
 		t.Fatalf("expected 2 genuine placeholder findings (CHANGEME, <NAMESPACE>), got %d: %+v", len(findings), findings)
 	}
 }
 
 func TestPlaceholderCheck_SkipsCustomResourceDefinitions(t *testing.T) {
-	pc := placeholderCheck{}
+	pc := static.PlaceholderCheck{}
 	if !pc.SkipDoc("CustomResourceDefinition") {
 		t.Error("expected CustomResourceDefinition documents to be skipped")
 	}
@@ -132,7 +139,7 @@ func TestClusterIdentityAdapter_DisabledWithoutProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	findings := (clusterIdentityAdapter{}).CheckOverlay(dir, "my-cluster")
+	findings := (static.ClusterIdentityAdapter{}).CheckOverlay(dir, "my-cluster")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when no ClusterIndexProvider is configured, got %+v", findings)
 	}
@@ -180,11 +187,11 @@ func (testClusterMetadata) ChangeGroups() (map[string]int, bool) { return nil, f
 
 func TestPsaCheck_CarriesMissingLabelsInExtra(t *testing.T) {
 	data := []byte("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: foo\n")
-	findings := (psaCheck{}).CheckDoc(data, "ns.yaml")
+	findings := (static.PSACheck{}).CheckDoc(data, "ns.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 psa finding, got %d: %+v", len(findings), findings)
 	}
-	extra := findings[0].Get(psaMissingLabelsExtraKey)
+	extra := findings[0].Get(static.PsaMissingLabelsExtraKey)
 	if extra == "" {
 		t.Fatal("expected missing_labels to be populated in Extra")
 	}
