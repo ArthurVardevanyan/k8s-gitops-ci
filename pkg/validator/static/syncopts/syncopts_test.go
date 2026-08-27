@@ -340,7 +340,7 @@ func TestValidateFile_OpenShiftBuiltin(t *testing.T) {
 
 func TestValidateFile_Malformed(t *testing.T) {
 	// Helm template syntax must not hang or panic the YAML decoder.
-	errs := ValidateFile("testdata/malformed.yaml")
+	errs := ValidateFile("testdata/invalid/malformed.yaml")
 	if len(errs) > 1 {
 		t.Errorf("expected at most a benign result for malformed Helm-template YAML, got: %v", errs)
 	}
