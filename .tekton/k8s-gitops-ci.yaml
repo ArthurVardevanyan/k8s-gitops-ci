@@ -382,6 +382,12 @@ spec:
                 # very end, so `task ci` remains the authoritative blocking gate.
                 # Tee the output so the comment can embed a tail of the failing
                 # step's log (the raw log is on the pipeline anyway).
+                # ── Tool versions ──────────────────────────────────────────────
+                echo "=== Tool versions ==="
+                go version
+                golangci-lint version || echo "golangci-lint not found"
+                echo "======================"
+
                 CI_RC=0
                 CI_LOG="${TMPDIR}/task-ci.log"
                 task ci 2>&1 | tee "${CI_LOG}" || CI_RC="${PIPESTATUS[0]}"
@@ -674,6 +680,12 @@ spec:
                 : "${PARAM_PR_NUMBER:=""}"
                 : "${PARAM_TARGET_BRANCH:=""}"
                 : "${AUTH_PATH:=""}"
+
+                # ── Tool versions ──────────────────────────────────────────────
+                echo "=== Tool versions ==="
+                go version
+                golangci-lint version || echo "golangci-lint not found"
+                echo "======================"
 
                 # No separate clone step: `k8s-gitops-ci pipeline --url`
                 # clones into its own temp directory internally (see
