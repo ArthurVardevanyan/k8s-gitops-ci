@@ -153,7 +153,7 @@ func TestValidateFile_Clean(t *testing.T) {
 }
 
 func TestValidateFile_HasPlaceholders_Fixture(t *testing.T) {
-	errs := ValidateFile("testdata/has-placeholders.yaml")
+	errs := ValidateFile("testdata/invalid/has-placeholders.yaml")
 	if len(errs) != 3 {
 		t.Fatalf("expected 3 findings (<NAMESPACE>, CHANGEME, AVP path), got %d: %v", len(errs), errs)
 	}
@@ -205,7 +205,7 @@ func TestValidateFile_ArgoCDApplicationSet(t *testing.T) {
 }
 
 func TestValidateFile_EnvVarReferences(t *testing.T) {
-	errs := ValidateFile("testdata/env-var-references.yaml")
+	errs := ValidateFile("testdata/invalid/env-var-references.yaml")
 	if len(errs) != 0 {
 		t.Errorf("expected no findings for ${VAR}-style shell env references, got: %v", errs)
 	}
@@ -223,7 +223,7 @@ func TestValidateFile_MixedRealAndFalse(t *testing.T) {
 	// one document: only the real placeholder is flagged (both the
 	// angle-bracket pattern and the CHANGE_ME sentinel independently match
 	// the same literal text, so 2 findings on the same line is expected).
-	errs := ValidateFile("testdata/mixed-real-and-false.yaml")
+	errs := ValidateFile("testdata/invalid/mixed-real-and-false.yaml")
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 findings (angle-bracket + sentinel match on the same real placeholder), got %d: %v", len(errs), errs)
 	}

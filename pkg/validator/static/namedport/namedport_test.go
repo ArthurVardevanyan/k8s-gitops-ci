@@ -179,7 +179,7 @@ func TestValidateFile_GoodFixtures(t *testing.T) {
 func TestValidateFile_BadDeploymentNumericProbe(t *testing.T) {
 	// Both httpGet and tcpSocket numeric ports in one container: 2 findings
 	// (closes the previously-untested numeric-tcpSocket path).
-	errs := ValidateFile("testdata/bad-deployment-numeric-probe.yaml")
+	errs := ValidateFile("testdata/invalid/bad-deployment-numeric-probe.yaml")
 	if len(errs) != 2 {
 		t.Fatalf("expected 2 findings, got %d: %v", len(errs), errs)
 	}
@@ -194,7 +194,7 @@ func TestValidateFile_BadDeploymentUnnamedContainerPort(t *testing.T) {
 
 func TestValidateFile_BadServiceNumericTargetPort(t *testing.T) {
 	// Isolates "numeric targetPort" from "missing name" - exactly 1 finding.
-	errs := ValidateFile("testdata/bad-service-numeric-targetport.yaml")
+	errs := ValidateFile("testdata/invalid/bad-service-numeric-targetport.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected exactly 1 finding, got %d: %v", len(errs), errs)
 	}
@@ -202,14 +202,14 @@ func TestValidateFile_BadServiceNumericTargetPort(t *testing.T) {
 
 func TestValidateFile_BadServiceUnnamedPort(t *testing.T) {
 	// Isolates "missing name" from "numeric targetPort" - exactly 1 finding.
-	errs := ValidateFile("testdata/bad-service-unnamed-port.yaml")
+	errs := ValidateFile("testdata/invalid/bad-service-unnamed-port.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected exactly 1 finding, got %d: %v", len(errs), errs)
 	}
 }
 
 func TestValidateFile_BadIngressNumber(t *testing.T) {
-	errs := ValidateFile("testdata/bad-ingress-number.yaml")
+	errs := ValidateFile("testdata/invalid/bad-ingress-number.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected exactly 1 finding, got %d: %v", len(errs), errs)
 	}
@@ -219,7 +219,7 @@ func TestValidateFile_BadIngressNumber(t *testing.T) {
 }
 
 func TestValidateFile_BadIngressDefaultBackendNumber(t *testing.T) {
-	errs := ValidateFile("testdata/bad-ingress-defaultbackend-number.yaml")
+	errs := ValidateFile("testdata/invalid/bad-ingress-defaultbackend-number.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected exactly 1 finding, got %d: %v", len(errs), errs)
 	}
