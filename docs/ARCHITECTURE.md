@@ -12,6 +12,7 @@ pipeline, and where to look for each piece.
 - [Why "app-aware" overlay detection matters](#why-app-aware-overlay-detection-matters)
 - [Package map](#package-map)
 - [Design conventions (link, not duplicate)](#design-conventions-link-not-duplicate)
+- [Future Simplifications](#future-simplifications)
 - [Where do I find X?](#where-do-i-find-x)
 
 ## Overview
@@ -141,6 +142,57 @@ canonical reference for:
 - The **generic check-enablement mechanism**
   (`Options.DisabledChecks`/`EnabledChecks` + `stepEnabled`/
   `defaultOffSteps` in `pkg/validator/phases.go`).
+- **Shared type consolidation** — types shared across multiple internal
+  wiring files (`overlayRef`, `renderedOverlay`, `hookOutcome`,
+  `appHookResult`, `appBuildStrategy`, `mergeHookOutcome`) are defined
+  once in `pkg/validator/types.go` and imported by callers, preventing
+  duplicated struct definitions and keeping the internal API surface
+  stable.
+
+## Future Simplifications
+
+The `pkg/validator/` directory currently holds the central orchestration
+(`phases.go`, ~1100 lines), the wiring layer (`build_wiring.go`,
+`hook_wiring.go`, `target_wiring.go`, `scaffold_wiring.go`, `kyverno_wiring.go`,
+`avp_wiring.go`, `nad_wiring.go`, `nonapp_wiring.go`, `dispatch.go`,
+`overlay_discovery.go`, `kubeconform_overlay.go`), and the centralized
+shared types (`types.go`). This structure has been validated by
+consolidation — `engine.go` was merged into `phases.go`, and wiring files
+are kept flat to avoid import cycles.
+
+The directory could be split further in the future if file counts or line
+counts make editing or review overhead noticeable. The path forward
+requires resolving two dependencies:
+
+1. **Export shared types.** The wiring layer and phases both depend on
+   internal types (`renderedOverlay`, `hookOutcome`, etc.) defined in
+   `types.go`. To extract `wiring/` and `engine/` (or `phases/`) as
+   sibling packages, these types must be promoted to a shared sub-package
+   (e.g. `pkg/validator/types`) so that `wiring`, `phases`, and `check`
+   can all import them without creating a cycle (`validator` ↔ `wiring`).
+2. **Decouple test imports.** Several tests in `phases_test.go` and
+   `*_wiring_test.go` depend on unexported package-level state
+   (`RunAll`'s side-effects, `hookBuildRoot`, `DefaultEnabledChecks`).
+   Extracting sub-packages would require converting these to explicit
+   dependency injection or test helpers that reset state between runs,
+   so each sub-package's tests can run independently without importing
+   the parent package's internals.
+
+If/when these prerequisites are met, the suggested extraction order is:
+
+- `pkg/validator/types` — shared structs driving the consolidation.
+- `pkg/validator/wiring` — overlay discovery, hook execution, and
+  check-target resolution logic (currently flat in `build_wiring.go`,
+  `hook_wiring.go`, `target_wiring.go`, etc.).
+- `pkg/validator/engine` — the per-overlay build loop and compliance
+  fan-out (historically `engine.go`, now merged into `phases.go`).
+- `pkg/validator/phases.go` — top-level phase orchestration (linting,
+  static checks, build orchestration, reporting assembly).
+
+Until those structural dependencies are resolved, the current flat
+layout under `pkg/validator/` is the intentional default — it keeps
+imports simple, avoids circular dependencies, and remains within
+maintainable file-size bounds.
 
 ## Where do I find X?
 
