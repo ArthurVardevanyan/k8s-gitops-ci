@@ -237,7 +237,7 @@ func TestValidateFile_MultiDoc(t *testing.T) {
 }
 
 func TestValidateBytes_NonTarget(t *testing.T) {
-	data, err := readTestdata("testdata/invalid/non-target.yaml")
+	data, err := readTestdata("testdata/non-target.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

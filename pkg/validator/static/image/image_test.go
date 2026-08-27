@@ -344,7 +344,7 @@ func TestDeduplicate_Empty(t *testing.T) {
 }
 
 func TestExtractImagesFromFile(t *testing.T) {
-	images := ExtractImagesFromFile("testdata/invalid/good-pinned.yaml")
+	images := ExtractImagesFromFile("testdata/good-pinned.yaml")
 	if len(images) != 2 {
 		t.Fatalf("expected 2 images, got %d: %v", len(images), images)
 	}
@@ -409,7 +409,7 @@ func TestVerifyFileTagDigests_SkipsUnpinned(t *testing.T) {
 // --- testdata-fixture-driven tests -------------------------------------
 
 func TestValidateFile_AllPinned(t *testing.T) {
-	errs := ValidateFile("testdata/invalid/good-pinned.yaml")
+	errs := ValidateFile("testdata/good-pinned.yaml")
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors for fully pinned images, got: %v", errs)
 	}
