@@ -351,7 +351,7 @@ func TestValidateFile_PartialStatefulSet(t *testing.T) {
 	// Regression for change #1: resources.requests/limits are now checked
 	// independently. This fixture has requests set but not limits, and a
 	// securityContext missing exactly seccompProfile.
-	errs := ValidateFile("testdata/partial-statefulset.yaml")
+	errs := ValidateFile("testdata/invalid/partial-statefulset.yaml")
 	if len(errs) != 2 {
 		t.Fatalf("expected exactly 2 findings, got %d: %v", len(errs), errs)
 	}
