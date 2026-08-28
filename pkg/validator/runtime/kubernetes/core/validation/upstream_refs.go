@@ -12,6 +12,10 @@ const coreValidationPath = "pkg/apis/core/validation/validation.go"
 // by the API server to every object regardless of kind.
 const objectMetaPath = "staging/src/k8s.io/apimachinery/pkg/api/validation/objectmeta.go"
 
+// labelsPath is apimachinery's meta/v1 label validation, which the shared
+// object-metadata path above delegates to for metadata.labels.
+const labelsPath = "staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/validation/validation.go"
+
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken
 // at. It matches the tag derived from go.mod that
 // `task verify:upstream-refs` pins to.
@@ -202,6 +206,31 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"a cluster-scoped object must not) are NOT ported here. They are owned by the exemptable " +
 			"\"namespace\" static check, which carries the generated cluster resource-scope map; duplicating " +
 			"them would double-report and would make an exemptable policy decision unexemptable.",
+	},
+
+	"core/object-meta-labels-invalid": {
+		Path:        labelsPath,
+		Functions:   []string{"ValidateLabels", "ValidateLabelName"},
+		Digest:      "sha256:2d462c5689c01b48bb90b35becfba9415e19e56c05a4ecf6a299e13a8483fc3e",
+		ValidatedAt: validatedAt,
+		Note: "Ports both branches of ValidateLabels: the key is checked with IsQualifiedName via " +
+			"ValidateLabelName, and the value with the narrower IsValidLabelValue. Unlike the name rules " +
+			"in object_meta.go this is not per-kind, so the check declares no Kinds() and runs on every " +
+			"document. Findings are emitted in sorted key order because upstream iterates a map and Go " +
+			"randomizes that; ordering is not part of the upstream contract.",
+	},
+
+	"core/object-meta-annotations-invalid": {
+		Path:        objectMetaPath,
+		Functions:   []string{"ValidateAnnotations", "ValidateAnnotationsSize"},
+		Digest:      "sha256:89a0f370e961b4895558f35f64622501b96c778d0aa0f7603abbe85f951b8e23",
+		ValidatedAt: validatedAt,
+		Note: "Ports the qualified-name branch, which lowercases the key first because annotation keys " +
+			"are case-insensitive where label keys are not, and the ValidateAnnotationsSize branch, " +
+			"which sums every key and value against the single 256 kB TotalAnnotationSizeLimitB and is " +
+			"therefore reported once per object rather than per annotation. Like the labels check this " +
+			"is kind-independent. Not ported: the field.TooLong error's empty value argument, an " +
+			"upstream formatting quirk with no bearing on whether the object is rejected.",
 	},
 
 	// --- core objects ------------------------------------------------------

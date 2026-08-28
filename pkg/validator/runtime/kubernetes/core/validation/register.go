@@ -51,6 +51,8 @@ func register() {
 		podSpecReadinessGateInvalidCheck{},
 		objectMetaNameInvalidCheck{},
 		objectMetaNamespaceInvalidCheck{},
+		objectMetaLabelsInvalidCheck{},
+		objectMetaAnnotationsInvalidCheck{},
 
 		// Core object checks (ConfigMap, LimitRange, ResourceQuota).
 		configMapDataSizeExceededCheck{},
