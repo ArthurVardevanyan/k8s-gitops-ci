@@ -47,6 +47,41 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"container/port-number-range.",
 	},
 
+	"core/replicationcontroller-replicas-invalid": {
+		Path:        coreValidationPath,
+		Functions:   []string{"ValidateReplicationControllerSpec"},
+		Digest:      "sha256:97e83579d67da9c5f839b93d0d438c2fb09d143f7d5d4ee12f54e82d5b93f29d",
+		ValidatedAt: validatedAt,
+		Note: "Ports the replicas ValidateNonnegativeField branch. Deliberate divergence: the " +
+			"Required branch for a nil replicas is skipped, because defaulting sets 1 before " +
+			"validation and an unrendered manifest legitimately omits the field.",
+	},
+	"core/replicationcontroller-selector-invalid": {
+		Path:        coreValidationPath,
+		Functions:   []string{"ValidateReplicationControllerSpec", "ValidateNonEmptySelector"},
+		Digest:      "sha256:4c3c38b503c5572c18b2b6de6353a031599200c4f9428f72e064488f94255f7a",
+		ValidatedAt: validatedAt,
+		Note: "Ports the ValidateNonEmptySelector Required branch. The selector is not read as " +
+			"written: SetDefaults_ReplicationController copies spec.template.metadata.labels into " +
+			"an empty selector before validation, so an omitted selector is valid and is the " +
+			"ordinary way to write the kind. That defaulting is cited below and reproduced here, " +
+			"so the rule fires only when the template has no labels to supply one either.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        "pkg/apis/core/v1/defaults.go",
+			Functions:   []string{"SetDefaults_ReplicationController"},
+			Digest:      "sha256:804c32438cc8c65d9720942aab02fc31af06816b6a4c531139aa33180e560f0c",
+			ValidatedAt: validatedAt,
+			Note: "Supplies the selector this rule tests. Without it the check reports every " +
+				"ReplicationController that omits spec.selector, which the API server accepts.",
+		}},
+	},
+	"core/replicationcontroller-min-ready-seconds-invalid": {
+		Path:        coreValidationPath,
+		Functions:   []string{"ValidateReplicationControllerSpec"},
+		Digest:      "sha256:97e83579d67da9c5f839b93d0d438c2fb09d143f7d5d4ee12f54e82d5b93f29d",
+		ValidatedAt: validatedAt,
+		Note:        "Ports the minReadySeconds ValidateNonnegativeField branch.",
+	},
 	"container/duplicate-container-names": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainers", "validateInitContainers", "validateEphemeralContainers"},

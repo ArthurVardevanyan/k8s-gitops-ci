@@ -1134,6 +1134,14 @@ rule must live here or nowhere.
 - **ConfigMap/Secret**: key-name and duplicate-key branches of
   `ValidateConfigMap` (only the 1 MiB size branch is ported).
 - **StatefulSet**: `volumeClaimTemplates` validation.
+- **ReplicationController**: the RC-only branches of
+  `ValidatePodTemplateSpecForRC` — that the template's `restartPolicy`
+  must be `Always` (the generic pod-spec rule accepts the whole enum),
+  that `activeDeadlineSeconds` is forbidden outright, and that the
+  selector must match the template's labels. The three spec-level
+  rules — `replicas`, `selector` and `minReadySeconds` — are ported, so
+  the kind has the same controller-level coverage as every other
+  workload; these three are additional semantics unique to it.
 - **HorizontalPodAutoscaler**: `metrics` validation (only the replica
   bounds and behavior windows are ported).
 

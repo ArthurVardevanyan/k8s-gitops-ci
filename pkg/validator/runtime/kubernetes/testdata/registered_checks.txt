@@ -44,6 +44,9 @@ core/object-meta-annotations-invalid	Object Annotations Must Be Valid	*
 core/object-meta-labels-invalid	Object Labels Must Be Valid	*
 core/object-meta-name-invalid	Object Name Must Be Valid For Its Kind	ClusterRole,ClusterRoleBinding,ConfigMap,CronJob,DaemonSet,Deployment,HorizontalPodAutoscaler,Ingress,IngressClass,Job,LimitRange,MutatingWebhookConfiguration,Namespace,NetworkPolicy,PersistentVolume,PersistentVolumeClaim,Pod,ReplicaSet,ResourceQuota,Role,RoleBinding,Secret,Service,ServiceAccount,StatefulSet,StorageClass,ValidatingWebhookConfiguration
 core/object-meta-namespace-invalid	Object Namespace Must Be A Valid DNS Label	ClusterRole,ClusterRoleBinding,ConfigMap,CronJob,DaemonSet,Deployment,HorizontalPodAutoscaler,Ingress,IngressClass,Job,LimitRange,MutatingWebhookConfiguration,Namespace,NetworkPolicy,PersistentVolume,PersistentVolumeClaim,Pod,ReplicaSet,ResourceQuota,Role,RoleBinding,Secret,Service,ServiceAccount,StatefulSet,StorageClass,ValidatingWebhookConfiguration
+core/replicationcontroller-min-ready-seconds-invalid	ReplicationController MinReadySeconds Must Be >= 0	ReplicationController
+core/replicationcontroller-replicas-invalid	ReplicationController Replicas Must Be >= 0	ReplicationController
+core/replicationcontroller-selector-invalid	ReplicationController Selector Must Not Be Empty	ReplicationController
 core/resourcequota-hard-invalid	ResourceQuota Hard Values Must Be Valid Resources	ResourceQuota
 core/resourcequota-hard-negative	ResourceQuota Hard Values Must Not Be Negative	ResourceQuota
 ingress/path-type-invalid	Ingress PathType Must Be Valid	Ingress

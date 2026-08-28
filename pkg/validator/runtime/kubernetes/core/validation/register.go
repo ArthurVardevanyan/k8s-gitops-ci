@@ -28,6 +28,9 @@ func Register() {
 
 func register() {
 	checks := []runtime.Check{
+		newReplicationControllerReplicasInvalidCheck(),
+		newReplicationControllerSelectorInvalidCheck(),
+		newReplicationControllerMinReadySecondsInvalidCheck(),
 		newDuplicateContainerNamesCheck(),
 		newContainerNameInvalidCheck(),
 		newContainerPortNameInvalidCheck(),
