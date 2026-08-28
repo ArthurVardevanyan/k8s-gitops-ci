@@ -156,11 +156,11 @@ spec:
               requests:
                 cpu: "1"
                 memory: 500Mi
-                ephemeral-storage: 1Gi
+                ephemeral-storage: 3Gi
               limits:
                 cpu: "6"
                 memory: 5Gi
-                ephemeral-storage: 3Gi
+                ephemeral-storage: 6Gi
             securityContext:
               privileged: false
               readOnlyRootFilesystem: true
