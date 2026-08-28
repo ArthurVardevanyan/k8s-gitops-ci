@@ -71,6 +71,20 @@ func TestRuntimeChecksAreNonExemptable(t *testing.T) {
 	}
 }
 
+// kindIndependentChecks are the checks that deliberately apply to every kind.
+//
+// This is an explicit allowlist rather than a relaxation of the rule below,
+// so that "I forgot to scope this check" still fails for everything else. A
+// check belongs here only when the upstream rule it ports is genuinely
+// kind-independent, which today means the object-metadata rules the API
+// server applies to every object it accepts, custom resources included.
+// Enumerating kinds for those is not merely tedious but impossible, since the
+// set includes CRDs this tool has never seen.
+var kindIndependentChecks = map[string]string{
+	"core/object-meta-labels-invalid":      "ValidateLabels runs on every object",
+	"core/object-meta-annotations-invalid": "ValidateAnnotations runs on every object",
+}
+
 // TestRuntimeChecksDeclareKinds ensures every runtime check filters by kind.
 // A check with no Kinds() is handed every document in the changeset, which
 // is both wasted work and a sign the author forgot to scope it.
@@ -85,8 +99,16 @@ func TestRuntimeChecksDeclareKinds(t *testing.T) {
 			continue
 		}
 		// A check that skips nothing at all declared no kinds.
-		if !skipper.SkipDoc("ThisKindDoesNotExist") {
+		unscoped := !skipper.SkipDoc("ThisKindDoesNotExist")
+		_, allowed := kindIndependentChecks[c.ID()]
+
+		if unscoped && !allowed {
 			t.Errorf("check %q declares no Kinds(), so it runs against every document", c.ID())
+		}
+		// Keep the allowlist honest: an entry that starts scoping itself
+		// should be removed rather than left to rot.
+		if !unscoped && allowed {
+			t.Errorf("check %q is in kindIndependentChecks but declares Kinds(); remove the allowlist entry", c.ID())
 		}
 	}
 }

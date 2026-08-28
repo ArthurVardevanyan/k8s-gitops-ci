@@ -110,13 +110,15 @@ func (c objectMetaLabelsInvalidCheck) Run(data []byte, source string) []runtime.
 		// ValidateLabelName: the key is a qualified name, case-sensitive.
 		for _, msg := range validation.IsQualifiedName(key) {
 			findings = append(findings, finding(
-				fmt.Sprintf("metadata.labels: invalid label key %q: %s", key, msg), key))
+				fmt.Sprintf("metadata.labels: invalid label key %q: %s", key, msg), key,
+			))
 		}
 		// ValidateLabels: the value has its own, narrower rule.
 		for _, msg := range validation.IsValidLabelValue(meta.Labels[key]) {
 			findings = append(findings, finding(
 				fmt.Sprintf("metadata.labels[%s]: invalid label value %q: %s", key, meta.Labels[key], msg),
-				meta.Labels[key]))
+				meta.Labels[key],
+			))
 		}
 	}
 
@@ -173,7 +175,8 @@ func (c objectMetaAnnotationsInvalidCheck) Run(data []byte, source string) []run
 	for _, key := range sortedKeys(meta.Annotations) {
 		for _, msg := range validation.IsQualifiedName(strings.ToLower(key)) {
 			findings = append(findings, finding(
-				fmt.Sprintf("metadata.annotations: invalid annotation key %q: %s", key, msg), key))
+				fmt.Sprintf("metadata.annotations: invalid annotation key %q: %s", key, msg), key,
+			))
 		}
 	}
 
@@ -187,7 +190,8 @@ func (c objectMetaAnnotationsInvalidCheck) Run(data []byte, source string) []run
 	if totalSize > int64(totalAnnotationSizeLimitB) {
 		findings = append(findings, finding(
 			fmt.Sprintf("metadata.annotations: too long: must have at most %d bytes", totalAnnotationSizeLimitB),
-			""))
+			"",
+		))
 	}
 
 	return findings

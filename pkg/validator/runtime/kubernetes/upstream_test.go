@@ -14,6 +14,9 @@ import (
 var upstreamPathPrefixes = []string{
 	"pkg/apis/",
 	"staging/src/k8s.io/apimachinery/pkg/api/validation/",
+	// meta/v1 validation is where the shared object-metadata path above
+	// delegates the label rules to (ValidateLabels, ValidateLabelName).
+	"staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/validation/",
 	"staging/src/k8s.io/apiextensions-apiserver/pkg/apis/",
 	"staging/src/k8s.io/apiserver/pkg/util/webhook/",
 }
