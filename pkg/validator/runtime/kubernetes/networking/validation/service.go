@@ -132,14 +132,3 @@ func (c sessionAffinityInvalidCheck) Run(data []byte, source string) []runtime.F
 
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		typeInvalidCheck{},
-		sessionAffinityInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

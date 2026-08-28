@@ -61,12 +61,3 @@ func (c limitRangeMaxMinInvalidCheck) Run(data []byte, source string) []runtime.
 	}
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		limitRangeMaxMinInvalidCheck{},
-	}
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

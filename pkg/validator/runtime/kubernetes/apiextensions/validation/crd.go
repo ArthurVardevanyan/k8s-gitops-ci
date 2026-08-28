@@ -79,13 +79,3 @@ func (c storageVersionInvalidCheck) Run(data []byte, source string) []runtime.Fi
 
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		storageVersionInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

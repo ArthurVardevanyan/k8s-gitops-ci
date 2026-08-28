@@ -87,6 +87,7 @@ resource generation steps a raw command would silently skip.
 | Regenerate embedded schemas                        | `task schemas:pull`            |
 | Bump the pinned schema SHA to the branch tip       | `task update:schemas`          |
 | Regenerate resource-scope maps from a live cluster | `task update:scoped-resources` |
+| Verify runtime checks' upstream citations          | `task verify:upstream-refs`    |
 
 **Note:** When running `task ci` via Bash, set `timeout` to **90 seconds** (it takes longer than the default 30s cutoff in practice — 90s is a good starting point; extend if needed).
 

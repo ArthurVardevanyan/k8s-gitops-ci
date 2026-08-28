@@ -87,13 +87,3 @@ func (c pathTypeInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		pathTypeInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

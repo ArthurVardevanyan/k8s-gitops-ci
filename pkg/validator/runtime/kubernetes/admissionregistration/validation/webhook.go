@@ -219,16 +219,11 @@ func (c timeoutInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	return findings
 }
 
-// registerWebhookChecks registers the three webhook checks for one
-// configuration kind.
-func registerWebhookChecks(base webhookCheckBase) {
-	checks := []runtime.Check{
+// webhookChecks returns the three shared checks for one configuration kind.
+func webhookChecks(base webhookCheckBase) []runtime.Check {
+	return []runtime.Check{
 		serviceInvalidCheck{webhookCheckBase: base},
 		failurePolicyInvalidCheck{webhookCheckBase: base},
 		timeoutInvalidCheck{webhookCheckBase: base},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
 	}
 }

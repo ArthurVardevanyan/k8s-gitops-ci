@@ -226,6 +226,10 @@ func extractSelectorString(v interface{}) string {
 
 // Register registers all PodDisruptionBudget validation checks with the
 // check registry.
+//
+// Registration funnels through runtime.RegisterAll so that each check must
+// carry an UpstreamRef in upstreamRefs citing the exact upstream Kubernetes
+// function it ports; RegisterAll panics on a check with no valid citation.
 func Register() {
 	checks := []runtime.Check{
 		selectorInvalidCheck{},
@@ -234,7 +238,5 @@ func Register() {
 		minAndMaxSpecifiedCheck{},
 	}
 
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
+	runtime.RegisterAll(checks, upstreamRefs)
 }

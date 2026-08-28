@@ -172,14 +172,3 @@ func (c clusterRoleBindingSubjectInvalidCheck) Run(data []byte, source string) [
 
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		clusterRoleBindingRoleRefInvalidCheck{},
-		clusterRoleBindingSubjectInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

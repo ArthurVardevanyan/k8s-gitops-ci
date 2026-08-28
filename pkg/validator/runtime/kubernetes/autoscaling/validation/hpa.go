@@ -256,13 +256,16 @@ func behaviorStabilizationWindowFindings(c runtime.Check, data []byte, behaviorF
 }
 
 // init registers all HPA validation checks (applies to both v1 and v2 API versions).
+//
+// Registration funnels through runtime.RegisterAll so that each check must
+// carry an UpstreamRef in upstreamRefs citing the exact upstream Kubernetes
+// function it ports; RegisterAll panics on a check with no valid citation.
 func init() {
 	checks := []runtime.Check{
 		maxReplicasInvalidCheck{},
 		scaleDownInvalidCheck{},
 		scaleUpInvalidCheck{},
 	}
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
+
+	runtime.RegisterAll(checks, upstreamRefs)
 }

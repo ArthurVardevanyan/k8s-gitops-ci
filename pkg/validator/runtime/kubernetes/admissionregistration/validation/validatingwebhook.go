@@ -16,7 +16,3 @@ var validatingWebhookBase = webhookCheckBase{
 	kinds:    validatingWebhookKinds,
 	parse:    parseValidatingWebhookConfiguration,
 }
-
-func init() {
-	registerWebhookChecks(validatingWebhookBase)
-}

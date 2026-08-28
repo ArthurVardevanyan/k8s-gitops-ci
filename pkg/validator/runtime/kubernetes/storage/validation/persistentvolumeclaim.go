@@ -107,14 +107,3 @@ func (c pvcVolumeModeInvalidCheck) Run(data []byte, source string) []runtime.Fin
 
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		pvcAccessModesInvalidCheck{},
-		pvcVolumeModeInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

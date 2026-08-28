@@ -15,7 +15,3 @@ var mutatingWebhookBase = webhookCheckBase{
 	kinds:    mutatingWebhookKinds,
 	parse:    parseMutatingWebhookConfiguration,
 }
-
-func init() {
-	registerWebhookChecks(mutatingWebhookBase)
-}

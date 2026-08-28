@@ -30,6 +30,8 @@ package map; this is the detailed, step-by-step reference.
     - [Scaffold Validation](#scaffold-validation)
     - [Registered checks](#registered-checks)
       - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
+        - [Every check must cite a verifiable upstream function](#every-check-must-cite-a-verifiable-upstream-function)
+        - [Version skew and feature gates (known limitation)](#version-skew-and-feature-gates-known-limitation)
         - [Object name validation](#object-name-validation)
         - [Deferred: policy-style checks removed from this family](#deferred-policy-style-checks-removed-from-this-family)
       - [Raw vs. rendered check input (dual-pass compliance)](#raw-vs-rendered-check-input-dual-pass-compliance)
@@ -803,8 +805,119 @@ were deleted**, leaving 77. The deleted ones were either **fabricated**
 (upstream has no such rule at all) or **distorted** (materially wrong
 semantics — the wrong validator, e.g. `IsDNS1123Subdomain` where upstream
 uses `ValidateDNS1123Label`; the wrong field name; the wrong threshold;
-the wrong enum; or dead code that could never fire). When adding or
-changing a check, cite the upstream function it ports.
+the wrong enum; or dead code that could never fire).
+
+##### Every check must cite a verifiable upstream function
+
+That standard is enforced, not merely stated. Each check supplies an
+`UpstreamRef` in its package's `upstream_refs.go`:
+
+```go
+"apps/deployment-replicas-invalid": {
+    Path:        "pkg/apis/apps/validation/validation.go",
+    Functions:   []string{"ValidateDeploymentSpec"},
+    Digest:      "sha256:...",
+    ValidatedAt: "v1.36.3",
+},
+```
+
+`runtime.RegisterAll` **panics** if a registered check has no valid ref, so
+a check added without a citation fails on the first `go test` or binary
+start. `Path` is relative to the root of `kubernetes/kubernetes`, which
+lets refs into staging modules (apimachinery, apiextensions-apiserver) use
+the same form as refs into `pkg/apis/*`.
+
+Citing a **function**, not a file, is the point. A file path such as
+`pkg/apis/core/validation/validation.go` is equally true of a faithful
+port and of an invented rule — which is exactly how the fabricated checks
+above survived review. Line numbers are forbidden outright: they drift on
+every upstream release, and every incorrect citation in this repository's
+history was a stale line range (one file cited `validation.go:5200-5210`
+for a rule that actually lived some 3000 lines away).
+
+Two layers verify this:
+
+- **Offline, in `task ci`** — `TestEveryRuntimeCheckCitesUpstream` walks
+  the registry and asserts every runtime check has a well-formed ref
+  pointing at a Kubernetes API validation location. It walks the registry
+  rather than scanning source because the admissionregistration checks
+  compose their IDs at runtime, so no grep or AST pass can enumerate them.
+- **Online, via `task verify:upstream-refs`** — fetches each cited file at
+  the pinned tag and proves every cited function still exists and is
+  unchanged. `Digest` is a hash of the cited functions' normalized source
+  (comments and formatting stripped), so upstream documentation churn and
+  gofmt changes are quiet while real logic changes fail. This runs as its
+  own step in `task ci`. Fetched sources are cached under `XDG_CACHE_HOME`,
+  so a warm run does no network I/O - the same pattern `schemas:pull`
+  already uses.
+
+Existence checking alone is not enough, which is why the digest exists:
+between v1.30 and v1.37 `ValidateServiceCreate` kept its name while its
+behavior changed substantially, and `validateResourceRequirements` did not
+exist under that name at all in v1.30. Meanwhile `validateContainerPorts`
+and `ValidateEnv` are byte-identical across that same span, so in practice
+the check is quiet.
+
+To add a check: find the upstream function, get a digest with
+`go run ./internal/cmd/verify-upstream-refs -compute "<path>" -functions "<Fn>"`,
+and add the entry. If no specific upstream function implements the rule,
+the check does not belong in this family — put it in the exemptable
+resource-compliance family instead.
+
+##### Version skew and feature gates (known limitation)
+
+Runtime checks are ports of **one** Kubernetes version's validation logic —
+the tag derived from `k8s.io/api` in `go.mod`, which is also what
+`ValidatedAt` records. `ValidatedAt` says a human validated the port
+against that tag. It is **not** a claim that the check is correct for every
+cluster version, and handling multi-version targeting is out of scope for
+this family today.
+
+A faithful port can still disagree with a real cluster in two ways.
+
+**Version skew.** Upstream rules are added, changed and relocated between
+releases:
+
+| Function                       | v1.30 → v1.37                                                    |
+| ------------------------------ | ---------------------------------------------------------------- |
+| `ValidateServiceCreate`        | changed materially — this is the Service name rule being relaxed |
+| `validateResourceRequirements` | did not exist under that name in v1.30                           |
+| `validateContainerPorts`       | byte-identical — most rules are in fact stable                   |
+
+**Feature gates.** Validation differs _within_ a single version depending
+on which gates are enabled. Core validation alone has 14
+`DefaultFeatureGate.Enabled` call sites; batch validation has 28
+option-gated branches:
+
+| Gate                                   | Timeline                                | Effect                              |
+| -------------------------------------- | --------------------------------------- | ----------------------------------- |
+| `RelaxedServiceNameValidation`         | 1.34 alpha off → 1.36 beta on → 1.37 GA | Service name: DNS-1035 → DNS-1123   |
+| `RelaxedEnvironmentVariableValidation` | 1.30 alpha off → 1.32 beta on → 1.34 GA | env var name charset                |
+| `TaintTolerationComparisonOperators`   | 1.35 alpha, off                         | adds `Lt`/`Gt` toleration operators |
+
+**When versions or gates disagree, port the permissive rule.** Because
+these findings are blocking and non-exemptable, the two failure directions
+are not symmetric:
+
+- _Under-enforcement_ — a manifest passes CI and is rejected at apply
+  time. Visible, recoverable, and the cluster is the backstop.
+- _Over-enforcement_ — a valid manifest is blocked with **no escape
+  hatch**, since runtime findings cannot be exempted.
+
+The Service name check is the worked example already in the tree: it uses
+the relaxed DNS-1123 label rule, so a Service named `1st-api` is never
+falsely blocked on a cluster where the gate is on, while uppercase,
+underscores, dots and over-length names are still caught everywhere.
+
+If version skew ever does produce a real false positive, the correct
+response is to fix or delete the check — not to add an exemption, which
+this family deliberately does not support.
+
+Out of scope today: the tool has no per-cluster version or feature-gate
+awareness, which matters for a GitOps repository targeting clusters at
+several versions. `UpstreamRef` is shaped so that `MinVersion`/`MaxVersion`
+/`FeatureGate` fields could be added additively, with registration
+filtering on them, if that becomes necessary.
 
 The remaining checks group by API group:
 

@@ -100,14 +100,3 @@ func (c pvCapacityInvalidCheck) Run(data []byte, source string) []runtime.Findin
 
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		pvAccessModesInvalidCheck{},
-		pvCapacityInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

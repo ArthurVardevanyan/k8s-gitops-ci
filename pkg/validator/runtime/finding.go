@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
@@ -30,6 +31,12 @@ func (f Finding) ToCheckFinding() check.Finding {
 	}
 	cf.Extra["ruleId"] = f.RuleID
 	cf.Extra["ruleTitle"] = f.RuleTitle
+	// Surface the upstream rule this finding corresponds to, so a reviewer
+	// can see which API-server validation function rejects the manifest
+	// rather than having to take the finding's word for it.
+	if ref, ok := Ref(f.RuleID); ok {
+		cf.Extra["upstreamRef"] = ref.Path + ":" + strings.Join(ref.Functions, ",")
+	}
 	return cf
 }
 

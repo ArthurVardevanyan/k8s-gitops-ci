@@ -337,18 +337,3 @@ func splitBy(s string, sep byte) []string {
 	}
 	return parts
 }
-
-// Register registers all CronJob validation checks with the check registry.
-func registerCronJob() {
-	checks := []runtime.Check{
-		scheduleInvalidCheck{},
-		concurrencyPolicyInvalidCheck{},
-		failedJobsHistoryLimitInvalidCheck{},
-		successfulJobsHistoryLimitInvalidCheck{},
-		startingDeadlineSecondsInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

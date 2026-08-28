@@ -650,7 +650,7 @@ tasks:
 
   # ── Full CI pipeline ──────────────────────────────────────────────────────────
   ci:
-    desc: Full CI pipeline — version, mod check, format, schemas, lint, vulncheck, test, build
+    desc: Full CI pipeline — version, mod check, format, schemas, upstream refs, lint, vulncheck, test, build
     silent: true
     vars:
       # Suffixed with the shell PID so concurrent/overlapping `task ci` runs
@@ -671,34 +671,37 @@ tasks:
         echo "🚀 Starting CI Pipeline"
         echo "=========================================="
         echo ""
-        echo "▶ Step 1/9  Version Check"
+        echo "▶ Step 1/10 Version Check"
       - task: version:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/9  Version Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 2/9  Module Dependencies Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/10 Version Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 2/10 Module Dependencies Check"
       - task: mod:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/9  Module Dependencies Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 3/9  Code Formatting Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/10 Module Dependencies Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 3/10 Code Formatting Check"
       - task: format:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/9  Code Formatting Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 4/9  Schemas & Policies"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/10 Code Formatting Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 4/10 Schemas & Policies"
       - task: schemas:pull
       - task: policies:pull
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/9  Schemas & Policies" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 5/9  Linting"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/10 Schemas & Policies" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 5/10 Upstream References"
+      - task: verify:upstream-refs
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/10 Upstream References" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 6/10 Linting"
       - task: lint
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/9  Linting" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 6/9  Vulnerability Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/10 Linting" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 7/10 Vulnerability Check"
       - task: vulncheck
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/9  Vulnerability Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 7/9  Tests (coverage + race)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/10 Vulnerability Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 8/10 Tests (coverage + race)"
       - task: test:cover
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/9  Tests (coverage + race)" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 8/9  Build"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/10 Tests (coverage + race)" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 9/10 Build"
       - task: build
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/9  Build" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 9/9  Smoke Gate (engine against this repo's own data)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 9/10 Build" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 10/10 Smoke Gate (engine against this repo's own data)"
       - "{{.ROOT_DIR}}/bin/k8s-gitops-ci test --disable-checks golangci"
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 9/9  Smoke Gate (engine against this repo's own data)" >> "{{.TIMEFILE}}"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 10/10 Smoke Gate (engine against this repo's own data)" >> "{{.TIMEFILE}}"
       - |
         set -euo pipefail
         echo ""
@@ -847,6 +850,11 @@ tasks:
         fi
         echo "❌ POLICY_REPO resolution is not implemented yet; wire it up like update:schemas."
         exit 1
+
+  verify:upstream-refs:
+    desc: Verify every runtime check's cited upstream Kubernetes function exists and is unchanged (fetches are cached)
+    cmds:
+      - scripts/verify-upstream-refs.sh {{.CLI_ARGS}}
 
   update:scoped-resources:
     desc: Regenerate resource scope maps from kubectl api-resources

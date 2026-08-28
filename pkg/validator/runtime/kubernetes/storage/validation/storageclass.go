@@ -261,16 +261,3 @@ func (c scAllowedTopologyRangeInvalidCheck) Run(data []byte, source string) []ru
 
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		scProvisionerInvalidCheck{},
-		scReclaimPolicyInvalidCheck{},
-		scVolumeBindingModeInvalidCheck{},
-		scAllowedTopologyRangeInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

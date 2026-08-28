@@ -96,13 +96,3 @@ func (c resourceQuotaHardNegativeCheck) Run(data []byte, source string) []runtim
 	}
 	return findings
 }
-
-func init() {
-	checks := []runtime.Check{
-		resourceQuotaHardInvalidCheck{},
-		resourceQuotaHardNegativeCheck{},
-	}
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

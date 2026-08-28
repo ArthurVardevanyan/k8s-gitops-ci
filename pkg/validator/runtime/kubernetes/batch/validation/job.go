@@ -1,7 +1,6 @@
 package validation
 
 import (
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
@@ -38,16 +37,4 @@ func (c backoffLimitInvalidCheck) Run(data []byte, source string) []runtime.Find
 	return nonNegativeIntFindings(c, data, "Job", "backoffLimit", func(spec nonNegativeSpecWrapper) (int64, bool) {
 		return int32Value(spec.BackoffLimit)
 	})
-}
-
-// Register registers all Job validation checks with the check registry.
-func Register() {
-	checks := []runtime.Check{
-		parallelismInvalidCheck{},
-		backoffLimitInvalidCheck{},
-	}
-
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
 }

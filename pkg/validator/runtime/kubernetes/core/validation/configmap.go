@@ -65,12 +65,3 @@ func (c configMapDataSizeExceededCheck) Run(data []byte, source string) []runtim
 	}
 	return nil
 }
-
-func init() {
-	checks := []runtime.Check{
-		configMapDataSizeExceededCheck{},
-	}
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
-}

@@ -1,12 +1,14 @@
 package validation
 
 import (
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-// Register registers all container, pod-spec, resource, and volume validation
-// checks with the check registry.
+// Register registers every check in this package with the check registry.
+//
+// Registration funnels through runtime.RegisterAll so that each check must
+// carry an UpstreamRef in upstreamRefs citing the exact upstream Kubernetes
+// function it ports; RegisterAll panics on a check with no valid citation.
 func Register() {
 	checks := []runtime.Check{
 		duplicateContainerNamesCheck{},
@@ -32,9 +34,13 @@ func Register() {
 		podSpecReadinessGateInvalidCheck{},
 		objectMetaNameInvalidCheck{},
 		objectMetaNamespaceInvalidCheck{},
+
+		// Core object checks (ConfigMap, LimitRange, ResourceQuota).
+		configMapDataSizeExceededCheck{},
+		limitRangeMaxMinInvalidCheck{},
+		resourceQuotaHardInvalidCheck{},
+		resourceQuotaHardNegativeCheck{},
 	}
 
-	for _, c := range checks {
-		check.Register(runtime.CheckToRegistered(c))
-	}
+	runtime.RegisterAll(checks, upstreamRefs)
 }
