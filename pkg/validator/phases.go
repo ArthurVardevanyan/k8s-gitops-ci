@@ -899,7 +899,11 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 	res.Check = combinedCheck
 
-	res.Blocking = len(direct) > 0 || ghostBlockingCount > 0
+	// Runtime findings are always blocking: they describe manifests the API
+	// server itself rejects. They must be OR-ed in here rather than relying
+	// on the earlier assignment, which this line would otherwise overwrite -
+	// leaving Blocking=false and Status="ok" on a run that Failed().
+	res.Blocking = len(direct) > 0 || ghostBlockingCount > 0 || len(runtimeFindings) > 0
 
 	// Per-check console lines: blocking
 	// sub-checks log an error (fail the run), non-blocking sub-checks log a

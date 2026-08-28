@@ -274,9 +274,18 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 // ❌/StatusError or ✅/StatusPassed. Check IDs are sorted for deterministic
 // output.
 func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
+	// Group by category ("core", "batch", ...), not CheckID. CheckID is the
+	// rule ID, so grouping on it would render one <details> block per rule -
+	// dozens of single-finding sub-sections. Category keeps the section
+	// readable while CheckID remains the finding's true identity for
+	// dispatch and registry lookups.
 	byCheck := map[string][]check.Finding{}
 	for _, f := range findings {
-		byCheck[f.CheckID] = append(byCheck[f.CheckID], f)
+		key := f.Extra["category"]
+		if key == "" {
+			key = f.CheckID
+		}
+		byCheck[key] = append(byCheck[key], f)
 	}
 	if len(byCheck) == 0 {
 		return ReportSection{Name: "Runtime Validation", Status: StatusPassed, Body: "No runtime validation findings."}

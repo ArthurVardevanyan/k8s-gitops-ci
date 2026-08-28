@@ -21,8 +21,25 @@ type Finding struct {
 }
 
 // ToCheckFinding converts a Finding to a check.Finding.
+//
+// CheckID must be the *registered* check ID (the rule ID), not the broader
+// Category. The dispatcher resolves a finding's section by looking its
+// CheckID up in the check registry (check.ByID), and checks register under
+// their rule ID ("batch/schedule-invalid"), never under a category
+// ("batch"). Falling back to Category here meant every lookup missed, so no
+// finding was ever classified as runtime-validation: the Runtime Validation
+// section never rendered and the findings were then dropped by the
+// resource-compliance copy loop, which only emits IDs listed in
+// complianceCheckOrder. The net effect was an always-blocking,
+// non-exemptable check family that silently blocked nothing.
+//
+// Category is still useful for grouping the rendered section, so it travels
+// in Extra rather than masquerading as an identity.
 func (f Finding) ToCheckFinding() check.Finding {
 	cf := f.Finding
+	if cf.CheckID == "" {
+		cf.CheckID = f.RuleID
+	}
 	if cf.CheckID == "" {
 		cf.CheckID = f.Category
 	}
@@ -31,6 +48,9 @@ func (f Finding) ToCheckFinding() check.Finding {
 	}
 	cf.Extra["ruleId"] = f.RuleID
 	cf.Extra["ruleTitle"] = f.RuleTitle
+	if f.Category != "" {
+		cf.Extra["category"] = f.Category
+	}
 	// Surface the upstream rule this finding corresponds to, so a reviewer
 	// can see which API-server validation function rejects the manifest
 	// rather than having to take the finding's word for it.
