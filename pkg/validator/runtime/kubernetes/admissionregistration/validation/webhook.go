@@ -66,6 +66,14 @@ func parseMutatingWebhookConfiguration(data []byte) (*webhookConfiguration, bool
 	if err := yaml.Unmarshal(data, &mwc); err != nil {
 		return nil, false
 	}
+	// The two configuration kinds have the same shape, so a validating
+	// document decodes cleanly as a mutating one. Dispatch filters by kind
+	// before a check runs, but nothing about this function requires that,
+	// and without the guard it reports a validating document's webhooks
+	// under the mutating kind.
+	if mwc.Kind != "MutatingWebhookConfiguration" {
+		return nil, false
+	}
 
 	cfg := &webhookConfiguration{Name: mwc.GetName()}
 	for _, webhook := range mwc.Webhooks {
@@ -82,6 +90,9 @@ func parseMutatingWebhookConfiguration(data []byte) (*webhookConfiguration, bool
 func parseValidatingWebhookConfiguration(data []byte) (*webhookConfiguration, bool) {
 	var vwc admissionregistrationv1.ValidatingWebhookConfiguration
 	if err := yaml.Unmarshal(data, &vwc); err != nil {
+		return nil, false
+	}
+	if vwc.Kind != "ValidatingWebhookConfiguration" {
 		return nil, false
 	}
 
