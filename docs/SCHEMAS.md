@@ -13,6 +13,7 @@ CRDs/policies that have no generic public source.
 - [The pattern](#the-pattern)
 - [Kubeconform schemas](#kubeconform-schemas)
   - [Org-specific CRDs with no public schema](#org-specific-crds-with-no-public-schema)
+  - [Runtime validation vs. kubeconform](#runtime-validation-vs-kubeconform)
 - [Kyverno policies](#kyverno-policies)
 
 ## The pattern
@@ -179,6 +180,56 @@ over overriding `kubeconform.ExtractSchemas` for this specific case: it
 keeps the public and org-specific schema sets as one archive behind one
 `SchemaLocations()` lookup, rather than needing a second directory /
 override function kept in sync alongside it.
+
+### Runtime validation vs. kubeconform
+
+The runtime-validation check family
+([CI.md](CI.md#runtime-validation-checks-admission-rules)) exists because
+of a hard limit in what the embedded schemas can express. This section
+records the empirical findings behind that boundary so it doesn't get
+re-litigated as "couldn't we just get enum validation from the schemas?"
+
+The archive's schemas are generated from Kubernetes OpenAPI **v2**
+(`swagger.json`). Inspecting them shows they carry exactly four kinds of
+constraint:
+
+- `required` — which keys must be present.
+- `type` — `string`/`integer`/`boolean`/`object`/`array`.
+- `format` — the OpenAPI numeric/string format hints (`int32`, `int64`, ...).
+- `additionalProperties: false` — i.e. strict mode, which is what catches
+  a misspelled or unknown field.
+
+What they contain essentially **none** of is value `enum`s. The only
+`enum` in the entire set is on `properties.kind`. This is not an artifact
+of the v2 conversion either: Kubernetes' OpenAPI **v3** has zero
+enum-annotated fields as well, so switching the generation pipeline to v3
+would not add a single allowed-value constraint.
+
+Consequently, these classes of rule **cannot** come from the schema
+pipeline at any version, and are exactly what runtime validation is for:
+
+| Class of rule           | Example                                                          |
+| ----------------------- | ---------------------------------------------------------------- |
+| Allowed values / enums  | `spec.strategy.type` must be `RollingUpdate` or `Recreate`       |
+| Numeric range and sign  | `replicas >= 0`; a PriorityClass `value` upper bound             |
+| Uniqueness              | duplicate container names; duplicate `hostPort`s within a pod    |
+| Cross-field consistency | a Deployment's `selector` must match its pod-template labels     |
+| String format           | DNS-1123 label/subdomain, qualified name, cron expression syntax |
+
+The boundary cuts the other way too. A check that only re-detects a
+**missing schema-`required` field** is pure duplication of what
+kubeconform already reports, and is deleted on that basis — 11 volume
+checks (`hostPath.path`, `persistentVolumeClaim.claimName`,
+`nfs.server`/`nfs.path`, `csi.driver`, and similar) were removed for
+exactly this reason.
+
+There is a subtlety worth writing down before applying that rule,
+though: schema `required` only guarantees the **key is present**. It says
+nothing about the value. So a Go check asserting a field is
+present-**and-non-empty** is _not_ redundant with the schema, because
+`field: ""` satisfies `required` perfectly well and the API server still
+rejects it. Delete a check as duplicative only when it is a bare
+key-presence assertion.
 
 ## Kyverno policies
 

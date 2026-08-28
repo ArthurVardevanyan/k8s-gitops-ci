@@ -16,6 +16,7 @@ for the tradeoffs between them.
   - [Which one do I use?](#which-one-do-i-use)
   - [Exemptable check IDs](#exemptable-check-ids)
     - [Check ID naming convention](#check-id-naming-convention)
+    - [Runtime-validation IDs are never exemptable](#runtime-validation-ids-are-never-exemptable)
   - [Non-app `test.sh` scoping](#non-app-testsh-scoping)
   - [Value vs. Token](#value-vs-token)
   - [Adding exemption support to a new check](#adding-exemption-support-to-a-new-check)
@@ -223,6 +224,41 @@ part of the `check.Register` framework at all, so it has no check ID to
 exempt by either mode — a NAD hard-error finding always blocks regardless
 of `EXEMPTIONS=(...)` or annotations (its non-blocking advisory warnings
 never block in the first place).
+
+### Runtime-validation IDs are never exemptable
+
+Every check ID under the **runtime-validation** family — the
+`<category>/<rule>` IDs registered from
+`pkg/validator/runtime/kubernetes/*/validation`, e.g.
+`apps/daemonset-min-ready-seconds-invalid`,
+`batch/backoff-limit-invalid`, `container/duplicate-container-names` — is
+**not exemptable by either mode**. No `gitops-ci.k8s.io/exempt-<id>`
+annotation and no `check=<id>` selector will match one; a runtime finding
+always blocks. See
+[CI.md](CI.md#runtime-validation-checks-admission-rules) for the family
+itself.
+
+The rationale is that these checks are 1:1 ports of the Kubernetes API
+server's own validation logic — they only fire on a manifest the cluster
+itself would reject. Exempting one wouldn't make the manifest valid; it
+would just move the failure from CI (where it's cheap and attributable to
+a PR) to apply/sync time (where it's a broken deployment). An exemption
+here can only ever defer a failure, never prevent one.
+
+This is enforced structurally rather than by an ID allowlist: the runtime
+adapter implements the `check.NonExemptable` interface
+(`pkg/validator/check/check.go`), and `check.Register` skips its otherwise
+unconditional `exempt.RegisterExemptable(c.ID())` call for any check that
+satisfies it. So a runtime ID never enters the exemptable registry in the
+first place, and `exempt.Exemptable` returns `false` for it. A test
+(`TestRuntimeChecksAreNonExemptable`) asserts this holds for every
+registered runtime check, so a newly-added one can't silently become
+exemptable.
+
+Note that `check.NonExemptable` is the _general_ opt-out mechanism — it's
+what any always-blocking check family should use, in preference to the
+older hardcoded special case used by `cluster-identity` (see the table
+above).
 
 ## Non-app `test.sh` scoping
 

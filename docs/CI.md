@@ -29,6 +29,8 @@ package map; this is the detailed, step-by-step reference.
     - [Ghost Patch Detection](#ghost-patch-detection)
     - [Scaffold Validation](#scaffold-validation)
     - [Registered checks](#registered-checks)
+      - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
+        - [Deferred: policy-style checks removed from this family](#deferred-policy-style-checks-removed-from-this-family)
       - [Raw vs. rendered check input (dual-pass compliance)](#raw-vs-rendered-check-input-dual-pass-compliance)
       - [`namespace`](#namespace)
       - [`psa-labels`](#psa-labels)
@@ -746,26 +748,83 @@ automatically exemptable via its own check ID (see
 
 #### Runtime validation checks (admission rules)
 
-These are structural/runtime Kubernetes validation rules enforced by the
-cluster API server. They run as a separate pass over the rendered overlay
-output (same input as render-sensitive checks) and are **always
-blocking** — the cluster rejects non-compliant manifests regardless of
-any exemptions. Each sub-check is individually gating via the same
-`Options.DisabledChecks`/`EnabledChecks` mechanism.
+Runtime-validation checks are ports of the Kubernetes API server's own
+validation logic — the `k8s.io/kubernetes/pkg/apis/*/validation` packages,
+which upstream does not publish as an importable library. They catch
+manifests the API server itself would reject at apply time: things
+JSON-schema validation structurally cannot express (allowed values,
+numeric ranges and signs, uniqueness, cross-field consistency, and string
+formats such as DNS-1123 labels, qualified names, or cron syntax). See
+[SCHEMAS.md](SCHEMAS.md#runtime-validation-vs-kubeconform) for why these
+cannot come out of the schema pipeline instead.
 
-| ID prefix                 | Package                                                  | What it checks                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apiextensions/*`         | `pkg/validator/runtime/kubernetes/apiextensions`         | CRD `names.singular`, `names.shortNames` (no empty strings), `versions.name` (`v[0-9]+` / `v[N]alpha[N]` / `v[N]beta[N]`), `version.storage` (exactly one `true`), `version.served` (at least one `true`), CRD names (`<plural>.<group>`, no `/` in name)                                                                                                                                                                                          |
-| `apps/*`                  | `pkg/validator/runtime/kubernetes/apps`                  | Deployment/StatefulSet/ReplicaSet/DaemonSet: selector-template match, label key/value format (`k8s`/`kubernetes.io` prefix check, valid chars), strategy definition, strategy type (`RollingUpdate`/`Recreate`), replicas range (`>= 0`), minReadySeconds (`>= 0`), maxSurge/maxUnavailable (valid intstr), pod restartPolicy (`Always`/`OnFailure`/`Never`), volumeClaimTemplates non-empty for StatefulSet                                       |
-| `autoscaling/*`           | `pkg/validator/runtime/kubernetes/autoscaling`           | HPA v1/v2: scaleTargetRef kind/name format, metrics name format, container names valid, target value ranges (> 0 for AverageValue/Value, 1-100 for Utilization), policy types and values valid, min/maxReplicas non-negative, CPU/memory resource names valid                                                                                                                                                                                      |
-| `batch/*`                 | `pkg/validator/runtime/kubernetes/batch`                 | Job: parallelism/completions (`>= 0`), activeDeadlineSeconds/backoffLimit (`>= 0`), ttlAfterFinished (`>= 0`), completionsMode (`Indexed`/`NonIndexed`), indexFormat valid range, podStartupPolicy valid, selector key format; CronJob: schedule valid cron expression, timezone valid IANA name, concurrencyPolicy valid, history limits (`>= 0`), startingDeadlineSeconds (`>= 0`)                                                               |
-| `core/*`                  | `pkg/validator/runtime/kubernetes/core`                  | ConfigMap: data key format (valid DNS subdomain chars); Secret: type valid, stringData/data key format, data value length (< 1MB); ServiceAccount: name format, secrets valid refs, automountServiceAccountToken valid bool, imagePullSecrets valid name; ResourceQuota: hard resource name format, values valid, non-negative; LimitRange: type valid, max/min/default valid resource quantities; Namespace: name DNS subdomain, finalizers valid |
-| `networking/*`            | `pkg/validator/runtime/kubernetes/networking`            | IngressClass: name valid, controller format (`<registry>/<name>`), parameters kind/reference format                                                                                                                                                                                                                                                                                                                                                |
-| `pod-spec/*`              | `pkg/validator/runtime/kubernetes/core`                  | Pod-level: nodeSelector key/value format, affinity/anti-affinity topologyKey valid, topologySpread constraints maxSkew/type/handling valid, schedulerName valid, serviceAccountName valid, activeDeadlineSeconds (`>= 0`), subdomain/hostname/domainName valid, readinessGates valid, hostPorts unique within pod                                                                                                                                  |
-| `policy/*`                | `pkg/validator/runtime/kubernetes/policy`                | PodDisruptionBudget: selector valid label format, minAvailable valid (int or resource quantity), maxUnavailable valid (int or resource quantity), minAndMax not both set, selector+podTemplateHashLabel conflict check                                                                                                                                                                                                                             |
-| `scheduling/*`            | `pkg/validator/runtime/kubernetes/scheduling`            | PriorityClass: name valid, value valid (`>= 0, <= 1000000000`), globalDefault valid bool                                                                                                                                                                                                                                                                                                                                                           |
-| `storage/*`               | `pkg/validator/runtime/kubernetes/storage`               | PV/PVC/StorageClass: name valid, accessModes valid, storageClassName valid, provisioner valid, mountOptions valid, reclaimPolicy valid, volumeBindingMode valid, allowedTopologies valid format                                                                                                                                                                                                                                                    |
-| `admissionregistration/*` | `pkg/validator/runtime/kubernetes/admissionregistration` | Validating/Mutating Webhook: name valid (DNS subdomain), failurePolicy valid (`Fail`/`Ignore`/`Ignore`), sideEffects valid (`None`/`NoneOnDryRun`), admissionReviewVersions valid (`v1`/`v1beta1`), timeoutSeconds valid (`0`-30), matchPolicy valid (`Exact`/`Equivalent`), rules API groups/versions/resources valid format, selectors valid label format                                                                                        |
+They live under `pkg/validator/runtime/` (shared adapter and finding
+types) and `pkg/validator/runtime/kubernetes/<apigroup>/validation/` (the
+checks themselves), and they render as their **own report section,
+"Runtime Validation"** (`Section()` returns `"runtime-validation"`),
+separate from Resource Compliance.
+
+Three properties distinguish this family from the registered checks
+table above:
+
+- **Always blocking, never exemptable.** A runtime finding describes a
+  manifest the cluster rejects, so suppressing it would only defer the
+  failure to apply time — the PR would go green and the sync would fail.
+  The adapter implements the `check.NonExemptable` interface
+  (`pkg/validator/check/check.go`), which makes `check.Register` skip its
+  usual `exempt.RegisterExemptable` call, so no annotation and no
+  `EXEMPTIONS=(...)` selector can match one. `TestRuntimeChecksAreNonExemptable`
+  enforces this for every registered runtime check. See
+  [EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids).
+- **Kind-scoped by declaration.** Each check declares the resource kinds
+  it applies to via `Kinds() []string`; the adapter inverts that
+  applies-to list into the existing `check.DocSkipper` contract
+  (`SkipDoc(kind) bool`), so a check is never handed a document kind it
+  doesn't care about. An empty `Kinds()` means "every kind".
+- **Registration is asserted, not assumed.** Each `validation`
+  sub-package registers its checks from an `init()`, pulled in by blank
+  imports in `pkg/validator/runtime/kubernetes/register.go`.
+  `TestEveryValidationPackageRegisters` asserts one representative check
+  ID per sub-package is actually present in the registry — several
+  packages previously shipped silently unregistered, with no check ever
+  running.
+
+**The standard for adding a new one: a runtime check must be a faithful
+1:1 port of a specific upstream Kubernetes validation rule, or it does
+not belong in this family.** "Always blocking, non-exemptable" is only
+defensible if the cluster really would reject the manifest. Anything that
+is merely a best practice — however good a practice — belongs in the
+exemptable resource-compliance family in the table above instead.
+
+That standard was applied retroactively: every check was audited against
+real upstream `kubernetes/kubernetes` validation source, and **128 of 211
+were deleted**, leaving 83. The deleted ones were either **fabricated**
+(upstream has no such rule at all) or **distorted** (materially wrong
+semantics — the wrong validator, e.g. `IsDNS1123Subdomain` where upstream
+uses `ValidateDNS1123Label`; the wrong field name; the wrong threshold;
+the wrong enum; or dead code that could never fire). When adding or
+changing a check, cite the upstream function it ports.
+
+The remaining checks group by API group:
+
+| Package                                               | Rules ported                                                                                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `runtime/kubernetes/core/validation`                  | Core objects (ConfigMap, Secret, ServiceAccount, ResourceQuota, LimitRange, Namespace), container, pod-spec, resource-quantity, and volume rules |
+| `runtime/kubernetes/apps/validation`                  | Deployment, StatefulSet, ReplicaSet, DaemonSet                                                                                                   |
+| `runtime/kubernetes/batch/validation`                 | Job, CronJob                                                                                                                                     |
+| `runtime/kubernetes/storage/validation`               | PersistentVolume, PersistentVolumeClaim, StorageClass                                                                                            |
+| `runtime/kubernetes/networking/validation`            | Service, Ingress, IngressClass, NetworkPolicy                                                                                                    |
+| `runtime/kubernetes/rbac/validation`                  | Role/ClusterRole rules and binding `roleRef` shape                                                                                               |
+| `runtime/kubernetes/admissionregistration/validation` | ValidatingWebhookConfiguration, MutatingWebhookConfiguration                                                                                     |
+| `runtime/kubernetes/apiextensions/validation`         | CustomResourceDefinition                                                                                                                         |
+| `runtime/kubernetes/autoscaling/validation`           | HorizontalPodAutoscaler (v1/v2)                                                                                                                  |
+| `runtime/kubernetes/policy/validation`                | PodDisruptionBudget                                                                                                                              |
+| `runtime/kubernetes/scheduling/validation`            | PriorityClass                                                                                                                                    |
+
+`pkg/validator/runtime/kubernetes/` is the authoritative list — the check
+IDs (`<category>/<rule>`, e.g. `apps/daemonset-min-ready-seconds-invalid`)
+are declared next to the rules they enforce, and this table is a map, not
+an inventory.
 
 A handful of Kubernetes resource kinds are deliberately **not** covered by
 runtime validation checks. These are runtime-generated, ephemeral, or
@@ -774,13 +833,34 @@ trivially validated by the API server:
 - `Event`, `EventSource` — cluster-internal, never committed to GitOps
 - `Endpoints` — auto-generated by Services; use `EndpointSlice` instead
 - `Lease` — controller-manager heartbeat objects
-- `Node` — provisioned by cloud/provider, not GitOps-managed (use NodeSelector/Taints in workloads instead)
+- `Node` — provisioned by the infrastructure layer, not GitOps-managed (use nodeSelector/taints in workloads instead)
 - `RuntimeClass` — node-level configuration, not workload-relevant
 - `VolumeAttachment`, `CSIDriver`, `CSINode` — CSI driver objects, node-local
 - `ClusterRoleBinding` subject namespace checks are handled by the existing `crb` registered check
-- `FlowControl` (`FlowSchema`, `PriorityLevelConfiguration`) — cluster scheduling config, not workload-relevant
-- `CertificateSigningRequest` — CSR lifecycle handled by cert-manager, not static YAML
-- `PriorityLevelConfiguration` — handled by the existing `scheduling/priorityclass` checks at the class level
+- `FlowSchema`, `PriorityLevelConfiguration` — API-priority-and-fairness config, not workload-relevant
+- `CertificateSigningRequest` — CSR lifecycle is handled by a certificate controller, not static YAML
+
+##### Deferred: policy-style checks removed from this family
+
+The following checks were **removed** from runtime validation and are
+recorded here as a backlog to revisit for enforcement somewhere else —
+Pod Security Admission, a Kyverno policy, or a new **exemptable**
+resource-compliance check (see the [registered checks](#registered-checks)
+table above):
+
+- Container security-context combinations: `privileged: true` together
+  with `allowPrivilegeEscalation`, `runAsNonRoot: true` with a `runAsUser`
+  of `0`, and `capabilities.drop: ["ALL"]` alongside
+  `capabilities.add: ["SYS_ADMIN"]`.
+- Pod-level host namespace sharing: `hostNetwork`, `hostPID`, `hostIPC`.
+- "Containers must declare `resources.requests` and `resources.limits`."
+
+None of these belong in runtime validation, because **the API server does
+not reject any of them**. They are best practices, not admission errors —
+a cluster will happily admit every one. Enforcing them as always-blocking,
+non-exemptable findings would have made the family's central claim ("this
+manifest cannot be applied") false. Note that the resource-requests/limits
+case is already covered as an exemptable finding by `podspec-defaults`.
 
 A handful of documents/directories are excluded from the doc-check pass
 above entirely (not merely exempted — they never generate a finding to

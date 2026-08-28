@@ -113,13 +113,19 @@ of the flow above:
   (`namespace`, `psa`, `rbac`, `crb`, `syncopts`, `image`, `namedport`,
   `podspec`, `placeholder`, `clusterid`).
 - **Runtime Validation (admission rules):**
-  `pkg/validator/runtime` (shared types and dual-pass wiring) and
-  `pkg/validator/runtime/kubernetes/*` (one subpackage per Kubernetes
-  API group: `admissionregistration`, `apiextensions`, `apps`,
-  `autoscaling`, `batch`, `core`, `networking`, `policy`, `rbac`,
-  `scheduling`, `storage`) — each containing a `validation/` package
-  with ~300 structural checks that mirror cluster admission-enforced
-  rules (names, formats, valid ranges, required fields).
+  `pkg/validator/runtime` (shared `Check`/`Finding` types and the adapter
+  onto `check.Check`) and
+  `pkg/validator/runtime/kubernetes/<apigroup>/validation` (one
+  subpackage per Kubernetes API group: `admissionregistration`,
+  `apiextensions`, `apps`, `autoscaling`, `batch`, `core`, `networking`,
+  `policy`, `rbac`, `scheduling`, `storage`). These are 1:1 ports of the
+  API server's own validation logic (upstream's
+  `k8s.io/kubernetes/pkg/apis/*/validation`, which isn't importable as a
+  library), so they only fire on manifests the cluster would reject.
+  They render as their own **"Runtime Validation"** report section and
+  are **always blocking and non-exemptable** (`check.NonExemptable`) —
+  see [CI.md](CI.md#runtime-validation-checks-admission-rules) and
+  [EXEMPTIONS.md](EXEMPTIONS.md#runtime-validation-ids-are-never-exemptable).
 - **NetworkAttachmentDefinition validation:** `pkg/validator/nad` — a
   separate, always-on, non-exemptable validator over rendered overlay
   output (not part of the `check.Register` framework above; its report
@@ -204,13 +210,15 @@ maintainable file-size bounds.
 
 ## Where do I find X?
 
-| Looking for...                                                                 | See                              |
-| ------------------------------------------------------------------------------ | -------------------------------- |
-| Full list of checks/steps, pipeline phases, report structure                   | [CI.md](CI.md)                   |
-| `test.sh` hook contract, `PRE_BUILD_HOOK`/etc. current status                  | [HOOKS.md](HOOKS.md)             |
-| Annotation vs. `EXEMPTIONS` selector exemptions, adding a new exemptable check | [EXEMPTIONS.md](EXEMPTIONS.md)   |
-| Tekton pipeline/task layout, PaC triggers, build-step script                   | [TEKTON.md](TEKTON.md)           |
-| Versioning (`VERSION` file), releases & RCs, release artifacts                 | [RELEASE.md](RELEASE.md)         |
-| Trust model, `exec.Command` audit, file-permission rationale                   | [SECURITY.md](SECURITY.md)       |
-| Embedded kubeconform schemas / Kyverno policies, how an org supplies its own   | [SCHEMAS.md](SCHEMAS.md)         |
-| Build/test/lint commands, repo structure, design conventions                   | [DEVELOPMENT.md](DEVELOPMENT.md) |
+| Looking for...                                                                 | See                                                        |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Full list of checks/steps, pipeline phases, report structure                   | [CI.md](CI.md)                                             |
+| Runtime validation (`pkg/validator/runtime/`), and why it's non-exemptable     | [CI.md](CI.md#runtime-validation-checks-admission-rules)   |
+| Why enum/range/format rules can't come from the embedded schemas               | [SCHEMAS.md](SCHEMAS.md#runtime-validation-vs-kubeconform) |
+| `test.sh` hook contract, `PRE_BUILD_HOOK`/etc. current status                  | [HOOKS.md](HOOKS.md)                                       |
+| Annotation vs. `EXEMPTIONS` selector exemptions, adding a new exemptable check | [EXEMPTIONS.md](EXEMPTIONS.md)                             |
+| Tekton pipeline/task layout, PaC triggers, build-step script                   | [TEKTON.md](TEKTON.md)                                     |
+| Versioning (`VERSION` file), releases & RCs, release artifacts                 | [RELEASE.md](RELEASE.md)                                   |
+| Trust model, `exec.Command` audit, file-permission rationale                   | [SECURITY.md](SECURITY.md)                                 |
+| Embedded kubeconform schemas / Kyverno policies, how an org supplies its own   | [SCHEMAS.md](SCHEMAS.md)                                   |
+| Build/test/lint commands, repo structure, design conventions                   | [DEVELOPMENT.md](DEVELOPMENT.md)                           |
