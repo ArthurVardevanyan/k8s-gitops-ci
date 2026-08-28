@@ -6,224 +6,6 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-func TestPodSpecRestartPolicyValue_Check_Always(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  restartPolicy: Always
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for Always restart policy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecRestartPolicyValue_Check_OnFailure(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  restartPolicy: OnFailure
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for OnFailure restart policy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecRestartPolicyValue_Check_Never(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  restartPolicy: Never
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for Never restart policy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecRestartPolicyValue_Check_Empty(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for empty restartPolicy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecRestartPolicyValue_Check_InvalidValue(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  restartPolicy: InvalidPolicy
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid restartPolicy, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/restart-policy-value" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "Pod" || findings[0].Name != "test" {
-		t.Errorf("unexpected kind/name: %s/%s", findings[0].Kind, findings[0].Name)
-	}
-}
-
-func TestPodSpecRestartPolicyValue_Check_Deployment(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  template:
-    spec:
-      restartPolicy: OnFailure
-      containers:
-      - name: c
-        image: nginx
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for Deployment with valid restartPolicy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_ClusterFirst(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: ClusterFirst
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for ClusterFirst dnsPolicy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_None(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: None
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for None dnsPolicy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_Default(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: Default
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for Default dnsPolicy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_ClusterFirstWithHostNet(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: ClusterFirstWithHostNet
-  hostNetwork: true
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for ClusterFirstWithHostNet, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_Empty(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for empty dnsPolicy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_InvalidValue(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: InvalidPolicy
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid dnsPolicy, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/dns-policy-value" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Value != "InvalidPolicy" {
-		t.Errorf("unexpected value: %s", findings[0].Value)
-	}
-}
-
 func TestPodSpecTolerationOperatorValue_Check_Exists(t *testing.T) {
 	data := []byte(`kind: Pod
 metadata:
@@ -1075,59 +857,6 @@ spec:
 	}
 }
 
-func TestPodSpecRestartPolicyValue_Check_CronJob(t *testing.T) {
-	data := []byte(`apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: test
-spec:
-  schedule: "*/1 * * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: OnFailure
-          containers:
-          - name: c
-            image: nginx
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for CronJob with valid restartPolicy, got %d", len(findings))
-	}
-}
-
-func TestPodSpecRestartPolicyValue_Check_Service(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-spec:
-  ports:
-  - port: 80
-`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if findings != nil {
-		t.Errorf("expected nil for Service, got %v", findings)
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_ConfigMap(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: test
-data:
-  key: value
-`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if findings != nil {
-		t.Errorf("expected nil for ConfigMap, got %v", findings)
-	}
-}
-
 func TestPodSpecAffinityInvalid_Check_Service(t *testing.T) {
 	data := []byte(`kind: Service
 metadata:
@@ -1140,24 +869,6 @@ spec:
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for Service, got %v", findings)
-	}
-}
-
-func TestPodSpecRestartPolicyValue_Check_InvalidYAML(t *testing.T) {
-	data := []byte(`not valid yaml {{`)
-	check := newPodSpecRestartPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if findings != nil {
-		t.Errorf("expected nil for invalid YAML, got %v", findings)
-	}
-}
-
-func TestPodSpecDNSPolicyValue_Check_InvalidYAML(t *testing.T) {
-	data := []byte(`---`)
-	check := newPodSpecDNSPolicyValueCheck()
-	findings := check.Run(data, "test.yaml")
-	if findings != nil {
-		t.Errorf("expected nil for invalid YAML, got %v", findings)
 	}
 }
 
@@ -1192,6 +903,93 @@ func TestPodSpecChecksImplementCheckInterface(t *testing.T) {
 		}
 		if len(c.Kinds()) == 0 {
 			t.Errorf("check %T should declare Kinds", c)
+		}
+	}
+}
+
+// podSpecEnumDoc builds a workload document carrying a single pod-spec
+// field, at the nesting depth the given kind uses. The enum checks all
+// exercise the same shape, so the fixture is built rather than repeated.
+func podSpecEnumDoc(kind, field, value string) []byte {
+	setting := ""
+	if value != "" {
+		setting = field + ": " + value + "\n"
+	}
+	switch kind {
+	case "Pod":
+		return []byte("kind: Pod\nmetadata:\n  name: test\nspec:\n  " + setting +
+			"  containers:\n  - name: c\n    image: nginx\n")
+	case "CronJob":
+		return []byte("kind: CronJob\nmetadata:\n  name: test\nspec:\n  jobTemplate:\n    spec:\n" +
+			"      template:\n        spec:\n          " + setting +
+			"          containers:\n          - name: c\n            image: nginx\n")
+	default:
+		return []byte("kind: " + kind + "\nmetadata:\n  name: test\nspec:\n  template:\n    spec:\n      " +
+			setting + "      containers:\n      - name: c\n        image: nginx\n")
+	}
+}
+
+// The restartPolicy and dnsPolicy rules are the same shape: an enum with a
+// NotSupported branch, where an empty value is deliberately skipped because
+// defaulting fills it before the API server validates.
+func TestPodSpecEnumFieldValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		check   runtime.Check
+		ruleID  string
+		kind    string
+		field   string
+		value   string
+		wantNum int
+	}{
+		{"restartPolicy Always", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "Always", 0},
+		{"restartPolicy OnFailure", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "OnFailure", 0},
+		{"restartPolicy Never", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "Never", 0},
+		{"restartPolicy absent", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "", 0},
+		{"restartPolicy invalid", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "InvalidPolicy", 1},
+		{"restartPolicy invalid in Deployment", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Deployment", "restartPolicy", "InvalidPolicy", 1},
+		{"restartPolicy invalid in CronJob", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "CronJob", "restartPolicy", "InvalidPolicy", 1},
+
+		{"dnsPolicy ClusterFirst", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "ClusterFirst", 0},
+		{"dnsPolicy None", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "None", 0},
+		{"dnsPolicy Default", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "Default", 0},
+		{"dnsPolicy ClusterFirstWithHostNet", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "ClusterFirstWithHostNet", 0},
+		{"dnsPolicy absent", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "", 0},
+		{"dnsPolicy invalid", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "InvalidPolicy", 1},
+		{"dnsPolicy invalid in Deployment", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Deployment", "dnsPolicy", "InvalidPolicy", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.check.Run(podSpecEnumDoc(tt.kind, tt.field, tt.value), "test.yaml")
+			if len(got) != tt.wantNum {
+				t.Fatalf("expected %d finding(s), got %d: %v", tt.wantNum, len(got), got)
+			}
+			if tt.wantNum == 0 {
+				return
+			}
+			if got[0].RuleID != tt.ruleID {
+				t.Errorf("unexpected rule ID: %s", got[0].RuleID)
+			}
+			if got[0].Kind != tt.kind || got[0].Name != "test" {
+				t.Errorf("unexpected kind/name: %s/%s", got[0].Kind, got[0].Name)
+			}
+		})
+	}
+}
+
+// Kinds without a pod spec, and unparseable input, must yield nothing
+// rather than an error or a spurious finding.
+func TestPodSpecEnumChecksIgnoreIrrelevantInput(t *testing.T) {
+	for _, c := range []runtime.Check{newPodSpecRestartPolicyValueCheck(), newPodSpecDNSPolicyValueCheck()} {
+		for _, data := range [][]byte{
+			[]byte("kind: Service\nmetadata:\n  name: test\n"),
+			[]byte("kind: ConfigMap\nmetadata:\n  name: test\n"),
+			[]byte("not valid yaml {{"),
+		} {
+			if got := c.Run(data, "test.yaml"); len(got) != 0 {
+				t.Errorf("check %s reported %d finding(s) for %q", c.ID(), len(got), data)
+			}
 		}
 	}
 }
