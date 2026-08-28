@@ -33,6 +33,7 @@ package map; this is the detailed, step-by-step reference.
         - [Every check must cite a verifiable upstream function](#every-check-must-cite-a-verifiable-upstream-function)
         - [Version skew and feature gates (known limitation)](#version-skew-and-feature-gates-known-limitation)
         - [Object name validation](#object-name-validation)
+        - [Known gaps: upstream rules not yet ported](#known-gaps-upstream-rules-not-yet-ported)
         - [Deferred: policy-style checks removed from this family](#deferred-policy-style-checks-removed-from-this-family)
       - [Raw vs. rendered check input (dual-pass compliance)](#raw-vs-rendered-check-input-dual-pass-compliance)
       - [`namespace`](#namespace)
@@ -986,6 +987,22 @@ check, which owns the generated cluster resource-scope map. Duplicating it
 would double-report and would turn an exemptable policy decision into an
 unexemptable one.
 
+`core/object-meta-labels-invalid` and
+`core/object-meta-annotations-invalid` validate `metadata.labels` and
+`metadata.annotations`. Unlike the name rules above these are **not
+kind-scoped**: the API server applies them to every object it accepts, so
+both checks declare no `Kinds()` and run against every document, custom
+resources included. They are the only runtime checks allowed to do so,
+enforced by an explicit allowlist in `TestRuntimeChecksDeclareKinds`.
+
+They are two checks rather than one because the key rule genuinely
+differs: **label keys are case-sensitive, annotation keys are
+lowercased** before the qualified-name test. Merging them would mean
+falsely rejecting the many real annotations that carry uppercase
+characters. Annotation **size** is a single 256 kB budget summed across
+all keys and values, so it is reported once per object rather than per
+annotation.
+
 A handful of Kubernetes resource kinds are deliberately **not** covered by
 runtime validation checks. These are runtime-generated, ephemeral, or
 trivially validated by the API server:
@@ -999,6 +1016,47 @@ trivially validated by the API server:
 - `ClusterRoleBinding` subject namespace checks are handled by the existing `crb` registered check
 - `FlowSchema`, `PriorityLevelConfiguration` — API-priority-and-fairness config, not workload-relevant
 - `CertificateSigningRequest` — CSR lifecycle is handled by a certificate controller, not static YAML
+
+##### Known gaps: upstream rules not yet ported
+
+The per-check `Note` in each package's `upstream_refs.go` records which
+branches of a cited function are ported and which are not, so a
+reviewer reading a single check can see its exact scope. The list below
+aggregates the rules that are **not covered by any check today**, so
+the omissions are recorded decisions rather than silent holes.
+
+None of these are catchable by kubeconform: the schema census in
+[docs/SCHEMAS.md](SCHEMAS.md) found zero field-level `pattern`, `enum`,
+`minimum`/`maximum` or `minLength` keywords, so any format or bound
+rule must live here or nowhere.
+
+- **Env var names** (`ValidateEnv`). Deliberately not ported.
+  Upstream chooses between `IsEnvVarName` and the far more permissive
+  `IsRelaxedEnvVarName` based on the
+  `AllowRelaxedEnvironmentVariableValidation` feature gate. This tool
+  has no per-cluster feature-gate knowledge (see [version skew
+  above](#version-skew-and-feature-gates-known-limitation)), so the
+  strict rule would risk false positives on an always-blocking,
+  non-exemptable check, and the relaxed rule would catch almost
+  nothing. Neither is worth adding.
+- **Service**: `nodePort` range, `externalName` format, and the
+  "ports required" rule. Only `type` and `sessionAffinity` are ported
+  today.
+- **Ingress**: the `Required` branch for an absent `pathType`, and the
+  rule that a path must begin with `/` for `Exact`/`Prefix`.
+- **NetworkPolicy**: `ipBlock` CIDR validity, including the rule that
+  each `except` entry must fall within `cidr`.
+- **PersistentVolumeClaim**: the `Required` branch for an empty
+  `accessModes` list, and the `ReadWriteOncePod`-with-other-modes rule.
+- **ConfigMap/Secret**: key-name and duplicate-key branches of
+  `ValidateConfigMap` (only the 1 MiB size branch is ported).
+- **StatefulSet**: `volumeClaimTemplates` validation.
+- **HorizontalPodAutoscaler**: `metrics` validation (only the replica
+  bounds and behavior windows are ported).
+
+Adding any of these follows the [citation
+standard](#every-check-must-cite-a-verifiable-upstream-function): port
+one branch, cite the exact function, and record the digest.
 
 ##### Deferred: policy-style checks removed from this family
 
