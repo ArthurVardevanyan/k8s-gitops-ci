@@ -3,6 +3,7 @@ package validator
 import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
@@ -172,4 +173,60 @@ func (r *Result) Failed() bool {
 func (o *Options) Workers() int {
 	// import in engine.go
 	return 0
+}
+
+// overlayRef pairs an overlay path with its cluster name.
+type overlayRef struct {
+	path, cluster string
+}
+
+// renderedOverlay pairs a successfully-rendered overlay's YAML with the
+// overlay path it came from, so a violation's temp resource file (see
+// runKyvernoValidation) can be remapped back to something a reviewer can
+// actually open, instead of the resource's bare Kind
+// (pkg/lint/kyverno.Violation.File's previous, less useful value).
+type renderedOverlay struct {
+	overlay string
+	data    []byte
+}
+
+// hookOutcome is the per-hook result recorded for an app's build-report row.
+type hookOutcome int
+
+const (
+	hookNotDefined hookOutcome = iota
+	hookRan
+	hookFailed
+)
+
+// appHookResult aggregates one app's hook outcomes across every overlay it
+// builds - PRE_BUILD_HOOK/POST_BUILD_HOOK run once per overlay (see
+// hook.RunPreBuildHook/RunPostBuildHook's doc comments), so a single app
+// with multiple overlays can see a mix of pass/fail; mergeHookOutcome keeps
+// the worst (a single failure marks the row ❌ even if other overlays
+// passed) so a partial failure is never silently hidden.
+type appHookResult struct {
+	PreBuild, PostBuild, PostValidate hookOutcome
+}
+
+// mergeHookOutcome folds next into current, keeping hookFailed sticky (a
+// later success never downgrades an already-recorded failure) and
+// otherwise taking the more-informative of the two (hookRan over
+// hookNotDefined).
+func mergeHookOutcome(current, next hookOutcome) hookOutcome {
+	if current == hookFailed || next == hookFailed {
+		return hookFailed
+	}
+	if current == hookRan || next == hookRan {
+		return hookRan
+	}
+	return hookNotDefined
+}
+
+// appBuildStrategy pairs the Strategy an app's overlays should be rendered
+// with and the set of overlay names excluded from AVP substitution (an
+// app's test.sh AVP_EXCLUDE= - see hook.Config.AVPExclude).
+type appBuildStrategy struct {
+	Strategy overlay.Strategy
+	Exclude  map[string]bool
 }

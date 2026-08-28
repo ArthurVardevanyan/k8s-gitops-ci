@@ -10,16 +10,6 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 )
 
-// renderedOverlay pairs a successfully-rendered overlay's YAML with the
-// overlay path it came from, so a violation's temp resource file (see
-// runKyvernoValidation) can be remapped back to something a reviewer can
-// actually open, instead of the resource's bare Kind
-// (pkg/lint/kyverno.Violation.File's previous, less useful value).
-type renderedOverlay struct {
-	overlay string
-	data    []byte
-}
-
 // isKustomizationFile reports whether path is a kustomization root file
 // (kustomization.yaml/.yml/Kustomization) rather than an actual resource
 // manifest - these aren't real Kubernetes resources and would only add

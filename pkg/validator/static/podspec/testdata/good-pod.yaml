@@ -1,0 +1,29 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: good-pod
+spec:
+  enableServiceLinks: false
+  restartPolicy: Always
+  schedulerName: default
+  dnsPolicy: ClusterFirst
+  automountServiceAccountToken: false
+  containers:
+    - name: c
+      image: example.com/app@sha256:deadbeef
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        privileged: false
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          cpu: 100m

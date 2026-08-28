@@ -1,0 +1,37 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: has-init
+spec:
+  selector:
+    matchLabels:
+      app: has-init
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      schedulerName: default
+      dnsPolicy: ClusterFirst
+      automountServiceAccountToken: false
+      initContainers:
+        - name: init
+          image: example.com/init@sha256:deadbeef
+      containers:
+        - name: c
+          image: example.com/app@sha256:deadbeef
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+            limits:
+              cpu: 100m

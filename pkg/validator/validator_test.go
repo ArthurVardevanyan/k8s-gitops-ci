@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/syncopts"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/syncopts"
 )
 
 func TestResolveChangeset_DirsWithDirs(t *testing.T) {

@@ -107,39 +107,6 @@ func hookMisdeclaredErrors(cfgs map[string]*hook.Config) []string {
 	return errs
 }
 
-// hookOutcome is the per-hook result recorded for an app's build-report row.
-type hookOutcome int
-
-const (
-	hookNotDefined hookOutcome = iota
-	hookRan
-	hookFailed
-)
-
-// appHookResult aggregates one app's hook outcomes across every overlay it
-// builds - PRE_BUILD_HOOK/POST_BUILD_HOOK run once per overlay (see
-// hook.RunPreBuildHook/RunPostBuildHook's doc comments), so a single app
-// with multiple overlays can see a mix of pass/fail; mergeHookOutcome keeps
-// the worst (a single failure marks the row ❌ even if other overlays
-// passed) so a partial failure is never silently hidden.
-type appHookResult struct {
-	PreBuild, PostBuild, PostValidate hookOutcome
-}
-
-// mergeHookOutcome folds next into current, keeping hookFailed sticky (a
-// later success never downgrades an already-recorded failure) and
-// otherwise taking the more-informative of the two (hookRan over
-// hookNotDefined).
-func mergeHookOutcome(current, next hookOutcome) hookOutcome {
-	if current == hookFailed || next == hookFailed {
-		return hookFailed
-	}
-	if current == hookRan || next == hookRan {
-		return hookRan
-	}
-	return hookNotDefined
-}
-
 // anyHookFailed reports whether any app in results recorded a hookFailed
 // outcome on any of its three hooks - used by runBuildAndPostBuild to give
 // the Kustomize Build report's "Hooks" line its own pass/fail icon

@@ -6,7 +6,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/changeset"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/syncopts"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/syncopts"
 )
 
 // RunAll runs the four validator phases.
@@ -23,6 +23,7 @@ func RunAll(opts Options) (*Result, error) {
 	// it (see DefaultAssumeOpenShift).
 	opts.AssumeOpenShift = opts.AssumeOpenShift || DefaultAssumeOpenShift
 	syncopts.AssumeOpenShift = opts.AssumeOpenShift
+
 	configureClusterIdentityFromProviders(opts)
 
 	// Thread pre-validation results/errors (from the pipeline layer) into

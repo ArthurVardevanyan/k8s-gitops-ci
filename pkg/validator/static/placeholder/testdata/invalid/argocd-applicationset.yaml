@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+spec:
+  template:
+    metadata:
+      name: "{{.app}}"
+    spec:
+      source:
+        path: "apps/{{ .context }}"

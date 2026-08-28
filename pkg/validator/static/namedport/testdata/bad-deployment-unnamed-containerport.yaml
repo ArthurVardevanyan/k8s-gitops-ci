@@ -1,0 +1,15 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-deploy
+spec:
+  selector:
+    matchLabels:
+      app: bad-deploy
+  template:
+    spec:
+      containers:
+        - name: app
+          ports:
+            - containerPort: 8080

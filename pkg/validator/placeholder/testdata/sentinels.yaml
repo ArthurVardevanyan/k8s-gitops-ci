@@ -1,9 +1,0 @@
-kind: ConfigMap
-metadata:
-  name: sentinels
-data:
-  todo-note: "fixme before merging this overlay"
-  password: CHANGEME
-  marker: XXX needs review
-  patch-note: "PATCH_ME once the real value is known"
-  duplicated: "changeme changeme"

@@ -5,15 +5,8 @@ import (
 	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/psa"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/psa"
 )
-
-// psaMissingLabelsExtraKey is the check.Finding.Extra key psaCheck.CheckDoc
-// (register_checks.go) uses to carry a psa-labels finding's raw,
-// comma-separated MissingLabels, so filterCommentedPSAFindings can check
-// each missing label individually against psa.FindCommentedNamespaces
-// without re-parsing the rendered Message string.
-const psaMissingLabelsExtraKey = "missing_labels"
 
 // filterCommentedPSAFindings drops psa-labels findings whose every missing
 // label is present, commented-out, in the finding's app's base/ directory -

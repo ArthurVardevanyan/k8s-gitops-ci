@@ -64,15 +64,27 @@ cmd/
   version/          build-time version metadata (ldflags-injected)
 pkg/
   validator/        orchestration (RunAll, phases, report composition) +
-                     per-concern sub-packages: check (registry), exempt
-                     (unified exemption framework), and one package per
-                     check.Register-driven validator (namespace, psa,
-                     rbac, crb, syncopts, image, namedport, podspec,
-                     placeholder, clusterid); nad is a separate,
-                     always-on, non-exemptable validator over rendered
-                     overlay output (not check.Register-driven; its report
-                     section is emitted only when a NAD is present — see
-                     docs/CI.md#networkattachmentdefinition-nad-validation)
+                       `static/` sub-package containing all 9
+                       check.Register-driven validator engines
+                       (namespace, psa, rbac, crb, syncopts, image,
+                       namedport, podspec, placeholder), their 12 check
+                       adapters, and the `RegisterAll` registration layer;
+                       `check/` (the registry engine) and `exempt/`
+                       (unified exemption framework) sit at top level;
+                       `clusterid/` and `nad/` remain top-level —
+                       clusterid is the engine the adapter wraps, nad is a
+                       separate always-on validator over rendered overlay
+                       output (not check.Register-driven; see
+                       docs/CI.md#networkattachmentdefinition-nad-validation)
+                       Shared types across wiring and phase logic are
+                       centralized in `types.go`; phases are orchestrated
+                       in `phases.go` (~1100 lines); wiring logic lives
+                       in `build_wiring.go`, `hook_wiring.go`,
+                       `target_wiring.go`, `scaffold_wiring.go`,
+                       `kyverno_wiring.go`, `avp_wiring.go`,
+                       `nad_wiring.go`, `nonapp_wiring.go`, and
+                       `dispatch.go` (see
+                       docs/ARCHITECTURE.md#future-simplifications).
   lint/              CLI-tool wrappers, one package per tool (golangci,
                      kubeconform, kyverno, markdownlint, prettier,
                      shellcheck, yamlsyntax)

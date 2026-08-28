@@ -1,7 +1,0 @@
-kind: ClusterRole
-metadata:
-  name: wildcard-groups
-rules:
-  - verbs: ["get"]
-    resources: ["pods"]
-    apiGroups: ["*"]
