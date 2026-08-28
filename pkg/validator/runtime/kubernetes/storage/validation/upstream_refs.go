@@ -63,6 +63,18 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !supportedAccessModes.Has(mode) -> field.NotSupported branch on spec.accessModes. The Required (empty list) and ReadWriteOncePod-with-other-modes branches are not ported.",
 	},
+	"persistent-volume/volume-mode-invalid": {
+		Path:        coreValidationPath,
+		Functions:   []string{"ValidatePersistentVolumeSpec"},
+		Digest:      "sha256:1fff24fb51a902e080f973a47107553cda679fdb80ca56d1414ee7a46864cc05",
+		ValidatedAt: validatedAt,
+		Note: "Ports the !supportedVolumeModes.Has(*pvSpec.VolumeMode) -> field.NotSupported branch " +
+			"(Filesystem or Block), the same set ValidatePersistentVolumeClaimSpec applies to a claim. " +
+			"The sibling Forbidden branch guarded by validateInlinePersistentVolumeSpec is not ported: " +
+			"it rejects a non-Filesystem mode on a PV embedded inline in a pod spec, and a standalone " +
+			"PersistentVolume document is validated with that flag false. A nil volumeMode is not " +
+			"reported, because defaulting is guarded on nil and supplies Filesystem.",
+	},
 	"persistent-volume/capacity-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePersistentVolumeSpec"},

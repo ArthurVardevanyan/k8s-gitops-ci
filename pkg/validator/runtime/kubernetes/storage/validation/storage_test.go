@@ -60,6 +60,33 @@ func TestPvcVolumeModeInvalid(t *testing.T) {
 	})
 }
 
+// TestPvVolumeModeInvalid mirrors TestPvcVolumeModeInvalid. Upstream applies
+// the same supportedVolumeModes set to both kinds; the PersistentVolume half
+// was missing, so an invalid mode on a PV went unreported.
+func TestPvVolumeModeInvalid(t *testing.T) {
+	runDocCases(t, newPvVolumeModeInvalidCheck().Run, []docCase{
+		{name: "PVVolumeModeInvalid", doc: "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  capacity:\n    storage: 1Gi\n  hostPath:\n    path: /tmp\n  volumeMode: InvalidMode", want: 1, contains: "volumeMode: Unsupported value"},
+		{name: "PVVolumeModeFilesystem", doc: "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  capacity:\n    storage: 1Gi\n  hostPath:\n    path: /tmp\n  volumeMode: Filesystem", want: 0},
+		{name: "PVVolumeModeBlock", doc: "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  capacity:\n    storage: 1Gi\n  hostPath:\n    path: /tmp\n  volumeMode: Block", want: 0},
+		{
+			// Defaulting is guarded on nil, so an absent volumeMode is filled
+			// in with Filesystem and must not be reported.
+			name: "PVVolumeModeAbsent",
+			doc:  "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  capacity:\n    storage: 1Gi\n  hostPath:\n    path: /tmp",
+			want: 0,
+		},
+		{
+			// An explicit "" survives defaulting as a non-nil pointer to the
+			// empty string, so the API server does reject it.
+			name:     "PVVolumeModeExplicitlyEmpty",
+			doc:      "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  capacity:\n    storage: 1Gi\n  hostPath:\n    path: /tmp\n  volumeMode: \"\"",
+			want:     1,
+			contains: "volumeMode: Unsupported value",
+		},
+		{name: "PVVolumeModeWrongKindIsStillParsed", doc: "kind: PersistentVolumeClaim\nmetadata:\n  name: test\nspec:\n  volumeMode: Filesystem", want: 0},
+	})
+}
+
 func TestScProvisionerInvalid(t *testing.T) {
 	runDocCases(t, newScProvisionerInvalidCheck().Run, []docCase{
 		{name: "SCProvisionerInvalidCheck", doc: "kind: StorageClass\nmetadata:\n  name: test\nreclaimPolicy: Delete", want: 1},

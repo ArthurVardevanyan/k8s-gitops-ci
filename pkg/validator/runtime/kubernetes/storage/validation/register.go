@@ -31,6 +31,7 @@ func register() {
 		// PersistentVolume.
 		newPvAccessModesInvalidCheck(),
 		newPvCapacityInvalidCheck(),
+		newPvVolumeModeInvalidCheck(),
 
 		// PersistentVolumeClaim.
 		newPvcAccessModesInvalidCheck(),

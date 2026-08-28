@@ -57,6 +57,7 @@ persistent-volume-claim/access-modes-invalid	PersistentVolumeClaim Access Modes 
 persistent-volume-claim/volume-mode-invalid	PersistentVolumeClaim Volume Mode Must Be Valid	PersistentVolumeClaim
 persistent-volume/access-modes-invalid	PersistentVolume Access Modes Must Be Valid	PersistentVolume
 persistent-volume/capacity-invalid	PersistentVolume Capacity Must Specify At Least One Resource	PersistentVolume
+persistent-volume/volume-mode-invalid	PersistentVolume Volume Mode Must Be Valid	PersistentVolume
 pod-spec/active-deadline-seconds-negative	ActiveDeadlineSeconds Must Be >= 1	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 pod-spec/affinity-node-selector-invalid	NodeSelector Values Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 pod-spec/dns-policy-value	DNSPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet

@@ -70,3 +70,27 @@ func (c pvCapacityInvalidCheck) Run(data []byte, source string) []runtime.Findin
 
 	return findings
 }
+
+// pvVolumeModeInvalidCheck validates that volumeMode is one of Filesystem or
+// Block. PersistentVolumeClaim has had this rule from the start; upstream
+// applies the same supportedVolumeModes set to a PersistentVolume in
+// ValidatePersistentVolumeSpec, so the kind is validated the same way.
+// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
+type pvVolumeModeInvalidCheck struct{ runtime.Meta }
+
+func newPvVolumeModeInvalidCheck() pvVolumeModeInvalidCheck {
+	return pvVolumeModeInvalidCheck{runtime.Meta{
+		RuleID:    "persistent-volume/volume-mode-invalid",
+		RuleTitle: "PersistentVolume Volume Mode Must Be Valid",
+		AppliesTo: pvKinds,
+	}}
+}
+
+func (c pvVolumeModeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
+	var pv corev1.PersistentVolume
+	if err := yaml.Unmarshal(data, &pv); err != nil {
+		return nil
+	}
+
+	return volumeModeInvalidFindings(c, pv.Spec.VolumeMode, "PersistentVolume", pv.GetName())
+}

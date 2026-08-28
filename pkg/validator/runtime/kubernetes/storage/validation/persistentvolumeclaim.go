@@ -1,13 +1,9 @@
 package validation
 
 import (
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
@@ -52,25 +48,5 @@ func (c pvcVolumeModeInvalidCheck) Run(data []byte, source string) []runtime.Fin
 		return nil
 	}
 
-	var findings []runtime.Finding
-	validModes := map[corev1.PersistentVolumeMode]bool{
-		corev1.PersistentVolumeFilesystem: true,
-		corev1.PersistentVolumeBlock:      true,
-	}
-
-	if pvc.Spec.VolumeMode != nil && !validModes[*pvc.Spec.VolumeMode] {
-		findings = append(findings, runtime.Finding{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Finding: check.Finding{
-				Path:    field.NewPath("spec").Child("volumeMode").String(),
-				Message: fmt.Sprintf("volumeMode: Unsupported value: %q", string(*pvc.Spec.VolumeMode)),
-				Kind:    "PersistentVolumeClaim",
-				Name:    pvc.GetName(),
-				Value:   string(*pvc.Spec.VolumeMode),
-			},
-		})
-	}
-
-	return findings
+	return volumeModeInvalidFindings(c, pvc.Spec.VolumeMode, "PersistentVolumeClaim", pvc.GetName())
 }
