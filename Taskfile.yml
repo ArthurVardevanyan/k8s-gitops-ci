@@ -8,7 +8,7 @@ vars:
   # renovate: datasource=go depName=mvdan.cc/gofumpt
   GOFUMPT_VERSION: v0.11.0
   # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
-  GOLANGCI_LINT_VERSION: v2.13.1
+  GOLANGCI_LINT_VERSION: v2.13.2
   # renovate: datasource=go depName=golang.org/x/vuln
   GOVULNCHECK_VERSION: v1.7.0
   # TOOLS defaults to the in-repo .tool/ dir, but honors a
@@ -744,13 +744,14 @@ tasks:
         echo "✅ Dependencies updated — run 'task test' to verify"
 
   update:
-    desc: Run all update tasks (deps, schemas/policies pin bump + repack, scoped-resources)
+    desc: Run all update tasks (deps, tools pin bump, schemas/policies pin bump + repack, scoped-resources)
     silent: true
     cmds:
       - task: update:deps
       # Bump the pins first, then repack the archives from the new pins so
       # `task update` leaves both the pinned SHA and the on-disk archive in
       # sync (update:schemas/update:policies only rewrite the pin).
+      - task: update:tools
       - task: update:schemas
       - task: update:policies
       - task: schemas:pull
@@ -855,3 +856,34 @@ tasks:
     generates:
       - pkg/validator/namespace/resource_scope.go
       - pkg/validator/namespace/extra_resource_scope.go
+
+  update:tools:
+    desc: Bump the pinned Go tool versions (golangci-lint, govulncheck, gofumpt, goimports) to their latest tags
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+        TASKFILE="Taskfile.yml"
+
+        update_ver() {
+          local var="$1" old_url="$2"
+          local cur=$(sed -n "s/^  ${var}: \(v[^ ]*\)/\1/p" "${TASKFILE}")
+          local latest=$(git ls-remote --refs --tags "${old_url}" "v*" | awk -F/ '{print $NF}' | sort -V | tail -1)
+          if [ -z "${cur}" ] || [ -z "${latest}" ]; then
+            echo "❌ Could not resolve ${var} (cur='${cur}', latest='${latest}')"
+            exit 1
+          fi
+          if [ "${cur}" = "${latest}" ]; then
+            echo "✅ ${var} already at latest (${cur})"
+            return 0
+          fi
+          echo "⬆️  Updating ${var}: ${cur} → ${latest}"
+          sed -i "s|^  ${var}: v[^ ]*|  ${var}: ${latest}|" "${TASKFILE}"
+          echo "   ✓ ${TASKFILE}"
+        }
+
+        update_ver GOIMPORTS_VERSION  "https://go.googlesource.com/tools"
+        update_ver GOFUMPT_VERSION    "https://github.com/mvdan/gofumpt"
+        update_ver GOLANGCI_LINT_VERSION "https://github.com/golangci/golangci-lint"
+        update_ver GOVULNCHECK_VERSION "https://go.googlesource.com/vuln"
+        echo "✅ All tool versions up to date"
