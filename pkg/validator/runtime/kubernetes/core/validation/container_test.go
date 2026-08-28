@@ -87,3 +87,40 @@ func TestVolumeMountNameUndefined(t *testing.T) {
 		{name: "ValidMount", spec: "  containers:\n  - name: c\n    image: nginx\n    volumeMounts:\n    - name: myvol\n      mountPath: /data\n  volumes:\n  - name: myvol\n    emptyDir: {}\n", want: 0},
 	})
 }
+
+// TestVolumeMountNameUndefinedAcceptsClaimTemplates is the regression test
+// for the false positive this rule produced against real StatefulSets.
+//
+// Mounting a volumeClaimTemplate by name is how the kind is normally used,
+// and the API server accepts it because it synthesizes a volume per claim
+// template before validating the pod template. Reporting it here was a
+// blocking, non-exemptable finding on a valid manifest.
+func TestVolumeMountNameUndefinedAcceptsClaimTemplates(t *testing.T) {
+	doc := func(claims string) []byte {
+		return []byte("apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: prometheus\n" +
+			"spec:\n  serviceName: p\n  selector:\n    matchLabels:\n      app: p\n" +
+			"  template:\n    metadata:\n      labels:\n        app: p\n    spec:\n" +
+			"      containers:\n        - name: prometheus\n          image: prom\n" +
+			"          volumeMounts:\n            - name: data\n              mountPath: /data\n" +
+			"            - name: config\n              mountPath: /etc\n" +
+			"      volumes:\n        - name: config\n          emptyDir: {}\n" + claims)
+	}
+	withClaim := "  volumeClaimTemplates:\n    - metadata:\n        name: data\n      spec:\n" +
+		"        accessModes: [\"ReadWriteOnce\"]\n        resources:\n          requests:\n            storage: 1Gi\n"
+
+	c := newVolumeMountNameUndefinedCheck()
+
+	if got := c.Run(doc(withClaim), "test.yaml"); len(got) != 0 {
+		t.Errorf("mounting a volumeClaimTemplate reported %d finding(s): %v", len(got), got)
+	}
+
+	// The rule must still fire when the name really is undefined - dropping
+	// it entirely would also make the manifest above pass.
+	got := c.Run(doc(""), "test.yaml")
+	if len(got) != 1 {
+		t.Fatalf("an undefined mount reported %d finding(s), want 1: %v", len(got), got)
+	}
+	if !strings.Contains(got[0].Message, `"data"`) {
+		t.Errorf("finding does not name the undefined mount: %s", got[0].Message)
+	}
+}

@@ -197,6 +197,36 @@ func main() {
 				fmt.Printf("         then re-run with --update to record the new digest\n")
 			}
 		}
+
+		// Supporting citations are verified exactly like the primary one.
+		// A rule whose input the API server prepares before calling the
+		// function that reports the error is only as faithful as that
+		// preparation, so drift in it has to fail the build too.
+		for i, add := range ref.Additional {
+			label := fmt.Sprintf("%s (additional[%d])", id, i)
+			asrc, err := f.get(add.Path)
+			if err != nil {
+				missing++
+				fmt.Printf("MISSING  %s\n         cannot fetch %s: %v\n", label, add.Path, err)
+				continue
+			}
+			agot, err := upstreamref.Digest(asrc, add.Functions)
+			if err != nil {
+				missing++
+				fmt.Printf("MISSING  %s\n         %v in %s\n", label, err, add.Path)
+				continue
+			}
+			if agot == add.Digest {
+				ok++
+				continue
+			}
+			changed++
+			fmt.Printf("CHANGED  %s\n", label)
+			fmt.Printf("         %s %s\n", add.Path, strings.Join(add.Functions, ", "))
+			fmt.Printf("         validated at %s, digest %s\n", add.ValidatedAt, short(add.Digest))
+			fmt.Printf("         at %s, digest %s\n", *tag, short(agot))
+			fmt.Printf("         supporting citation: re-read it and update the entry by hand\n")
+		}
 	}
 
 	fmt.Printf("\n%d ok, %d changed, %d missing", ok, changed, missing)

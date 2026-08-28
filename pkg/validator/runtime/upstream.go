@@ -53,6 +53,24 @@ type UpstreamRef struct {
 	// feature-gated branch this tool cannot evaluate - and without the note
 	// a reviewer cannot tell a deliberate subset from an incomplete port.
 	Note string `json:"note"`
+	// Additional cites supporting functions in other files that the ported
+	// rule depends on, each verified exactly like the primary ref.
+	//
+	// A rule is not always contained in one function. Where the API server
+	// prepares its input before calling the function that reports the
+	// error, the preparation is part of the rule: porting only the callee
+	// reproduces its logic against different data. That is not
+	// hypothetical - container/volume-mount-name-undefined rejected almost
+	// every real StatefulSet because it ported ValidateVolumeMounts while
+	// upstream's caller first synthesizes a volume for each
+	// volumeClaimTemplate. The digest over the cited function was correct
+	// and verified throughout.
+	//
+	// Cite that supporting code here so a change to it is caught the same
+	// way, rather than describing it in Note where nothing checks it.
+	// Nesting is one level deep; an entry here may not carry its own
+	// Additional.
+	Additional []UpstreamRef `json:"additional,omitempty"`
 }
 
 var (
@@ -91,6 +109,14 @@ func (r UpstreamRef) Validate() error {
 	}
 	if strings.TrimSpace(r.Note) == "" {
 		return fmt.Errorf("note is required: record which upstream branch is ported and any deliberate divergence, so a partial port is distinguishable from an incomplete one")
+	}
+	for i, a := range r.Additional {
+		if len(a.Additional) > 0 {
+			return fmt.Errorf("additional[%d]: nesting is one level deep; cite the supporting function directly", i)
+		}
+		if err := a.Validate(); err != nil {
+			return fmt.Errorf("additional[%d]: %w", i, err)
+		}
 	}
 	return nil
 }

@@ -119,7 +119,64 @@ func ExtractPodSpecInfo(data []byte, source string) (*PodSpecInfo, error) {
 	info.InitContainers = podSpec.InitContainers
 	info.PodSecurityContext = podSpec.SecurityContext
 
+	if kind == "StatefulSet" {
+		addVolumeClaimTemplateVolumes(&unstructuredObj, info)
+	}
+
 	return info, nil
+}
+
+// addVolumeClaimTemplateVolumes injects a StatefulSet's volumeClaimTemplates
+// into the pod spec's volume list as the API server does.
+//
+// A StatefulSet's containers mount their persistent storage by the name of a
+// volumeClaimTemplate, not of a volume declared in the pod template - that is
+// the whole point of the field, and nearly every real StatefulSet is written
+// that way. Upstream validates the template only after synthesizing a volume
+// for each claim template (ValidateStatefulSetSpec -> volumesToAddForTemplates),
+// so a mount naming one resolves and is accepted.
+//
+// Porting the mount rule without this step reports every such StatefulSet as
+// mounting an undefined volume - a false positive on a non-exemptable check,
+// against the most common way the kind is used.
+//
+// The claim templates are added first and a pod-template volume of the same
+// name is dropped, matching upstream's precedence, so that a name appearing in
+// both does not read as a duplicate volume.
+func addVolumeClaimTemplateVolumes(obj *unstructured.Unstructured, info *PodSpecInfo) {
+	templates, found, err := unstructured.NestedSlice(obj.UnstructuredContent(), "spec", "volumeClaimTemplates")
+	if err != nil || !found || len(templates) == 0 {
+		return
+	}
+
+	claimed := make(map[string]bool, len(templates))
+	merged := make([]corev1.Volume, 0, len(templates)+len(info.PodSpec.Volumes))
+	for _, t := range templates {
+		tm, ok := t.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, found, err := unstructured.NestedString(tm, "metadata", "name")
+		if err != nil || !found || name == "" {
+			continue
+		}
+		claimed[name] = true
+		merged = append(merged, corev1.Volume{
+			Name: name,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: name},
+			},
+		})
+	}
+	if len(merged) == 0 {
+		return
+	}
+	for _, v := range info.PodSpec.Volumes {
+		if !claimed[v.Name] {
+			merged = append(merged, v)
+		}
+	}
+	info.PodSpec.Volumes = merged
 }
 
 // extractPodSpecAt decodes the PodSpec at the given path within obj. It

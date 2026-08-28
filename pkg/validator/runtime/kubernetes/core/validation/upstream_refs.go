@@ -97,7 +97,20 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"ValidateVolumeMounts", "IsMatchedVolume"},
 		Digest:      "sha256:557c21473e961112901aabff3714918e08bd449639d6c5685e30929a2bd389c2",
 		ValidatedAt: validatedAt,
-		Note:        "Ports the !IsMatchedVolume -> field.NotFound branch (a volumeMount must name a declared volume).",
+		Note: "Ports the !IsMatchedVolume -> field.NotFound branch (a volumeMount must name a declared volume). " +
+			"The set of declared volumes is the caller's, not the pod spec's alone: for a StatefulSet the API " +
+			"server synthesizes a volume per volumeClaimTemplate and drops any pod-template volume of the same " +
+			"name before validating the template, so a mount naming a claim template resolves. That merge is " +
+			"reproduced in the walker and cited below; without it this rule rejects nearly every real StatefulSet.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        "pkg/apis/apps/validation/validation.go",
+			Functions:   []string{"volumesToAddForTemplates", "ValidateStatefulSetSpec"},
+			Digest:      "sha256:68d77b8d83710b959c4a977f22529fbd1746ba4dff01cd91f399eccc83a70532",
+			ValidatedAt: validatedAt,
+			Note: "Supplies the volume set the mount rule is evaluated against. volumesToAddForTemplates builds " +
+				"one volume per claim template; ValidateStatefulSetSpec is cited with it because the precedence " +
+				"(claim templates first, same-named pod-template volumes dropped) lives in the caller.",
+		}},
 	},
 
 	// --- pod spec ----------------------------------------------------------
