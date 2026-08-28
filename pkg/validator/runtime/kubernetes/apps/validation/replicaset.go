@@ -5,7 +5,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -36,11 +35,11 @@ func (c replicaSetSelectorInvalidCheck) RenderSensitive() bool {
 }
 
 func (c replicaSetSelectorInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"ReplicaSet"}
 }
 
 func (c replicaSetSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	obj, name := parseReplicaSet(data)
+	obj, name := parseKind(data, "ReplicaSet")
 
 	return selectorInvalidFindings(c, obj, "ReplicaSet", name)
 }
@@ -70,11 +69,11 @@ func (c replicaSetReplicasInvalidCheck) RenderSensitive() bool {
 }
 
 func (c replicaSetReplicasInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"ReplicaSet"}
 }
 
 func (c replicaSetReplicasInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseReplicaSet(data)
+	specMap, name := parseKind(data, "ReplicaSet")
 	if specMap == nil {
 		return nil
 	}
@@ -100,24 +99,6 @@ func (c replicaSetReplicasInvalidCheck) Run(data []byte, source string) []runtim
 			Value:   fmt.Sprintf("%d", replicas),
 		},
 	}}
-}
-
-// parseReplicaSet parses data as a ReplicaSet resource.
-func parseReplicaSet(data []byte) (specMap map[string]interface{}, name string) {
-	var obj map[string]interface{}
-	if err := yaml.Unmarshal(data, &obj); err != nil {
-		return nil, ""
-	}
-
-	kind := nestedString(obj, "kind")
-	if kind != "ReplicaSet" {
-		return nil, ""
-	}
-
-	name = nestedString(obj, "metadata", "name")
-	specMap = obj
-
-	return specMap, name
 }
 
 // ValidateReplicaSet runs all replicaset validation checks and returns findings.

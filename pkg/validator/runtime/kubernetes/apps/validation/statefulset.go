@@ -5,7 +5,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -36,11 +35,11 @@ func (c statefulSetReplicasInvalidCheck) RenderSensitive() bool {
 }
 
 func (c statefulSetReplicasInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"StatefulSet"}
 }
 
 func (c statefulSetReplicasInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseStatefulSet(data)
+	specMap, name := parseKind(data, "StatefulSet")
 	if specMap == nil {
 		return nil
 	}
@@ -93,36 +92,18 @@ func (c statefulSetPodManagementPolicyInvalidCheck) RenderSensitive() bool {
 }
 
 func (c statefulSetPodManagementPolicyInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"StatefulSet"}
 }
 
 func (c statefulSetPodManagementPolicyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseStatefulSet(data)
-	if specMap == nil {
-		return nil
-	}
+	obj, name := parseKind(data, "StatefulSet")
 
-	podManagementPolicy, found, _ := unstructured.NestedString(specMap, "spec", "podManagementPolicy")
-	if !found {
-		return nil
-	}
-
-	if podManagementPolicy == "OrderedReady" || podManagementPolicy == "Parallel" {
-		return nil
-	}
-
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("podManagementPolicy").String(),
-			Message: fmt.Sprintf("podManagementPolicy: Unsupported value: %q: supported values: \"OrderedReady\", \"Parallel\"", podManagementPolicy),
-			Kind:    "StatefulSet",
-			Name:    name,
-			Value:   podManagementPolicy,
-		},
-	}}
+	return enumFieldFindings(
+		c, obj, "StatefulSet", name, "podManagementPolicy",
+		[]string{"spec", "podManagementPolicy"},
+		[]string{"OrderedReady", "Parallel"},
+		false,
+	)
 }
 
 // statefulSetUpdateStrategyInvalidCheck verifies updateStrategy type is valid.
@@ -150,55 +131,18 @@ func (c statefulSetUpdateStrategyInvalidCheck) RenderSensitive() bool {
 }
 
 func (c statefulSetUpdateStrategyInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"StatefulSet"}
 }
 
 func (c statefulSetUpdateStrategyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseStatefulSet(data)
-	if specMap == nil {
-		return nil
-	}
+	obj, name := parseKind(data, "StatefulSet")
 
-	strategyMap, found, _ := unstructured.NestedMap(specMap, "spec", "updateStrategy")
-	if !found {
-		return nil
-	}
-
-	updateStrategyType, _, _ := unstructured.NestedString(strategyMap, "type")
-	if updateStrategyType == "" || updateStrategyType == "RollingUpdate" || updateStrategyType == "OnDelete" {
-		return nil
-	}
-
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("updateStrategy").Child("type").String(),
-			Message: fmt.Sprintf("updateStrategy: Unsupported value: %q: supported values: \"RollingUpdate\", \"OnDelete\"", updateStrategyType),
-			Kind:    "StatefulSet",
-			Name:    name,
-			Value:   updateStrategyType,
-		},
-	}}
-}
-
-// parseStatefulSet parses data as a StatefulSet resource.
-func parseStatefulSet(data []byte) (specMap map[string]interface{}, name string) {
-	var obj map[string]interface{}
-	if err := yaml.Unmarshal(data, &obj); err != nil {
-		return nil, ""
-	}
-
-	kind := nestedString(obj, "kind")
-	if kind != "StatefulSet" {
-		return nil, ""
-	}
-
-	name = nestedString(obj, "metadata", "name")
-	specMap = obj
-
-	return specMap, name
+	return enumFieldFindings(
+		c, obj, "StatefulSet", name, "updateStrategy",
+		[]string{"spec", "updateStrategy", "type"},
+		[]string{"RollingUpdate", "OnDelete"},
+		true,
+	)
 }
 
 // ValidateStatefulSet runs all statefulset validation checks and returns findings.

@@ -5,7 +5,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -36,11 +35,11 @@ func (c daemonSetSelectorInvalidCheck) RenderSensitive() bool {
 }
 
 func (c daemonSetSelectorInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"DaemonSet"}
 }
 
 func (c daemonSetSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	obj, name := parseDaemonSet(data)
+	obj, name := parseKind(data, "DaemonSet")
 
 	return selectorInvalidFindings(c, obj, "DaemonSet", name)
 }
@@ -70,37 +69,18 @@ func (c daemonSetUpdateStrategyInvalidCheck) RenderSensitive() bool {
 }
 
 func (c daemonSetUpdateStrategyInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"DaemonSet"}
 }
 
 func (c daemonSetUpdateStrategyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseDaemonSet(data)
-	if specMap == nil {
-		return nil
-	}
+	obj, name := parseKind(data, "DaemonSet")
 
-	strategyMap, found, _ := unstructured.NestedMap(specMap, "spec", "updateStrategy")
-	if !found {
-		return nil
-	}
-
-	updateStrategyType, _, _ := unstructured.NestedString(strategyMap, "type")
-	if updateStrategyType == "" || updateStrategyType == "RollingUpdate" || updateStrategyType == "OnDelete" {
-		return nil
-	}
-
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("updateStrategy").Child("type").String(),
-			Message: fmt.Sprintf("updateStrategy: Unsupported value: %q: supported values: \"RollingUpdate\", \"OnDelete\"", updateStrategyType),
-			Kind:    "DaemonSet",
-			Name:    name,
-			Value:   updateStrategyType,
-		},
-	}}
+	return enumFieldFindings(
+		c, obj, "DaemonSet", name, "updateStrategy",
+		[]string{"spec", "updateStrategy", "type"},
+		[]string{"RollingUpdate", "OnDelete"},
+		true,
+	)
 }
 
 // daemonSetMinReadySecondsInvalidCheck verifies minReadySeconds >= 0.
@@ -128,11 +108,11 @@ func (c daemonSetMinReadySecondsInvalidCheck) RenderSensitive() bool {
 }
 
 func (c daemonSetMinReadySecondsInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"DaemonSet"}
 }
 
 func (c daemonSetMinReadySecondsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseDaemonSet(data)
+	specMap, name := parseKind(data, "DaemonSet")
 	if specMap == nil {
 		return nil
 	}
@@ -158,24 +138,6 @@ func (c daemonSetMinReadySecondsInvalidCheck) Run(data []byte, source string) []
 			Value:   fmt.Sprintf("%d", minReadySeconds),
 		},
 	}}
-}
-
-// parseDaemonSet parses data as a DaemonSet resource.
-func parseDaemonSet(data []byte) (specMap map[string]interface{}, name string) {
-	var obj map[string]interface{}
-	if err := yaml.Unmarshal(data, &obj); err != nil {
-		return nil, ""
-	}
-
-	kind := nestedString(obj, "kind")
-	if kind != "DaemonSet" {
-		return nil, ""
-	}
-
-	name = nestedString(obj, "metadata", "name")
-	specMap = obj
-
-	return specMap, name
 }
 
 // ValidateDaemonSet runs all daemonset validation checks and returns findings.

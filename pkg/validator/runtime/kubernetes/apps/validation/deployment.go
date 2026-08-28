@@ -5,7 +5,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -36,11 +35,11 @@ func (c deploymentSelectorInvalidCheck) RenderSensitive() bool {
 }
 
 func (c deploymentSelectorInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"Deployment"}
 }
 
 func (c deploymentSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	obj, name := parseDeployment(data)
+	obj, name := parseKind(data, "Deployment")
 
 	return selectorInvalidFindings(c, obj, "Deployment", name)
 }
@@ -70,37 +69,18 @@ func (c deploymentStrategyTypeInvalidCheck) RenderSensitive() bool {
 }
 
 func (c deploymentStrategyTypeInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"Deployment"}
 }
 
 func (c deploymentStrategyTypeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	selectorMap, name := parseDeployment(data)
-	if selectorMap == nil {
-		return nil
-	}
+	obj, name := parseKind(data, "Deployment")
 
-	strategyMap, found, _ := unstructured.NestedMap(selectorMap, "spec", "strategy")
-	if !found {
-		return nil
-	}
-
-	strategyType, _, _ := unstructured.NestedString(strategyMap, "type")
-	if strategyType == "" || strategyType == "RollingUpdate" || strategyType == "Recreate" {
-		return nil
-	}
-
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("strategy").Child("type").String(),
-			Message: fmt.Sprintf("strategy: Unsupported value: %q: supported values: \"RollingUpdate\", \"Recreate\"", strategyType),
-			Kind:    "Deployment",
-			Name:    name,
-			Value:   strategyType,
-		},
-	}}
+	return enumFieldFindings(
+		c, obj, "Deployment", name, "strategy",
+		[]string{"spec", "strategy", "type"},
+		[]string{"RollingUpdate", "Recreate"},
+		true,
+	)
 }
 
 // deploymentReplicasInvalidCheck verifies replicas >= 0.
@@ -128,11 +108,11 @@ func (c deploymentReplicasInvalidCheck) RenderSensitive() bool {
 }
 
 func (c deploymentReplicasInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"Deployment"}
 }
 
 func (c deploymentReplicasInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	selectorMap, name := parseDeployment(data)
+	selectorMap, name := parseKind(data, "Deployment")
 	if selectorMap == nil {
 		return nil
 	}
@@ -185,11 +165,11 @@ func (c deploymentMinReadySecondsInvalidCheck) RenderSensitive() bool {
 }
 
 func (c deploymentMinReadySecondsInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+	return []string{"Deployment"}
 }
 
 func (c deploymentMinReadySecondsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	selectorMap, name := parseDeployment(data)
+	selectorMap, name := parseKind(data, "Deployment")
 	if selectorMap == nil {
 		return nil
 	}
@@ -215,37 +195,6 @@ func (c deploymentMinReadySecondsInvalidCheck) Run(data []byte, source string) [
 			Value:   fmt.Sprintf("%d", minReadySeconds),
 		},
 	}}
-}
-
-// parseDeployment parses data as a Deployment resource, returning
-// raw spec map and metadata name. Returns nil if not a Deployment.
-func parseDeployment(data []byte) (specMap map[string]interface{}, name string) {
-	var obj map[string]interface{}
-	if err := yaml.Unmarshal(data, &obj); err != nil {
-		return nil, ""
-	}
-
-	kind := nestedString(obj, "kind")
-	if kind != "Deployment" {
-		return nil, ""
-	}
-
-	name = nestedString(obj, "metadata", "name")
-	specMap = obj
-
-	return specMap, name
-}
-
-// nestedString returns a string value from the map at the given path.
-func nestedString(obj map[string]interface{}, path ...string) string {
-	if obj == nil {
-		return ""
-	}
-	val, found, _ := unstructured.NestedString(obj, path...)
-	if !found {
-		return ""
-	}
-	return val
 }
 
 // ValidateDeployment runs all deployment validation checks and returns findings.
