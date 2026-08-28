@@ -12,7 +12,7 @@ import (
 
 // resourceRequestsGreaterThanLimitsCheck ensures that resource requests are
 // less than or equal to limits for each resource type.
-// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go:5200-5210
+// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type resourceRequestsGreaterThanLimitsCheck struct{}
 
 func (c resourceRequestsGreaterThanLimitsCheck) ID() string {
@@ -95,7 +95,7 @@ func (c resourceRequestsGreaterThanLimitsCheck) Run(data []byte, source string) 
 
 // resourceQuantityNegativeCheck ensures that resource quantities are not
 // negative. This check catches quantities that compare as less than zero.
-// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go:5200-5210
+// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type resourceQuantityNegativeCheck struct{}
 
 func (c resourceQuantityNegativeCheck) ID() string {

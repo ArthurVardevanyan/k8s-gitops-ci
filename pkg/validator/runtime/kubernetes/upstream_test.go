@@ -8,17 +8,41 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-// upstreamPathPrefixes are the locations a runtime check may cite. Anything
-// outside these is not API-server validation code, so a check citing it is
-// not the 1:1 port this family requires.
-var upstreamPathPrefixes = []string{
+// upstreamRoots are the modules a runtime check may cite from.
+//
+// A root alone is not sufficient: "pkg/apis/" also contains types.go,
+// defaults.go, conversion.go and register.go, none of which are validation
+// code, so a prefix test would accept a citation to any of them and still
+// claim to have proven the path is "a real API-validation location". The
+// path must additionally sit in a /validation/ directory - see
+// isUpstreamValidationPath.
+var upstreamRoots = []string{
 	"pkg/apis/",
 	"staging/src/k8s.io/apimachinery/pkg/api/validation/",
 	// meta/v1 validation is where the shared object-metadata path above
 	// delegates the label rules to (ValidateLabels, ValidateLabelName).
 	"staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/validation/",
 	"staging/src/k8s.io/apiextensions-apiserver/pkg/apis/",
-	"staging/src/k8s.io/apiserver/pkg/util/webhook/",
+}
+
+// isUpstreamValidationPath reports whether path is an API-server validation
+// source file: under a known root, inside a /validation/ directory, and a Go
+// file.
+func isUpstreamValidationPath(path string) bool {
+	var rooted bool
+	for _, root := range upstreamRoots {
+		if strings.HasPrefix(path, root) {
+			rooted = true
+			break
+		}
+	}
+	if !rooted {
+		return false
+	}
+	if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		return false
+	}
+	return strings.Contains(path, "/validation/")
 }
 
 // TestEveryRuntimeCheckCitesUpstream is the offline half of the 1:1 standard.
@@ -49,16 +73,10 @@ func TestEveryRuntimeCheckCitesUpstream(t *testing.T) {
 			continue
 		}
 
-		var allowed bool
-		for _, prefix := range upstreamPathPrefixes {
-			if strings.HasPrefix(ref.Path, prefix) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			t.Errorf("check %q cites %q, which is not a Kubernetes API validation location (allowed prefixes: %s)",
-				c.ID(), ref.Path, strings.Join(upstreamPathPrefixes, ", "))
+		if !isUpstreamValidationPath(ref.Path) {
+			t.Errorf("check %q cites %q, which is not a Kubernetes API validation source file "+
+				"(must be under one of %s, inside a /validation/ directory, and a non-test .go file)",
+				c.ID(), ref.Path, strings.Join(upstreamRoots, ", "))
 		}
 	}
 
@@ -136,7 +154,18 @@ func TestUpstreamRefValidateRejectsLineNumbers(t *testing.T) {
 				Functions:   []string{"ValidatePodSpec"},
 				Digest:      "sha256:" + strings.Repeat("a", 64),
 				ValidatedAt: "v1.36.3",
+				Note:        "Ports the whole function.",
 			},
+		},
+		{
+			name: "missing note rejected",
+			ref: runtime.UpstreamRef{
+				Path:        "pkg/apis/core/validation/validation.go",
+				Functions:   []string{"ValidatePodSpec"},
+				Digest:      "sha256:" + strings.Repeat("a", 64),
+				ValidatedAt: "v1.36.3",
+			},
+			wantErr: "note is required",
 		},
 	}
 
@@ -154,6 +183,47 @@ func TestUpstreamRefValidateRejectsLineNumbers(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("expected error mentioning %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// TestIsUpstreamValidationPath pins the predicate itself. The previous
+// prefix-only test accepted every file under pkg/apis/, so it would have
+// passed a citation to defaults.go or conversion.go while reporting that it
+// had verified the path was API-validation code.
+func TestIsUpstreamValidationPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		// Real citations in use today.
+		{"pkg/apis/core/validation/validation.go", true},
+		{"pkg/apis/apps/validation/validation.go", true},
+		{"staging/src/k8s.io/apimachinery/pkg/api/validation/objectmeta.go", true},
+		{"staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/validation/validation.go", true},
+		{"staging/src/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation/validation.go", true},
+
+		// Under a valid root, but not validation code.
+		{"pkg/apis/core/types.go", false},
+		{"pkg/apis/core/v1/defaults.go", false},
+		{"pkg/apis/core/v1/conversion.go", false},
+		{"pkg/apis/core/register.go", false},
+
+		// Validation code, but outside any allowed root.
+		{"pkg/registry/core/pod/validation/validation.go", false},
+		{"plugin/pkg/admission/validation/validation.go", false},
+
+		// Not a Go source file, or a test file.
+		{"pkg/apis/core/validation/validation_test.go", false},
+		{"pkg/apis/core/validation/README.md", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := isUpstreamValidationPath(tt.path); got != tt.want {
+				t.Errorf("isUpstreamValidationPath(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
 	}

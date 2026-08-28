@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -42,9 +43,16 @@ type UpstreamRef struct {
 	// port against. It is NOT a claim that the check is correct for every
 	// cluster version - see the version-skew section in docs/CI.md.
 	ValidatedAt string `json:"validatedAt"`
-	// Note optionally records a deliberate divergence from upstream and the
-	// reason for it.
-	Note string `json:"note,omitempty"`
+	// Note records which upstream branch this check ports and every
+	// deliberate divergence from it, with the reason.
+	//
+	// It is required. A citation proves the cited function exists and has
+	// not changed; it says nothing about how much of that function the
+	// check actually implements. Most of these ports are partial by design
+	// - skipping a Required branch that defaulting makes unreachable, or a
+	// feature-gated branch this tool cannot evaluate - and without the note
+	// a reviewer cannot tell a deliberate subset from an incomplete port.
+	Note string `json:"note"`
 }
 
 var (
@@ -80,6 +88,9 @@ func (r UpstreamRef) Validate() error {
 	}
 	if !tagPattern.MatchString(r.ValidatedAt) {
 		return fmt.Errorf("validatedAt %q must be a Kubernetes release tag such as v1.36.3", r.ValidatedAt)
+	}
+	if strings.TrimSpace(r.Note) == "" {
+		return fmt.Errorf("note is required: record which upstream branch is ported and any deliberate divergence, so a partial port is distinguishable from an incomplete one")
 	}
 	return nil
 }

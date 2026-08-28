@@ -1,8 +1,6 @@
 package kubernetes
 
 import (
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
-	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes/admissionregistration/validation" // registers admissionregistration checks
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes/apiextensions/validation"         // registers apiextensions checks
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes/apps/validation"                  // registers apps checks
@@ -15,8 +13,11 @@ import (
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes/storage/validation"               // registers storage checks
 )
 
-// Register registers all Kubernetes validation checks with the check registry.
-// This function is called via init() in each subpackage.
-func Register(c runtime.Check) {
-	check.Register(runtime.CheckToRegistered(c))
-}
+// This package exists only to blank-import every validation sub-package, so
+// that importing it registers the whole family.
+//
+// It deliberately exports no Register helper. It previously offered
+// Register(runtime.Check), which called check.Register directly and so
+// bypassed runtime.RegisterAll - the registrar that panics when a check has
+// no valid UpstreamRef. Any caller using it could install an uncited check
+// while the package documented that this was impossible. It had no callers.

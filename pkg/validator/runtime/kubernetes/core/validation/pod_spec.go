@@ -15,7 +15,7 @@ import (
 
 // Check 1: restart-policy-value
 // restartPolicy must be one of: Always, OnFailure, Never.
-// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go:3969-3972
+// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type podSpecRestartPolicyValueCheck struct{}
 
 func (c podSpecRestartPolicyValueCheck) ID() string {
@@ -76,7 +76,7 @@ func (c podSpecRestartPolicyValueCheck) Run(data []byte, source string) []runtim
 
 // Check 5: dns-policy-value
 // dnsPolicy must be one of: ClusterFirst, Default, None, ClusterFirstWithHostNet.
-// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go:4000-4010
+// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type podSpecDNSPolicyValueCheck struct{}
 
 func (c podSpecDNSPolicyValueCheck) ID() string {
@@ -138,7 +138,7 @@ func (c podSpecDNSPolicyValueCheck) Run(data []byte, source string) []runtime.Fi
 
 // Check 7: toleration-operator-value
 // toleration.operator must be one of: Exists, Equal.
-// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go:4500-4510
+// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type podSpecTolerationOperatorValueCheck struct{}
 
 func (c podSpecTolerationOperatorValueCheck) ID() string {

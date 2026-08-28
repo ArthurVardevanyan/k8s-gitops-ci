@@ -12,7 +12,7 @@ import (
 
 // Check 2: duplicate-volume-names
 // All volumes must have unique names within a Pod.
-// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go:2069-2075
+// Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type duplicateVolumeNamesCheck struct{}
 
 func (c duplicateVolumeNamesCheck) ID() string {

@@ -106,12 +106,19 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"validateRestartPolicy"},
 		Digest:      "sha256:bd9dd69734808b0f2de5c957e16c41adf51706310e3196757aeb21d829af6768",
 		ValidatedAt: validatedAt,
+		Note: "Ports the default -> field.NotSupported branch on restartPolicy. Deliberate " +
+			"divergence: the empty-value Required branch is skipped, because defaulting sets " +
+			"Always before validation and an unrendered manifest legitimately omits the field.",
 	},
 	"pod-spec/dns-policy-value": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateDNSPolicy"},
 		Digest:      "sha256:647b87b7449ee64adc1503341952293477e04d4bc70b103cad702bf01a14b2d5",
 		ValidatedAt: validatedAt,
+		Note: "Ports the default -> field.NotSupported branch on dnsPolicy. Deliberate " +
+			"divergence: the empty-value Required branch is skipped, because defaulting sets " +
+			"ClusterFirst before validation and an unrendered manifest legitimately omits the " +
+			"field.",
 	},
 	"pod-spec/toleration-operator-value": {
 		Path:        coreValidationPath,
@@ -160,6 +167,8 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"validateReadinessGates"},
 		Digest:      "sha256:757173fa3badacbac8c8bd02e74106863c1710e459574c1320d215bc18722c88",
 		ValidatedAt: validatedAt,
+		Note: "Ports the ValidateQualifiedName call on each readinessGates[i].conditionType. " +
+			"No divergence: the upstream function contains only this rule.",
 	},
 
 	// --- resources ---------------------------------------------------------
