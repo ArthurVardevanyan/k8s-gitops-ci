@@ -112,6 +112,14 @@ of the flow above:
   [EXEMPTIONS.md](EXEMPTIONS.md)), and one package per validator
   (`namespace`, `psa`, `rbac`, `crb`, `syncopts`, `image`, `namedport`,
   `podspec`, `placeholder`, `clusterid`).
+- **Runtime Validation (admission rules):**
+  `pkg/validator/runtime` (shared types and dual-pass wiring) and
+  `pkg/validator/runtime/kubernetes/*` (one subpackage per Kubernetes
+  API group: `admissionregistration`, `apiextensions`, `apps`,
+  `autoscaling`, `batch`, `core`, `networking`, `policy`, `rbac`,
+  `scheduling`, `storage`) — each containing a `validation/` package
+  with ~300 structural checks that mirror cluster admission-enforced
+  rules (names, formats, valid ranges, required fields).
 - **NetworkAttachmentDefinition validation:** `pkg/validator/nad` — a
   separate, always-on, non-exemptable validator over rendered overlay
   output (not part of the `check.Register` framework above; its report

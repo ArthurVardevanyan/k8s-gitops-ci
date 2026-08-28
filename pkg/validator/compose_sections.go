@@ -265,6 +265,38 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 	return composeParentFromChildren("Static Checks", children)
 }
 
+// ComposeRuntimeValidationSection renders runtime validation findings
+// grouped by CheckID into per-check nested <details> sub-sections.
+// Runtime checks (core, rbac, policy, apps, batch, networking, storage,
+// admissionregistration) return Section() == "runtime-validation" and are
+// always blocking — the cluster rejects non-compliant manifests regardless
+// of any exemptions, so this section never shows ⚠️ or StatusWarning, only
+// ❌/StatusError or ✅/StatusPassed. Check IDs are sorted for deterministic
+// output.
+func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
+	byCheck := map[string][]check.Finding{}
+	for _, f := range findings {
+		byCheck[f.CheckID] = append(byCheck[f.CheckID], f)
+	}
+	if len(byCheck) == 0 {
+		return ReportSection{Name: "Runtime Validation", Status: StatusPassed, Body: "No runtime validation findings."}
+	}
+
+	var b strings.Builder
+	b.WriteString("These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject.\n\n")
+
+	for _, id := range orderedComplianceIDs(byCheck) {
+		findings := byCheck[id]
+		icon := "❌"
+		count, body := renderComplianceSub(id, findings, true, nil)
+		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, complianceTitle(id), count)
+		b.WriteString(body)
+		b.WriteString("\n</details>\n\n")
+	}
+
+	return ReportSection{Name: "Runtime Validation", Body: b.String(), Status: StatusError}
+}
+
 // ComposeResourceComplianceSection renders resource-compliance findings
 // grouped by CheckID into per-check nested <details> sub-sections (rather
 // than one flat table for every finding regardless of check type), plus an

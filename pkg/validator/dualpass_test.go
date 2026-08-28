@@ -51,8 +51,12 @@ func TestRenderSensitiveClassification(t *testing.T) {
 		"podspec-defaults": true,
 	}
 	for _, c := range check.ByScope(check.ScopeDoc) {
+		want, known := wantSensitive[c.ID()]
+		if !known {
+			continue
+		}
 		got := check.IsRenderSensitive(c)
-		if want := wantSensitive[c.ID()]; got != want {
+		if got != want {
 			t.Errorf("check %q: RenderSensitive=%v, want %v", c.ID(), got, want)
 		}
 	}

@@ -85,6 +85,13 @@ pkg/
                        `nad_wiring.go`, `nonapp_wiring.go`, and
                        `dispatch.go` (see
                        docs/ARCHITECTURE.md#future-simplifications).
+  validator/runtime/ shared types (Finding, Check interface) and the
+                     dual-pass wiring (ScopeDoc + IsRenderSensitive)
+                     used by the runtime validation checks; the checks
+                     themselves live under runtime/kubernetes/* (one
+                     package per API group, each with a validation/
+                     subpackage containing admission-enforced
+                     structural rules)
   lint/              CLI-tool wrappers, one package per tool (golangci,
                      kubeconform, kyverno, markdownlint, prettier,
                      shellcheck, yamlsyntax)

@@ -1,0 +1,96 @@
+package runtime
+
+import (
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
+)
+
+// Finding extends check.Finding with runtime validation metadata.
+// Runtime checks are always blocking and never exempted — the cluster rejects
+// non-compliant manifests regardless of any exemptions.
+type Finding struct {
+	// RuleID is the upstream Kubernetes validation rule ID.
+	RuleID string `json:"ruleId,omitempty"`
+	// RuleTitle is a human-readable title for the rule.
+	RuleTitle string `json:"ruleTitle,omitempty"`
+	// Category identifies the validation category (e.g. "security-context", "container").
+	Category string `json:"category,omitempty"`
+	check.Finding
+}
+
+// ToCheckFinding converts a Finding to a check.Finding.
+func (f Finding) ToCheckFinding() check.Finding {
+	cf := f.Finding
+	if cf.CheckID == "" {
+		cf.CheckID = f.Category
+	}
+	if cf.Extra == nil {
+		cf.Extra = make(map[string]string)
+	}
+	cf.Extra["ruleId"] = f.RuleID
+	cf.Extra["ruleTitle"] = f.RuleTitle
+	return cf
+}
+
+// CheckToRegistered converts a runtime Check to a registered check.Check.
+func CheckToRegistered(c Check) check.Check {
+	return adapter{c: c}
+}
+
+// Check is a runtime validation check that operates on Kubernetes resources.
+type Check interface {
+	// ID returns the unique identifier for this check.
+	ID() string
+	// Title returns a human-readable title.
+	Title() string
+	// Category returns the validation category (used as CheckID in findings).
+	Category() string
+	// Blocking returns whether findings cause pipeline failure.
+	Blocking() bool
+	// RenderSensitive returns whether this check should run on rendered output.
+	RenderSensitive() bool
+	// DocSkipper returns kinds this check should skip (e.g. CRDs).
+	DocSkipper() []string
+	// Run validates the given document data and returns findings.
+	Run(data []byte, source string) []Finding
+}
+
+type adapter struct {
+	c Check
+}
+
+func (a adapter) ID() string {
+	return a.c.ID()
+}
+
+func (a adapter) Title() string {
+	return a.c.Title()
+}
+
+func (a adapter) Section() string {
+	return "runtime-validation"
+}
+
+func (a adapter) Blocking() bool {
+	return a.c.Blocking()
+}
+
+func (a adapter) Scope() check.Scope {
+	return check.ScopeDoc
+}
+
+func (a adapter) RenderSensitive() bool {
+	return a.c.RenderSensitive()
+}
+
+func (a adapter) DocSkipper() []string {
+	return a.c.DocSkipper()
+}
+
+func (a adapter) CheckDoc(data []byte, source string) []check.Finding {
+	findings := a.c.Run(data, source)
+	out := make([]check.Finding, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, f.ToCheckFinding())
+	}
+	return out
+}
