@@ -153,5 +153,13 @@ func TestRuntimeChecksAreNonExemptable(t *testing.T) {
 		if !c.Blocking() {
 			t.Errorf("check %q is non-blocking, but the runtime family is documented as always-blocking", c.ID())
 		}
+		// The API server sees the rendered object, so these rules must be
+		// evaluated against it. Asserted here rather than recorded per-check
+		// in the identity snapshot, where it would be the same value 81
+		// times.
+		rs, ok := c.(interface{ RenderSensitive() bool })
+		if !ok || !rs.RenderSensitive() {
+			t.Errorf("check %q is not render-sensitive, but runtime rules apply to the rendered object", c.ID())
+		}
 	}
 }
