@@ -11,7 +11,7 @@ const appsValidationPath = "pkg/apis/apps/validation/validation.go"
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken
 // at. It matches the tag derived from go.mod that
 // `task verify:upstream-refs` pins to.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // selectorNote is shared by the workload selector checks. Each upstream
 // *Spec validator hands spec.selector to apimachinery's ValidateLabelSelector;
@@ -63,14 +63,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/statefulset-replicas-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
-		Digest:      "sha256:49cafc1bc27a4840cfbe86266db3595b1e4abd7f37e1327433430267360403d6",
+		Digest:      "sha256:41a8b9ce87c41a9f9b7bb1a487068d18faec9784a39127780acb777a7ead8eb7",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.Replicas, ...) call in ValidateStatefulSetSpec.",
 	},
 	"apps/statefulset-pod-management-policy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
-		Digest:      "sha256:49cafc1bc27a4840cfbe86266db3595b1e4abd7f37e1327433430267360403d6",
+		Digest:      "sha256:41a8b9ce87c41a9f9b7bb1a487068d18faec9784a39127780acb777a7ead8eb7",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default branch of the spec.podManagementPolicy switch " +
 			"(must be 'OrderedReady' or 'Parallel'). Deliberate divergence: the empty case, which " +
@@ -79,12 +79,15 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/statefulset-update-strategy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
-		Digest:      "sha256:49cafc1bc27a4840cfbe86266db3595b1e4abd7f37e1327433430267360403d6",
+		Digest:      "sha256:41a8b9ce87c41a9f9b7bb1a487068d18faec9784a39127780acb777a7ead8eb7",
 		ValidatedAt: validatedAt,
-		Note: "Ports the default branch of the spec.updateStrategy.type switch " +
-			"(must be 'RollingUpdate' or 'OnDelete'). Deliberate divergence: the empty case, which " +
-			"upstream reports Required, is skipped because defaulting supplies RollingUpdate. " +
-			"The rollingUpdate sub-branches are not ported.",
+		Note: "Ports the default branch of the spec.updateStrategy.type switch. " +
+			"Deliberate divergence: the empty case, which upstream reports Required, is skipped " +
+			"because defaulting supplies RollingUpdate. The rollingUpdate sub-branches are not ported. " +
+			"Deliberate divergence: 'Recreate' is accepted. Kubernetes 1.37 adds it behind the " +
+			"AllowStatefulSetRecreateStrategy gate, and this tool cannot see a cluster's feature " +
+			"gates, so it takes the permissive branch rather than risk blocking a valid manifest " +
+			"with a non-exemptable check; a cluster with the gate off rejects it at apply time.",
 	},
 
 	// --- DaemonSet ---------------------------------------------------------

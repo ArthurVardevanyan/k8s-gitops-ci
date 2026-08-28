@@ -10,7 +10,7 @@ import (
 const rbacValidationPath = "pkg/apis/rbac/validation/validation.go"
 
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken at.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
@@ -19,7 +19,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"rbac/role-ref-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateRoleBinding"},
-		Digest:      "sha256:1a1f1a247e55bfdc3a2c6ab8bce3a424bf86a4eaf82eb3d6ae1bab604fd15ea6",
+		Digest:      "sha256:0edb35117d9aefca6833b8535206f9d4a4785c9ab105441ee06154e42c91ca0e",
 		ValidatedAt: validatedAt,
 		Note: "Ports the three roleRef branches of ValidateRoleBinding: apiGroup must be rbac.GroupName, " +
 			"kind must be Role or ClusterRole, and name is Required. The ValidateRBACName check on a " +
@@ -28,7 +28,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"rbac/clusterrole-ref-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateClusterRoleBinding"},
-		Digest:      "sha256:5d2bd79ebe82acc461f4b8a91e73f1df7c69aa950158b7f8bbf2ba5e7a34fbaa",
+		Digest:      "sha256:759c184539ae73e38a5e224dc77a81d23b19daaf6157ce4cdf1e0ecc499c9963",
 		ValidatedAt: validatedAt,
 		Note: "Ports the three roleRef branches of ValidateClusterRoleBinding: apiGroup must be " +
 			"rbac.GroupName, kind must be ClusterRole (a ClusterRoleBinding may not reference a " +
@@ -38,7 +38,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"rbac/clusterrolebinding-subject-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateClusterRoleBinding", "ValidateRoleBindingSubject"},
-		Digest:      "sha256:d1ec0a8da15d9b7a0d76804dca6104d68465cb8a1e9f3b7921ffe9e295172c77",
+		Digest:      "sha256:d025704ba9ca71753122018db9d68df9ac990e45d7360c51350b2dbd2daa042a",
 		ValidatedAt: validatedAt,
 		Note: "Ports the subject branches reached from ValidateClusterRoleBinding's " +
 			"ValidateRoleBindingSubject loop: the default: field.NotSupported branch on subject.kind " +

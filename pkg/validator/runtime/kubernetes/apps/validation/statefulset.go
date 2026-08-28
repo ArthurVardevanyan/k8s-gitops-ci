@@ -137,10 +137,16 @@ func (c statefulSetUpdateStrategyInvalidCheck) Kinds() []string {
 func (c statefulSetUpdateStrategyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	obj, name := parseKind(data, "StatefulSet")
 
+	// "Recreate" is accepted because Kubernetes 1.37 adds it behind the
+	// AllowStatefulSetRecreateStrategy gate. This tool cannot see a target
+	// cluster's feature gates, so it takes the permissive branch: a cluster
+	// with the gate on must not have a valid manifest blocked by an
+	// always-blocking, non-exemptable check. A cluster with the gate off
+	// rejects it at apply time instead, which is the safe direction to err.
 	return enumFieldFindings(
 		c, obj, "StatefulSet", name, "updateStrategy",
 		[]string{"spec", "updateStrategy", "type"},
-		[]string{"RollingUpdate", "OnDelete"},
+		[]string{"RollingUpdate", "OnDelete", "Recreate"},
 		true,
 	)
 }

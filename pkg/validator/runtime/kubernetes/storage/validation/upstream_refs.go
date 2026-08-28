@@ -14,7 +14,7 @@ const storageValidationPath = "pkg/apis/storage/validation/validation.go"
 const coreValidationPath = "pkg/apis/core/validation/validation.go"
 
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken at.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only

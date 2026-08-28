@@ -10,7 +10,7 @@ import (
 const admissionregistrationValidationPath = "pkg/apis/admissionregistration/validation/validation.go"
 
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken at.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // Digests over validateMutatingWebhook and validateValidatingWebhook. The two
 // functions are near-identical but not equal (only the mutating variant

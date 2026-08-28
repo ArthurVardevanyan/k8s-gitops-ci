@@ -9,7 +9,7 @@ import (
 const policyValidationPath = "pkg/apis/policy/validation/validation.go"
 
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken at.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // pdbFunctions is the upstream call chain every check in this package ports:
 // ValidatePodDisruptionBudget delegates the whole spec to

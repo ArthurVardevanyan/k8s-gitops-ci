@@ -237,6 +237,32 @@ spec:
 	}
 }
 
+// TestStatefulSetUpdateStrategyInvalid_Check_Recreate pins the deliberate
+// divergence recorded in upstreamRefs: Kubernetes 1.37 adds a Recreate
+// strategy behind the AllowStatefulSetRecreateStrategy gate. This tool cannot
+// see a cluster's feature gates, so it accepts Recreate rather than block a
+// valid manifest with a non-exemptable check.
+func TestStatefulSetUpdateStrategyInvalid_Check_Recreate(t *testing.T) {
+	data := []byte(`apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test
+spec:
+  updateStrategy:
+    type: Recreate
+  selector:
+    app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+`)
+	findings := statefulSetUpdateStrategyInvalidCheck{}.Run(data, "test.yaml")
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for Recreate, got %d: %v", len(findings), findings)
+	}
+}
+
 func TestStatefulSetUpdateStrategyInvalid_Check_NoUpdateStrategy(t *testing.T) {
 	data := []byte(`apiVersion: apps/v1
 kind: StatefulSet

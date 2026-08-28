@@ -14,7 +14,7 @@ const networkingValidationPath = "pkg/apis/networking/validation/validation.go"
 const coreValidationPath = "pkg/apis/core/validation/validation.go"
 
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken at.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
@@ -43,7 +43,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"network-policy/port-range-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicyPort"},
-		Digest:      "sha256:b1bf82dca313a3889114358245ddc8a9f9e0bd0e5da7feca2aa0b5cc702cb9ed",
+		Digest:      "sha256:170d64ffe974b384932f1c67058e0acc0f2feb3cbad540924a90b500f9859996",
 		ValidatedAt: validatedAt,
 		Note: "Ports the endPort branches: *port.EndPort < port.Port.IntVal (\"must be greater than or equal " +
 			"to `port`\") and endPort set with no port (\"may not be specified when `port` is not " +
@@ -52,7 +52,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"network-policy/protocol-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicyPort"},
-		Digest:      "sha256:b1bf82dca313a3889114358245ddc8a9f9e0bd0e5da7feca2aa0b5cc702cb9ed",
+		Digest:      "sha256:170d64ffe974b384932f1c67058e0acc0f2feb3cbad540924a90b500f9859996",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the protocol field.NotSupported branch (TCP, UDP or SCTP) only; the port/endPort branches of the same function are covered by network-policy/port-range-invalid.",
 	},

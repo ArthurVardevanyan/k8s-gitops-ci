@@ -19,7 +19,7 @@ const labelsPath = "staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/validation/
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken
 // at. It matches the tag derived from go.mod that
 // `task verify:upstream-refs` pins to.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
@@ -29,7 +29,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/name-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerCommon"},
-		Digest:      "sha256:5fbf5a1fa2fc71df7747e788e9991d04fa0dbfd6013a1cf1d000fbdd40fa3345",
+		Digest:      "sha256:a4dbd3861f90d8ae24bebdabb6d2839506dc0d027f470059c534c0ead8d344be",
 		ValidatedAt: validatedAt,
 		Note: "Ports the namePath branch: an absent name is Required and a present one must pass " +
 			"ValidateDNS1123Label. The two are mutually exclusive upstream and are kept that way here. " +
@@ -50,7 +50,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/duplicate-container-names": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainers"},
-		Digest:      "sha256:2efe76edc824948b3ed983dd76be9c3c844aa61471c6d9278ea2fc6070583211",
+		Digest:      "sha256:a27afba15f49a693820862049de0c5e4f40381f6de3e388649343b32b5a3c924",
 		ValidatedAt: validatedAt,
 		Note: "Ports the allNames/field.Duplicate branch. Upstream splits regular, init " +
 			"and ephemeral containers across validateContainers, validateInitContainers " +
@@ -88,14 +88,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/termination-message-policy-value": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerCommon"},
-		Digest:      "sha256:5fbf5a1fa2fc71df7747e788e9991d04fa0dbfd6013a1cf1d000fbdd40fa3345",
+		Digest:      "sha256:a4dbd3861f90d8ae24bebdabb6d2839506dc0d027f470059c534c0ead8d344be",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the terminationMessagePolicy switch. The empty case is skipped rather than reported Required, because defaulting supplies it.",
 	},
 	"container/volume-mount-name-duplicate": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateVolumeMounts", "IsMatchedVolume"},
-		Digest:      "sha256:d796ec01c6d1f8351bd9158d8d9a44672b0297edac64076f0d41388224db6fef",
+		Digest:      "sha256:557c21473e961112901aabff3714918e08bd449639d6c5685e30929a2bd389c2",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !IsMatchedVolume -> field.NotFound branch (a volumeMount must name a declared volume).",
 	},
@@ -116,14 +116,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"pod-spec/toleration-operator-value": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateTolerations"},
-		Digest:      "sha256:068b53da42369da6ec1c27c890559f309e434f5f219dbaceea8bd5180494bfee",
+		Digest:      "sha256:26ba60c837f145eb446ab5cc88f2f24e3ac93b913527369bebd1fa1a3752c9df",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the operator supported-value branch only; the key/value/effect branches of the same function are not ported.",
 	},
 	"pod-spec/affinity-node-selector-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePodSpec"},
-		Digest:      "sha256:08ae74ef871676e5fb3d657df5b13d518d3209aa12c9385988ccb0bf602ae778",
+		Digest:      "sha256:dc7bb989a2aa5e7bccc0b2dcef021764e0fc18f6f7e7338d223ded13048c307f",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the unversionedvalidation.ValidateLabels(spec.NodeSelector, ...) call in ValidatePodSpec: nodeSelector keys must be qualified names and values valid label values.",
 	},
@@ -144,14 +144,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"pod-spec/service-account-name-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePodSpec"},
-		Digest:      "sha256:08ae74ef871676e5fb3d657df5b13d518d3209aa12c9385988ccb0bf602ae778",
+		Digest:      "sha256:dc7bb989a2aa5e7bccc0b2dcef021764e0fc18f6f7e7338d223ded13048c307f",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateServiceAccountName(spec.ServiceAccountName, false) call in ValidatePodSpec. ValidateServiceAccountName is an alias for apimachinery NameIsDNSSubdomain (generic.go), i.e. IsDNS1123Subdomain.",
 	},
 	"pod-spec/active-deadline-seconds-negative": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePodSpec"},
-		Digest:      "sha256:08ae74ef871676e5fb3d657df5b13d518d3209aa12c9385988ccb0bf602ae778",
+		Digest:      "sha256:dc7bb989a2aa5e7bccc0b2dcef021764e0fc18f6f7e7338d223ded13048c307f",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the activeDeadlineSeconds InclusiveRangeError(1, math.MaxInt32) branch in ValidatePodSpec. Only the lower bound is reported here; the upper bound is unreachable through int32 decoding.",
 	},
@@ -189,14 +189,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"volume/secret-name-required": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateSecretVolumeSource"},
-		Digest:      "sha256:26981025a6e3e2d3ffdddfd7ed0023e3d8d92a3db85794a52a7ff815fba695dc",
+		Digest:      "sha256:fc0888d9a77954b5901bfa011532f80363e4c757bbec470c93a37510f7f029c4",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the len(secretSource.SecretName) == 0 -> field.Required branch. It is a required-field rule, not a live lookup: whether the Secret exists in the cluster cannot be checked from a manifest.",
 	},
 	"volume/configmap-name-required": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateConfigMapVolumeSource"},
-		Digest:      "sha256:aa1832cbb80466b7acc809b6f8b4b4f0533167c85af760b7891a1f8ad7350179",
+		Digest:      "sha256:a0573b41524df4ef32f8d50e05570cb3b64a567ee6c6ff957cda243186ec18cc",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the len(configMapSource.Name) == 0 -> field.Required branch. As with volume/secret-name-required this is a required-field rule, not a live lookup.",
 	},
@@ -219,7 +219,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"core/object-meta-namespace-invalid": {
 		Path:        objectMetaPath,
 		Functions:   []string{"validateObjectMetaAccessorWithOptsCommon"},
-		Digest:      "sha256:5268dcb498467874c96b5d2895f0cd47fc8a2181ba1af385bbcaf5b703b277f6",
+		Digest:      "sha256:353cac5eff6478c7fe4c4e9031ee216b69cb7e84077ab1ec571ff1577d2366c6",
 		ValidatedAt: validatedAt,
 		Note: "Ports the ValidateNamespaceName(meta.GetNamespace(), false) branch only; ValidateNamespaceName " +
 			"is an alias for apimachinery NameIsDNSLabel (generic.go), i.e. IsDNS1123Label. " +

@@ -11,7 +11,7 @@ const batchValidationPath = "pkg/apis/batch/validation/validation.go"
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken
 // at. It matches the tag derived from go.mod that
 // `task verify:upstream-refs` pins to.
-const validatedAt = "v1.36.3"
+const validatedAt = "v1.37.0"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
@@ -21,7 +21,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"batch/parallelism-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateJobSpec"},
-		Digest:      "sha256:6d69e61c7f7def3dcc572040efacc5629d67e8476bd3993b227745b0da881dce",
+		Digest:      "sha256:d8620c5fe4869a483b10904705c22a32910bc93de74f65d567ffe957fdd26c63",
 		ValidatedAt: validatedAt,
 		Note: "Ports the ValidateNonnegativeField(*spec.Parallelism, ...) branch. The indexed-completion " +
 			"upper-bound branches on the same field are not ported: they are cross-field rules against " +
@@ -30,7 +30,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"batch/backoff-limit-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateJobSpec"},
-		Digest:      "sha256:6d69e61c7f7def3dcc572040efacc5629d67e8476bd3993b227745b0da881dce",
+		Digest:      "sha256:d8620c5fe4869a483b10904705c22a32910bc93de74f65d567ffe957fdd26c63",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(*spec.BackoffLimit, ...) branch. An unset backoffLimit is skipped, matching the upstream nil guard (defaulting supplies 6).",
 	},
@@ -59,21 +59,21 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"batch/failed-jobs-history-limit-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateCronJobSpec"},
-		Digest:      "sha256:17526d34d5fc769d701980192a597844e45627f372b223a93595e9d4d1bfd059",
+		Digest:      "sha256:77970eb95ee7d7eeddce0a77759ac613a0c49315630b7f4864b748ac691c74cc",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(*spec.FailedJobsHistoryLimit, ...) branch; zero is valid, matching upstream.",
 	},
 	"batch/successful-jobs-history-limit-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateCronJobSpec"},
-		Digest:      "sha256:17526d34d5fc769d701980192a597844e45627f372b223a93595e9d4d1bfd059",
+		Digest:      "sha256:77970eb95ee7d7eeddce0a77759ac613a0c49315630b7f4864b748ac691c74cc",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(*spec.SuccessfulJobsHistoryLimit, ...) branch; zero is valid, matching upstream.",
 	},
 	"batch/starting-deadline-seconds-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateCronJobSpec"},
-		Digest:      "sha256:17526d34d5fc769d701980192a597844e45627f372b223a93595e9d4d1bfd059",
+		Digest:      "sha256:77970eb95ee7d7eeddce0a77759ac613a0c49315630b7f4864b748ac691c74cc",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(*spec.StartingDeadlineSeconds, ...) branch.",
 	},
