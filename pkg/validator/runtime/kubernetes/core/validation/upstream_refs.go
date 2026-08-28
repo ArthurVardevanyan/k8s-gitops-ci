@@ -26,6 +26,27 @@ const validatedAt = "v1.36.3"
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
 	// --- container ---------------------------------------------------------
+	"container/name-invalid": {
+		Path:        coreValidationPath,
+		Functions:   []string{"validateContainerCommon"},
+		Digest:      "sha256:5fbf5a1fa2fc71df7747e788e9991d04fa0dbfd6013a1cf1d000fbdd40fa3345",
+		ValidatedAt: validatedAt,
+		Note: "Ports the namePath branch: an absent name is Required and a present one must pass " +
+			"ValidateDNS1123Label. The two are mutually exclusive upstream and are kept that way here. " +
+			"The rest of validateContainerCommon (image, lifecycle, probes, resources) is not ported.",
+	},
+
+	"container/port-name-invalid": {
+		Path:        coreValidationPath,
+		Functions:   []string{"validateContainerPorts"},
+		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		ValidatedAt: validatedAt,
+		Note: "Ports the IsValidPortName branch only, which upstream applies solely when a port name is " +
+			"set, since an unnamed port is legal. The Duplicate branch of the same function is covered " +
+			"by container/duplicate-port-names, and the containerPort/hostPort/protocol branches by " +
+			"container/port-number-range.",
+	},
+
 	"container/duplicate-container-names": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainers"},

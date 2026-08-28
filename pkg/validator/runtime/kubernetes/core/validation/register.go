@@ -29,6 +29,8 @@ func Register() {
 func register() {
 	checks := []runtime.Check{
 		duplicateContainerNamesCheck{},
+		containerNameInvalidCheck{},
+		containerPortNameInvalidCheck{},
 		duplicatePortNamesCheck{},
 		portNumberRangeCheck{},
 		imagePullPolicyCheck{},
