@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: s
+spec:
+  serviceName: s
+  podManagementPolicy: ""
+  selector:
+    matchLabels:
+      app: s
+  updateStrategy:
+    type: ""
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: ""
+    whenScaled: ""
+  template:
+    metadata:
+      labels:
+        app: s
+    spec:
+      containers:
+        - name: c
+          image: nginx:1.25
+          imagePullPolicy: ""

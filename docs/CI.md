@@ -927,6 +927,31 @@ faithfully, but upstream's caller first synthesizes a volume for each
 `volumeClaimTemplate`, so the mount it flagged does resolve. The digest over
 the cited function was correct and verified throughout.
 
+**Defaulting is the most common form of this preparation**, and the trap is
+that whether it applies is invisible from the validation source. It is decided
+by the shape of the guard in the defaulting function:
+
+```go
+if len(obj.Spec.PodManagementPolicy) == 0 {   // value:   "" IS defaulted
+if obj.ReclaimPolicy == nil {                 // pointer: "" is NOT defaulted
+```
+
+A value-typed field cannot distinguish an absent field from an explicit `""`,
+so both are replaced before validation and a rule rejecting `""` is a false
+positive. A pointer-typed field can: an explicit `""` unmarshals to a non-nil
+pointer, defaulting is skipped, and the API server really does reject it — so
+there the rule is correct and relaxing it would hide a genuine failure.
+
+Every `SetDefaults_*` function in the ported API groups was audited against
+the fields the checks read. It found three false positives — StatefulSet
+`podManagementPolicy` and the `roleRef.apiGroup` rules on both binding kinds —
+and confirmed five look-alikes (`volumeMode`, `reclaimPolicy`,
+`volumeBindingMode`, NetworkPolicy `protocol`, webhook `failurePolicy`) as
+correct, because those fields are pointer-typed. `TestExplicitlyEmptyDefaultedFields`
+pins both directions with one fixture per kind that sets every defaulted field
+empty at once, so a new check reading one of those fields is covered without a
+new case.
+
 Cite supporting code in `Additional`, a list of refs in other files verified
 exactly like the primary one:
 

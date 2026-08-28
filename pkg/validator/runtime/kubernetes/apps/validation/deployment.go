@@ -47,7 +47,6 @@ func (c deploymentStrategyTypeInvalidCheck) Run(data []byte, source string) []ru
 		c, obj, "Deployment", name, "strategy",
 		[]string{"spec", "strategy", "type"},
 		[]string{"RollingUpdate", "Recreate"},
-		true,
 	)
 }
 

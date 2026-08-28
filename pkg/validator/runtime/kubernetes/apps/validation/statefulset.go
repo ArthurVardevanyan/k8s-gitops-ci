@@ -69,7 +69,6 @@ func (c statefulSetPodManagementPolicyInvalidCheck) Run(data []byte, source stri
 		c, obj, "StatefulSet", name, "podManagementPolicy",
 		[]string{"spec", "podManagementPolicy"},
 		[]string{"OrderedReady", "Parallel"},
-		false,
 	)
 }
 
@@ -98,7 +97,6 @@ func (c statefulSetUpdateStrategyInvalidCheck) Run(data []byte, source string) [
 		c, obj, "StatefulSet", name, "updateStrategy",
 		[]string{"spec", "updateStrategy", "type"},
 		[]string{"RollingUpdate", "OnDelete", "Recreate"},
-		true,
 	)
 }
 

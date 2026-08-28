@@ -1,0 +1,20 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: w
+webhooks:
+  - name: w.example.com
+    failurePolicy: ""
+    matchPolicy: ""
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: svc
+        namespace: ns
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: ""

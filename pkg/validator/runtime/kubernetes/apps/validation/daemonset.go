@@ -47,7 +47,6 @@ func (c daemonSetUpdateStrategyInvalidCheck) Run(data []byte, source string) []r
 		c, obj, "DaemonSet", name, "updateStrategy",
 		[]string{"spec", "updateStrategy", "type"},
 		[]string{"RollingUpdate", "OnDelete"},
-		true,
 	)
 }
 

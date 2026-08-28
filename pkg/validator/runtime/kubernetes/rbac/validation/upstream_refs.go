@@ -23,7 +23,17 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		ValidatedAt: validatedAt,
 		Note: "Ports the three roleRef branches of ValidateRoleBinding: apiGroup must be rbac.GroupName, " +
 			"kind must be Role or ClusterRole, and name is Required. The ValidateRBACName check on a " +
-			"non-empty roleRef.name and the per-subject branches are not ported here.",
+			"non-empty roleRef.name and the per-subject branches are not ported here. Deliberate " +
+			"divergence: an explicitly-empty apiGroup is accepted, because SetDefaults_RoleBinding " +
+			"replaces it with the rbac group before validation runs.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        "pkg/apis/rbac/v1/defaults.go",
+			Functions:   []string{"SetDefaults_RoleBinding"},
+			Digest:      "sha256:0a0c780a9d5ae4eb93c729f541e4d5fc56f50077c0161e2fd965fc61d8b00ec6",
+			ValidatedAt: validatedAt,
+			Note: "Supplies the apiGroup this rule tests. Without it the check reports every " +
+				"binding written with an explicitly-empty roleRef.apiGroup, which the API server accepts.",
+		}},
 	},
 	"rbac/clusterrole-ref-invalid": {
 		Path:        rbacValidationPath,
@@ -33,7 +43,17 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Note: "Ports the three roleRef branches of ValidateClusterRoleBinding: apiGroup must be " +
 			"rbac.GroupName, kind must be ClusterRole (a ClusterRoleBinding may not reference a " +
 			"namespaced Role), and name is Required. The ValidateRBACName check on a non-empty " +
-			"roleRef.name and the per-subject branches are not ported here.",
+			"roleRef.name and the per-subject branches are not ported here. Deliberate divergence: " +
+			"an explicitly-empty apiGroup is accepted, because SetDefaults_ClusterRoleBinding " +
+			"replaces it with the rbac group before validation runs.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        "pkg/apis/rbac/v1/defaults.go",
+			Functions:   []string{"SetDefaults_ClusterRoleBinding"},
+			Digest:      "sha256:4e31786f30e8e5d304316df07d5e09d3af85a39d4f67eca41e8518736a0ea84b",
+			ValidatedAt: validatedAt,
+			Note: "Supplies the apiGroup this rule tests. Without it the check reports every " +
+				"binding written with an explicitly-empty roleRef.apiGroup, which the API server accepts.",
+		}},
 	},
 	"rbac/clusterrolebinding-subject-invalid": {
 		Path:        rbacValidationPath,

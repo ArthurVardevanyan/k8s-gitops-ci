@@ -1,0 +1,18 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cj
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: ""
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: cj
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: c
+              image: nginx:1.25

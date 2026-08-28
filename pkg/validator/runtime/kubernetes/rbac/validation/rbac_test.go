@@ -72,16 +72,27 @@ func TestRoleBindingRoleRefInvalid(t *testing.T) {
 		},
 		{
 			name:     "wrong apiGroup",
-			doc:      binding("RoleBinding", "  apiGroup: \"\"\n  kind: Role\n  name: r\n", ""),
+			doc:      binding("RoleBinding", "  apiGroup: apps\n  kind: Role\n  name: r\n", ""),
 			want:     1,
 			contains: "does not match expected group",
 		},
 		{
-			// An absent roleRef fails all three branches at once; the rule
-			// reports each rather than stopping at the first.
-			name: "absent roleRef reports every branch",
+			// SetDefaults_RoleBinding guards roleRef.apiGroup on len()==0, so
+			// an explicitly-empty value is replaced with the rbac group before
+			// validation and the API server accepts the binding. Reporting it
+			// would be an unsuppressible false positive.
+			name: "explicitly-empty apiGroup is defaulted, not rejected",
+			doc:  binding("RoleBinding", "  apiGroup: \"\"\n  kind: Role\n  name: r\n", ""),
+			want: 0,
+		},
+		{
+			// An absent roleRef fails the kind and name branches at once, and
+			// the rule reports each rather than stopping at the first. It does
+			// not report apiGroup: an absent roleRef leaves that field empty,
+			// which defaulting fills in, so only two branches remain.
+			name: "absent roleRef reports every branch that survives defaulting",
 			doc:  binding("RoleBinding", "", ""),
-			want: 3,
+			want: 2,
 		},
 		{
 			name: "a ClusterRoleBinding is not this rule's kind",
@@ -111,6 +122,20 @@ func TestClusterRoleBindingRoleRefInvalid(t *testing.T) {
 			doc:      binding("ClusterRoleBinding", "  apiGroup: rbac.authorization.k8s.io\n  kind: ClusterRole\n", ""),
 			want:     1,
 			contains: "name is required",
+		},
+		{
+			name:     "wrong apiGroup",
+			doc:      binding("ClusterRoleBinding", "  apiGroup: apps\n  kind: ClusterRole\n  name: r\n", ""),
+			want:     1,
+			contains: "does not match expected group",
+		},
+		{
+			// See the RoleBinding case: SetDefaults_ClusterRoleBinding guards
+			// roleRef.apiGroup on len()==0, so an explicitly-empty value is
+			// accepted by the API server.
+			name: "explicitly-empty apiGroup is defaulted, not rejected",
+			doc:  binding("ClusterRoleBinding", "  apiGroup: \"\"\n  kind: ClusterRole\n  name: r\n", ""),
+			want: 0,
 		},
 		{
 			name: "a RoleBinding is not this rule's kind",

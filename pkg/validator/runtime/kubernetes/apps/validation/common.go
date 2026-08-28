@@ -49,15 +49,22 @@ func parseKind(data []byte, kind string) (obj map[string]interface{}, name strin
 // server produces for a closed enum field.
 //
 // label is the field name used in the message, which upstream reports relative
-// to the enclosing struct rather than as a full path. When allowEmpty is set,
-// an empty value is accepted because the API server defaults it.
+// to the enclosing struct rather than as a full path.
+//
+// An empty value is always accepted. Every apps enum field this serves
+// (podManagementPolicy, and the Deployment/DaemonSet/StatefulSet strategy
+// types) is a plain string defaulted on a len()==0 or =="" guard, which cannot
+// distinguish an absent field from an explicit "". Both are therefore replaced
+// before validation runs, so rejecting "" reports a manifest the API server
+// accepts. A pointer-typed enum would behave the opposite way - defaulting is
+// guarded on nil, an explicit "" survives it, and the cluster does reject it -
+// so one added here would need this skip made conditional again.
 func enumFieldFindings(
 	c runtime.Check,
 	obj map[string]interface{},
 	kind, name, label string,
 	path []string,
 	allowed []string,
-	allowEmpty bool,
 ) []runtime.Finding {
 	if obj == nil || len(path) == 0 {
 		return nil
@@ -68,7 +75,7 @@ func enumFieldFindings(
 		return nil
 	}
 
-	if allowEmpty && value == "" {
+	if value == "" {
 		return nil
 	}
 

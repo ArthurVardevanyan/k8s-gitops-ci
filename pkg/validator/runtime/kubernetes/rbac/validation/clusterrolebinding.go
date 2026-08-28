@@ -64,7 +64,10 @@ func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) [
 		})
 	}
 
-	if crb.RoleRef.APIGroup != rbacv1.GroupName {
+	// SetDefaults_ClusterRoleBinding replaces an empty roleRef.apiGroup with
+	// the rbac group before validation runs, so an explicitly-empty apiGroup
+	// is accepted by the API server.
+	if crb.RoleRef.APIGroup != "" && crb.RoleRef.APIGroup != rbacv1.GroupName {
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),

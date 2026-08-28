@@ -74,7 +74,16 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		ValidatedAt: validatedAt,
 		Note: "Ports the default branch of the spec.podManagementPolicy switch " +
 			"(must be 'OrderedReady' or 'Parallel'). Deliberate divergence: the empty case, which " +
-			"upstream reports Required, is skipped because defaulting supplies OrderedReady.",
+			"upstream reports Required, is skipped because defaulting supplies OrderedReady. That " +
+			"defaulting is cited below, and an explicitly-empty value is accepted for the same reason.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        "pkg/apis/apps/v1/defaults.go",
+			Functions:   []string{"SetDefaults_StatefulSet"},
+			Digest:      "sha256:28a57c312fcb8d3ef5f4227bbe29b10938e5505a6a142003bf291098133ef902",
+			ValidatedAt: validatedAt,
+			Note: "Guards podManagementPolicy on len()==0, so an explicitly-empty value is " +
+				"defaulted to OrderedReady and must not be reported.",
+		}},
 	},
 	"apps/statefulset-update-strategy-invalid": {
 		Path:        appsValidationPath,

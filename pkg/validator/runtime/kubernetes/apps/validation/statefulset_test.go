@@ -200,3 +200,33 @@ spec:
 		t.Errorf("expected no findings for clean statefulset, got %d: %v", len(findings), findings)
 	}
 }
+
+// TestStatefulSetPodManagementPolicyInvalid_Check_ExplicitlyEmpty pins that an
+// explicitly-empty podManagementPolicy is accepted.
+//
+// SetDefaults_StatefulSet guards the field on len()==0, which cannot tell an
+// absent value from an explicit "", so both are replaced with OrderedReady
+// before validation runs. The rule's own UpstreamRef.Note already said the
+// empty case is skipped; the code disagreed, making every StatefulSet written
+// with an empty value fail an unsuppressible check.
+func TestStatefulSetPodManagementPolicyInvalid_Check_ExplicitlyEmpty(t *testing.T) {
+	data := []byte(`apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test
+spec:
+  podManagementPolicy: ""
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+`)
+	check := newStatefulSetPodManagementPolicyInvalidCheck()
+	if findings := check.Run(data, "test.yaml"); len(findings) != 0 {
+		t.Errorf("an explicitly-empty podManagementPolicy is defaulted to OrderedReady and must not be reported, got %d: %v",
+			len(findings), findings)
+	}
+}
