@@ -1,15 +1,27 @@
-// Package runtime provides runtime validation checks that catch errors
-// Kubernetes enforces at admission time but cannot be expressed in OpenAPI schemas.
+// Package runtime provides validation checks that mirror what the Kubernetes
+// API server rejects at admission time but that an OpenAPI schema cannot
+// express, so kubeconform alone cannot catch them.
 //
-// Checks are organized in pkg/validator/runtime/kubernetes/*.go, following
-// the categories found in k8s.io/kubernetes/pkg/apis/core/validation:
+// This package holds only the shared machinery; the checks themselves live in
+// the per-API-group subpackages under kubernetes/.
 //
-//   - security_context.go — combinatorial security context constraints
-//   - container.go — container-level validations (ports, images, names, probes)
-//   - volume.go — volume and mount validations
-//   - resources.go — resource limits/requests and QoS validations
-//   - pod_spec.go — pod spec level validations (affinity, tolerations, etc.)
+//   - walker.go — extracts a PodSpec and its container list from any
+//     pod-bearing kind, with field paths for accurate finding locations.
+//   - finding.go — the Finding type and the adapter that exposes a Check to
+//     the check registry, including kind filtering via Kinds/SkipDoc and the
+//     NonExemptable marker.
+//   - upstream.go — the UpstreamRef citation type and RegisterAll, which
+//     panics if a check is registered without a valid citation.
 //
-// All checks use k8s.io/api/core/v1 typed structs for parsing YAML,
-// with validation rules rewritten inline from k8s.io/kubernetes.
+// Checks parse manifests with the k8s.io/api typed structs and reimplement the
+// upstream rule rather than importing k8s.io/kubernetes, which is not a usable
+// library dependency.
+//
+// Because this family is always-blocking and non-exemptable, every check must
+// cite the exact upstream function it ports via an UpstreamRef in its
+// package's upstreamRefs table. The citation records a file path, the function
+// names, and a digest of their normalized bodies at a pinned Kubernetes tag,
+// so `task verify:upstream-refs` fails when upstream changes and the port has
+// not been re-reviewed. See docs/CI.md for the full standard and for the
+// known version-skew and feature-gate limitations.
 package runtime
