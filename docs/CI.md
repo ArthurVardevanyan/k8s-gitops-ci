@@ -909,13 +909,44 @@ so a new check inherits those tests without adding any.
 A digest covers only the bodies of the functions named in `Functions`. When
 a cited function **delegates** part of its work to a helper in another file,
 a change confined to that helper leaves the caller's digest unchanged, so
-verification can report `81 ok` while the ported rule has shifted
+verification can report all-clear while the ported rule has shifted
 underneath it. `Functions` is a list precisely so a check can cite the
 callee it actually ports, and a check whose rule lives entirely in a shared
 helper should call that helper rather than reimplement it — as
 `policy/selector-invalid` does with apimachinery's `ValidateLabelSelector`.
 Resolving callees transitively would close the gap generally; it is not
 implemented.
+
+The same gap runs in the other direction, and that one has bitten. Where the
+API server **prepares the input** before calling the function that reports
+the error, the preparation is part of the rule: porting only the callee
+applies correct logic to the wrong data.
+`container/volume-mount-name-undefined` rejected nearly every real
+StatefulSet for exactly this reason — it ported `ValidateVolumeMounts`
+faithfully, but upstream's caller first synthesizes a volume for each
+`volumeClaimTemplate`, so the mount it flagged does resolve. The digest over
+the cited function was correct and verified throughout.
+
+Cite supporting code in `Additional`, a list of refs in other files verified
+exactly like the primary one:
+
+```go
+"container/volume-mount-name-undefined": {
+    Path:      coreValidationPath,
+    Functions: []string{"ValidateVolumeMounts", "IsMatchedVolume"},
+    // ...
+    Additional: []runtime.UpstreamRef{{
+        Path:      "pkg/apis/apps/validation/validation.go",
+        Functions: []string{"volumesToAddForTemplates", "ValidateStatefulSetSpec"},
+        // ...
+    }},
+},
+```
+
+Describing such a dependency in `Note` instead leaves it unchecked, which is
+how that bug survived review. Nesting is one level deep, and `--update` does
+not rewrite supporting entries — update them by hand after re-reading the
+upstream function.
 
 ##### Version skew and feature gates (known limitation)
 
