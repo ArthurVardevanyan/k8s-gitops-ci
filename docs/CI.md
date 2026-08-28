@@ -780,18 +780,22 @@ table above:
   `EXEMPTIONS=(...)` selector can match one. `TestRuntimeChecksAreNonExemptable`
   enforces this for every registered runtime check. See
   [EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids).
-- **Kind-scoped by declaration.** Each check declares the resource kinds
-  it applies to via `Kinds() []string`; the adapter inverts that
+- **Kind-scoped by declaration.** Each check declares the kinds it
+  applies to in its embedded `runtime.Meta`; the adapter inverts that
   applies-to list into the existing `check.DocSkipper` contract
   (`SkipDoc(kind) bool`), so a check is never handed a document kind it
-  doesn't care about. An empty `Kinds()` means "every kind".
+  doesn't care about. An empty list means "every kind". Checks also guard
+  on kind themselves rather than relying solely on the adapter, so a
+  check invoked directly cannot attribute a finding to a kind the
+  document is not.
 - **Registration is asserted, not assumed.** Each `validation`
   sub-package registers its checks from an `init()`, pulled in by blank
   imports in `pkg/validator/runtime/kubernetes/register.go`.
   `TestEveryValidationPackageRegisters` asserts one representative check
-  ID per sub-package is actually present in the registry — several
-  packages previously shipped silently unregistered, with no check ever
-  running.
+  ID per sub-package is actually present in the registry. A package that
+  is never imported, or imported without an `init()`, registers nothing
+  and its checks simply never run — a failure that is invisible in a
+  passing pipeline, since a check that never runs reports nothing.
 
 **The standard for adding a new one: a runtime check must be a faithful
 1:1 port of a specific upstream Kubernetes validation rule, or it does
@@ -800,15 +804,14 @@ defensible if the cluster really would reject the manifest. Anything that
 is merely a best practice — however good a practice — belongs in the
 exemptable resource-compliance family in the table above instead.
 
-That standard was applied retroactively: every check was audited against
-real upstream `kubernetes/kubernetes` validation source, and **128 of 211
-were deleted**, leaving 83. A further 6 that only duplicated kubeconform's
-strict mode were then dropped, leaving 77; checks added since bring the
-family to its current **81**. The deleted ones were either **fabricated**
-(upstream has no such rule at all) or **distorted** (materially wrong
-semantics — the wrong validator, e.g. `IsDNS1123Subdomain` where upstream
-uses `ValidateDNS1123Label`; the wrong field name; the wrong threshold;
-the wrong enum; or dead code that could never fire).
+Two failure modes disqualify a rule, and both are easy to write by
+accident. A **fabricated** rule is one upstream has no equivalent for at
+all. A **distorted** one is a real rule with materially wrong semantics:
+the wrong validator (`IsDNS1123Subdomain` where upstream uses
+`ValidateDNS1123Label`), the wrong field name, the wrong threshold, the
+wrong enum, or a condition that can never fire. Neither is detectable by
+reading the check in isolation, which is why the citation requirement
+below is mandatory rather than advisory.
 
 ##### Every check must cite a verifiable upstream function
 
@@ -820,7 +823,7 @@ That standard is enforced, not merely stated. Each check supplies an
     Path:        "pkg/apis/apps/validation/validation.go",
     Functions:   []string{"ValidateDeploymentSpec"},
     Digest:      "sha256:...",
-    ValidatedAt: "v1.36.3",
+    ValidatedAt: "v1.37.0",
 },
 ```
 
@@ -866,6 +869,27 @@ To add a check: find the upstream function, get a digest with
 and add the entry. If no specific upstream function implements the rule,
 the check does not belong in this family — put it in the exemptable
 resource-compliance family instead.
+
+A check declares its identity once, by embedding `runtime.Meta`, and
+implements `Run`:
+
+```go
+type deploymentReplicasInvalidCheck struct{ runtime.Meta }
+
+func newDeploymentReplicasInvalidCheck() deploymentReplicasInvalidCheck {
+    return deploymentReplicasInvalidCheck{runtime.Meta{
+        RuleID:    "apps/deployment-replicas-invalid",
+        RuleTitle: "Replicas Must Be >= 0",
+        AppliesTo: []string{"Deployment"},
+    }}
+}
+```
+
+`Meta` supplies `Blocking` and `RenderSensitive` (both always true for
+this family) and the report category is derived from the rule ID's
+prefix by `runtime.CategoryOf`, so there is no second copy of either to
+fall out of step. Build findings with `runtime.NewFinding(c, ...)`,
+which attaches the rule and citation metadata reporting depends on.
 
 A digest covers only the bodies of the functions named in `Functions`. When
 a cited function **delegates** part of its work to a helper in another file,
