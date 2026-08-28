@@ -101,19 +101,6 @@ func (c replicaSetReplicasInvalidCheck) Run(data []byte, source string) []runtim
 	}}
 }
 
-// ValidateReplicaSet runs all replicaset validation checks and returns findings.
-func ValidateReplicaSet(data []byte, source string) []runtime.Finding {
-	checks := []runtime.Check{
-		replicaSetSelectorInvalidCheck{},
-		replicaSetReplicasInvalidCheck{},
-	}
-	findings := make([]runtime.Finding, 0, len(checks))
-	for _, c := range checks {
-		findings = append(findings, c.Run(data, source)...)
-	}
-	return findings
-}
-
 // init registers all replicaset checks.
 func init() {
 	Register()

@@ -6,7 +6,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 )
@@ -79,15 +78,15 @@ func ExtractPodSpecInfo(data []byte, source string) (*PodSpecInfo, error) {
 
 	switch kind {
 	case "Pod":
-		podSpec, err = extractPodSpecFromUnstructured(&unstructuredObj)
+		podSpec, err = extractPodSpecAt(&unstructuredObj, "spec")
 		info.ContainersPath = "spec.containers"
 		info.InitContainersPath = "spec.initContainers"
 	case "CronJob":
-		podSpec, err = extractPodSpecFromCronJob(&unstructuredObj)
+		podSpec, err = extractPodSpecAt(&unstructuredObj, "spec", "jobTemplate", "spec", "template", "spec")
 		info.ContainersPath = "spec.jobTemplate.spec.template.spec.containers"
 		info.InitContainersPath = "spec.jobTemplate.spec.template.spec.initContainers"
 	default:
-		podSpec, err = extractPodSpecFromTemplate(&unstructuredObj)
+		podSpec, err = extractPodSpecAt(&unstructuredObj, "spec", "template", "spec")
 		info.ContainersPath = "spec.template.spec.containers"
 		info.InitContainersPath = "spec.template.spec.initContainers"
 	}
@@ -108,55 +107,11 @@ func ExtractPodSpecInfo(data []byte, source string) (*PodSpecInfo, error) {
 	return info, nil
 }
 
-func extractPodSpecFromUnstructured(obj *unstructured.Unstructured) (*corev1.PodSpec, error) {
-	podData, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&corev1.Pod{Spec: corev1.PodSpec{}})
-	if err != nil {
-		return nil, err
-	}
-
-	for k, v := range obj.UnstructuredContent() {
-		if k == "spec" {
-			podData["spec"] = v
-		}
-	}
-
-	podBytes, err := json.Marshal(podData)
-	if err != nil {
-		return nil, err
-	}
-
-	var pod corev1.Pod
-	if err := yaml.Unmarshal(podBytes, &pod); err != nil {
-		return nil, err
-	}
-
-	return &pod.Spec, nil
-}
-
-func extractPodSpecFromTemplate(obj *unstructured.Unstructured) (*corev1.PodSpec, error) {
-	spec, found, err := unstructured.NestedMap(obj.UnstructuredContent(), "spec", "template", "spec")
-	if err != nil {
-		return nil, err
-	}
-	if !found || len(spec) == 0 {
-		return nil, nil
-	}
-
-	specJSON, err := json.Marshal(spec)
-	if err != nil {
-		return nil, err
-	}
-
-	var podSpec corev1.PodSpec
-	if err := yaml.Unmarshal(specJSON, &podSpec); err != nil {
-		return nil, err
-	}
-
-	return &podSpec, nil
-}
-
-func extractPodSpecFromCronJob(obj *unstructured.Unstructured) (*corev1.PodSpec, error) {
-	spec, found, err := unstructured.NestedMap(obj.UnstructuredContent(), "spec", "jobTemplate", "spec", "template", "spec")
+// extractPodSpecAt decodes the PodSpec at the given path within obj. It
+// returns nil, nil when the path is absent or empty, meaning there is no pod
+// spec to validate.
+func extractPodSpecAt(obj *unstructured.Unstructured, path ...string) (*corev1.PodSpec, error) {
+	spec, found, err := unstructured.NestedMap(obj.UnstructuredContent(), path...)
 	if err != nil {
 		return nil, err
 	}

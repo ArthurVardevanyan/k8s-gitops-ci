@@ -349,7 +349,7 @@ spec:
       labels:
         app: wrong
 `)
-	findings := ValidateDaemonSet(data, "test.yaml")
+	findings := runKindChecks(data, "DaemonSet")
 	ruleIDs := make(map[string]bool)
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
@@ -378,7 +378,7 @@ spec:
       labels:
         app: myapp
 `)
-	findings := ValidateDaemonSet(data, "test.yaml")
+	findings := runKindChecks(data, "DaemonSet")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for clean daemonset, got %d: %v", len(findings), findings)
 	}
@@ -390,7 +390,7 @@ kind: Service
 metadata:
   name: test
 `)
-	findings := ValidateDaemonSet(data, "test.yaml")
+	findings := runKindChecks(data, "DaemonSet")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Service, got %d: %v", len(findings), findings)
 	}
@@ -398,7 +398,7 @@ metadata:
 
 func TestValidateDaemonSet_InvalidYAML(t *testing.T) {
 	data := []byte(`not valid yaml {{`)
-	findings := ValidateDaemonSet(data, "test.yaml")
+	findings := runKindChecks(data, "DaemonSet")
 	if len(findings) > 0 {
 		t.Errorf("expected nil or empty for invalid YAML, got %v", findings)
 	}

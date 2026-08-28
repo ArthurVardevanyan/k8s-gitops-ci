@@ -9,6 +9,30 @@ import (
 
 var registerOnce sync.Once
 
+// allChecks is the single list of this package's checks, sorted by ID. Both
+// Register and the tests derive from it so neither can drift from the other.
+func allChecks() []runtime.Check {
+	checks := []runtime.Check{
+		deploymentSelectorInvalidCheck{},
+		deploymentStrategyTypeInvalidCheck{},
+		deploymentReplicasInvalidCheck{},
+		deploymentMinReadySecondsInvalidCheck{},
+		statefulSetReplicasInvalidCheck{},
+		statefulSetPodManagementPolicyInvalidCheck{},
+		statefulSetUpdateStrategyInvalidCheck{},
+		daemonSetSelectorInvalidCheck{},
+		daemonSetUpdateStrategyInvalidCheck{},
+		daemonSetMinReadySecondsInvalidCheck{},
+		replicaSetSelectorInvalidCheck{},
+		replicaSetReplicasInvalidCheck{},
+	}
+	sort.Slice(checks, func(i, j int) bool {
+		return checks[i].ID() < checks[j].ID()
+	})
+
+	return checks
+}
+
 // Register registers all apps validation checks with the check registry.
 //
 // Registration funnels through runtime.RegisterAll so that each check must
@@ -16,24 +40,6 @@ var registerOnce sync.Once
 // function it ports; RegisterAll panics on a check with no valid citation.
 func Register() {
 	registerOnce.Do(func() {
-		checks := []runtime.Check{
-			deploymentSelectorInvalidCheck{},
-			deploymentStrategyTypeInvalidCheck{},
-			deploymentReplicasInvalidCheck{},
-			deploymentMinReadySecondsInvalidCheck{},
-			statefulSetReplicasInvalidCheck{},
-			statefulSetPodManagementPolicyInvalidCheck{},
-			statefulSetUpdateStrategyInvalidCheck{},
-			daemonSetSelectorInvalidCheck{},
-			daemonSetUpdateStrategyInvalidCheck{},
-			daemonSetMinReadySecondsInvalidCheck{},
-			replicaSetSelectorInvalidCheck{},
-			replicaSetReplicasInvalidCheck{},
-		}
-		sort.Slice(checks, func(i, j int) bool {
-			return checks[i].ID() < checks[j].ID()
-		})
-
-		runtime.RegisterAll(checks, upstreamRefs)
+		runtime.RegisterAll(allChecks(), upstreamRefs)
 	})
 }

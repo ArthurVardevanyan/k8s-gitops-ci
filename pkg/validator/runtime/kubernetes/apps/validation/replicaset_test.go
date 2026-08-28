@@ -246,7 +246,7 @@ spec:
       - name: c
         image: nginx
 `)
-	findings := ValidateReplicaSet(data, "test.yaml")
+	findings := runKindChecks(data, "ReplicaSet")
 	ruleIDs := make(map[string]bool)
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
@@ -275,7 +275,7 @@ spec:
       - name: c
         image: nginx
 `)
-	findings := ValidateReplicaSet(data, "test.yaml")
+	findings := runKindChecks(data, "ReplicaSet")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for clean replicaset, got %d: %v", len(findings), findings)
 	}
@@ -287,7 +287,7 @@ kind: Service
 metadata:
   name: test
 `)
-	findings := ValidateReplicaSet(data, "test.yaml")
+	findings := runKindChecks(data, "ReplicaSet")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Service, got %d: %v", len(findings), findings)
 	}
@@ -295,7 +295,7 @@ metadata:
 
 func TestValidateReplicaSet_InvalidYAML(t *testing.T) {
 	data := []byte(`not valid yaml {{`)
-	findings := ValidateReplicaSet(data, "test.yaml")
+	findings := runKindChecks(data, "ReplicaSet")
 	if len(findings) > 0 {
 		t.Errorf("expected nil or empty for invalid YAML, got %v", findings)
 	}

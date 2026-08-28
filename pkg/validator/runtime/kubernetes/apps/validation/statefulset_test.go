@@ -351,7 +351,7 @@ spec:
       labels:
         app: wrong
 `)
-	findings := ValidateStatefulSet(data, "test.yaml")
+	findings := runKindChecks(data, "StatefulSet")
 	ruleIDs := make(map[string]bool)
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
@@ -392,7 +392,7 @@ spec:
       labels:
         app: myapp
 `)
-	findings := ValidateStatefulSet(data, "test.yaml")
+	findings := runKindChecks(data, "StatefulSet")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for clean statefulset, got %d: %v", len(findings), findings)
 	}
@@ -404,7 +404,7 @@ kind: Service
 metadata:
   name: test
 `)
-	findings := ValidateStatefulSet(data, "test.yaml")
+	findings := runKindChecks(data, "StatefulSet")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Service, got %d: %v", len(findings), findings)
 	}
@@ -412,7 +412,7 @@ metadata:
 
 func TestValidateStatefulSet_InvalidYAML(t *testing.T) {
 	data := []byte(`not valid yaml {{`)
-	findings := ValidateStatefulSet(data, "test.yaml")
+	findings := runKindChecks(data, "StatefulSet")
 	if len(findings) > 0 {
 		t.Errorf("expected nil or empty for invalid YAML, got %v", findings)
 	}

@@ -140,20 +140,6 @@ func (c daemonSetMinReadySecondsInvalidCheck) Run(data []byte, source string) []
 	}}
 }
 
-// ValidateDaemonSet runs all daemonset validation checks and returns findings.
-func ValidateDaemonSet(data []byte, source string) []runtime.Finding {
-	checks := []runtime.Check{
-		daemonSetSelectorInvalidCheck{},
-		daemonSetUpdateStrategyInvalidCheck{},
-		daemonSetMinReadySecondsInvalidCheck{},
-	}
-	findings := make([]runtime.Finding, 0, len(checks))
-	for _, c := range checks {
-		findings = append(findings, c.Run(data, source)...)
-	}
-	return findings
-}
-
 // init registers all daemonset checks.
 func init() {
 	Register()

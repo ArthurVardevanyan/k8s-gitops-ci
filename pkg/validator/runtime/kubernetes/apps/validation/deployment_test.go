@@ -412,7 +412,7 @@ spec:
       labels:
         app: wrong
 `)
-	findings := ValidateDeployment(data, "test.yaml")
+	findings := runKindChecks(data, "Deployment")
 	ruleIDs := make(map[string]bool)
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
@@ -444,7 +444,7 @@ spec:
       labels:
         app: myapp
 `)
-	findings := ValidateDeployment(data, "test.yaml")
+	findings := runKindChecks(data, "Deployment")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for clean deployment, got %d: %v", len(findings), findings)
 	}
@@ -459,7 +459,7 @@ spec:
   selector:
     app: myapp
 `)
-	findings := ValidateDeployment(data, "test.yaml")
+	findings := runKindChecks(data, "Deployment")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Service, got %d: %v", len(findings), findings)
 	}
@@ -467,7 +467,7 @@ spec:
 
 func TestValidateDeployment_InvalidYAML(t *testing.T) {
 	data := []byte(`not valid yaml {{`)
-	findings := ValidateDeployment(data, "test.yaml")
+	findings := runKindChecks(data, "Deployment")
 	if len(findings) > 0 {
 		t.Errorf("expected nil or empty for invalid YAML, got %v", findings)
 	}

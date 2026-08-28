@@ -197,21 +197,6 @@ func (c deploymentMinReadySecondsInvalidCheck) Run(data []byte, source string) [
 	}}
 }
 
-// ValidateDeployment runs all deployment validation checks and returns findings.
-func ValidateDeployment(data []byte, source string) []runtime.Finding {
-	checks := []runtime.Check{
-		deploymentSelectorInvalidCheck{},
-		deploymentStrategyTypeInvalidCheck{},
-		deploymentReplicasInvalidCheck{},
-		deploymentMinReadySecondsInvalidCheck{},
-	}
-	findings := make([]runtime.Finding, 0, len(checks))
-	for _, c := range checks {
-		findings = append(findings, c.Run(data, source)...)
-	}
-	return findings
-}
-
 // init registers all deployment checks.
 func init() {
 	Register()

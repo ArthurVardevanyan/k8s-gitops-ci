@@ -145,20 +145,6 @@ func (c statefulSetUpdateStrategyInvalidCheck) Run(data []byte, source string) [
 	)
 }
 
-// ValidateStatefulSet runs all statefulset validation checks and returns findings.
-func ValidateStatefulSet(data []byte, source string) []runtime.Finding {
-	checks := []runtime.Check{
-		statefulSetReplicasInvalidCheck{},
-		statefulSetPodManagementPolicyInvalidCheck{},
-		statefulSetUpdateStrategyInvalidCheck{},
-	}
-	findings := make([]runtime.Finding, 0, len(checks))
-	for _, c := range checks {
-		findings = append(findings, c.Run(data, source)...)
-	}
-	return findings
-}
-
 // init registers all statefulset checks.
 func init() {
 	Register()

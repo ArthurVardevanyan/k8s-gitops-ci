@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -39,7 +38,6 @@ func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 	if schedule == "" {
 		return nil
 	}
-	_ = time.Now()
 	if err := parseCronSchedule(schedule); err != nil {
 		return []runtime.Finding{{
 			RuleID:    c.ID(),
