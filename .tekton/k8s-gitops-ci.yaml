@@ -419,7 +419,7 @@ spec:
                   #   other = harness/setup error → fail.
                   REPLAY_REPORT="${TMPDIR}/homelab-replay.md"
                   REPLAY_RC=0
-                  task test:homelab-prs COUNT=50 PARALLEL=15 OUTPUT="${REPLAY_REPORT}" || REPLAY_RC=$?
+                  task test:homelab-prs COUNT=50 PARALLEL=25 OUTPUT="${REPLAY_REPORT}" || REPLAY_RC=$?
                   case "${REPLAY_RC}" in
                   0) REPLAY_STATUS="pass" ;;
                   1) REPLAY_STATUS="warn" ;;
