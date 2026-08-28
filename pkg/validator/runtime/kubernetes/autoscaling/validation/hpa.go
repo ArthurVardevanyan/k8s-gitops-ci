@@ -171,6 +171,12 @@ func (c scaleUpInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 // stabilizationWindowSeconds entries under spec.behavior.<behaviorField>,
 // which is identical logic for scaleUp and scaleDown.
 // Source: k8s.io/kubernetes/pkg/apis/autoscaling/validation/validation.go
+// behaviorStabilizationWindowFindings validates
+// behavior.<scaleUp|scaleDown>.stabilizationWindowSeconds.
+//
+// Both are HPAScalingRules objects, not lists, so the finding path carries
+// no index: spec.behavior.scaleDown[0].stabilizationWindowSeconds is not a
+// field an HPA manifest has.
 func behaviorStabilizationWindowFindings(c runtime.Check, data []byte, behaviorField string) []runtime.Finding {
 	spec, err := parseHPA(data)
 	if err != nil {
@@ -178,31 +184,31 @@ func behaviorStabilizationWindowFindings(c runtime.Check, data []byte, behaviorF
 	}
 	name, _ := extractHPAName(data)
 
-	entries, found := extractNestedSlice(spec, "behavior", behaviorField)
-	if !found {
+	behavior, ok := spec["behavior"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	rules, ok := behavior[behaviorField].(map[string]interface{})
+	if !ok {
 		return nil
 	}
 
-	var findings []runtime.Finding
-	for i, entry := range entries {
-		entryPath := field.NewPath("spec").Child("behavior").Child(behaviorField).Index(i)
-		if val, ok := extractNestedInt(entry, "stabilizationWindowSeconds"); ok {
-			if val < 0 {
-				findings = append(findings, runtime.Finding{
-					RuleID:    c.ID(),
-					RuleTitle: c.Title(),
-					Finding: check.Finding{
-						Path:    entryPath.Child("stabilizationWindowSeconds").String(),
-						Message: fmt.Sprintf("behavior.%s[%d].stabilizationWindowSeconds: invalid value: %d: must be >= 0", behaviorField, i, val),
-						Kind:    "HorizontalPodAutoscaler",
-						Name:    name,
-						Value:   fmt.Sprintf("%d", val),
-					},
-				})
-			}
-		}
+	val, ok := extractNestedInt(rules, "stabilizationWindowSeconds")
+	if !ok || val >= 0 {
+		return nil
 	}
-	return findings
+
+	return []runtime.Finding{{
+		RuleID:    c.ID(),
+		RuleTitle: c.Title(),
+		Finding: check.Finding{
+			Path:    field.NewPath("spec").Child("behavior").Child(behaviorField).Child("stabilizationWindowSeconds").String(),
+			Message: fmt.Sprintf("behavior.%s.stabilizationWindowSeconds: invalid value: %d: must be >= 0", behaviorField, val),
+			Kind:    "HorizontalPodAutoscaler",
+			Name:    name,
+			Value:   fmt.Sprintf("%d", val),
+		},
+	}}
 }
 
 // init registers all HPA validation checks (applies to both v1 and v2 API versions).

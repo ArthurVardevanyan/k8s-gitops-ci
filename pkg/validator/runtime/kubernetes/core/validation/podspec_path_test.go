@@ -135,3 +135,55 @@ spec:
 		t.Errorf("finding Path = %q, want %q", got, want)
 	}
 }
+
+// Affinity findings must name the term they came from. The four affinity
+// lists live at different paths, and a weighted term nests its selector
+// under podAffinityTerm, so a single hard-coded base sends the reader to a
+// field that is not in their manifest.
+func TestPodAffinityFindingPathsMatchTheTerm(t *testing.T) {
+	doc := func(section, body string) []byte {
+		return []byte("kind: Pod\nmetadata:\n  name: test\nspec:\n  affinity:\n    " +
+			section + ":\n" + body +
+			"  containers:\n  - name: c\n    image: nginx\n")
+	}
+	required := "      requiredDuringSchedulingIgnoredDuringExecution:\n" +
+		"      - topologyKey: kubernetes.io/hostname\n" +
+		"        labelSelector:\n          matchLabels:\n            \"bad key\": v\n"
+	preferred := "      preferredDuringSchedulingIgnoredDuringExecution:\n" +
+		"      - weight: 1\n        podAffinityTerm:\n" +
+		"          topologyKey: kubernetes.io/hostname\n" +
+		"          labelSelector:\n            matchLabels:\n              \"bad key\": v\n"
+
+	tests := []struct {
+		name, section, body, wantPath string
+	}{
+		{
+			"podAffinity required", "podAffinity", required,
+			"spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector",
+		},
+		{
+			"podAntiAffinity required", "podAntiAffinity", required,
+			"spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector",
+		},
+		{
+			"podAffinity preferred", "podAffinity", preferred,
+			"spec.affinity.podAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector",
+		},
+		{
+			"podAntiAffinity preferred", "podAntiAffinity", preferred,
+			"spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := newPodSpecAffinityInvalidCheck().Run(doc(tt.section, tt.body), "test.yaml")
+			if len(got) == 0 {
+				t.Fatalf("expected a finding for an invalid label key")
+			}
+			if !strings.HasPrefix(got[0].Path, tt.wantPath) {
+				t.Errorf("finding Path = %q, want prefix %q", got[0].Path, tt.wantPath)
+			}
+		})
+	}
+}

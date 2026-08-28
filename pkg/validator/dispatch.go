@@ -13,22 +13,40 @@ import (
 // not the value: `kind: "Pod"` yields `"Pod"` with quotes, which matches no
 // registered kind and silently skips every check for that document. Since
 // runtime checks are non-exemptable, a skip caused by quoting style is
-// invisible rather than merely wrong. Trailing comments (`kind: Pod # why`)
-// have the same effect.
+// invisible rather than merely wrong.
+//
+// The comment must be stripped before unquoting and must itself be
+// quote-aware, because both orders of the two features occur: `kind: "Pod"
+// # why` has a comment after a quoted scalar, while `kind: "Pod # not a
+// comment"` has a '#' inside one.
 func normalizeScalar(s string) string {
 	s = strings.TrimSpace(s)
-	// A quoted scalar may legitimately contain '#', so unquote first and
-	// return - there is no trailing comment inside the quotes.
+
+	// Drop a trailing comment. In YAML a '#' only opens one at the start of
+	// the scalar or after whitespace, and never inside quotes.
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
+			s = s[:i]
+			i = len(s)
+		}
+	}
+	s = strings.TrimSpace(s)
+
 	if len(s) >= 2 {
 		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
 			return s[1 : len(s)-1]
 		}
 	}
-	// An unquoted scalar ends at a ' #' comment separator.
-	if i := strings.Index(s, " #"); i >= 0 {
-		s = s[:i]
-	}
-	return strings.TrimSpace(s)
+	return s
 }
 
 // quickKind extracts kind from a YAML document header with minimal parsing.

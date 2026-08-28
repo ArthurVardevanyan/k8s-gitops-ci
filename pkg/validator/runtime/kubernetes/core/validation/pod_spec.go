@@ -239,40 +239,49 @@ func (c podSpecAffinityInvalidCheck) Run(data []byte, source string) []runtime.F
 				}
 			}
 		}
-		pa := info.PodSpec.Affinity.PodAffinity
-		if pa != nil {
-			checkPodAffinityTerms(pa.RequiredDuringSchedulingIgnoredDuringExecution, "requiredDuringSchedulingIgnoredDuringExecution", info, &findings)
-			checkWeightedPodAffinityTerms(pa.PreferredDuringSchedulingIgnoredDuringExecution, "preferredDuringSchedulingIgnoredDuringExecution", info, &findings)
+		affinityPath := field.NewPath(info.PodSpecPath).Child("affinity")
+		if pa := info.PodSpec.Affinity.PodAffinity; pa != nil {
+			base := affinityPath.Child("podAffinity")
+			checkPodAffinityTerms(pa.RequiredDuringSchedulingIgnoredDuringExecution, base.Child(requiredTerms), "podAffinity", info, &findings)
+			checkWeightedPodAffinityTerms(pa.PreferredDuringSchedulingIgnoredDuringExecution, base.Child(preferredTerms), "podAffinity", info, &findings)
 		}
-		paa := info.PodSpec.Affinity.PodAntiAffinity
-		if paa != nil {
-			checkPodAffinityTerms(paa.RequiredDuringSchedulingIgnoredDuringExecution, "requiredDuringSchedulingIgnoredDuringExecution", info, &findings)
-			checkWeightedPodAffinityTerms(paa.PreferredDuringSchedulingIgnoredDuringExecution, "preferredDuringSchedulingIgnoredDuringExecution", info, &findings)
+		if paa := info.PodSpec.Affinity.PodAntiAffinity; paa != nil {
+			base := affinityPath.Child("podAntiAffinity")
+			checkPodAffinityTerms(paa.RequiredDuringSchedulingIgnoredDuringExecution, base.Child(requiredTerms), "podAntiAffinity", info, &findings)
+			checkWeightedPodAffinityTerms(paa.PreferredDuringSchedulingIgnoredDuringExecution, base.Child(preferredTerms), "podAntiAffinity", info, &findings)
 		}
 	}
 	return findings
 }
 
-func checkPodAffinityTerms(terms []corev1.PodAffinityTerm, pathPrefix string, info *runtime.PodSpecInfo, findings *[]runtime.Finding) {
+const (
+	requiredTerms  = "requiredDuringSchedulingIgnoredDuringExecution"
+	preferredTerms = "preferredDuringSchedulingIgnoredDuringExecution"
+)
+
+func checkPodAffinityTerms(terms []corev1.PodAffinityTerm, base *field.Path, msgPrefix string, info *runtime.PodSpecInfo, findings *[]runtime.Finding) {
 	for i, term := range terms {
-		checkPodAffinityLabelSelector(term.LabelSelector, i, "podAffinity", pathPrefix, info, findings)
+		checkPodAffinityLabelSelector(term.LabelSelector, i, msgPrefix, base.Index(i), info, findings)
 	}
 }
 
-func checkWeightedPodAffinityTerms(terms []corev1.WeightedPodAffinityTerm, pathPrefix string, info *runtime.PodSpecInfo, findings *[]runtime.Finding) {
+func checkWeightedPodAffinityTerms(terms []corev1.WeightedPodAffinityTerm, base *field.Path, msgPrefix string, info *runtime.PodSpecInfo, findings *[]runtime.Finding) {
 	for i, term := range terms {
-		checkPodAffinityLabelSelector(term.PodAffinityTerm.LabelSelector, i, "weightedPodAffinity", pathPrefix, info, findings)
+		// A weighted term nests the selector under podAffinityTerm.
+		checkPodAffinityLabelSelector(term.PodAffinityTerm.LabelSelector, i, msgPrefix, base.Index(i).Child("podAffinityTerm"), info, findings)
 	}
 }
 
 // checkPodAffinityLabelSelector validates the label selector of the i-th
 // (weighted) pod affinity term. msgPrefix distinguishes the two callers in the
-// reported message ("podAffinity" vs "weightedPodAffinity").
-func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPrefix, pathPrefix string, info *runtime.PodSpecInfo, findings *[]runtime.Finding) {
+// reported message. termPath is the term's own path, so anti-affinity and
+// weighted terms report where they actually live rather than a
+// podAffinity path that does not exist in the manifest.
+func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPrefix string, termPath *field.Path, info *runtime.PodSpecInfo, findings *[]runtime.Finding) {
 	if selector == nil {
 		return
 	}
-	psPath := field.NewPath(info.PodSpecPath).Child("affinity").Child("podAffinity").Child(pathPrefix).Index(i).Child("labelSelector")
+	psPath := termPath.Child("labelSelector")
 	for j, expr := range selector.MatchExpressions {
 		if errs := validation.IsQualifiedName(expr.Key); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{

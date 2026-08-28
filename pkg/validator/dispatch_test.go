@@ -16,6 +16,9 @@ func TestQuickKind(t *testing.T) {
 		{"single quoted", "apiVersion: v1\nkind: 'Pod'\n", "Pod"},
 		{"trailing comment", "apiVersion: v1\nkind: Pod # the workload\n", "Pod"},
 		{"quoted with hash", "apiVersion: v1\nkind: \"Pod # not a comment\"\n", "Pod # not a comment"},
+		{"double quoted then comment", "apiVersion: v1\nkind: \"Pod\" # workload\n", "Pod"},
+		{"single quoted then comment", "apiVersion: v1\nkind: 'Pod'  # workload\n", "Pod"},
+		{"hash without leading space is not a comment", "apiVersion: v1\nkind: Pod#1\n", "Pod#1"},
 		{"extra whitespace", "apiVersion: v1\nkind:    Pod   \n", "Pod"},
 		{"absent", "apiVersion: v1\n", ""},
 	}
@@ -40,6 +43,7 @@ func TestQuickAPIVersion(t *testing.T) {
 		{"double quoted", "apiVersion: \"apps/v1\"\nkind: Deployment\n", "apps/v1"},
 		{"single quoted", "apiVersion: 'kyverno.io/v1'\nkind: Policy\n", "kyverno.io/v1"},
 		{"trailing comment", "apiVersion: apps/v1 # pinned\nkind: Deployment\n", "apps/v1"},
+		{"quoted then comment", "apiVersion: \"apps/v1\" # pinned\nkind: Deployment\n", "apps/v1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

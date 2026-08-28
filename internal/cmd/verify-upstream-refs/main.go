@@ -112,6 +112,30 @@ func main() {
 	}
 	sort.Strings(ids)
 
+	// Resolve every digest up front when updating, so a shared constant can
+	// be checked against all of its users rather than just the entry that
+	// happens to be written first. Fetches are cached, so this is cheap.
+	allDigests := map[string]string{}
+	if *update {
+		for _, id := range ids {
+			ref := refs[id]
+			src, err := f.get(ref.Path)
+			if err != nil {
+				continue
+			}
+			if d, err := upstreamref.Digest(src, ref.Functions); err == nil {
+				allDigests[id] = d
+			}
+		}
+	}
+	desiredFor = func(field, id string) (string, bool) {
+		if field == "ValidatedAt" {
+			return *tag, true
+		}
+		d, ok := allDigests[id]
+		return d, ok
+	}
+
 	for _, id := range ids {
 		ref := refs[id]
 
@@ -142,8 +166,12 @@ func main() {
 			if ref.ValidatedAt != *tag {
 				stale++
 				if *update {
-					if _, err := updateEntry(id, got, *tag); err != nil {
+					found, err := updateEntry(id, got, *tag)
+					if err != nil {
 						fatalf("update %s: %v", id, err)
+					}
+					if !found {
+						fatalf("update %s: no entry found in %s/**/upstream_refs.go", id, refsRoot)
 					}
 				}
 			}
@@ -281,6 +309,14 @@ const refsRoot = "pkg/validator/runtime/kubernetes"
 // the per-package upstream_refs.go tables. The entry is located by its check
 // ID key, so unrelated entries are never touched.
 //
+// Both fields may be written either as a string literal or as an identifier
+// referring to a package-level constant, and the tables use both forms: every
+// entry spells the tag `ValidatedAt: validatedAt`, and several share a digest
+// constant. An updater that only rewrote literals would silently do nothing
+// for the tag on every entry, and nothing for a shared digest - while still
+// reporting success. So an identifier is resolved to its declaration and the
+// constant is rewritten instead.
+//
 // Re-validation is deliberately a human step: --update records that a person
 // re-read the upstream function and confirmed the port is still faithful. The
 // tool only automates the bookkeeping, because a digest match proves upstream
@@ -308,13 +344,21 @@ func updateEntry(id, digest, tag string) (bool, error) {
 		}
 		entry := text[start : start+end]
 
-		replaced := digestLine.ReplaceAllString(entry, "Digest:      "+strconv.Quote(digest))
-		replaced = validatedLine.ReplaceAllString(replaced, "ValidatedAt: "+strconv.Quote(tag))
-		if replaced == entry {
-			return nil
+		newEntry, rest, err := setRefField(entry, text, "Digest", digest, id, path)
+		if err != nil {
+			return err
+		}
+		text = rest
+		newEntry, text, err = setRefField(newEntry, text, "ValidatedAt", tag, id, path)
+		if err != nil {
+			return err
 		}
 
-		out := text[:start] + replaced + text[start+end:]
+		// Re-locate the entry: rewriting a constant may have shifted it.
+		start = strings.Index(text, key)
+		end = strings.Index(text[start:], "\n\t},")
+		out := text[:start] + newEntry + text[start+end:]
+
 		if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
 			return err
 		}
@@ -324,10 +368,75 @@ func updateEntry(id, digest, tag string) (bool, error) {
 	return updated, err
 }
 
-var (
-	digestLine    = regexp.MustCompile(`Digest:\s*"[^"]*"`)
-	validatedLine = regexp.MustCompile(`ValidatedAt:\s*"[^"]*"`)
-)
+// desiredFor reports the value a check ID should end up with for the given
+// field, so a shared constant can be checked for agreement across all its
+// users before being rewritten. It is set by main once every digest for the
+// run is known.
+var desiredFor func(field, id string) (string, bool)
+
+// entriesReferencing returns the check IDs whose entry sets field to the
+// identifier name.
+func entriesReferencing(file, field, name string) []string {
+	var out []string
+	re := regexp.MustCompile(`"([^"]+)": \{(?s:.*?)` + field + `:\s*` + name + `\b`)
+	for _, m := range re.FindAllStringSubmatch(file, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+// setRefField sets one field of a ref entry to value. If the field holds a
+// string literal it is rewritten in place; if it holds an identifier, the
+// referenced constant declaration is rewritten instead.
+//
+// Rewriting a shared constant changes every entry using it, so a conflicting
+// value is reported rather than applied - silently restamping unrelated
+// checks would assert a human re-validated ports they never looked at.
+func setRefField(entry, file, field, value, id, path string) (string, string, error) {
+	lit := regexp.MustCompile(field + `:(\s*)"[^"]*"`)
+	if loc := lit.FindStringSubmatchIndex(entry); loc != nil {
+		pad := entry[loc[2]:loc[3]]
+		return entry[:loc[0]] + field + ":" + pad + strconv.Quote(value) + entry[loc[1]:], file, nil
+	}
+
+	ident := regexp.MustCompile(field + `:(\s*)([A-Za-z_][A-Za-z0-9_]*)`)
+	loc := ident.FindStringSubmatchIndex(entry)
+	if loc == nil {
+		return entry, file, fmt.Errorf("%s: entry %s has no %s field to update", path, id, field)
+	}
+	name := entry[loc[4]:loc[5]]
+
+	decl := regexp.MustCompile(`(?m)^(\s*(?:const\s+)?` + name + `\s*=\s*)"([^"]*)"`)
+	dloc := decl.FindStringSubmatchIndex(file)
+	if dloc == nil {
+		return entry, file, fmt.Errorf("%s: entry %s references %s %q, whose declaration could not be found",
+			path, id, field, name)
+	}
+	current := file[dloc[4]:dloc[5]]
+	if current == value {
+		return entry, file, nil
+	}
+
+	// A shared constant may only be rewritten when every entry using it
+	// wants the same new value. Otherwise the rewrite would restamp checks
+	// nobody re-validated, which is exactly the assertion --update exists
+	// to make honestly.
+	for _, other := range entriesReferencing(file, field, name) {
+		if other == id {
+			continue
+		}
+		want, ok := desiredFor(field, other)
+		if !ok {
+			return entry, file, fmt.Errorf("%s: entry %s wants %s %q, but that value lives in constant %q which entry %s also uses, and %s was not verified in this run", path, id, field, value, name, other, other)
+		}
+		if want != value {
+			return entry, file, fmt.Errorf("%s: entries %s and %s share constant %q but need different %s values (%q vs %q); give one of them its own value", path, id, other, name, field, value, want)
+		}
+	}
+
+	file = file[:dloc[3]] + strconv.Quote(value) + file[dloc[5]+1:]
+	return entry, file, nil
+}
 
 func short(digest string) string {
 	d := strings.TrimPrefix(digest, "sha256:")

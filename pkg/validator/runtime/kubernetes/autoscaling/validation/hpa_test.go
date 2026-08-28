@@ -126,3 +126,29 @@ func TestAllHPAChecksImplementCheckInterface(t *testing.T) {
 	var _ runtime.Check = newScaleDownInvalidCheck()
 	var _ runtime.Check = newScaleUpInvalidCheck()
 }
+
+// scaleUp and scaleDown are HPAScalingRules objects, so the finding must
+// point at spec.behavior.<direction>.stabilizationWindowSeconds. An indexed
+// path is not a field an HPA manifest has.
+func TestHPABehaviorFindingPathHasNoIndex(t *testing.T) {
+	for _, direction := range []string{"scaleUp", "scaleDown"} {
+		t.Run(direction, func(t *testing.T) {
+			data := []byte("apiVersion: autoscaling/v2\nkind: HorizontalPodAutoscaler\n" +
+				"metadata:\n  name: test\nspec:\n  maxReplicas: 5\n  behavior:\n    " +
+				direction + ":\n      stabilizationWindowSeconds: -1\n")
+
+			c := newScaleUpInvalidCheck().Run
+			if direction == "scaleDown" {
+				c = newScaleDownInvalidCheck().Run
+			}
+			got := c(data, "test.yaml")
+			if len(got) != 1 {
+				t.Fatalf("expected 1 finding, got %d: %v", len(got), got)
+			}
+			want := "spec.behavior." + direction + ".stabilizationWindowSeconds"
+			if got[0].Path != want {
+				t.Errorf("finding Path = %q, want %q", got[0].Path, want)
+			}
+		})
+	}
+}
