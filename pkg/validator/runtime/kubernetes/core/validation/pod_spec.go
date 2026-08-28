@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -121,9 +122,18 @@ func (c podSpecTolerationOperatorValueCheck) Run(data []byte, source string) []r
 		return nil
 	}
 
+	// Lt and Gt are accepted unconditionally. Upstream rejects them unless
+	// AllowTaintTolerationComparisonOperators is enabled, and this tool
+	// cannot see the target cluster's gates. Where a gate can only widen
+	// what the API server accepts, the permissive branch is the correct one
+	// to port: a finding here is blocking and non-exemptable, so rejecting
+	// a manifest that a gate-enabled cluster accepts is unrecoverable,
+	// while missing one it rejects is caught at apply time.
 	validOperators := map[corev1.TolerationOperator]bool{
 		corev1.TolerationOpExists: true,
 		corev1.TolerationOpEqual:  true,
+		corev1.TolerationOpLt:     true,
+		corev1.TolerationOpGt:     true,
 	}
 
 	var findings []runtime.Finding
@@ -137,7 +147,7 @@ func (c podSpecTolerationOperatorValueCheck) Run(data []byte, source string) []r
 			RuleTitle: c.Title(),
 			Finding: check.Finding{
 				Path:      field.NewPath(info.PodSpecPath).Child("tolerations").Index(i).Child("operator").String(),
-				Message:   fmt.Sprintf("toleration[%d]: operator: Unsupported value: %q: supported values: 'Exists', 'Equal'", i, string(op)),
+				Message:   fmt.Sprintf("toleration[%d]: operator: Unsupported value: %q: supported values: 'Equal', 'Exists', 'Lt', 'Gt'", i, string(op)),
 				Kind:      info.Kind,
 				Name:      info.Name,
 				Namespace: info.Namespace,
@@ -428,14 +438,17 @@ func (c podSpecActiveDeadlineSecondsNegativeCheck) Run(data []byte, source strin
 		return nil
 	}
 	ads := info.PodSpec.ActiveDeadlineSeconds
-	if ads == nil || *ads >= 1 {
+	// Upstream bounds this on both sides: 1 <= value <= MaxInt32. The field
+	// is an *int64, so the upper bound is reachable from a manifest and
+	// checking only the lower one accepts a value the API server rejects.
+	if ads == nil || (*ads >= 1 && *ads <= math.MaxInt32) {
 		return nil
 	}
 	return []runtime.Finding{{
 		RuleID: c.ID(), RuleTitle: c.Title(),
 		Finding: check.Finding{
 			Path:    field.NewPath(info.PodSpecPath).Child("activeDeadlineSeconds").String(),
-			Message: fmt.Sprintf("activeDeadlineSeconds: must be >= 1, got %d", *ads),
+			Message: fmt.Sprintf("activeDeadlineSeconds: must be between 1 and %d, inclusive, got %d", int64(math.MaxInt32), *ads),
 			Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: fmt.Sprintf("%d", *ads),
 		},
 	}}

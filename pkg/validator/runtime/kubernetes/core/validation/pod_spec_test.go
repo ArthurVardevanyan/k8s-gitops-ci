@@ -40,6 +40,12 @@ func runPodSpecCases(t *testing.T, run func([]byte, string) []runtime.Finding, c
 
 func TestPodSpecTolerationOperatorValue(t *testing.T) {
 	runPodSpecCases(t, newPodSpecTolerationOperatorValueCheck().Run, []podSpecCase{
+		// Lt and Gt are gated upstream and only rejected when the gate is
+		// off. The gate can only widen what the cluster accepts and this
+		// tool cannot see it, so the permissive branch is the one ported -
+		// blocking a valid manifest here is not suppressible.
+		{name: "Lt is accepted under a feature gate", spec: "  tolerations:\n  - key: k\n    operator: Lt\n    value: \"5\"\n", want: 0},
+		{name: "Gt is accepted under a feature gate", spec: "  tolerations:\n  - key: k\n    operator: Gt\n    value: \"5\"\n", want: 0},
 		{name: "Exists", spec: "  tolerations:\n  - key: node.kubernetes.io/not-ready\n    operator: Exists\n    effect: NoExecute\n", want: 0},
 		{name: "Equal", spec: "  tolerations:\n  - key: node.kubernetes.io/memory-pressure\n    operator: Equal\n    value: \"true\"\n    effect: NoSchedule\n", want: 0},
 		{name: "EmptyOperator", spec: "  tolerations:\n  - key: node.kubernetes.io/not-ready\n    effect: NoExecute\n", want: 0},
@@ -94,6 +100,10 @@ func TestPodSpecServiceAccountNameInvalid(t *testing.T) {
 
 func TestPodSpecActiveDeadlineSecondsNegative(t *testing.T) {
 	runPodSpecCases(t, newPodSpecActiveDeadlineSecondsNegativeCheck().Run, []podSpecCase{
+		// The field is an *int64 and upstream bounds it at MaxInt32, so the
+		// upper bound is reachable from a manifest.
+		{name: "above MaxInt32", spec: "  activeDeadlineSeconds: 2147483648\n", want: 1, contains: "between 1 and 2147483647"},
+		{name: "exactly MaxInt32", spec: "  activeDeadlineSeconds: 2147483647\n", want: 0},
 		{name: "Valid", spec: "  activeDeadlineSeconds: 60\n", want: 0},
 		{name: "Zero", spec: "  activeDeadlineSeconds: 0\n", want: 1},
 		{name: "Negative", spec: "  activeDeadlineSeconds: -1\n", want: 1},

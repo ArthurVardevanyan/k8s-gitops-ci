@@ -140,7 +140,10 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"ValidateTolerations"},
 		Digest:      "sha256:26ba60c837f145eb446ab5cc88f2f24e3ac93b913527369bebd1fa1a3752c9df",
 		ValidatedAt: validatedAt,
-		Note:        "Ports the operator supported-value branch only; the key/value/effect branches of the same function are not ported.",
+		Note: "Ports the operator supported-value branch only; the key/value/effect branches of the same function are not ported. " +
+			"Lt and Gt are accepted: upstream rejects them only when AllowTaintTolerationComparisonOperators is off, " +
+			"and a gate that widens what the API server accepts is ported on its permissive branch, since this tool " +
+			"cannot see the target cluster's gates and the finding would be non-exemptable.",
 	},
 	"pod-spec/affinity-node-selector-invalid": {
 		Path:        coreValidationPath,
@@ -175,7 +178,10 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"ValidatePodSpec"},
 		Digest:      "sha256:dc7bb989a2aa5e7bccc0b2dcef021764e0fc18f6f7e7338d223ded13048c307f",
 		ValidatedAt: validatedAt,
-		Note:        "Ports the activeDeadlineSeconds InclusiveRangeError(1, math.MaxInt32) branch in ValidatePodSpec. Only the lower bound is reported here; the upper bound is unreachable through int32 decoding.",
+		Note: "Ports the activeDeadlineSeconds InclusiveRangeError(1, math.MaxInt32) branch in ValidatePodSpec, " +
+			"both bounds. The note here previously claimed the upper bound was unreachable through int32 " +
+			"decoding; the field is an *int64, so a manifest can carry a value above MaxInt32 and the API " +
+			"server rejects it.",
 	},
 	"pod-spec/readiness-gate-invalid": {
 		Path:        coreValidationPath,

@@ -66,13 +66,21 @@ func (c storageVersionInvalidCheck) Run(data []byte, source string) []runtime.Fi
 		}
 	}
 
-	if storageCount == 0 && len(crd.Spec.Versions) > 0 {
+	// Upstream's condition is storageFlagCount != 1, with no guard on the
+	// list being non-empty: a CRD declaring no versions has no storage
+	// version either and is rejected for it. Requiring versions to be
+	// present here skipped exactly that shape.
+	if storageCount == 0 {
+		msg := "exactly one version must have storage=true"
+		if len(crd.Spec.Versions) == 0 {
+			msg = "exactly one version must have storage=true (spec.versions is empty)"
+		}
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
 			Finding: check.Finding{
 				Path:    field.NewPath("spec").Child("versions").String(),
-				Message: "exactly one version must have storage=true",
+				Message: msg,
 				Kind:    "CustomResourceDefinition",
 				Name:    crd.GetName(),
 			},

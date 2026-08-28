@@ -319,7 +319,7 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 // corresponds to a specific function in the API server rather than to this
 // tool's opinion. It is listed once per rule under the table instead of
 // repeated on every row, which keeps the rows narrow enough to read.
-func renderRuntimeSub(findings []check.Finding) (int, string) {
+func renderRuntimeSub(findings []check.Finding) (count int, body string) {
 	rows := dedupFindingsForTable(findings)
 
 	cell := func(s string) string {

@@ -59,14 +59,6 @@ func (c policyTypeInvalidCheck) Run(data []byte, source string) []runtime.Findin
 	return findings
 }
 
-// getIntValue extracts the integer value from an IntOrString, returning 0 if not an int.
-func getIntValue(v intstr.IntOrString) int32 {
-	if v.Type == intstr.Int {
-		return v.IntVal
-	}
-	return 0
-}
-
 // portRangeInvalidCheck validates that port range end is >= start.
 // Source: k8s.io/kubernetes/pkg/apis/networking/validation/validation.go
 type portRangeInvalidCheck struct{ runtime.Meta }
@@ -90,31 +82,33 @@ func (c portRangeInvalidCheck) Run(data []byte, source string) []runtime.Finding
 	validatePortRanges := func(ports []networkingv1.NetworkPolicyPort, pathPrefix *field.Path) {
 		for i, port := range ports {
 			portPath := pathPrefix.Child("ports").Index(i)
-			if port.Port != nil && port.EndPort != nil {
-				portInt := getIntValue(*port.Port)
-				if *port.EndPort < int32(portInt) {
-					findings = append(findings, runtime.Finding{
-						RuleID:    c.ID(),
-						RuleTitle: c.Title(),
-						Finding: check.Finding{
-							Path:    portPath.Child("endPort").String(),
-							Message: fmt.Sprintf("port range end must be >= start: endPort %d < port %d", *port.EndPort, portInt),
-							Kind:    "NetworkPolicy",
-							Name:    np.GetName(),
-						},
-					})
-				}
-			} else if port.EndPort != nil {
+			report := func(msg string) {
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
 					Finding: check.Finding{
 						Path:    portPath.Child("endPort").String(),
-						Message: "port range end must be >= start: endPort requires port to be specified",
+						Message: msg,
 						Kind:    "NetworkPolicy",
 						Name:    np.GetName(),
 					},
 				})
+			}
+
+			if port.EndPort == nil {
+				continue
+			}
+			switch {
+			case port.Port == nil:
+				report("endPort may not be specified when port is not specified")
+			case port.Port.Type != intstr.Int:
+				// A named port has no numeric value to bound, so upstream
+				// rejects the pairing outright. Coercing the name to an
+				// int instead read it as port 0, which any positive
+				// endPort clears, so this shape was silently accepted.
+				report(fmt.Sprintf("endPort may not be specified when port is non-numeric (port %q)", port.Port.StrVal))
+			case *port.EndPort < port.Port.IntVal:
+				report(fmt.Sprintf("port range end must be >= start: endPort %d < port %d", *port.EndPort, port.Port.IntVal))
 			}
 		}
 	}
