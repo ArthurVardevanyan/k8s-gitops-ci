@@ -21,6 +21,26 @@ func TestQuickKind(t *testing.T) {
 		{"hash without leading space is not a comment", "apiVersion: v1\nkind: Pod#1\n", "Pod#1"},
 		{"extra whitespace", "apiVersion: v1\nkind:    Pod   \n", "Pod"},
 		{"absent", "apiVersion: v1\n", ""},
+		// A nested kind must not win. Trimming each line before matching
+		// made roleRef.kind indistinguishable from the document's own, so
+		// this RoleBinding dispatched as a ClusterRole and every
+		// RoleBinding rule was skipped without a trace.
+		{
+			"nested kind above the root kind",
+			"apiVersion: rbac.authorization.k8s.io/v1\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: ClusterRole\n  name: admin\nkind: RoleBinding\nmetadata:\n  name: rb\n",
+			"RoleBinding",
+		},
+		{
+			"nested kind in a list entry above the root kind",
+			"apiVersion: v1\nsubjects:\n  - kind: ServiceAccount\n    name: sa\nkind: RoleBinding\n",
+			"RoleBinding",
+		},
+		// Escapes are part of the value, not decoration around it.
+		{"escaped scalar", "apiVersion: v1\nkind: \"P\\u006fd\"\n", "Pod"},
+		{"flow mapping", "{apiVersion: v1, kind: Pod}\n", "Pod"},
+		{"kind is not a string", "apiVersion: v1\nkind: ~\n", ""},
+		{"unparseable input falls back to a root-level scan", "kind: Pod\n  bad: [\n", "Pod"},
+		{"unparseable input ignores an indented kind", "spec:\n  kind: ClusterRole\n  bad: [\n", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

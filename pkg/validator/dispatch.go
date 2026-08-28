@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+
+	"sigs.k8s.io/yaml"
 )
 
 // normalizeScalar cleans a raw YAML scalar taken from a `key: value` header
@@ -49,35 +51,54 @@ func normalizeScalar(s string) string {
 	return s
 }
 
-// quickKind extracts kind from a YAML document header with minimal parsing.
+// quickKind extracts the document's root-level kind.
 func quickKind(data []byte) string {
-	for _, line := range bytes.Split(data, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		if bytes.HasPrefix(line, []byte("-")) || bytes.HasPrefix(line, []byte("---")) {
-			continue
-		}
-		if bytes.HasPrefix(line, []byte("kind:")) {
-			return normalizeScalar(string(bytes.TrimPrefix(line, []byte("kind:"))))
-		}
-	}
-	return ""
+	return rootScalar(data, "kind")
 }
 
-// quickAPIVersion extracts apiVersion from a YAML document header.
+// quickAPIVersion extracts the document's root-level apiVersion.
 func quickAPIVersion(data []byte) string {
+	return rootScalar(data, "apiVersion")
+}
+
+// rootScalar returns the value of a root-level string field.
+//
+// This drives dispatch, so an answer that is merely close is worse than no
+// answer: naming a kind no check claims silently skips every rule for the
+// document, and because runtime findings are non-exemptable there is nothing
+// downstream to notice the absence.
+//
+// A line scan cannot do this correctly. Trimming each line before testing it
+// makes a nested key indistinguishable from a root one, so a RoleBinding
+// whose roleRef.kind appears above its own kind dispatches as a ClusterRole,
+// and every RoleBinding rule is skipped. A scan also leaves escapes encoded,
+// so kind: "P\u006fd" matches nothing. The parser has none of these problems,
+// and the document is parsed again by every check that runs against it, so
+// one more parse is not what makes dispatch expensive.
+func rootScalar(data []byte, key string) string {
+	var root map[string]interface{}
+	if err := yaml.Unmarshal(data, &root); err == nil {
+		s, _ := root[key].(string)
+		return s
+	}
+	// The parser rejected the document. It is not a manifest any check can
+	// act on, but the caller still wants a best-effort label for it, and a
+	// root-level key is the only one worth guessing at.
+	return scanRootScalar(data, key)
+}
+
+// scanRootScalar looks for an unindented "key:" line, used only for input the
+// YAML parser rejected.
+func scanRootScalar(data []byte, key string) string {
+	prefix := []byte(key + ":")
 	for _, line := range bytes.Split(data, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
+		// Only column zero: an indented match is a nested field, which is
+		// the thing that made the previous implementation wrong.
+		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' || line[0] == '#' || line[0] == '-' {
 			continue
 		}
-		if bytes.HasPrefix(line, []byte("-")) || bytes.HasPrefix(line, []byte("---")) {
-			continue
-		}
-		if bytes.HasPrefix(line, []byte("apiVersion:")) {
-			return normalizeScalar(string(bytes.TrimPrefix(line, []byte("apiVersion:"))))
+		if bytes.HasPrefix(line, prefix) {
+			return normalizeScalar(string(bytes.TrimPrefix(line, prefix)))
 		}
 	}
 	return ""

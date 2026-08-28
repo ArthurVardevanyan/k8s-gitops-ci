@@ -49,13 +49,15 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 
 	"container/duplicate-container-names": {
 		Path:        coreValidationPath,
-		Functions:   []string{"validateContainers"},
-		Digest:      "sha256:a27afba15f49a693820862049de0c5e4f40381f6de3e388649343b32b5a3c924",
+		Functions:   []string{"validateContainers", "validateInitContainers", "validateEphemeralContainers"},
+		Digest:      "sha256:0388d1b9a2f1c4dab3ad95caeb848678dbf10a4c750ac7a63071a7fe36093464",
 		ValidatedAt: validatedAt,
 		Note: "Ports the allNames/field.Duplicate branch. Upstream splits regular, init " +
 			"and ephemeral containers across validateContainers, validateInitContainers " +
 			"and validateEphemeralContainers to avoid duplicate messages; this check " +
-			"walks all container lists at once and reports each colliding name once.",
+			"walks all container lists at once and reports each colliding name once. " +
+			"All three are cited because the rule is ported from all three: citing only " +
+			"validateContainers left changes to the init and ephemeral branches invisible.",
 	},
 	"container/duplicate-port-names": {
 		Path:        coreValidationPath,

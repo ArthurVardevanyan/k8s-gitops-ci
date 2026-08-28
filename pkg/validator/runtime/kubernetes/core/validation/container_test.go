@@ -124,3 +124,36 @@ func TestVolumeMountNameUndefinedAcceptsClaimTemplates(t *testing.T) {
 		t.Errorf("finding does not name the undefined mount: %s", got[0].Message)
 	}
 }
+
+// TestContainerRulesCoverEphemeralContainers pins that the shared traversal
+// reaches all three container lists.
+//
+// Upstream runs validateContainerCommon over ephemeral containers too and
+// requires their names to be unique against both other lists. Walking only
+// spec.containers and spec.initContainers silently exempted anything
+// declared in spec.ephemeralContainers, which for a non-exemptable family
+// is the wrong direction to be wrong in.
+func TestContainerRulesCoverEphemeralContainers(t *testing.T) {
+	const doc = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: test\nspec:\n" +
+		"  containers:\n    - name: app\n      image: nginx\n" +
+		"  initContainers:\n    - name: setup\n      image: busybox\n" +
+		"  ephemeralContainers:\n    - name: app\n      image: debug\n" +
+		"      imagePullPolicy: Bogus\n"
+
+	t.Run("container rules apply", func(t *testing.T) {
+		got := newImagePullPolicyCheck().Run([]byte(doc), "test.yaml")
+		if len(got) != 1 {
+			t.Fatalf("got %d finding(s), want 1: %v", len(got), got)
+		}
+		if !strings.Contains(got[0].Path, "ephemeralContainers") {
+			t.Errorf("finding path %q does not point at spec.ephemeralContainers", got[0].Path)
+		}
+	})
+
+	t.Run("names collide across lists", func(t *testing.T) {
+		got := newDuplicateContainerNamesCheck().Run([]byte(doc), "test.yaml")
+		if len(got) != 1 {
+			t.Fatalf("an ephemeral container reusing a container name reported %d finding(s), want 1: %v", len(got), got)
+		}
+	})
+}

@@ -15,11 +15,22 @@ type ContainerWithPath struct {
 	Container corev1.Container
 	Path      *field.Path
 	IsInit    bool
+	// IsEphemeral marks a container from spec.ephemeralContainers. Upstream
+	// validates these with the same validateContainerCommon as the other
+	// two lists and requires their names to be unique across all three.
+	IsEphemeral bool
 }
 
-// AllContainers builds the full container list (regular + init) with path context.
+// AllContainers builds the full container list (regular + init + ephemeral)
+// with path context.
+//
+// All three lists are included because upstream validates all three: a rule
+// applied only to spec.containers silently exempts whatever is declared in
+// the other lists, which is the opposite of what a non-exemptable family
+// should do.
 func AllContainers(info *PodSpecInfo) []ContainerWithPath {
-	out := make([]ContainerWithPath, 0, len(info.Containers)+len(info.InitContainers))
+	out := make([]ContainerWithPath, 0,
+		len(info.Containers)+len(info.InitContainers)+len(info.EphemeralContainers))
 	for i := range info.Containers {
 		out = append(out, ContainerWithPath{
 			Container: info.Containers[i],
@@ -32,6 +43,13 @@ func AllContainers(info *PodSpecInfo) []ContainerWithPath {
 			Container: info.InitContainers[i],
 			Path:      field.NewPath(info.InitContainersPath).Key(info.InitContainers[i].Name),
 			IsInit:    true,
+		})
+	}
+	for i := range info.EphemeralContainers {
+		out = append(out, ContainerWithPath{
+			Container:   info.EphemeralContainers[i],
+			Path:        field.NewPath(info.EphemeralContainersPath).Key(info.EphemeralContainers[i].Name),
+			IsEphemeral: true,
 		})
 	}
 	return out
@@ -48,6 +66,11 @@ type PodSpecInfo struct {
 	PodSecurityContext *corev1.PodSecurityContext
 	Containers         []corev1.Container
 	InitContainers     []corev1.Container
+	// EphemeralContainers holds spec.ephemeralContainers as plain
+	// Containers. The upstream type embeds EphemeralContainerCommon, which
+	// is field-for-field the same as Container apart from the fields
+	// ephemeral containers may not set, so the shared rules apply unchanged.
+	EphemeralContainers []corev1.Container
 	// PodSpecPath is the dotted path to the PodSpec within the document
 	// ("spec" for a Pod, "spec.template.spec" for a controller,
 	// "spec.jobTemplate.spec.template.spec" for a CronJob).
@@ -57,9 +80,10 @@ type PodSpecInfo struct {
 	// that points at spec.volumes sends the reader to a field that does not
 	// exist in their manifest. ContainersPath and InitContainersPath are
 	// derived from it so the three cannot drift apart.
-	PodSpecPath        string
-	ContainersPath     string
-	InitContainersPath string
+	PodSpecPath             string
+	ContainersPath          string
+	InitContainersPath      string
+	EphemeralContainersPath string
 }
 
 // VolumesPath returns the dotted path to the pod spec's volumes list for the
@@ -105,6 +129,7 @@ func ExtractPodSpecInfo(data []byte, source string) (*PodSpecInfo, error) {
 	}
 	info.ContainersPath = info.PodSpecPath + ".containers"
 	info.InitContainersPath = info.PodSpecPath + ".initContainers"
+	info.EphemeralContainersPath = info.PodSpecPath + ".ephemeralContainers"
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract pod spec for %s %s: %w", kind, info.Name, err)
@@ -117,6 +142,10 @@ func ExtractPodSpecInfo(data []byte, source string) (*PodSpecInfo, error) {
 	info.PodSpec = *podSpec
 	info.Containers = podSpec.Containers
 	info.InitContainers = podSpec.InitContainers
+	for i := range podSpec.EphemeralContainers {
+		info.EphemeralContainers = append(info.EphemeralContainers,
+			corev1.Container(podSpec.EphemeralContainers[i].EphemeralContainerCommon))
+	}
 	info.PodSecurityContext = podSpec.SecurityContext
 
 	if kind == "StatefulSet" {
