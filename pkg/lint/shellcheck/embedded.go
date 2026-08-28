@@ -78,8 +78,8 @@ func extractEmbeddedFromBytes(data []byte, path string) ([]EmbeddedScript, error
 // podSpecNode returns the pod spec node for kind. CronJob nests its pod
 // spec three levels deeper than every other workload kind
 // (spec.jobTemplate.spec.template.spec, not spec.template.spec) - this is
-// the same convention already duplicated in pkg/validator/namedport and
-// pkg/validator/podspec.
+// the same convention already duplicated in pkg/validator/static/namedport and
+// pkg/validator/static/podspec.
 func podSpecNode(mapping *yaml.Node, kind string) *yaml.Node {
 	if kind == "CronJob" {
 		return getNodeAtPath(mapping, "spec.jobTemplate.spec.template.spec")

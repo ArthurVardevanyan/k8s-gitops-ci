@@ -9,7 +9,6 @@
 package static
 
 import (
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
 )
@@ -36,19 +35,3 @@ func RegisterAll() {
 // CheckOverlay), which is the correct default for a generic run with no
 // org cluster-identity metadata configured.
 var ClusterIndexProvider func() clusterid.ClusterIndex
-
-// ConfigureClusterIdentityFromProviders wires opts.Providers.ProjectIdentity()
-// into ClusterIndexProvider for the duration of this run.
-func ConfigureClusterIdentityFromProviders(p provider.Providers) {
-	projectIdx, knownClusters, ok, err := p.ProjectIdentity()
-	if !ok || err != nil {
-		ClusterIndexProvider = nil
-		return
-	}
-	idx := clusterid.ClusterIndex{
-		IDToCluster:     projectIdx.IDToCluster,
-		NumberToCluster: projectIdx.NumberToCluster,
-		KnownClusters:   knownClusters,
-	}
-	ClusterIndexProvider = func() clusterid.ClusterIndex { return idx }
-}

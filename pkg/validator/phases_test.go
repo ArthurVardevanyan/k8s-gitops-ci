@@ -667,13 +667,13 @@ func TestExcludeInvalidTestdata(t *testing.T) {
 	in := []string{
 		"pkg/overlay/overlay.go",
 		"pkg/lint/shellcheck/testdata/invalid/cronjob-bash.yaml",
-		"pkg/validator/static/syncopts/testdata/malformed.yaml", // good/top-level fixture, kept
+		"pkg/validator/static/syncopts/testdata/builtin.yaml", // good/top-level fixture, kept
 		"app/overlays/dev/kustomization.yaml",
 	}
 	got := excludeInvalidTestdata(in)
 	want := []string{
 		"pkg/overlay/overlay.go",
-		"pkg/validator/static/syncopts/testdata/malformed.yaml",
+		"pkg/validator/static/syncopts/testdata/builtin.yaml",
 		"app/overlays/dev/kustomization.yaml",
 	}
 	if len(got) != len(want) {
