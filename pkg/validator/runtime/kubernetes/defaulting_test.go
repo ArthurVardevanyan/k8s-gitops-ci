@@ -42,47 +42,59 @@ import (
 func TestExplicitlyEmptyDefaultedFields(t *testing.T) {
 	cases := []struct {
 		file string
+		// kind is the fixture's root kind, declared rather than parsed out of
+		// the document. The engine filters checks by kind before running them
+		// (see evaluateDoc), and a test that skips that filter observes
+		// cross-kind leakage that cannot happen in production - a check whose
+		// Run does not re-guard on kind will happily read a structurally
+		// similar spec belonging to another kind.
+		kind string
 		// want is the set of rule IDs that must fire, and exactly those.
 		// Empty means every defaulted field of this kind is value-typed and
 		// the manifest must be accepted whole.
 		want []string
 		why  string
 	}{
-		{file: "pod.yaml", why: "restartPolicy, dnsPolicy, schedulerName, serviceAccountName, imagePullPolicy, terminationMessagePath/Policy are all value-typed"},
-		{file: "sts.yaml", why: "podManagementPolicy and updateStrategy.type are value-typed (len()==0 / ==\"\" guards in SetDefaults_StatefulSet)"},
-		{file: "deploy.yaml", why: "strategy.type is value-typed"},
-		{file: "ds.yaml", why: "updateStrategy.type is value-typed"},
-		{file: "svc.yaml", why: "type and sessionAffinity are value-typed"},
-		{file: "job.yaml", why: "completionMode and podReplacementPolicy are pointer-typed but unchecked"},
-		{file: "cronjob.yaml", why: "concurrencyPolicy is value-typed"},
-		{file: "hpa.yaml", why: "minReplicas is pointer-typed and absent, not empty"},
-		{file: "csidriver.yaml", why: "volumeLifecycleModes is value-typed (len()==0)"},
-		{file: "rb.yaml", why: "SetDefaults_RoleBinding guards roleRef.apiGroup on len()==0"},
-		{file: "crb.yaml", why: "SetDefaults_ClusterRoleBinding guards roleRef.apiGroup on len()==0"},
+		{file: "pod.yaml", kind: "Pod", why: "restartPolicy, dnsPolicy, schedulerName, serviceAccountName, imagePullPolicy, terminationMessagePath/Policy are all value-typed"},
+		{file: "sts.yaml", kind: "StatefulSet", why: "podManagementPolicy and updateStrategy.type are value-typed (len()==0 / ==\"\" guards in SetDefaults_StatefulSet)"},
+		{file: "deploy.yaml", kind: "Deployment", why: "strategy.type is value-typed"},
+		{file: "ds.yaml", kind: "DaemonSet", why: "updateStrategy.type is value-typed"},
+		{file: "svc.yaml", kind: "Service", why: "type and sessionAffinity are value-typed"},
+		{file: "job.yaml", kind: "Job", why: "completionMode and podReplacementPolicy are pointer-typed but unchecked"},
+		{file: "cronjob.yaml", kind: "CronJob", why: "concurrencyPolicy is value-typed"},
+		{file: "hpa.yaml", kind: "HorizontalPodAutoscaler", why: "minReplicas is pointer-typed and absent, not empty"},
+		{file: "csidriver.yaml", kind: "CSIDriver", why: "volumeLifecycleModes is value-typed (len()==0)"},
+		{file: "rb.yaml", kind: "RoleBinding", why: "SetDefaults_RoleBinding guards roleRef.apiGroup on len()==0"},
+		{file: "crb.yaml", kind: "ClusterRoleBinding", why: "SetDefaults_ClusterRoleBinding guards roleRef.apiGroup on len()==0"},
 
 		// Pointer-typed: the API server rejects these, so the checks must fire.
 		{
 			file: "netpol.yaml",
+			kind: "NetworkPolicy",
 			want: []string{"network-policy/protocol-invalid"},
 			why:  "SetDefaults_NetworkPolicyPort guards Protocol on == nil",
 		},
 		{
 			file: "pv.yaml",
-			want: []string{"persistent-volume-claim/volume-mode-invalid"},
+			kind: "PersistentVolume",
+			want: []string{"persistent-volume/volume-mode-invalid"},
 			why:  "SetDefaults_PersistentVolume guards VolumeMode on == nil",
 		},
 		{
 			file: "pvc.yaml",
+			kind: "PersistentVolumeClaim",
 			want: []string{"persistent-volume-claim/volume-mode-invalid"},
 			why:  "SetDefaults_PersistentVolumeClaimSpec guards VolumeMode on == nil",
 		},
 		{
 			file: "sc.yaml",
+			kind: "StorageClass",
 			want: []string{"storage-class/reclaim-policy-invalid", "storage-class/volume-binding-mode-invalid"},
 			why:  "SetDefaults_StorageClass guards both on == nil",
 		},
 		{
 			file: "vwc.yaml",
+			kind: "ValidatingWebhookConfiguration",
 			want: []string{"admissionregistration/validating-failure-policy-invalid"},
 			why:  "SetDefaults_ValidatingWebhook guards FailurePolicy on == nil",
 		},
@@ -96,24 +108,7 @@ func TestExplicitlyEmptyDefaultedFields(t *testing.T) {
 				t.Fatalf("read %s: %v", path, err)
 			}
 
-			var got []string
-			for _, c := range check.All() {
-				if c.Section() != "runtime-validation" {
-					continue
-				}
-				dc, ok := c.(interface {
-					CheckDoc(data []byte, source string) []check.Finding
-				})
-				if !ok {
-					continue
-				}
-				for _, f := range dc.CheckDoc(data, tc.file) {
-					got = append(got, f.CheckID)
-				}
-			}
-			sort.Strings(got)
-			got = dedupeStrings(got)
-
+			got := runtimeFindingsForKind(t, data, tc.kind, tc.file)
 			want := append([]string(nil), tc.want...)
 			sort.Strings(want)
 
@@ -133,4 +128,45 @@ func dedupeStrings(in []string) []string {
 		}
 	}
 	return out
+}
+
+// runtimeFindingsForKind runs every registered runtime check that the engine
+// would dispatch for kind, and returns the rule IDs that fired, sorted and
+// deduplicated.
+//
+// The kind filter is the part that matters. evaluateDoc in pkg/validator
+// consults check.DocSkipper before calling CheckDoc, and most runtime checks
+// rely on that entirely rather than re-checking the kind themselves - reading
+// a typed struct out of the document is enough once dispatch guarantees the
+// kind. A test that calls CheckDoc directly drops that guarantee and sees
+// findings production cannot produce: the PersistentVolumeClaim volume-mode
+// rule, for instance, will happily decode a PersistentVolume, whose spec has
+// an identically-shaped volumeMode field.
+func runtimeFindingsForKind(t *testing.T, doc []byte, kind, source string) []string {
+	t.Helper()
+
+	var got []string
+	for _, c := range check.All() {
+		if c.Section() != "runtime-validation" {
+			continue
+		}
+		skipper, ok := c.(interface{ SkipDoc(string) bool })
+		if !ok {
+			t.Fatalf("check %q does not implement SkipDoc, so the dispatcher cannot filter it", c.ID())
+		}
+		if skipper.SkipDoc(kind) {
+			continue
+		}
+		dc, ok := c.(interface {
+			CheckDoc(data []byte, source string) []check.Finding
+		})
+		if !ok {
+			t.Fatalf("check %q is not a DocCheck", c.ID())
+		}
+		for _, f := range dc.CheckDoc(doc, source) {
+			got = append(got, f.CheckID)
+		}
+	}
+	sort.Strings(got)
+	return dedupeStrings(got)
 }

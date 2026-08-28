@@ -60,9 +60,15 @@ spec:
 
 	for kind, manifest := range manifests {
 		t.Run(kind, func(t *testing.T) {
+			// Filtered by kind exactly as the engine does, so this asserts
+			// on the findings a real run would report and no others.
 			var total int
 			for _, c := range check.All() {
 				if c.Section() != "runtime-validation" {
+					continue
+				}
+				skipper, ok := c.(interface{ SkipDoc(string) bool })
+				if !ok || skipper.SkipDoc(kind) {
 					continue
 				}
 				dc, ok := c.(interface {

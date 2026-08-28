@@ -32,6 +32,7 @@ package map; this is the detailed, step-by-step reference.
       - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
         - [Every check must cite a verifiable upstream function](#every-check-must-cite-a-verifiable-upstream-function)
         - [Version skew and feature gates (known limitation)](#version-skew-and-feature-gates-known-limitation)
+        - [Dispatch owns kind filtering](#dispatch-owns-kind-filtering)
         - [Object name validation](#object-name-validation)
         - [Known gaps: upstream rules not yet ported](#known-gaps-upstream-rules-not-yet-ported)
         - [Deferred: policy-style checks removed from this family](#deferred-policy-style-checks-removed-from-this-family)
@@ -1047,6 +1048,31 @@ The remaining checks group by API group:
 IDs (`<category>/<rule>`, e.g. `apps/daemonset-min-ready-seconds-invalid`)
 are declared next to the rules they enforce, and this table is a map, not
 an inventory.
+
+##### Dispatch owns kind filtering
+
+A runtime check declares the kinds it applies to, and the engine filters on
+that before running it: `evaluateDoc` reads the document's kind once and skips
+any check whose `SkipDoc` rejects it. Most checks therefore do **not** re-check
+the kind inside `Run` — 55 of them decode a typed struct and read a field,
+which is sufficient once dispatch has guaranteed the kind. That is the design,
+not an oversight, and it is what lets the pod-spec and container rules serve a
+dozen workload kinds from one implementation.
+
+The consequence is a trap for tests. A test that calls `CheckDoc` directly,
+without consulting `SkipDoc` first, drops the guarantee the checks are written
+against and will observe findings production cannot produce — any two kinds
+with a structurally similar spec leak into each other. `PersistentVolume` and
+`PersistentVolumeClaim` both have `spec.volumeMode`, so the claim rule decodes
+a volume quite happily; a fixture test asserting on that finding looked like
+coverage and was measuring a leak.
+
+Tests that assert **what the engine would report** must filter by kind the way
+`evaluateDoc` does; `runtimeFindingsForKind` in `defaulting_test.go` is the
+helper for that. Tests that deliberately probe `Run` in isolation —
+`TestChecksIgnoreMalformedInput` and `TestChecksIgnoreKindsTheyDoNotDeclare` —
+bypass dispatch on purpose, because robustness of the individual function is
+exactly what they are checking.
 
 ##### Object name validation
 
