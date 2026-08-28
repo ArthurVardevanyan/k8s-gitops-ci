@@ -189,3 +189,48 @@ func TestRuntimeFindingsCarryTheirCategory(t *testing.T) {
 		}
 	}
 }
+
+// TestRuntimeSectionRendersRuleAndCitation guards the reporting half of the
+// family's claim.
+//
+// The section is grouped by category, which has no TableSpec, so the generic
+// compliance renderer fell through to a File/Message table: the resource, the
+// field path, the rule that fired and the upstream citation were all dropped,
+// and identical findings from two overlays were printed twice. A citation
+// that never reaches the report is not a citation.
+func TestRuntimeSectionRendersRuleAndCitation(t *testing.T) {
+	mk := func(file string) check.Finding {
+		return runtimepkg.Finding{
+			RuleID:    "batch/schedule-invalid",
+			RuleTitle: "CronJob Schedule Must Be Valid",
+			Finding: check.Finding{
+				File:    file,
+				Kind:    "CronJob",
+				Name:    "nightly",
+				Path:    "spec.schedule",
+				Message: "schedule: invalid cron expression",
+			},
+		}.ToCheckFinding()
+	}
+
+	sec := ComposeRuntimeValidationSection([]check.Finding{mk("a.yaml")})
+
+	for _, want := range []string{
+		"batch/schedule-invalid",    // which rule fired
+		"CronJob/nightly",           // which resource
+		"spec.schedule",             // which field
+		"pkg/apis/batch/validation", // the upstream citation
+		"invalid cron expression",   // the message
+	} {
+		if !strings.Contains(sec.Body, want) {
+			t.Errorf("section body omits %q:\n%s", want, sec.Body)
+		}
+	}
+
+	// The same finding reaching the report from two rendered overlays is one
+	// problem, not two.
+	dup := ComposeRuntimeValidationSection([]check.Finding{mk("a.yaml"), mk("a.yaml")})
+	if n := strings.Count(dup.Body, "invalid cron expression"); n != 1 {
+		t.Errorf("an identical finding rendered %d times, want 1:\n%s", n, dup.Body)
+	}
+}

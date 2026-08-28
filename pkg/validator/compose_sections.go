@@ -297,13 +297,71 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 	for _, id := range orderedComplianceIDs(byCheck) {
 		findings := byCheck[id]
 		icon := "❌"
-		count, body := renderComplianceSub(id, findings, true, nil)
+		count, body := renderRuntimeSub(findings)
 		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, complianceTitle(id), count)
 		b.WriteString(body)
 		b.WriteString("\n</details>\n\n")
 	}
 
 	return ReportSection{Name: "Runtime Validation", Body: b.String(), Status: StatusError}
+}
+
+// renderRuntimeSub renders one category's runtime findings.
+//
+// The generic compliance renderer cannot be reused here. It looks up a
+// TableSpec by the sub-section's ID, and these are grouped by category, which
+// has no spec - so it fell back to a File/Message table that dropped the
+// resource, the field path, the rule that fired and the upstream citation,
+// and skipped deduplication, printing the same finding once per overlay it
+// was rendered from.
+//
+// The citation is the whole claim this family makes: that a finding
+// corresponds to a specific function in the API server rather than to this
+// tool's opinion. It is listed once per rule under the table instead of
+// repeated on every row, which keeps the rows narrow enough to read.
+func renderRuntimeSub(findings []check.Finding) (int, string) {
+	rows := dedupFindingsForTable(findings)
+
+	cell := func(s string) string {
+		if s == "" {
+			return "—"
+		}
+		return strings.ReplaceAll(s, "|", "\\|")
+	}
+
+	var b strings.Builder
+	b.WriteString("| Rule | Resource | File | Field | Message |\n| --- | --- | --- | --- | --- |\n")
+
+	refs := map[string]string{}
+	order := []string{}
+	for _, f := range rows {
+		resource := f.Kind
+		if f.Name != "" {
+			resource += "/" + f.Name
+		}
+		rule := f.Extra["ruleId"]
+		if rule == "" {
+			rule = f.CheckID
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n",
+			cell(rule), cell(resource), cell(f.File), cell(f.Path), cell(f.Message))
+
+		if ref := f.Extra["upstreamRef"]; ref != "" {
+			if _, seen := refs[rule]; !seen {
+				order = append(order, rule)
+			}
+			refs[rule] = ref
+		}
+	}
+
+	if len(order) > 0 {
+		b.WriteString("\nUpstream Kubernetes validation these rules are ported from:\n\n")
+		for _, rule := range order {
+			fmt.Fprintf(&b, "- `%s` — `%s`\n", rule, refs[rule])
+		}
+	}
+
+	return len(rows), b.String()
 }
 
 // ComposeResourceComplianceSection renders resource-compliance findings
