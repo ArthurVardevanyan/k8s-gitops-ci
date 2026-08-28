@@ -891,6 +891,21 @@ prefix by `runtime.CategoryOf`, so there is no second copy of either to
 fall out of step. Build findings with `runtime.NewFinding(c, ...)`,
 which attaches the rule and citation metadata reporting depends on.
 
+Adding or renaming a check changes its identity, which is pinned by a
+golden file listing every registered rule ID, title and applies-to list.
+Regenerate it in the same commit:
+
+```sh
+go test ./pkg/validator/runtime/kubernetes/ -update-checks
+```
+
+The diff is the review surface for the change: a new check is one added
+line, and a rename that was not intended shows up as a deletion next to
+an insertion. Behavior that is identical across the whole family —
+blocking, non-exemptable, render-sensitive, parsing and kind filtering —
+is asserted for every registered check rather than recorded per check,
+so a new check inherits those tests without adding any.
+
 A digest covers only the bodies of the functions named in `Functions`. When
 a cited function **delegates** part of its work to a helper in another file,
 a change confined to that helper leaves the caller's digest unchanged, so
