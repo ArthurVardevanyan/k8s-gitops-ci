@@ -77,17 +77,21 @@ func (c duplicateVolumeNamesCheck) Run(data []byte, source string) []runtime.Fin
 	return findings
 }
 
-// Check 6: secret-not-found
-// Secret volume must reference a valid (non-empty) secretName.
+// Check 6: secret-name-required
+// A secret volume must set a non-empty secretName. This is the upstream
+// field.Required rule, NOT an existence check: whether the Secret exists in
+// the cluster cannot be determined from a manifest, and must not be inferred
+// here, since a Secret is frequently created by a separate controller or
+// secret manager rather than by the commit under review.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type secretVolumeCheck struct{}
 
 func (c secretVolumeCheck) ID() string {
-	return "volume/secret-not-found"
+	return "volume/secret-name-required"
 }
 
 func (c secretVolumeCheck) Title() string {
-	return "Secret Volume Must Have Valid Secret Name"
+	return "Secret Volume Must Set secretName"
 }
 
 func (c secretVolumeCheck) Category() string {
@@ -161,17 +165,18 @@ func volumeReferenceNameFindings(
 	return findings
 }
 
-// Check 7: configmap-not-found
-// ConfigMap volume must reference a valid (non-empty) name.
+// Check 7: configmap-name-required
+// A configMap volume must set a non-empty name. As with secret-name-required
+// this is the upstream field.Required rule, not an existence check.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 type configmapVolumeCheck struct{}
 
 func (c configmapVolumeCheck) ID() string {
-	return "volume/configmap-not-found"
+	return "volume/configmap-name-required"
 }
 
 func (c configmapVolumeCheck) Title() string {
-	return "ConfigMap Volume Must Have Valid Name"
+	return "ConfigMap Volume Must Set name"
 }
 
 func (c configmapVolumeCheck) Category() string {

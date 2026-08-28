@@ -161,19 +161,19 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		ValidatedAt: validatedAt,
 		Note:        "Ports the allNames/field.Duplicate branch on spec.volumes[].name.",
 	},
-	"volume/secret-not-found": {
+	"volume/secret-name-required": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateSecretVolumeSource"},
 		Digest:      "sha256:26981025a6e3e2d3ffdddfd7ed0023e3d8d92a3db85794a52a7ff815fba695dc",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the len(secretSource.SecretName) == 0 -> field.Required branch. It is a required-field rule, not a live lookup: whether the Secret exists in the cluster cannot be checked from a manifest.",
 	},
-	"volume/configmap-not-found": {
+	"volume/configmap-name-required": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateConfigMapVolumeSource"},
 		Digest:      "sha256:aa1832cbb80466b7acc809b6f8b4b4f0533167c85af760b7891a1f8ad7350179",
 		ValidatedAt: validatedAt,
-		Note:        "Ports the len(configMapSource.Name) == 0 -> field.Required branch. As with volume/secret-not-found this is a required-field rule, not a live lookup.",
+		Note:        "Ports the len(configMapSource.Name) == 0 -> field.Required branch. As with volume/secret-name-required this is a required-field rule, not a live lookup.",
 	},
 
 	// --- object metadata ---------------------------------------------------
