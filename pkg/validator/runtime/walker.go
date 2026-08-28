@@ -48,8 +48,24 @@ type PodSpecInfo struct {
 	PodSecurityContext *corev1.PodSecurityContext
 	Containers         []corev1.Container
 	InitContainers     []corev1.Container
+	// PodSpecPath is the dotted path to the PodSpec within the document
+	// ("spec" for a Pod, "spec.template.spec" for a controller,
+	// "spec.jobTemplate.spec.template.spec" for a CronJob).
+	//
+	// Checks that report a field inside the pod spec must build their path
+	// from this rather than hard-coding "spec.*": a finding on a Deployment
+	// that points at spec.volumes sends the reader to a field that does not
+	// exist in their manifest. ContainersPath and InitContainersPath are
+	// derived from it so the three cannot drift apart.
+	PodSpecPath        string
 	ContainersPath     string
 	InitContainersPath string
+}
+
+// VolumesPath returns the dotted path to the pod spec's volumes list for the
+// workload kind this info was extracted from.
+func (i *PodSpecInfo) VolumesPath() string {
+	return i.PodSpecPath + ".volumes"
 }
 
 // ExtractPodSpecInfo parses a YAML document and extracts pod spec information.
@@ -79,17 +95,16 @@ func ExtractPodSpecInfo(data []byte, source string) (*PodSpecInfo, error) {
 	switch kind {
 	case "Pod":
 		podSpec, err = extractPodSpecAt(&unstructuredObj, "spec")
-		info.ContainersPath = "spec.containers"
-		info.InitContainersPath = "spec.initContainers"
+		info.PodSpecPath = "spec"
 	case "CronJob":
 		podSpec, err = extractPodSpecAt(&unstructuredObj, "spec", "jobTemplate", "spec", "template", "spec")
-		info.ContainersPath = "spec.jobTemplate.spec.template.spec.containers"
-		info.InitContainersPath = "spec.jobTemplate.spec.template.spec.initContainers"
+		info.PodSpecPath = "spec.jobTemplate.spec.template.spec"
 	default:
 		podSpec, err = extractPodSpecAt(&unstructuredObj, "spec", "template", "spec")
-		info.ContainersPath = "spec.template.spec.containers"
-		info.InitContainersPath = "spec.template.spec.initContainers"
+		info.PodSpecPath = "spec.template.spec"
 	}
+	info.ContainersPath = info.PodSpecPath + ".containers"
+	info.InitContainersPath = info.PodSpecPath + ".initContainers"
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract pod spec for %s %s: %w", kind, info.Name, err)

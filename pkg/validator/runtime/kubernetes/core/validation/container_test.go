@@ -350,12 +350,12 @@ spec:
   - name: other
     emptyDir: {}
 `)
-	check := volumeMountNameDuplicateCheck{}
+	check := volumeMountNameUndefinedCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for missing volume mount, got %d", len(findings))
 	}
-	if findings[0].RuleID != "container/volume-mount-name-duplicate" {
+	if findings[0].RuleID != "container/volume-mount-name-undefined" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
@@ -375,7 +375,7 @@ spec:
   - name: myvol
     emptyDir: {}
 `)
-	check := volumeMountNameDuplicateCheck{}
+	check := volumeMountNameUndefinedCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid volume mount, got %d", len(findings))

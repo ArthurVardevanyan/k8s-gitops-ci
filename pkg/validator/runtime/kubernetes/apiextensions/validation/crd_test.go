@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"strings"
 	"testing"
 
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -58,6 +59,14 @@ spec:
 	}
 	if findings[0].RuleID != "apiextensions/crd-storage-version-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
+	}
+	// The message must name both sides of the conflict. Asserting only the
+	// finding count let a bug through where the first storage version was
+	// overwritten before the message was built, so it reported the second
+	// version twice ("found \"v2\" and \"v2\"") and told the reader nothing
+	// about which version it collided with.
+	if msg := findings[0].Message; !strings.Contains(msg, `"v1"`) || !strings.Contains(msg, `"v2"`) {
+		t.Errorf("message must name both conflicting versions, got: %s", msg)
 	}
 }
 

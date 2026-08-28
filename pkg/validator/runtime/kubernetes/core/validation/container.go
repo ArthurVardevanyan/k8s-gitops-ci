@@ -60,7 +60,7 @@ func (c duplicateContainerNamesCheck) Run(data []byte, source string) []runtime.
 				RuleTitle: c.Title(),
 				Category:  c.Category(),
 				Finding: check.Finding{
-					Path:      field.NewPath("spec").Child("containers").Key(name).String(),
+					Path:      field.NewPath(info.PodSpecPath).Child("containers").Key(name).String(),
 					Message:   fmt.Sprintf("duplicate container name %q appears %d times", name, count),
 					Kind:      info.Kind,
 					Name:      info.Name,
@@ -406,33 +406,33 @@ func (c terminationMessagePolicyValueCheck) Run(data []byte, source string) []ru
 	return findings
 }
 
-type volumeMountNameDuplicateCheck struct{}
+type volumeMountNameUndefinedCheck struct{}
 
-func (c volumeMountNameDuplicateCheck) ID() string {
-	return "container/volume-mount-name-duplicate"
+func (c volumeMountNameUndefinedCheck) ID() string {
+	return "container/volume-mount-name-undefined"
 }
 
-func (c volumeMountNameDuplicateCheck) Title() string {
+func (c volumeMountNameUndefinedCheck) Title() string {
 	return "VolumeMount Name Must Match a Volume Definition"
 }
 
-func (c volumeMountNameDuplicateCheck) Category() string {
+func (c volumeMountNameUndefinedCheck) Category() string {
 	return "container"
 }
 
-func (c volumeMountNameDuplicateCheck) Blocking() bool {
+func (c volumeMountNameUndefinedCheck) Blocking() bool {
 	return true
 }
 
-func (c volumeMountNameDuplicateCheck) RenderSensitive() bool {
+func (c volumeMountNameUndefinedCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c volumeMountNameDuplicateCheck) Kinds() []string {
+func (c volumeMountNameUndefinedCheck) Kinds() []string {
 	return runtime.HasPodSpecKinds()
 }
 
-func (c volumeMountNameDuplicateCheck) Run(data []byte, source string) []runtime.Finding {
+func (c volumeMountNameUndefinedCheck) Run(data []byte, source string) []runtime.Finding {
 	info, err := runtime.ExtractPodSpecInfo(data, source)
 	if err != nil || info == nil {
 		return nil

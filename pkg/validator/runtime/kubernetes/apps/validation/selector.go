@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,8 +23,7 @@ func selectorInvalidFindings(c runtime.Check, obj map[string]interface{}, kind, 
 		return nil
 	}
 
-	selectorMap, found, _ := unstructured.NestedMap(obj, "spec", "selector")
-	if !found {
+	if _, found, _ := unstructured.NestedMap(obj, "spec", "selector"); !found {
 		return nil
 	}
 
@@ -41,16 +41,32 @@ func selectorInvalidFindings(c runtime.Check, obj map[string]interface{}, kind, 
 		}}
 	}
 
-	// Check matchLabels keys (only string values in the selector map)
-	for key, val := range selectorMap {
-		if _, ok := val.(string); !ok {
-			continue
+	// Validate matchLabels keys.
+	//
+	// This must read spec.selector.matchLabels, not spec.selector. Iterating
+	// the selector object itself yields the keys "matchLabels" and
+	// "matchExpressions", whose values are a map and a slice respectively -
+	// so a filter for string values skipped every real label key and the
+	// rule validated nothing. The unit tests used a bare
+	// `selector: {app: ...}`, which is not the API shape, and so did not
+	// catch it.
+	matchLabels, found, err := unstructured.NestedMap(obj, "spec", "selector", "matchLabels")
+	if err == nil && found {
+		// Sorted so that a selector with more than one invalid key reports
+		// the same one on every run; map iteration order would otherwise
+		// make the message nondeterministic.
+		keys := make([]string, 0, len(matchLabels))
+		for key := range matchLabels {
+			keys = append(keys, key)
 		}
-		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
-			return finding(
-				field.NewPath("spec").Child("selector").Child("matchLabels").Key(key).String(),
-				key, errs,
-			)
+		sort.Strings(keys)
+		for _, key := range keys {
+			if errs := validation.IsQualifiedName(key); len(errs) > 0 {
+				return finding(
+					field.NewPath("spec").Child("selector").Child("matchLabels").Key(key).String(),
+					key, errs,
+				)
+			}
 		}
 	}
 

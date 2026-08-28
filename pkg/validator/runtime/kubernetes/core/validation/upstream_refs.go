@@ -92,7 +92,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		ValidatedAt: validatedAt,
 		Note:        "Ports the terminationMessagePolicy switch. The empty case is skipped rather than reported Required, because defaulting supplies it.",
 	},
-	"container/volume-mount-name-duplicate": {
+	"container/volume-mount-name-undefined": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateVolumeMounts", "IsMatchedVolume"},
 		Digest:      "sha256:557c21473e961112901aabff3714918e08bd449639d6c5685e30929a2bd389c2",

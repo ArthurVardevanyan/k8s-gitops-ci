@@ -41,13 +41,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"validateScheduleFormat"},
 		Digest:      "sha256:aa239363d1159d12d4f403084a1cfa1c58e5b737414d05e9f597411716bf4061",
 		ValidatedAt: validatedAt,
-		Note: "Ports the ParseCronScheduleWithPanicRecovery -> field.Invalid branch. Deliberate " +
-			"divergence: the parse is a self-contained 5-field cron structural parser rather than the " +
-			"upstream robfig/cron parser, so it accepts a superset (it does not range-check field " +
-			"values or resolve names like MON/JAN); it is therefore never stricter than the API " +
-			"server. An empty schedule is skipped rather than reported Required (that branch lives " +
-			"in validateCronJobSpec and is covered by the schema's `required`), and the TZ/CRON_TZ " +
-			"branches are not ported.",
+		Note: "Ports the ParseCronScheduleWithPanicRecovery -> field.Invalid branch, calling the " +
+			"same parser upstream does: cron.ParseStandard from github.com/robfig/cron/v3 at the " +
+			"v3.0.1 revision Kubernetes pins, wrapped in the same panic recovery (ParseStandard " +
+			"panics on inputs such as \"TZ=0\"). An empty schedule is skipped rather than reported " +
+			"Required (that branch lives in validateCronJobSpec and is covered by the schema's " +
+			"`required`), and the TZ-vs-timeZone conflict branches are not ported, since they " +
+			"depend on the CronJobTimeZone feature gate.",
 	},
 	"batch/concurrency-policy-invalid": {
 		Path:        batchValidationPath,

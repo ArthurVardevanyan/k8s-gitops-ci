@@ -36,7 +36,7 @@ func register() {
 		imagePullPolicyCheck{},
 		mountPropagationValueCheck{},
 		terminationMessagePolicyValueCheck{},
-		volumeMountNameDuplicateCheck{},
+		volumeMountNameUndefinedCheck{},
 		duplicateVolumeNamesCheck{},
 		secretVolumeCheck{},
 		configmapVolumeCheck{},

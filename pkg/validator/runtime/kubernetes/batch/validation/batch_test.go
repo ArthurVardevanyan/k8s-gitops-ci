@@ -94,7 +94,12 @@ func TestScheduleInvalidCheck(t *testing.T) {
 		{"valid schedule", "CronJob", "0 0 * * *", false},
 		{"valid schedule with minute", "CronJob", "*/5 * * * *", false},
 		{"valid schedule with range", "CronJob", "0 1-5 * * *", false},
-		{"valid schedule with list", "CronJob", "0 0,15,30,45 * * *", false},
+		// Quarter-hourly. The values belong in the minute field: as hours,
+		// 30 and 45 exceed the 0-23 range and the API server rejects the
+		// schedule. The previous hand-rolled parser did not range-check
+		// field values, so it accepted this invalid schedule.
+		{"valid schedule with list", "CronJob", "0,15,30,45 * * * *", false},
+		{"list value out of range for field", "CronJob", "0 0,15,30,45 * * *", true},
 		{"invalid schedule - too few fields", "CronJob", "* *", true},
 		{"invalid schedule - bad number", "CronJob", "abc 0 * * *", true},
 	}
@@ -363,4 +368,76 @@ func ptrInt32(v int32) *int32 {
 
 func ptrInt64(v int64) *int64 {
 	return &v
+}
+
+// TestCronScheduleAcceptsEverythingTheAPIServerAccepts covers the schedules
+// the previous hand-rolled parser rejected. Each is valid to
+// cron.ParseStandard, so the API server admits it; a finding here is an
+// unsuppressible CI failure on a correct manifest, which is strictly worse
+// than missing an invalid one.
+func TestCronScheduleAcceptsEverythingTheAPIServerAccepts(t *testing.T) {
+	valid := []struct{ name, schedule string }{
+		{"standard 5-field", "0 0 * * *"},
+		{"step values", "*/15 * * * *"},
+		{"range", "0 9-17 * * *"},
+		{"list", "0 0 1,15 * *"},
+		{"symbolic weekday", "0 0 * * MON"},
+		{"symbolic weekday range", "0 0 * * MON-FRI"},
+		{"symbolic month", "0 0 1 JAN *"},
+		{"descriptor daily", "@daily"},
+		{"descriptor hourly", "@hourly"},
+		{"descriptor weekly", "@weekly"},
+		{"descriptor monthly", "@monthly"},
+		{"descriptor yearly", "@yearly"},
+		{"descriptor midnight", "@midnight"},
+		{"every duration", "@every 1h30m"},
+		{"timezone prefix", "TZ=UTC 0 0 * * *"},
+		{"cron_tz prefix", "CRON_TZ=America/New_York 0 0 * * *"},
+	}
+
+	c := scheduleInvalidCheck{}
+	for _, tt := range valid {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte("kind: CronJob\nmetadata:\n  name: test\nspec:\n  schedule: \"" + tt.schedule + "\"\n")
+			if findings := c.Run(data, "test.yaml"); len(findings) != 0 {
+				t.Errorf("schedule %q is accepted by the API server but reported %d finding(s): %v",
+					tt.schedule, len(findings), findings)
+			}
+		})
+	}
+}
+
+// TestCronScheduleRejectsInvalid keeps the check from degrading into one
+// that accepts anything.
+func TestCronScheduleRejectsInvalid(t *testing.T) {
+	invalid := []struct{ name, schedule string }{
+		{"too few fields", "0 0 *"},
+		{"nonsense", "not-a-schedule"},
+		{"bad descriptor", "@sometimes"},
+		{"minute out of range", "99 0 * * *"},
+		{"bad symbolic name", "0 0 * * FUNDAY"},
+	}
+
+	c := scheduleInvalidCheck{}
+	for _, tt := range invalid {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte("kind: CronJob\nmetadata:\n  name: test\nspec:\n  schedule: \"" + tt.schedule + "\"\n")
+			if findings := c.Run(data, "test.yaml"); len(findings) != 1 {
+				t.Errorf("schedule %q is rejected by the API server but produced %d finding(s)",
+					tt.schedule, len(findings))
+			}
+		})
+	}
+}
+
+// TestCronScheduleMalformedTZDoesNotPanic pins the panic-recovery half of
+// the ported upstream helper. cron.ParseStandard panics on inputs like
+// "TZ=0"; without recovery that would abort the entire validation run
+// rather than report one bad schedule.
+func TestCronScheduleMalformedTZDoesNotPanic(t *testing.T) {
+	data := []byte("kind: CronJob\nmetadata:\n  name: test\nspec:\n  schedule: \"TZ=0\"\n")
+	findings := scheduleInvalidCheck{}.Run(data, "test.yaml")
+	if len(findings) != 1 {
+		t.Errorf("expected 1 finding for a malformed TZ schedule, got %d", len(findings))
+	}
 }

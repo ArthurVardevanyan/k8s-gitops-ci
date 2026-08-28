@@ -2,8 +2,8 @@ package validation
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
+
+	"github.com/robfig/cron/v3"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
@@ -167,171 +167,34 @@ type cronJobSpecWrapper struct {
 	ConcurrencyPolicy string `json:"concurrencyPolicy"`
 }
 
-// parseCronSchedule attempts to parse a cron schedule string.
-// Returns nil if valid, error if invalid.
-// Supports both 5-field and 6-field (with seconds) cron formats.
-func parseCronSchedule(schedule string) error {
-	// Try standard 5-field cron format
-	return parseCronField(schedule, 5)
-}
-
-// parseCronField validates a cron schedule with the expected number of fields.
-// This is a simplified validator that checks basic structure without requiring
-// a full cron parsing library.
-func parseCronField(schedule string, expectedFields int) error {
-	parts := splitFields(schedule)
-	if len(parts) != expectedFields {
-		return fmt.Errorf("expected %d fields, got %d", expectedFields, len(parts))
-	}
-	for _, part := range parts {
-		if err := validateCronField(part); err != nil {
-			return err
+// parseCronSchedule parses a cron schedule exactly as the API server does.
+//
+// Upstream's validateScheduleFormat calls
+// k8s.io/kubernetes/pkg/util/parsers.ParseCronScheduleWithPanicRecovery,
+// which is cron.ParseStandard from github.com/robfig/cron/v3 wrapped in a
+// panic recovery. This calls the same parser at the same version
+// Kubernetes pins, so the rule is a genuine 1:1 port rather than an
+// approximation of one.
+//
+// It previously used a hand-rolled 5-field structural parser. That parser
+// was documented as accepting a superset of what the API server accepts -
+// "never stricter" - but it was not: it resolved every field with
+// strconv.Atoi, so the symbolic names cron.ParseStandard supports (MON-SUN,
+// JAN-DEC) were rejected, as were the @daily/@hourly descriptors and the
+// TZ=/CRON_TZ= prefix. Those are valid schedules the cluster accepts, and
+// this check is non-exemptable, so each was an unsuppressible failure on a
+// correct manifest.
+//
+// The panic recovery is part of the ported behavior, not defensive
+// programming: cron.ParseStandard panics on some malformed input (upstream
+// cites "TZ=0"), and a panic here would take down the whole run instead of
+// reporting one invalid schedule.
+func parseCronSchedule(schedule string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("invalid schedule: %v", r)
 		}
-	}
-	return nil
-}
-
-// splitFields splits a cron schedule into fields, handling quoted strings.
-func splitFields(s string) []string {
-	var parts []string
-	var current string
-	inQuote := false
-	quoteChar := byte(0)
-
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if inQuote {
-			if c == quoteChar {
-				inQuote = false
-			} else {
-				current += string(c)
-			}
-		} else {
-			switch c {
-			case ' ', '\t':
-				if current != "" {
-					parts = append(parts, current)
-					current = ""
-				}
-			case '\n', '\r':
-				if current != "" {
-					parts = append(parts, current)
-					current = ""
-				}
-			case '"', '\'':
-				inQuote = true
-				quoteChar = c
-			default:
-				current += string(c)
-			}
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
-}
-
-// validateCronField validates a single cron field.
-func validateCronField(field string) error {
-	// Handle wildcard
-	if field == "*" {
-		return nil
-	}
-
-	// Handle step values (*/2, 1-10/2)
-	stepIdx := -1
-	for i, c := range field {
-		if c == '/' {
-			stepIdx = i
-			break
-		}
-	}
-
-	var basePart string
-	var stepPart string
-	if stepIdx >= 0 {
-		basePart = field[:stepIdx]
-		stepPart = field[stepIdx+1:]
-		if stepPart == "" {
-			return fmt.Errorf("empty step value")
-		}
-		if _, err := strconv.Atoi(stepPart); err != nil {
-			return fmt.Errorf("invalid step value: %s", stepPart)
-		}
-	} else {
-		basePart = field
-	}
-
-	// Handle wildcard only
-	if basePart == "*" {
-		return nil
-	}
-
-	// Handle range (1-5) or comma-separated values
-	if strings.Contains(basePart, ",") {
-		return validateListOrRange(basePart)
-	}
-
-	// Handle range (1-5)
-	if strings.Contains(basePart, "-") {
-		return validateRange(basePart)
-	}
-
-	// Handle single number
-	if _, err := strconv.Atoi(basePart); err != nil {
-		return fmt.Errorf("invalid cron field: %s", field)
-	}
-	return nil
-}
-
-// validateListOrRange validates a field containing ranges or comma-separated values.
-func validateListOrRange(s string) error {
-	// Split by comma first
-	items := splitBy(s, ',')
-	for _, item := range items {
-		if err := validateRange(item); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateRange validates a range expression like "1-5" or a single number.
-func validateRange(s string) error {
-	parts := splitBy(s, '-')
-	if len(parts) == 1 {
-		// Single number, validate it
-		if _, err := strconv.Atoi(parts[0]); err != nil {
-			return fmt.Errorf("invalid value in list: %s", s)
-		}
-		return nil
-	}
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid range: %s", s)
-	}
-	_, err1 := strconv.Atoi(parts[0])
-	_, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil {
-		return fmt.Errorf("invalid range: %s", s)
-	}
-	return nil
-}
-
-// splitBy splits a string by a delimiter.
-func splitBy(s string, sep byte) []string {
-	var parts []string
-	var current string
-	for i := 0; i < len(s); i++ {
-		if s[i] == sep {
-			parts = append(parts, current)
-			current = ""
-		} else {
-			current += string(s[i])
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
+	}()
+	_, err = cron.ParseStandard(schedule)
+	return err
 }

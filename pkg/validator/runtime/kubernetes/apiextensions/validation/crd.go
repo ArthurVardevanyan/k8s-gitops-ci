@@ -45,21 +45,27 @@ func (c storageVersionInvalidCheck) Run(data []byte, source string) []runtime.Fi
 	for i, v := range crd.Spec.Versions {
 		if v.Storage {
 			storageCount++
-			storageName = v.Name
-			if storageCount > 1 {
-				path := versionPath.Index(i).Child("storage")
-				findings = append(findings, runtime.Finding{
-					RuleID:    c.ID(),
-					RuleTitle: c.Title(),
-					Category:  c.Category(),
-					Finding: check.Finding{
-						Path:    path.String(),
-						Message: fmt.Sprintf("storage: must not have more than one version with storage=true (found %q and %q)", storageName, v.Name),
-						Kind:    "CustomResourceDefinition",
-						Name:    crd.GetName(),
-					},
-				})
+			if storageCount == 1 {
+				// Remember the first storage version so a later duplicate
+				// can name both sides of the conflict. Assigning on every
+				// iteration instead reported the same version twice
+				// ("found \"v2\" and \"v2\""), hiding which other version
+				// it collided with.
+				storageName = v.Name
+				continue
 			}
+			path := versionPath.Index(i).Child("storage")
+			findings = append(findings, runtime.Finding{
+				RuleID:    c.ID(),
+				RuleTitle: c.Title(),
+				Category:  c.Category(),
+				Finding: check.Finding{
+					Path:    path.String(),
+					Message: fmt.Sprintf("storage: must not have more than one version with storage=true (found %q and %q)", storageName, v.Name),
+					Kind:    "CustomResourceDefinition",
+					Name:    crd.GetName(),
+				},
+			})
 		}
 	}
 

@@ -1,10 +1,11 @@
 package validation
 
 import (
-	"fmt"
 	"strconv"
 
-	"k8s.io/apimachinery/pkg/labels"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
+
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 
@@ -16,7 +17,6 @@ import (
 type podDisruptionBudgetSpecWrapper struct {
 	MinAvailable   interface{} `json:"minAvailable"`
 	MaxUnavailable interface{} `json:"maxUnavailable"`
-	Selector       interface{} `json:"selector"`
 }
 
 // selectorInvalidCheck validates that the PDB selector is a valid label selector.
@@ -32,8 +32,13 @@ func (c selectorInvalidCheck) Kinds() []string       { return []string{"PodDisru
 
 func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var pdb struct {
-		Kind string                         `json:"kind"`
-		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+		Spec struct {
+			Selector *metav1.LabelSelector `json:"selector"`
+		} `json:"spec"`
 	}
 	if err := yaml.Unmarshal(data, &pdb); err != nil {
 		return nil
@@ -41,25 +46,45 @@ func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 	if pdb.Kind != "PodDisruptionBudget" {
 		return nil
 	}
-
-	selector := extractSelectorString(pdb.Spec.Selector)
-	if selector == "" {
+	// Upstream tolerates a nil selector here.
+	if pdb.Spec.Selector == nil {
 		return nil
 	}
-	if _, err := labels.Parse(selector); err != nil {
-		return []runtime.Finding{{
+
+	// Call the same apimachinery helper upstream calls, rather than
+	// approximating it.
+	//
+	// This previously flattened the selector to a string and handed it to
+	// labels.Parse. A string has no representation for matchExpressions, so
+	// every operator/values rule was silently skipped: a selector whose only
+	// error was in a matchExpression passed. It also accepted a bare string
+	// selector, which is not a valid PodDisruptionBudget shape at all - the
+	// test fixture used one, so the check was exercised only on input the
+	// API server would already have rejected.
+	//
+	// AllowInvalidLabelValueInSelector is set because the API server sets it
+	// when an object already carries such a value, and this tool cannot see
+	// whether the object exists. Taking the permissive branch is the
+	// standing policy for non-exemptable checks: a missed finding is
+	// recoverable, an unsuppressible false positive is not.
+	opts := metav1validation.LabelSelectorValidationOptions{AllowInvalidLabelValueInSelector: true}
+	errs := metav1validation.ValidateLabelSelector(pdb.Spec.Selector, opts, field.NewPath("spec").Child("selector"))
+
+	findings := make([]runtime.Finding, 0, len(errs))
+	for _, err := range errs {
+		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
 			Category:  c.Category(),
 			Finding: check.Finding{
-				Path:    field.NewPath("spec").Child("selector").String(),
-				Message: "selector: invalid label selector",
+				Path:    err.Field,
+				Message: "selector: " + err.ErrorBody(),
 				Kind:    pdb.Kind,
-				Extra:   map[string]string{"selector": selector},
+				Name:    pdb.Metadata.Name,
 			},
-		}}
+		})
 	}
-	return nil
+	return findings
 }
 
 // pdbNonNegativeFindings validates that the named PodDisruptionBudget spec
@@ -197,31 +222,6 @@ func intOrStringFromInterface(v interface{}) (result intOrStringValue, ok bool) 
 	default:
 		return result, false
 	}
-}
-
-// extractSelectorString normalizes the PDB selector field to a label
-// selector string. The selector can be:
-//   - a string (e.g. "app=myapp")
-//   - an object with matchLabels (e.g. {"matchLabels":{"app":"myapp"}})
-func extractSelectorString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	switch val := v.(type) {
-	case string:
-		return val
-	case map[string]interface{}:
-		if ml, ok := val["matchLabels"].(map[string]interface{}); ok {
-			labelMap := make(map[string]string)
-			for k, v := range ml {
-				labelMap[k] = fmt.Sprintf("%v", v)
-			}
-			return labels.FormatLabels(labels.Set(labelMap))
-		}
-	case map[string]string:
-		return labels.FormatLabels(labels.Set(val))
-	}
-	return ""
 }
 
 // Register registers all PodDisruptionBudget validation checks with the

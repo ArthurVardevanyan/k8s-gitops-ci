@@ -29,8 +29,12 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      pdbDigest,
 		ValidatedAt: validatedAt,
 		Note: "Ports the unversionedvalidation.ValidateLabelSelector(spec.Selector, ...) call in " +
-			"ValidatePodDisruptionBudgetSpec. An absent selector is skipped rather than reported, " +
-			"because upstream tolerates a nil selector here.",
+			"ValidatePodDisruptionBudgetSpec by calling that same apimachinery helper, so the " +
+			"matchLabels, matchExpressions operator and values rules are all covered. An absent " +
+			"selector is skipped rather than reported, because upstream tolerates a nil selector " +
+			"here. AllowInvalidLabelValueInSelector is set true: upstream derives it from whether " +
+			"the stored object already carries such a value, which this tool cannot observe, so " +
+			"the permissive branch is taken to avoid an unsuppressible false positive.",
 	},
 	"policy/min-available-invalid": {
 		Path:        policyValidationPath,

@@ -63,7 +63,7 @@ func (c duplicateVolumeNamesCheck) Run(data []byte, source string) []runtime.Fin
 				RuleTitle: c.Title(),
 				Category:  c.Category(),
 				Finding: check.Finding{
-					Path:      field.NewPath("spec").Child("volumes").Key(name).String(),
+					Path:      field.NewPath(info.VolumesPath()).Key(name).String(),
 					Message:   fmt.Sprintf("duplicate volume name %q appears %d times", name, count),
 					Kind:      info.Kind,
 					Name:      info.Name,
@@ -152,7 +152,7 @@ func volumeReferenceNameFindings(
 				RuleTitle: c.Title(),
 				Category:  c.Category(),
 				Finding: check.Finding{
-					Path:      field.NewPath("spec").Child("volumes").Index(i).Child(volumeField).Child(nameField).String(),
+					Path:      field.NewPath(info.VolumesPath()).Index(i).Child(volumeField).Child(nameField).String(),
 					Message:   fmt.Sprintf("volume %q: %s.%s: Required value", vol.Name, volumeField, nameField),
 					Kind:      info.Kind,
 					Name:      info.Name,

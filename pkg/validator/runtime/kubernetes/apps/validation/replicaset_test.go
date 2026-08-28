@@ -13,8 +13,9 @@ metadata:
   name: test
 spec:
   selector:
-    app: myapp
-    "app.kubernetes.io/name": myapp
+    matchLabels:
+      app: myapp
+      "app.kubernetes.io/name": myapp
   template:
     metadata:
       labels:
@@ -34,7 +35,8 @@ metadata:
   name: test
 spec:
   selector:
-    "invalid key with spaces": myapp
+    matchLabels:
+      "invalid key with spaces": myapp
   template:
     metadata:
       labels:
@@ -57,7 +59,8 @@ metadata:
   name: test
 spec:
   selector:
-    "invalid key": myapp
+    matchLabels:
+      "invalid key": myapp
     matchExpressions:
     - key: "another invalid key"
       operator: In
@@ -117,7 +120,8 @@ metadata:
 spec:
   replicas: 3
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -138,7 +142,8 @@ metadata:
 spec:
   replicas: 0
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -159,7 +164,8 @@ metadata:
 spec:
   replicas: -1
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -235,7 +241,8 @@ metadata:
 spec:
   replicas: -1
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -264,7 +271,8 @@ metadata:
 spec:
   replicas: 3
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:

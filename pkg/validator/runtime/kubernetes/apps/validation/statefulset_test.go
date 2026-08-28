@@ -14,7 +14,8 @@ metadata:
 spec:
   replicas: 3
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -35,7 +36,8 @@ metadata:
 spec:
   replicas: 0
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -56,7 +58,8 @@ metadata:
 spec:
   replicas: -1
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -99,7 +102,8 @@ metadata:
 spec:
   podManagementPolicy: OrderedReady
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -120,7 +124,8 @@ metadata:
 spec:
   podManagementPolicy: Parallel
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -140,7 +145,8 @@ metadata:
   name: test
 spec:
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -161,7 +167,8 @@ metadata:
 spec:
   podManagementPolicy: Random
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -202,7 +209,8 @@ spec:
   updateStrategy:
     type: RollingUpdate
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -224,7 +232,8 @@ spec:
   updateStrategy:
     type: OnDelete
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -251,7 +260,8 @@ spec:
   updateStrategy:
     type: Recreate
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -270,7 +280,8 @@ metadata:
   name: test
 spec:
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -292,7 +303,8 @@ spec:
   updateStrategy:
     type: BlueGreen
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -371,7 +383,8 @@ spec:
   serviceName: invalid name
   volumeClaimTemplates: []
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -412,7 +425,8 @@ spec:
         requests:
           storage: 1Gi
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:

@@ -6,24 +6,70 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
+// The selector must be validated as a structured LabelSelector. It was
+// previously flattened to a string and parsed with labels.Parse, which has
+// no representation for matchExpressions - so every operator/values rule
+// was skipped. The old fixture passed a bare string selector, which is not
+// a valid PodDisruptionBudget shape at all.
 func TestPDBSelectorCheck(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector: "invalid=invalid["
-  minAvailable: 1
-`)
-	check := selectorInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
+	tests := []struct {
+		name string
+		spec string
+	}{
+		{
+			"invalid matchLabels key",
+			`  selector:
+    matchLabels:
+      "invalid key with spaces": myapp
+  minAvailable: 1`,
+		},
+		{
+			// Unreachable through a stringified selector: this is the case
+			// the previous implementation silently accepted.
+			"invalid matchExpressions key",
+			`  selector:
+    matchExpressions:
+    - key: "invalid key with spaces"
+      operator: In
+      values:
+      - val
+  minAvailable: 1`,
+		},
+		{
+			"In operator with no values",
+			`  selector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values: []
+  minAvailable: 1`,
+		},
+		{
+			"unknown operator",
+			`  selector:
+    matchExpressions:
+    - key: app
+      operator: Sometimes
+      values:
+      - val
+  minAvailable: 1`,
+		},
 	}
-	if findings[0].RuleID != "policy/selector-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PodDisruptionBudget" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte("kind: PodDisruptionBudget\nmetadata:\n  name: test\nspec:\n" + tt.spec + "\n")
+			findings := selectorInvalidCheck{}.Run(data, "test.yaml")
+			if len(findings) == 0 {
+				t.Fatalf("expected at least 1 finding, got none")
+			}
+			if findings[0].RuleID != "policy/selector-invalid" {
+				t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
+			}
+			if findings[0].Kind != "PodDisruptionBudget" {
+				t.Errorf("unexpected kind: %s", findings[0].Kind)
+			}
+		})
 	}
 }
 

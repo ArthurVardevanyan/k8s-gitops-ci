@@ -13,8 +13,9 @@ metadata:
   name: test
 spec:
   selector:
-    app: myapp
-    "app.kubernetes.io/name": myapp
+    matchLabels:
+      app: myapp
+      "app.kubernetes.io/name": myapp
   template:
     metadata:
       labels:
@@ -34,7 +35,8 @@ metadata:
   name: test
 spec:
   selector:
-    "invalid key with spaces": myapp
+    matchLabels:
+      "invalid key with spaces": myapp
   template:
     metadata:
       labels:
@@ -57,7 +59,8 @@ metadata:
   name: test
 spec:
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
     matchExpressions:
     - key: "another invalid key"
       operator: In
@@ -103,7 +106,8 @@ metadata:
   name: test
 spec:
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
 `)
 	check := deploymentSelectorInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
@@ -406,7 +410,8 @@ spec:
   strategy:
     type: InvalidType
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -438,7 +443,8 @@ spec:
       maxUnavailable: 1
       maxSurge: 1
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
   template:
     metadata:
       labels:
@@ -457,7 +463,8 @@ metadata:
   name: test
 spec:
   selector:
-    app: myapp
+    matchLabels:
+      app: myapp
 `)
 	findings := runKindChecks(data, "Deployment")
 	if len(findings) != 0 {

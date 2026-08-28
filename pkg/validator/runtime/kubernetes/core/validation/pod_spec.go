@@ -64,7 +64,7 @@ func (c podSpecRestartPolicyValueCheck) Run(data []byte, source string) []runtim
 		RuleTitle: c.Title(),
 		Category:  c.Category(),
 		Finding: check.Finding{
-			Path:      field.NewPath("spec").Child("restartPolicy").String(),
+			Path:      field.NewPath(info.PodSpecPath).Child("restartPolicy").String(),
 			Message:   fmt.Sprintf("restartPolicy: Unsupported value: %q", string(policy)),
 			Kind:      info.Kind,
 			Name:      info.Name,
@@ -126,7 +126,7 @@ func (c podSpecDNSPolicyValueCheck) Run(data []byte, source string) []runtime.Fi
 		RuleTitle: c.Title(),
 		Category:  c.Category(),
 		Finding: check.Finding{
-			Path:      field.NewPath("spec").Child("dnsPolicy").String(),
+			Path:      field.NewPath(info.PodSpecPath).Child("dnsPolicy").String(),
 			Message:   fmt.Sprintf("dnsPolicy: Unsupported value: %q", string(policy)),
 			Kind:      info.Kind,
 			Name:      info.Name,
@@ -187,7 +187,7 @@ func (c podSpecTolerationOperatorValueCheck) Run(data []byte, source string) []r
 			RuleTitle: c.Title(),
 			Category:  c.Category(),
 			Finding: check.Finding{
-				Path:      field.NewPath("spec").Child("tolerations").Index(i).Child("operator").String(),
+				Path:      field.NewPath(info.PodSpecPath).Child("tolerations").Index(i).Child("operator").String(),
 				Message:   fmt.Sprintf("toleration[%d]: operator: Unsupported value: %q: supported values: 'Exists', 'Equal'", i, string(op)),
 				Kind:      info.Kind,
 				Name:      info.Name,
@@ -224,7 +224,7 @@ func (c podSpecNodeSelectorInvalidCheck) Run(data []byte, source string) []runti
 			findings = append(findings, runtime.Finding{
 				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("nodeSelector").Key(key).String(),
+					Path:    field.NewPath(info.PodSpecPath).Child("nodeSelector").Key(key).String(),
 					Message: fmt.Sprintf("nodeSelector[%q]: invalid key: %s", key, strings.Join(errs, ", ")),
 					Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: key,
 				},
@@ -235,7 +235,7 @@ func (c podSpecNodeSelectorInvalidCheck) Run(data []byte, source string) []runti
 			findings = append(findings, runtime.Finding{
 				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("nodeSelector").Key(key).String(),
+					Path:    field.NewPath(info.PodSpecPath).Child("nodeSelector").Key(key).String(),
 					Message: fmt.Sprintf("nodeSelector[%q]: invalid value: %s", key, strings.Join(errs, ", ")),
 					Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: value,
 				},
@@ -271,7 +271,7 @@ func (c podSpecAffinityInvalidCheck) Run(data []byte, source string) []runtime.F
 						findings = append(findings, runtime.Finding{
 							RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 							Finding: check.Finding{
-								Path:    field.NewPath("spec").Child("affinity").Child("nodeAffinity").Child("requiredDuringSchedulingIgnoredDuringExecution").Child("nodeSelectorTerms").Index(i).Child("matchExpressions").Index(j).Child("key").String(),
+								Path:    field.NewPath(info.PodSpecPath).Child("affinity").Child("nodeAffinity").Child("requiredDuringSchedulingIgnoredDuringExecution").Child("nodeSelectorTerms").Index(i).Child("matchExpressions").Index(j).Child("key").String(),
 								Message: fmt.Sprintf("nodeAffinity matchExpressions[%d]: invalid key: %s", j, strings.Join(errs, ", ")),
 								Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: me.Key,
 							},
@@ -283,7 +283,7 @@ func (c podSpecAffinityInvalidCheck) Run(data []byte, source string) []runtime.F
 						findings = append(findings, runtime.Finding{
 							RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 							Finding: check.Finding{
-								Path:    field.NewPath("spec").Child("affinity").Child("nodeAffinity").Child("requiredDuringSchedulingIgnoredDuringExecution").Child("nodeSelectorTerms").Index(i).Child("matchFields").Index(j).Child("key").String(),
+								Path:    field.NewPath(info.PodSpecPath).Child("affinity").Child("nodeAffinity").Child("requiredDuringSchedulingIgnoredDuringExecution").Child("nodeSelectorTerms").Index(i).Child("matchFields").Index(j).Child("key").String(),
 								Message: fmt.Sprintf("nodeAffinity matchFields[%d]: invalid key: %s", j, strings.Join(errs, ", ")),
 								Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: mf.Key,
 							},
@@ -325,7 +325,7 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 	if selector == nil {
 		return
 	}
-	psPath := field.NewPath("spec").Child("affinity").Child("podAffinity").Child(pathPrefix).Index(i).Child("labelSelector")
+	psPath := field.NewPath(info.PodSpecPath).Child("affinity").Child("podAffinity").Child(pathPrefix).Index(i).Child("labelSelector")
 	for j, expr := range selector.MatchExpressions {
 		if errs := validation.IsQualifiedName(expr.Key); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{
@@ -384,7 +384,7 @@ func (c podSpecTopologySpreadInvalidCheck) Run(data []byte, source string) []run
 		if tc.LabelSelector == nil {
 			continue
 		}
-		psPath := field.NewPath("spec").Child("topologySpreadConstraints").Index(i).Child("labelSelector")
+		psPath := field.NewPath(info.PodSpecPath).Child("topologySpreadConstraints").Index(i).Child("labelSelector")
 		for j, expr := range tc.LabelSelector.MatchExpressions {
 			if errs := validation.IsQualifiedName(expr.Key); len(errs) > 0 {
 				findings = append(findings, runtime.Finding{
@@ -453,7 +453,7 @@ func (c podSpecServiceAccountNameInvalidCheck) Run(data []byte, source string) [
 		return []runtime.Finding{{
 			RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 			Finding: check.Finding{
-				Path:    field.NewPath("spec").Child("serviceAccountName").String(),
+				Path:    field.NewPath(info.PodSpecPath).Child("serviceAccountName").String(),
 				Message: fmt.Sprintf("serviceAccountName: invalid value: %s", strings.Join(errs, ", ")),
 				Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: sa,
 			},
@@ -491,7 +491,7 @@ func (c podSpecActiveDeadlineSecondsNegativeCheck) Run(data []byte, source strin
 	return []runtime.Finding{{
 		RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("activeDeadlineSeconds").String(),
+			Path:    field.NewPath(info.PodSpecPath).Child("activeDeadlineSeconds").String(),
 			Message: fmt.Sprintf("activeDeadlineSeconds: must be >= 1, got %d", *ads),
 			Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: fmt.Sprintf("%d", *ads),
 		},
@@ -521,7 +521,7 @@ func (c podSpecReadinessGateInvalidCheck) Run(data []byte, source string) []runt
 			findings = append(findings, runtime.Finding{
 				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("readinessGates").Index(i).Child("conditionType").String(),
+					Path:    field.NewPath(info.PodSpecPath).Child("readinessGates").Index(i).Child("conditionType").String(),
 					Message: fmt.Sprintf("readinessGates[%d]: conditionType must not be empty", i),
 					Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace,
 				},
@@ -532,7 +532,7 @@ func (c podSpecReadinessGateInvalidCheck) Run(data []byte, source string) []runt
 			findings = append(findings, runtime.Finding{
 				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
 				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("readinessGates").Index(i).Child("conditionType").String(),
+					Path:    field.NewPath(info.PodSpecPath).Child("readinessGates").Index(i).Child("conditionType").String(),
 					Message: fmt.Sprintf("readinessGates[%d]: conditionType: invalid value: %s", i, strings.Join(errs, ", ")),
 					Kind:    info.Kind, Name: info.Name, Namespace: info.Namespace, Value: string(gate.ConditionType),
 				},
