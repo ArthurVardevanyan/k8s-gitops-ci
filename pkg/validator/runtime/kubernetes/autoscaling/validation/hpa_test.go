@@ -2,8 +2,6 @@ package validation
 
 import (
 	"testing"
-
-	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
 func TestMaxReplicasInvalidCheck_Invalid(t *testing.T) {
@@ -119,12 +117,6 @@ spec:
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
 	}
-}
-
-func TestAllHPAChecksImplementCheckInterface(t *testing.T) {
-	var _ runtime.Check = newMaxReplicasInvalidCheck()
-	var _ runtime.Check = newScaleDownInvalidCheck()
-	var _ runtime.Check = newScaleUpInvalidCheck()
 }
 
 // scaleUp and scaleDown are HPAScalingRules objects, so the finding must

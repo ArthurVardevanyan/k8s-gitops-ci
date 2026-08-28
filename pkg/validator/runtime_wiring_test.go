@@ -163,3 +163,29 @@ func TestRuntimeChecksAreNonExemptable(t *testing.T) {
 		}
 	}
 }
+
+// TestRuntimeFindingsCarryTheirCategory pins the report's grouping key for
+// every check at once.
+//
+// The category is derived from the rule ID's prefix rather than stored, so
+// the thing that can actually break is an ID with no prefix to derive from:
+// CategoryOf would hand back the whole ID and the report would grow a
+// one-off group named after a single rule. Asserting the ID is namespaced
+// and that the category survives into Extra covers both halves.
+func TestRuntimeFindingsCarryTheirCategory(t *testing.T) {
+	for _, c := range runtimeChecks(t) {
+		id := c.ID()
+		group, _, ok := strings.Cut(id, "/")
+		if !ok || group == "" {
+			t.Errorf("check %q has no %q-separated category prefix, so its findings would group under the rule itself", id, "/")
+			continue
+		}
+		if got := runtimepkg.CategoryOf(id); got != group {
+			t.Errorf("check %q: CategoryOf = %q, want %q", id, got, group)
+		}
+		f := runtimepkg.Finding{RuleID: id, RuleTitle: c.Title()}.ToCheckFinding()
+		if got := f.Extra["category"]; got != group {
+			t.Errorf("check %q: finding category = %q, want %q; the report groups on this", id, got, group)
+		}
+	}
+}

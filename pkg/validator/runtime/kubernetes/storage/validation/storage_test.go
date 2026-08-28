@@ -2,8 +2,6 @@ package validation
 
 import (
 	"testing"
-
-	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
 func TestPVAccessModesInvalidCheck(t *testing.T) {
@@ -338,38 +336,5 @@ allowedTopologies:
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestAllChecksImplementCheckInterface(t *testing.T) {
-	checks := []runtime.Check{
-		newPvAccessModesInvalidCheck(),
-		newPvCapacityInvalidCheck(),
-		newPvcAccessModesInvalidCheck(),
-		newPvcVolumeModeInvalidCheck(),
-		newScProvisionerInvalidCheck(),
-		newScReclaimPolicyInvalidCheck(),
-		newScVolumeBindingModeInvalidCheck(),
-		newScAllowedTopologyRangeInvalidCheck(),
-	}
-	for _, c := range checks {
-		if c.ID() == "" {
-			t.Errorf("check %T has empty ID", c)
-		}
-		if c.Title() == "" {
-			t.Errorf("check %T has empty Title", c)
-		}
-		if runtime.CategoryOf(c.ID()) == "" {
-			t.Errorf("check %T has empty Category", c)
-		}
-		if !c.Blocking() {
-			t.Errorf("check %T should be blocking", c)
-		}
-		if !c.RenderSensitive() {
-			t.Errorf("check %T should render sensitive", c)
-		}
-		if len(c.Kinds()) == 0 {
-			t.Errorf("check %T should declare Kinds", c)
-		}
 	}
 }

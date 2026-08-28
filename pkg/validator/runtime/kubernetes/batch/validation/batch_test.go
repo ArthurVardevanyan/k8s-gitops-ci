@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"sigs.k8s.io/yaml"
-
-	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
 func TestParallelismInvalidCheck(t *testing.T) {
@@ -264,44 +262,6 @@ func TestStartingDeadlineSecondsInvalidCheck(t *testing.T) {
 			}
 			if !tt.want && len(findings) > 0 {
 				t.Errorf("expected no findings, got %d", len(findings))
-			}
-		})
-	}
-}
-
-func TestCheckIDs(t *testing.T) {
-	checks := []struct {
-		id string
-		c  runtime.Check
-	}{
-		{"batch/parallelism-invalid", newParallelismInvalidCheck()},
-		{"batch/backoff-limit-invalid", newBackoffLimitInvalidCheck()},
-		{"batch/schedule-invalid", newScheduleInvalidCheck()},
-		{"batch/concurrency-policy-invalid", newConcurrencyPolicyInvalidCheck()},
-		{"batch/failed-jobs-history-limit-invalid", newFailedJobsHistoryLimitInvalidCheck()},
-		{"batch/successful-jobs-history-limit-invalid", newSuccessfulJobsHistoryLimitInvalidCheck()},
-		{"batch/starting-deadline-seconds-invalid", newStartingDeadlineSecondsInvalidCheck()},
-	}
-
-	for _, tc := range checks {
-		t.Run(tc.id, func(t *testing.T) {
-			if tc.c.ID() != tc.id {
-				t.Errorf("ID mismatch: expected %q, got %q", tc.id, tc.c.ID())
-			}
-			if tc.c.Title() == "" {
-				t.Error("Title must not be empty")
-			}
-			if runtime.CategoryOf(tc.c.ID()) == "" {
-				t.Error("Category must not be empty")
-			}
-			if !tc.c.Blocking() {
-				t.Error("Blocking must be true")
-			}
-			if !tc.c.RenderSensitive() {
-				t.Error("RenderSensitive must be true")
-			}
-			if len(tc.c.Kinds()) == 0 {
-				t.Error("Kinds must not be empty")
 			}
 		})
 	}

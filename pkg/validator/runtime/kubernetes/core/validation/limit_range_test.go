@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/resource"
-
-	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
 func TestLimitRangeMaxMinInvalid_Check(t *testing.T) {
@@ -83,29 +81,6 @@ spec:
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when no min, got %d", len(findings))
-	}
-}
-
-func TestLimitRange_Check_Interface(t *testing.T) {
-	checks := []runtime.Check{
-		newLimitRangeMaxMinInvalidCheck(),
-	}
-	for _, c := range checks {
-		if c.ID() == "" {
-			t.Errorf("check %T has empty ID", c)
-		}
-		if runtime.CategoryOf(c.ID()) != "core" {
-			t.Errorf("check %T has wrong category: %s", c, runtime.CategoryOf(c.ID()))
-		}
-		if !c.Blocking() {
-			t.Errorf("check %T should be blocking", c)
-		}
-		if !c.RenderSensitive() {
-			t.Errorf("check %T should render sensitive", c)
-		}
-		if len(c.Kinds()) == 0 {
-			t.Errorf("check %T should declare Kinds", c)
-		}
 	}
 }
 

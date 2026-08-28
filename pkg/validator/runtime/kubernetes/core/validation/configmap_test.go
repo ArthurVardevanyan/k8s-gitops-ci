@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
 func TestConfigMapDataSizeExceeded_Check(t *testing.T) {
@@ -55,31 +53,5 @@ metadata:
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty data, got %d", len(findings))
-	}
-}
-
-func TestConfigMap_Check_Interface(t *testing.T) {
-	checks := []runtime.Check{
-		newConfigMapDataSizeExceededCheck(),
-	}
-	for _, c := range checks {
-		if c.ID() == "" {
-			t.Errorf("check %T has empty ID", c)
-		}
-		if c.Title() == "" {
-			t.Errorf("check %T has empty Title", c)
-		}
-		if runtime.CategoryOf(c.ID()) != "core" {
-			t.Errorf("check %T has wrong category: %s", c, runtime.CategoryOf(c.ID()))
-		}
-		if !c.Blocking() {
-			t.Errorf("check %T should be blocking", c)
-		}
-		if !c.RenderSensitive() {
-			t.Errorf("check %T should render sensitive", c)
-		}
-		if len(c.Kinds()) == 0 {
-			t.Errorf("check %T should declare Kinds", c)
-		}
 	}
 }

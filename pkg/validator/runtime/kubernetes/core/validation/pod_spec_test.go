@@ -872,41 +872,6 @@ spec:
 	}
 }
 
-func TestPodSpecChecksImplementCheckInterface(t *testing.T) {
-	checks := []runtime.Check{
-		newPodSpecRestartPolicyValueCheck(),
-		newPodSpecDNSPolicyValueCheck(),
-		newPodSpecTolerationOperatorValueCheck(),
-		newPodSpecNodeSelectorInvalidCheck(),
-		newPodSpecAffinityInvalidCheck(),
-		newPodSpecTopologySpreadInvalidCheck(),
-		newPodSpecServiceAccountNameInvalidCheck(),
-		newPodSpecActiveDeadlineSecondsNegativeCheck(),
-		newPodSpecReadinessGateInvalidCheck(),
-	}
-
-	for _, c := range checks {
-		if c.ID() == "" {
-			t.Errorf("check %T has empty ID", c)
-		}
-		if c.Title() == "" {
-			t.Errorf("check %T has empty Title", c)
-		}
-		if runtime.CategoryOf(c.ID()) == "" {
-			t.Errorf("check %T has empty Category", c)
-		}
-		if !c.Blocking() {
-			t.Errorf("check %T should be blocking", c)
-		}
-		if !c.RenderSensitive() {
-			t.Errorf("check %T should render sensitive", c)
-		}
-		if len(c.Kinds()) == 0 {
-			t.Errorf("check %T should declare Kinds", c)
-		}
-	}
-}
-
 // podSpecEnumDoc builds a workload document carrying a single pod-spec
 // field, at the nesting depth the given kind uses. The enum checks all
 // exercise the same shape, so the fixture is built rather than repeated.

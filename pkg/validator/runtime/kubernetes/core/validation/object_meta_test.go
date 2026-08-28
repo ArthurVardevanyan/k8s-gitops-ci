@@ -170,21 +170,3 @@ func TestObjectMetaNamespaceScopeNotChecked(t *testing.T) {
 		t.Errorf("cluster-scope namespace misuse must not be reported here, got: %s", got[0].Message)
 	}
 }
-
-func TestObjectMetaChecksMetadata(t *testing.T) {
-	for _, c := range []interface {
-		ID() string
-		Kinds() []string
-		Blocking() bool
-	}{
-		newObjectMetaNameInvalidCheck(),
-		newObjectMetaNamespaceInvalidCheck(),
-	} {
-		if len(c.Kinds()) == 0 {
-			t.Errorf("check %s should declare Kinds", c.ID())
-		}
-		if !c.Blocking() {
-			t.Errorf("check %s should be blocking", c.ID())
-		}
-	}
-}
