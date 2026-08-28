@@ -27,7 +27,11 @@ data:
 }
 
 func TestConfigMapDataSizeExceeded_Check_UnderLimit(t *testing.T) {
-	smallVal := string(make([]byte, maxConfigMapSize-100))
+	// Printable filler, not make([]byte, n). A zeroed slice is NUL bytes,
+	// which are not valid in YAML, so the document failed to parse and the
+	// check returned nil - the test passed without ever reaching the size
+	// comparison it exists to exercise.
+	smallVal := strings.Repeat("a", maxConfigMapSize-100)
 	data := []byte(`apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -110,14 +110,18 @@ spec:
       requests:
         cpu: "-100m"
 `)
-	// Negative values in YAML are typically rejected by the Kubernetes
-	// unmarshaler, but if they make it through this check catches them.
+	// resource.Quantity parses negative values fine ("-100m" is a valid
+	// quantity), so this must produce exactly one finding. The assertion
+	// previously accepted 0 or 1 on the theory that the unmarshaler might
+	// reject it, which made the test pass whether or not the check worked -
+	// including if it silently stopped detecting negative quantities.
 	check := resourceQuantityNegativeCheck{}
 	findings := check.Run(data, "test.yaml")
-	// The YAML unmarshaler may reject negative values, so we accept either
-	// 0 or 1 finding depending on whether the value was parsed.
-	if len(findings) > 1 {
-		t.Errorf("expected at most 1 finding, got %d: %v", len(findings), findings)
+	if len(findings) != 1 {
+		t.Fatalf("expected exactly 1 finding for a negative quantity, got %d: %v", len(findings), findings)
+	}
+	if findings[0].RuleID != "resources/resource-quantity-negative" {
+		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
 
