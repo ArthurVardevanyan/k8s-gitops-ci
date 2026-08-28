@@ -86,44 +86,9 @@ spec:
 	}
 }
 
-func TestLimitRangeNameInvalid_Check(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: LimitRange
-metadata:
-spec:
-  limits:
-  - type: Container
-`)
-	check := limitRangeNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "core/limitrange-name-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-func TestLimitRangeNameInvalid_Check_WithName(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: LimitRange
-metadata:
-  name: test-lr
-spec:
-  limits:
-  - type: Container
-`)
-	check := limitRangeNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d", len(findings))
-	}
-}
-
 func TestLimitRange_Check_Interface(t *testing.T) {
 	checks := []runtime.Check{
 		limitRangeMaxMinInvalidCheck{},
-		limitRangeNameInvalidCheck{},
 	}
 	for _, c := range checks {
 		if c.ID() == "" {

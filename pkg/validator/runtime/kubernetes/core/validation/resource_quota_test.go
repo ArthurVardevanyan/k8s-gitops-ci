@@ -99,40 +99,6 @@ spec:
 	}
 }
 
-func TestResourceQuotaNameInvalid_Check(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: ResourceQuota
-metadata:
-spec:
-  hard:
-    cpu: "10"
-`)
-	check := resourceQuotaNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "core/resourcequota-name-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-func TestResourceQuotaNameInvalid_Check_WithName(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: test-quota
-spec:
-  hard:
-    cpu: "10"
-`)
-	check := resourceQuotaNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d", len(findings))
-	}
-}
-
 func TestResourceQuotaHardInvalid_Check_NegativeResource(t *testing.T) {
 	data := []byte(`apiVersion: v1
 kind: ResourceQuota
@@ -158,7 +124,6 @@ func TestResourceQuota_Check_Interface(t *testing.T) {
 	checks := []runtime.Check{
 		resourceQuotaHardInvalidCheck{},
 		resourceQuotaHardNegativeCheck{},
-		resourceQuotaNameInvalidCheck{},
 	}
 	for _, c := range checks {
 		if c.ID() == "" {

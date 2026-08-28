@@ -33,7 +33,6 @@ func TestEveryValidationPackageRegisters(t *testing.T) {
 		{pkg: "networking", id: "ingress/path-type-invalid"},
 		{pkg: "policy", id: "policy/max-unavailable-invalid"},
 		{pkg: "rbac", id: "rbac/clusterrole-ref-invalid"},
-		{pkg: "scheduling", id: "scheduling/priorityclass-name-invalid"},
 		{pkg: "storage", id: "persistent-volume-claim/access-modes-invalid"},
 	}
 

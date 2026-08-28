@@ -30,6 +30,8 @@ func Register() {
 		podSpecServiceAccountNameInvalidCheck{},
 		podSpecActiveDeadlineSecondsNegativeCheck{},
 		podSpecReadinessGateInvalidCheck{},
+		objectMetaNameInvalidCheck{},
+		objectMetaNamespaceInvalidCheck{},
 	}
 
 	for _, c := range checks {

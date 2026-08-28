@@ -62,45 +62,9 @@ func (c limitRangeMaxMinInvalidCheck) Run(data []byte, source string) []runtime.
 	return findings
 }
 
-type limitRangeNameInvalidCheck struct{}
-
-func (c limitRangeNameInvalidCheck) ID() string            { return "core/limitrange-name-invalid" }
-func (c limitRangeNameInvalidCheck) Title() string         { return "LimitRange Name Is Required" }
-func (c limitRangeNameInvalidCheck) Category() string      { return "core" }
-func (c limitRangeNameInvalidCheck) Blocking() bool        { return true }
-func (c limitRangeNameInvalidCheck) RenderSensitive() bool { return true }
-func (c limitRangeNameInvalidCheck) Kinds() []string       { return limitRangeKinds }
-
-func (c limitRangeNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var ref struct {
-		Kind string `json:"kind"`
-	}
-	if err := yaml.Unmarshal(data, &ref); err != nil || ref.Kind != "LimitRange" {
-		return nil
-	}
-	var lr corev1.LimitRange
-	if err := yaml.Unmarshal(data, &lr); err != nil {
-		return nil
-	}
-	if lr.GetName() == "" {
-		return []runtime.Finding{{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Category:  c.Category(),
-			Finding: check.Finding{
-				Path:    "metadata.name",
-				Message: "limitrange: metadata.name is required",
-				Kind:    "LimitRange",
-			},
-		}}
-	}
-	return nil
-}
-
 func init() {
 	checks := []runtime.Check{
 		limitRangeMaxMinInvalidCheck{},
-		limitRangeNameInvalidCheck{},
 	}
 	for _, c := range checks {
 		check.Register(runtime.CheckToRegistered(c))

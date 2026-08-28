@@ -97,47 +97,10 @@ func (c resourceQuotaHardNegativeCheck) Run(data []byte, source string) []runtim
 	return findings
 }
 
-type resourceQuotaNameInvalidCheck struct{}
-
-func (c resourceQuotaNameInvalidCheck) ID() string { return "core/resourcequota-name-invalid" }
-
-func (c resourceQuotaNameInvalidCheck) Title() string         { return "ResourceQuota Name Is Required" }
-func (c resourceQuotaNameInvalidCheck) Category() string      { return "core" }
-func (c resourceQuotaNameInvalidCheck) Blocking() bool        { return true }
-func (c resourceQuotaNameInvalidCheck) RenderSensitive() bool { return true }
-func (c resourceQuotaNameInvalidCheck) Kinds() []string       { return resourceQuotaKinds }
-
-func (c resourceQuotaNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var ref struct {
-		Kind string `json:"kind"`
-	}
-	if err := yaml.Unmarshal(data, &ref); err != nil || ref.Kind != "ResourceQuota" {
-		return nil
-	}
-	var rq corev1.ResourceQuota
-	if err := yaml.Unmarshal(data, &rq); err != nil {
-		return nil
-	}
-	if rq.GetName() == "" {
-		return []runtime.Finding{{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Category:  c.Category(),
-			Finding: check.Finding{
-				Path:    "metadata.name",
-				Message: "resourcequota: metadata.name is required",
-				Kind:    "ResourceQuota",
-			},
-		}}
-	}
-	return nil
-}
-
 func init() {
 	checks := []runtime.Check{
 		resourceQuotaHardInvalidCheck{},
 		resourceQuotaHardNegativeCheck{},
-		resourceQuotaNameInvalidCheck{},
 	}
 	for _, c := range checks {
 		check.Register(runtime.CheckToRegistered(c))

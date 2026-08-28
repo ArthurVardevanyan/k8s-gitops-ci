@@ -54,54 +54,9 @@ metadata:
 	}
 }
 
-func TestConfigMapNameInvalid_Check(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: ConfigMap
-metadata:
-data:
-  key: value
-`)
-	check := configMapNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "core/configmap-name-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Path != "metadata.name" {
-		t.Errorf("unexpected path: %s", findings[0].Path)
-	}
-}
-
-func TestConfigMapNameInvalid_Check_WithName(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: valid-name
-data:
-  key: value
-`)
-	check := configMapNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d", len(findings))
-	}
-}
-
-func TestConfigMapNameInvalid_Check_NonConfigMap(t *testing.T) {
-	data := []byte(`kind: Pod`)
-	check := configMapNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for Pod, got %d", len(findings))
-	}
-}
-
 func TestConfigMap_Check_Interface(t *testing.T) {
 	checks := []runtime.Check{
 		configMapDataSizeExceededCheck{},
-		configMapNameInvalidCheck{},
 	}
 	for _, c := range checks {
 		if c.ID() == "" {

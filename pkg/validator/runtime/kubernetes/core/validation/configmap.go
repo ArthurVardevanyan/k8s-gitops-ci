@@ -66,42 +66,9 @@ func (c configMapDataSizeExceededCheck) Run(data []byte, source string) []runtim
 	return nil
 }
 
-type configMapNameInvalidCheck struct{}
-
-func (c configMapNameInvalidCheck) ID() string            { return "core/configmap-name-invalid" }
-func (c configMapNameInvalidCheck) Title() string         { return "ConfigMap Name Is Required" }
-func (c configMapNameInvalidCheck) Category() string      { return "core" }
-func (c configMapNameInvalidCheck) Blocking() bool        { return true }
-func (c configMapNameInvalidCheck) RenderSensitive() bool { return true }
-func (c configMapNameInvalidCheck) Kinds() []string       { return configMapKinds }
-
-func (c configMapNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	if !isKind(data, "ConfigMap") {
-		return nil
-	}
-	var cm corev1.ConfigMap
-	if err := yaml.Unmarshal(data, &cm); err != nil {
-		return nil
-	}
-	if cm.GetName() == "" {
-		return []runtime.Finding{{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Category:  c.Category(),
-			Finding: check.Finding{
-				Path:    "metadata.name",
-				Message: "configmap: metadata.name is required",
-				Kind:    "ConfigMap",
-			},
-		}}
-	}
-	return nil
-}
-
 func init() {
 	checks := []runtime.Check{
 		configMapDataSizeExceededCheck{},
-		configMapNameInvalidCheck{},
 	}
 	for _, c := range checks {
 		check.Register(runtime.CheckToRegistered(c))

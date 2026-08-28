@@ -123,19 +123,15 @@ func (c maxReplicasInvalidCheck) Run(data []byte, source string) []runtime.Findi
 
 	val, found := extractNestedInt(spec, "maxReplicas")
 	if !found {
-		return []runtime.Finding{
-			{
-				RuleID:    c.ID(),
-				RuleTitle: c.Title(),
-				Category:  c.Category(),
-				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("maxReplicas").String(),
-					Message: "spec.maxReplicas: required",
-					Kind:    "HorizontalPodAutoscaler",
-					Name:    name,
-				},
-			},
-		}
+		// A missing spec.maxReplicas is already rejected by kubeconform:
+		// maxReplicas is in the `required` array of every HPA schema
+		// variant (autoscaling/v1, autoscaling/v2, and the default). This
+		// is the only place in the runtime family where the JSON schema
+		// fully subsumes a branch, because it is the only branch keyed on
+		// key *presence* rather than on a value the schema cannot
+		// constrain. Reporting it here too would just double-report.
+		// See docs/SCHEMAS.md.
+		return nil
 	}
 	if val <= 0 {
 		return []runtime.Finding{
