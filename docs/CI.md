@@ -30,6 +30,7 @@ package map; this is the detailed, step-by-step reference.
     - [Scaffold Validation](#scaffold-validation)
     - [Registered checks](#registered-checks)
       - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
+        - [Object name validation](#object-name-validation)
         - [Deferred: policy-style checks removed from this family](#deferred-policy-style-checks-removed-from-this-family)
       - [Raw vs. rendered check input (dual-pass compliance)](#raw-vs-rendered-check-input-dual-pass-compliance)
       - [`namespace`](#namespace)
@@ -798,7 +799,7 @@ exemptable resource-compliance family in the table above instead.
 
 That standard was applied retroactively: every check was audited against
 real upstream `kubernetes/kubernetes` validation source, and **128 of 211
-were deleted**, leaving 83. The deleted ones were either **fabricated**
+were deleted**, leaving 77. The deleted ones were either **fabricated**
 (upstream has no such rule at all) or **distorted** (materially wrong
 semantics — the wrong validator, e.g. `IsDNS1123Subdomain` where upstream
 uses `ValidateDNS1123Label`; the wrong field name; the wrong threshold;
@@ -807,24 +808,70 @@ changing a check, cite the upstream function it ports.
 
 The remaining checks group by API group:
 
-| Package                                               | Rules ported                                                                                                                                     |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `runtime/kubernetes/core/validation`                  | Core objects (ConfigMap, Secret, ServiceAccount, ResourceQuota, LimitRange, Namespace), container, pod-spec, resource-quantity, and volume rules |
-| `runtime/kubernetes/apps/validation`                  | Deployment, StatefulSet, ReplicaSet, DaemonSet                                                                                                   |
-| `runtime/kubernetes/batch/validation`                 | Job, CronJob                                                                                                                                     |
-| `runtime/kubernetes/storage/validation`               | PersistentVolume, PersistentVolumeClaim, StorageClass                                                                                            |
-| `runtime/kubernetes/networking/validation`            | Service, Ingress, IngressClass, NetworkPolicy                                                                                                    |
-| `runtime/kubernetes/rbac/validation`                  | Role/ClusterRole rules and binding `roleRef` shape                                                                                               |
-| `runtime/kubernetes/admissionregistration/validation` | ValidatingWebhookConfiguration, MutatingWebhookConfiguration                                                                                     |
-| `runtime/kubernetes/apiextensions/validation`         | CustomResourceDefinition                                                                                                                         |
-| `runtime/kubernetes/autoscaling/validation`           | HorizontalPodAutoscaler (v1/v2)                                                                                                                  |
-| `runtime/kubernetes/policy/validation`                | PodDisruptionBudget                                                                                                                              |
-| `runtime/kubernetes/scheduling/validation`            | PriorityClass                                                                                                                                    |
+| Package                                               | Rules ported                                                                                                                                                            |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime/kubernetes/core/validation`                  | Object metadata (name/generateName/namespace, all kinds), core objects (ConfigMap, ResourceQuota, LimitRange), container, pod-spec, resource-quantity, and volume rules |
+| `runtime/kubernetes/apps/validation`                  | Deployment, StatefulSet, ReplicaSet, DaemonSet                                                                                                                          |
+| `runtime/kubernetes/batch/validation`                 | Job, CronJob                                                                                                                                                            |
+| `runtime/kubernetes/storage/validation`               | PersistentVolume, PersistentVolumeClaim, StorageClass                                                                                                                   |
+| `runtime/kubernetes/networking/validation`            | Service, Ingress, IngressClass, NetworkPolicy                                                                                                                           |
+| `runtime/kubernetes/rbac/validation`                  | Role/ClusterRole rules and binding `roleRef` shape                                                                                                                      |
+| `runtime/kubernetes/admissionregistration/validation` | ValidatingWebhookConfiguration, MutatingWebhookConfiguration                                                                                                            |
+| `runtime/kubernetes/apiextensions/validation`         | CustomResourceDefinition                                                                                                                                                |
+| `runtime/kubernetes/autoscaling/validation`           | HorizontalPodAutoscaler (v1/v2)                                                                                                                                         |
+| `runtime/kubernetes/policy/validation`                | PodDisruptionBudget                                                                                                                                                     |
 
 `pkg/validator/runtime/kubernetes/` is the authoritative list — the check
 IDs (`<category>/<rule>`, e.g. `apps/daemonset-min-ready-seconds-invalid`)
 are declared next to the rules they enforce, and this table is a map, not
 an inventory.
+
+##### Object name validation
+
+`core/object-meta-name-invalid` covers `metadata.name` and
+`metadata.generateName` for every kind in one place. This is worth a
+separate note because the rules are **not uniform** — assuming a blanket
+DNS-1123 subdomain rule produces false positives on valid manifests:
+
+| Name function                                    | Kinds                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NameIsDNSSubdomain` (≤253, dots allowed)        | Pod, ConfigMap, Secret, ServiceAccount, LimitRange, ResourceQuota, PersistentVolume, PersistentVolumeClaim, PriorityClass, StorageClass, Deployment, DaemonSet, ReplicaSet, Job, CronJob, HorizontalPodAutoscaler, Ingress, IngressClass, NetworkPolicy, webhook configurations |
+| `NameIsDNSLabel` (≤63, **no dots**)              | Namespace, **StatefulSet**, Service                                                                                                                                                                                                                                             |
+| `IsPathSegmentName` (no charset or length limit) | Role, ClusterRole, RoleBinding, ClusterRoleBinding                                                                                                                                                                                                                              |
+
+Three traps this encodes:
+
+- **StatefulSet uses a DNS _label_, not a subdomain** — its name becomes a
+  pod-name prefix, so `my.db` is rejected by the API server even though it
+  would be a fine Deployment name.
+- **RBAC names are barely validated at all.** `IsPathSegmentName` rejects
+  only `.`/`..` and names containing `/` or `%`. A `ClusterRole` named
+  `system:controller:foo` or `My.Role` is entirely valid; flagging it
+  would block correct RBAC.
+- **Service uses the relaxed rule.** Historically Service names were
+  `NameIsDNS1035Label`, which additionally requires a leading letter.
+  KEP-5311 (`RelaxedServiceNameValidation`) relaxes this to
+  `NameIsDNSLabel`: off by default in 1.34, **on by default from 1.36**,
+  GA and locked on in 1.37. We use the relaxed rule because it is the
+  modern default and the permissive one — a Service named `1st-api` is
+  never falsely blocked, while uppercase, underscores, dots and
+  over-length names are still caught on every version.
+
+Kinds absent from that map are **skipped, not defaulted**. Custom
+resources are the bulk of documents in a typical GitOps repository and
+their name rules are not reliably DNS-1123, so guessing would risk
+blocking valid manifests — and these findings are non-exemptable.
+`CustomResourceDefinition` is also excluded here: its name rule is the
+cross-field `<plural>.<group>` form and belongs with the other
+apiextensions checks.
+
+`core/object-meta-namespace-invalid` validates the **format** of
+`metadata.namespace` (a DNS-1123 label) when one is set. It deliberately
+does not check whether a namespace is present or forbidden for the
+object's scope — that rule belongs to the exemptable `namespace` static
+check, which owns the generated cluster resource-scope map. Duplicating it
+would double-report and would turn an exemptable policy decision into an
+unexemptable one.
 
 A handful of Kubernetes resource kinds are deliberately **not** covered by
 runtime validation checks. These are runtime-generated, ephemeral, or

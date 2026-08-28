@@ -205,6 +205,24 @@ of the v2 conversion either: Kubernetes' OpenAPI **v3** has zero
 enum-annotated fields as well, so switching the generation pipeline to v3
 would not add a single allowed-value constraint.
 
+A census of every value-constraining JSON Schema keyword across all 1373
+builtin schemas makes the ceiling concrete:
+
+| Keyword                                                                                               | Real occurrences                         |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `additionalProperties`                                                                                | 29534                                    |
+| `required`                                                                                            | 15237                                    |
+| `format`                                                                                              | 11816                                    |
+| `oneOf`                                                                                               | 3629 (all IntOrString `string\|integer`) |
+| `enum`                                                                                                | 978 — **all on `kind`/`apiVersion`**     |
+| `pattern`, `minimum`, `maximum`, `uniqueItems`, `minLength`, `maxLength`, `minItems`, `minProperties` | **0**                                    |
+| `contains`, `allOf`, `if`/`then`, `dependentRequired`, `const`                                        | **0**                                    |
+
+Beware one trap when re-running that census: `_definitions.json` contains
+the `JSONSchemaProps` type (the CRD schema-of-schemas), which has
+_properties named_ `pattern`, `minimum`, `allOf` and friends. A naive
+grep counts those as constraints; they are field names.
+
 Consequently, these classes of rule **cannot** come from the schema
 pipeline at any version, and are exactly what runtime validation is for:
 
@@ -214,14 +232,36 @@ pipeline at any version, and are exactly what runtime validation is for:
 | Numeric range and sign  | `replicas >= 0`; a PriorityClass `value` upper bound             |
 | Uniqueness              | duplicate container names; duplicate `hostPort`s within a pod    |
 | Cross-field consistency | a Deployment's `selector` must match its pod-template labels     |
+| Cardinality             | a CRD must have exactly one version with `storage: true`         |
 | String format           | DNS-1123 label/subdomain, qualified name, cron expression syntax |
+
+#### Object names are not validated by the schemas at all
+
+This deserves calling out because it is easy to assume otherwise.
+Kubernetes requires every object's `metadata.name` to satisfy a
+per-kind name function, but in the embedded schemas:
+
+```json
+"name": { "type": ["string", "null"] }
+```
+
+There is no `pattern` and no `maxLength`, and `metadata` carries no
+`required` array. So kubeconform strict accepts an object with **no name
+at all**, a 400-character name, or `name: My_Bad_Name!`. The same is true
+of `generateName` and `metadata.namespace`. All object-name validation
+therefore has to live in the runtime family — see
+`core/object-meta-name-invalid` and `core/object-meta-namespace-invalid`.
+
+### When a runtime check _is_ duplicative
 
 The boundary cuts the other way too. A check that only re-detects a
 **missing schema-`required` field** is pure duplication of what
 kubeconform already reports, and is deleted on that basis — 11 volume
 checks (`hostPath.path`, `persistentVolumeClaim.claimName`,
 `nfs.server`/`nfs.path`, `csi.driver`, and similar) were removed for
-exactly this reason.
+exactly this reason, as was the key-presence branch of
+`autoscaling/max-replicas-invalid` (`maxReplicas` is `required` in every
+HPA schema variant).
 
 There is a subtlety worth writing down before applying that rule,
 though: schema `required` only guarantees the **key is present**. It says
@@ -230,6 +270,26 @@ present-**and-non-empty** is _not_ redundant with the schema, because
 `field: ""` satisfies `required` perfectly well and the API server still
 rejects it. Delete a check as duplicative only when it is a bare
 key-presence assertion.
+
+These checks look duplicative and are not — each is a strict superset of
+the schema rule, catching the empty-string case the schema permits. Do
+not delete them:
+
+`batch/schedule-invalid`, `container/port-number-range`,
+`storage-class/provisioner-invalid`, `rbac/role-ref-invalid`,
+`rbac/clusterrole-ref-invalid`, `rbac/clusterrolebinding-subject-invalid`,
+`admissionregistration/service-invalid`,
+`admissionregistration/validating-service-invalid`,
+`pod-spec/readiness-gate-invalid`.
+
+The accepted trade-off is that for those checks a manifest omitting the
+key entirely yields two findings — one from kubeconform in the Linting
+phase, one from the runtime check in Post-Build Validation. That is
+deliberate: the runtime half is the only one that survives if the
+kubeconform step is disabled.
+
+Finally, `custom-standalone-strict/` (the CRD-derived schemas) is out of
+scope for this comparison: every runtime check targets a builtin kind.
 
 ## Kyverno policies
 
