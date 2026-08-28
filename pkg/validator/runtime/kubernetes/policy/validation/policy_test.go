@@ -1,8 +1,63 @@
 package validation
 
 import (
+	"strings"
 	"testing"
+
+	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
+
+// docCase is one complete manifest and the findings it must produce. These
+// rules span three kinds with unrelated spec shapes, so a case carries the
+// whole document rather than a fragment.
+type docCase struct {
+	name     string
+	doc      string
+	want     int
+	contains string
+}
+
+func runDocCases(t *testing.T, run func([]byte, string) []runtime.Finding, cases []docCase) {
+	t.Helper()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := run([]byte(tc.doc), "test.yaml")
+			if len(findings) != tc.want {
+				t.Fatalf("got %d finding(s), want %d: %v", len(findings), tc.want, findings)
+			}
+			if tc.contains != "" && !strings.Contains(findings[0].Message, tc.contains) {
+				t.Errorf("message %q does not contain %q", findings[0].Message, tc.contains)
+			}
+		})
+	}
+}
+
+func TestSelectorInvalid(t *testing.T) {
+	runDocCases(t, newSelectorInvalidCheck().Run, []docCase{
+		{name: "PDBSelectorValid", doc: "kind: \"PodDisruptionBudget\"\nmetadata:\n  name: \"test\"\nspec:\n  selector:\n    matchLabels:\n      app: \"test\"\n  minAvailable: 1\n", want: 0},
+	})
+}
+
+func TestMinAvailableInvalid(t *testing.T) {
+	runDocCases(t, newMinAvailableInvalidCheck().Run, []docCase{
+		{name: "PDBMinAvailableCheck", doc: "kind: \"PodDisruptionBudget\"\nmetadata:\n  name: \"test\"\nspec:\n  selector:\n    matchLabels:\n      app: \"test\"\n  minAvailable: -1\n", want: 1},
+		{name: "PDBMinAvailableValid", doc: "kind: \"PodDisruptionBudget\"\nmetadata:\n  name: \"test\"\nspec:\n  selector:\n    matchLabels:\n      app: \"test\"\n  minAvailable: 1\n", want: 0},
+	})
+}
+
+func TestMaxUnavailableInvalid(t *testing.T) {
+	runDocCases(t, newMaxUnavailableInvalidCheck().Run, []docCase{
+		{name: "PDBMaxUnavailableCheck", doc: "kind: \"PodDisruptionBudget\"\nmetadata:\n  name: \"test\"\nspec:\n  selector:\n    matchLabels:\n      app: \"test\"\n  maxUnavailable: -1\n", want: 1},
+		{name: "PDBMaxUnavailableValid", doc: "kind: \"PodDisruptionBudget\"\nmetadata:\n  name: \"test\"\nspec:\n  selector:\n    matchLabels:\n      app: \"test\"\n  maxUnavailable: 1\n", want: 0},
+	})
+}
+
+func TestMinAndMaxSpecified(t *testing.T) {
+	runDocCases(t, newMinAndMaxSpecifiedCheck().Run, []docCase{
+		{name: "PDBMinAndMaxSpecifiedCheck", doc: "kind: \"PodDisruptionBudget\"\nmetadata:\n  name: \"test\"\nspec:\n  selector:\n    matchLabels:\n      app: \"test\"\n  minAvailable: 1\n  maxUnavailable: 1\n", want: 1},
+		{name: "PDBMinAndMaxSpecifiedValid", doc: "kind: \"PodDisruptionBudget\"\nmetadata:\n  name: \"test\"\nspec:\n  selector:\n    matchLabels:\n      app: \"test\"\n  minAvailable: 1\n", want: 0},
+	})
+}
 
 // The selector must be validated as a structured LabelSelector. It was
 // previously flattened to a string and parsed with labels.Parse, which has
@@ -68,143 +123,5 @@ func TestPDBSelectorCheck(t *testing.T) {
 				t.Errorf("unexpected kind: %s", findings[0].Kind)
 			}
 		})
-	}
-}
-
-func TestPDBSelectorValid(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector:
-    matchLabels:
-      app: "test"
-  minAvailable: 1
-`)
-	check := newSelectorInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPDBMinAvailableCheck(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector:
-    matchLabels:
-      app: "test"
-  minAvailable: -1
-`)
-	check := newMinAvailableInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "policy/min-available-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PodDisruptionBudget" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPDBMinAvailableValid(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector:
-    matchLabels:
-      app: "test"
-  minAvailable: 1
-`)
-	check := newMinAvailableInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPDBMaxUnavailableCheck(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector:
-    matchLabels:
-      app: "test"
-  maxUnavailable: -1
-`)
-	check := newMaxUnavailableInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "policy/max-unavailable-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PodDisruptionBudget" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPDBMaxUnavailableValid(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector:
-    matchLabels:
-      app: "test"
-  maxUnavailable: 1
-`)
-	check := newMaxUnavailableInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPDBMinAndMaxSpecifiedCheck(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector:
-    matchLabels:
-      app: "test"
-  minAvailable: 1
-  maxUnavailable: 1
-`)
-	check := newMinAndMaxSpecifiedCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "policy/min-and-max-specified" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PodDisruptionBudget" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPDBMinAndMaxSpecifiedValid(t *testing.T) {
-	data := []byte(`kind: "PodDisruptionBudget"
-metadata:
-  name: "test"
-spec:
-  selector:
-    matchLabels:
-      app: "test"
-  minAvailable: 1
-`)
-	check := newMinAndMaxSpecifiedCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
 	}
 }

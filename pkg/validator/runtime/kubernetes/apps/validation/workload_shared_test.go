@@ -165,22 +165,3 @@ func TestWorkloadUpdateStrategyInvalid(t *testing.T) {
 		})
 	}
 }
-
-// Unparseable input must yield nothing rather than an error or a spurious
-// finding. Kinds a check does not declare are covered for all 81 checks by
-// TestChecksIgnoreKindsTheyDoNotDeclare in the parent package.
-func TestAppsChecksIgnoreInvalidYAML(t *testing.T) {
-	for _, c := range []runtime.Check{
-		newDeploymentSelectorInvalidCheck(), newDeploymentReplicasInvalidCheck(),
-		newDeploymentMinReadySecondsInvalidCheck(), newDeploymentStrategyTypeInvalidCheck(),
-		newStatefulSetReplicasInvalidCheck(), newStatefulSetUpdateStrategyInvalidCheck(),
-		newStatefulSetPodManagementPolicyInvalidCheck(),
-		newDaemonSetSelectorInvalidCheck(), newDaemonSetUpdateStrategyInvalidCheck(),
-		newDaemonSetMinReadySecondsInvalidCheck(),
-		newReplicaSetSelectorInvalidCheck(), newReplicaSetReplicasInvalidCheck(),
-	} {
-		if got := c.Run([]byte("not valid yaml {{"), "test.yaml"); len(got) != 0 {
-			t.Errorf("check %s reported %d finding(s) for unparseable input", c.ID(), len(got))
-		}
-	}
-}

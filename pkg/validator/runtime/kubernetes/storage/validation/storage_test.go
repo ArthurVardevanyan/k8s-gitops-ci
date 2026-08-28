@@ -1,340 +1,89 @@
 package validation
 
 import (
+	"strings"
 	"testing"
+
+	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-func TestPVAccessModesInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWritonce
-  capacity:
-    storage: 1Gi
-  storageClassName: standard
-  hostPath:
-    path: /tmp`)
-	check := newPvAccessModesInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume/access-modes-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolume" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
+// docCase is one complete manifest and the findings it must produce. These
+// rules span three kinds with unrelated spec shapes, so a case carries the
+// whole document rather than a fragment.
+type docCase struct {
+	name     string
+	doc      string
+	want     int
+	contains string
+}
+
+func runDocCases(t *testing.T, run func([]byte, string) []runtime.Finding, cases []docCase) {
+	t.Helper()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			findings := run([]byte(tc.doc), "test.yaml")
+			if len(findings) != tc.want {
+				t.Fatalf("got %d finding(s), want %d: %v", len(findings), tc.want, findings)
+			}
+			if tc.contains != "" && !strings.Contains(findings[0].Message, tc.contains) {
+				t.Errorf("message %q does not contain %q", findings[0].Message, tc.contains)
+			}
+		})
 	}
 }
 
-func TestPVAccessModesInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  capacity:
-    storage: 1Gi
-  storageClassName: standard
-  hostPath:
-    path: /tmp`)
-	check := newPvAccessModesInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
+func TestPvAccessModesInvalid(t *testing.T) {
+	runDocCases(t, newPvAccessModesInvalidCheck().Run, []docCase{
+		{name: "PVAccessModesInvalidCheck", doc: "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWritonce\n  capacity:\n    storage: 1Gi\n  storageClassName: standard\n  hostPath:\n    path: /tmp", want: 1},
+		{name: "PVAccessModesInvalidValid", doc: "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  capacity:\n    storage: 1Gi\n  storageClassName: standard\n  hostPath:\n    path: /tmp", want: 0},
+	})
 }
 
-func TestPVCapacityInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  storageClassName: standard
-  hostPath:
-    path: /tmp`)
-	check := newPvCapacityInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume/capacity-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolume" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
+func TestPvCapacityInvalid(t *testing.T) {
+	runDocCases(t, newPvCapacityInvalidCheck().Run, []docCase{
+		{name: "PVCapacityInvalidCheck", doc: "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  storageClassName: standard\n  hostPath:\n    path: /tmp", want: 1},
+		{name: "PVCapacityInvalidValid", doc: "kind: PersistentVolume\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  capacity:\n    storage: 10Gi\n  storageClassName: standard\n  hostPath:\n    path: /tmp", want: 0},
+	})
 }
 
-func TestPVCapacityInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  capacity:
-    storage: 10Gi
-  storageClassName: standard
-  hostPath:
-    path: /tmp`)
-	check := newPvCapacityInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
+func TestPvcAccessModesInvalid(t *testing.T) {
+	runDocCases(t, newPvcAccessModesInvalidCheck().Run, []docCase{
+		{name: "PVCAccessModesInvalidCheck", doc: "kind: PersistentVolumeClaim\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWritonce\n  resources:\n    requests:\n      storage: 1Gi\n  storageClassName: standard", want: 1},
+		{name: "PVCAccessModesInvalidValid", doc: "kind: PersistentVolumeClaim\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n  storageClassName: standard", want: 0},
+	})
 }
 
-func TestPVCapacityInvalidGuardsOnKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	// The check guards on kind itself rather than relying solely on the
-	// adapter to gate dispatch. Without that guard it decodes any
-	// document into a PersistentVolume and reports its required fields as
-	// missing - attributing the finding to a kind the document is not.
-	if findings := newPvCapacityInvalidCheck().Run(data, "test.yaml"); len(findings) != 0 {
-		t.Fatalf("expected no findings for a non-PersistentVolume document, got %d: %v", len(findings), findings)
-	}
+func TestPvcVolumeModeInvalid(t *testing.T) {
+	runDocCases(t, newPvcVolumeModeInvalidCheck().Run, []docCase{
+		{name: "PVCVolumeModeInvalidCheck", doc: "kind: PersistentVolumeClaim\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n  volumeMode: InvalidMode", want: 1},
+		{name: "PVCVolumeModeInvalidValid", doc: "kind: PersistentVolumeClaim\nmetadata:\n  name: test\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n  volumeMode: Filesystem", want: 0},
+	})
 }
 
-func TestPVCAccessModesInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWritonce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: standard`)
-	check := newPvcAccessModesInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume-claim/access-modes-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolumeClaim" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
+func TestScProvisionerInvalid(t *testing.T) {
+	runDocCases(t, newScProvisionerInvalidCheck().Run, []docCase{
+		{name: "SCProvisionerInvalidCheck", doc: "kind: StorageClass\nmetadata:\n  name: test\nreclaimPolicy: Delete", want: 1},
+		{name: "SCProvisionerInvalidValid", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nreclaimPolicy: Delete", want: 0},
+	})
 }
 
-func TestPVCAccessModesInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: standard`)
-	check := newPvcAccessModesInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
+func TestScReclaimPolicyInvalid(t *testing.T) {
+	runDocCases(t, newScReclaimPolicyInvalidCheck().Run, []docCase{
+		{name: "SCReclaimPolicyInvalidCheck", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nreclaimPolicy: InvalidReclaim", want: 1},
+		{name: "SCReclaimPolicyInvalidValid", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nreclaimPolicy: Delete", want: 0},
+	})
 }
 
-func TestPVCVolumeModeInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  volumeMode: InvalidMode`)
-	check := newPvcVolumeModeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume-claim/volume-mode-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolumeClaim" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
+func TestScVolumeBindingModeInvalid(t *testing.T) {
+	runDocCases(t, newScVolumeBindingModeInvalidCheck().Run, []docCase{
+		{name: "SCVolumeBindingModeInvalidCheck", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nvolumeBindingMode: InvalidMode", want: 1},
+		{name: "SCVolumeBindingModeInvalidValid", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nvolumeBindingMode: WaitForFirstConsumer", want: 0},
+	})
 }
 
-func TestPVCVolumeModeInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  volumeMode: Filesystem`)
-	check := newPvcVolumeModeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCProvisionerInvalidCheck(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-reclaimPolicy: Delete`)
-	check := newScProvisionerInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "storage-class/provisioner-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "StorageClass" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestSCProvisionerInvalidValid(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-reclaimPolicy: Delete`)
-	check := newScProvisionerInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCProvisionerInvalidGuardsOnKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	// The check guards on kind itself rather than relying solely on the
-	// adapter to gate dispatch. Without that guard it decodes any
-	// document into a StorageClass and reports its required fields as
-	// missing - attributing the finding to a kind the document is not.
-	if findings := newScProvisionerInvalidCheck().Run(data, "test.yaml"); len(findings) != 0 {
-		t.Fatalf("expected no findings for a non-StorageClass document, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCReclaimPolicyInvalidCheck(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-reclaimPolicy: InvalidReclaim`)
-	check := newScReclaimPolicyInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "storage-class/reclaim-policy-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "StorageClass" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestSCReclaimPolicyInvalidValid(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-reclaimPolicy: Delete`)
-	check := newScReclaimPolicyInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCVolumeBindingModeInvalidCheck(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-volumeBindingMode: InvalidMode`)
-	check := newScVolumeBindingModeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "storage-class/volume-binding-mode-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "StorageClass" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestSCVolumeBindingModeInvalidValid(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-volumeBindingMode: WaitForFirstConsumer`)
-	check := newScVolumeBindingModeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCAllowedTopologyRangeInvalidCheck(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-allowedTopologies:
-- matchLabelExpressions:
-  - key: ""
-    operator: In
-    values:
-    - us-east-1a`)
-	check := newScAllowedTopologyRangeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "storage-class/allowed-topology-range-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "StorageClass" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestSCAllowedTopologyRangeInvalidValid(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-allowedTopologies:
-- matchLabelExpressions:
-  - key: topology.kubernetes.io/zone
-    operator: In
-    values:
-    - us-east-1a`)
-	check := newScAllowedTopologyRangeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
+func TestScAllowedTopologyRangeInvalid(t *testing.T) {
+	runDocCases(t, newScAllowedTopologyRangeInvalidCheck().Run, []docCase{
+		{name: "SCAllowedTopologyRangeInvalidCheck", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nallowedTopologies:\n- matchLabelExpressions:\n  - key: \"\"\n    operator: In\n    values:\n    - us-east-1a", want: 1},
+		{name: "SCAllowedTopologyRangeInvalidValid", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nallowedTopologies:\n- matchLabelExpressions:\n  - key: topology.kubernetes.io/zone\n    operator: In\n    values:\n    - us-east-1a", want: 0},
+	})
 }

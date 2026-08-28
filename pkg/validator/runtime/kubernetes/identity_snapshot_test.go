@@ -159,6 +159,45 @@ func TestRegisteredCheckIdentityIsStable(t *testing.T) {
 	}
 }
 
+// TestChecksIgnoreMalformedInput asserts that no check reports a finding
+// against input it could not parse.
+//
+// A check that returns findings from a failed decode blames the manifest
+// for the parser's confusion, and because the family is non-exemptable
+// there is no way to suppress it. Rendering upstream of this can emit
+// documents that are empty or not YAML at all, so this is reachable.
+//
+// Individual packages sampled this against their own checks; driving it
+// from the registry covers all of them and any added later.
+func TestChecksIgnoreMalformedInput(t *testing.T) {
+	inputs := map[string]string{
+		"unparseable": "not valid yaml {{",
+		"empty":       "",
+		"onlyComment": "# nothing here\n",
+		"scalar":      "just-a-string\n",
+		"list":        "- a\n- b\n",
+		"nullKind":    "apiVersion: v1\nkind: ~\nmetadata:\n  name: test\n",
+	}
+	for _, c := range check.All() {
+		if c.Section() != "runtime-validation" {
+			continue
+		}
+		dc, ok := c.(interface {
+			CheckDoc(data []byte, source string) []check.Finding
+		})
+		if !ok {
+			t.Fatalf("check %q is not a DocCheck", c.ID())
+		}
+		t.Run(c.ID(), func(t *testing.T) {
+			for name, in := range inputs {
+				if got := dc.CheckDoc([]byte(in), "test.yaml"); len(got) != 0 {
+					t.Errorf("%s: reported %d finding(s) on input it cannot parse: %v", name, len(got), got)
+				}
+			}
+		})
+	}
+}
+
 // TestChecksIgnoreKindsTheyDoNotDeclare asserts the applies-to contract for
 // every registered check at once: a check handed a kind outside its list
 // must be skipped by the dispatcher and, if run anyway, must report nothing.
