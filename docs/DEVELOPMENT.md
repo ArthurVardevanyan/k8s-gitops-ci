@@ -939,7 +939,7 @@ is about the local dev-loop `task` targets themselves.
 | `test:homelab-prs`        | Replay the last _N_ merged PRs of a real GitOps repo (default HomeLab) — smoke gate, see [Testing](#end-to-end--regression-replay)                                               |
 | `coverage:report`         | Print per-file coverage report                                                                                                                                                   |
 | `coverage:html`           | Generate HTML coverage report and open in browser                                                                                                                                |
-| `ci`                      | Full CI pipeline — version check, mod check, format, schemas, lint, vulncheck, test, build                                                                                       |
+| `ci`                      | Full CI pipeline — version check, mod check, format, schemas, upstream refs, lint, vulncheck, test, build, smoke gate                                                            |
 | `clean`                   | Remove build artifacts, caches, and temp files                                                                                                                                   |
 | `update`                  | Run all update tasks (deps, schemas/policies pin bump + repack, scoped-resources)                                                                                                |
 | `update:deps`             | Upgrade all Go dependencies and tidy `go.mod`/`go.sum`                                                                                                                           |

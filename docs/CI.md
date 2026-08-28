@@ -802,7 +802,9 @@ exemptable resource-compliance family in the table above instead.
 
 That standard was applied retroactively: every check was audited against
 real upstream `kubernetes/kubernetes` validation source, and **128 of 211
-were deleted**, leaving 77. The deleted ones were either **fabricated**
+were deleted**, leaving 83. A further 6 that only duplicated kubeconform's
+strict mode were then dropped, leaving 77; checks added since bring the
+family to its current **81**. The deleted ones were either **fabricated**
 (upstream has no such rule at all) or **distorted** (materially wrong
 semantics — the wrong validator, e.g. `IsDNS1123Subdomain` where upstream
 uses `ValidateDNS1123Label`; the wrong field name; the wrong threshold;
@@ -860,7 +862,7 @@ and `ValidateEnv` are byte-identical across that same span, so in practice
 the check is quiet.
 
 To add a check: find the upstream function, get a digest with
-`go run ./internal/cmd/verify-upstream-refs -compute "<path>" -functions "<Fn>"`,
+`task verify:upstream-refs -- -compute "<path>" -functions "<Fn>"`,
 and add the entry. If no specific upstream function implements the rule,
 the check does not belong in this family — put it in the exemptable
 resource-compliance family instead.
@@ -928,8 +930,8 @@ The remaining checks group by API group:
 | `runtime/kubernetes/apps/validation`                  | Deployment, StatefulSet, ReplicaSet, DaemonSet                                                                                                                          |
 | `runtime/kubernetes/batch/validation`                 | Job, CronJob                                                                                                                                                            |
 | `runtime/kubernetes/storage/validation`               | PersistentVolume, PersistentVolumeClaim, StorageClass                                                                                                                   |
-| `runtime/kubernetes/networking/validation`            | Service, Ingress, IngressClass, NetworkPolicy                                                                                                                           |
-| `runtime/kubernetes/rbac/validation`                  | Role/ClusterRole rules and binding `roleRef` shape                                                                                                                      |
+| `runtime/kubernetes/networking/validation`            | Service, Ingress, NetworkPolicy                                                                                                                                         |
+| `runtime/kubernetes/rbac/validation`                  | RoleBinding/ClusterRoleBinding `roleRef` and subject shape                                                                                                              |
 | `runtime/kubernetes/admissionregistration/validation` | ValidatingWebhookConfiguration, MutatingWebhookConfiguration                                                                                                            |
 | `runtime/kubernetes/apiextensions/validation`         | CustomResourceDefinition                                                                                                                                                |
 | `runtime/kubernetes/autoscaling/validation`           | HorizontalPodAutoscaler (v1/v2)                                                                                                                                         |

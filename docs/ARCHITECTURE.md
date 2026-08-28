@@ -118,7 +118,7 @@ of the flow above:
   `pkg/validator/runtime/kubernetes/<apigroup>/validation` (one
   subpackage per Kubernetes API group: `admissionregistration`,
   `apiextensions`, `apps`, `autoscaling`, `batch`, `core`, `networking`,
-  `policy`, `rbac`, `scheduling`, `storage`). These are 1:1 ports of the
+  `policy`, `rbac`, `storage`). These are 1:1 ports of the
   API server's own validation logic (upstream's
   `k8s.io/kubernetes/pkg/apis/*/validation`, which isn't importable as a
   library), so they only fire on manifests the cluster would reject.

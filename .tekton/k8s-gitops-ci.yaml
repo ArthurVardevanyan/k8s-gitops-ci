@@ -410,9 +410,9 @@ spec:
 
                   # Live regression replay — a non-blocking false-positive smoke
                   # gate (see docs/DEVELOPMENT.md#end-to-end--regression-replay).
-                  # runs after the gate, so it never blocks. Per-PR wall time may rise a
-                  # little under contention/GitHub throttling at this width, but
-                  # the aggregate stays well within budget.
+                  # Runs after the gate, so it never blocks. Per-PR wall time may
+                  # rise a little under contention/GitHub throttling, but the
+                  # aggregate stays well within budget.
                   # Exit-code contract from scripts/test-homelab-prs.sh:
                   #   0 = all passed → pass; 1 = some PRs failed → warn
                   #   (eyeball the diff, not necessarily a regression);

@@ -54,7 +54,9 @@ func isUpstreamValidationPath(path string) bool {
 //
 // The online half - proving the cited functions actually exist upstream and
 // have not changed since they were validated - is `task verify:upstream-refs`,
-// which is kept out of `task ci` because it needs network access.
+// which runs as step 5/10 of `task ci`. Both halves are enforced: this test
+// covers the citations offline, and CI re-derives every digest from the
+// upstream tag.
 func TestEveryRuntimeCheckCitesUpstream(t *testing.T) {
 	var runtimeChecks int
 	for _, c := range check.All() {
