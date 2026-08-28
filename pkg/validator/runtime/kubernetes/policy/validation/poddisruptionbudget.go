@@ -86,7 +86,10 @@ func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 // Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
 func pdbNonNegativeFindings(c runtime.Check, data []byte, fieldName string, value func(podDisruptionBudgetSpecWrapper) interface{}) []runtime.Finding {
 	var pdb struct {
-		Kind string                         `json:"kind"`
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
 		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
 	}
 	if err := yaml.Unmarshal(data, &pdb); err != nil {
@@ -109,6 +112,7 @@ func pdbNonNegativeFindings(c runtime.Check, data []byte, fieldName string, valu
 			Path:    field.NewPath("spec").Child(fieldName).String(),
 			Message: fieldName + ": must be >= 0",
 			Kind:    pdb.Kind,
+			Name:    pdb.Metadata.Name,
 			Extra:   map[string]string{fieldName: strconv.Itoa(int(av.IntVal))},
 		},
 	}}
@@ -165,7 +169,10 @@ func newMinAndMaxSpecifiedCheck() minAndMaxSpecifiedCheck {
 
 func (c minAndMaxSpecifiedCheck) Run(data []byte, source string) []runtime.Finding {
 	var pdb struct {
-		Kind string                         `json:"kind"`
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
 		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
 	}
 	if err := yaml.Unmarshal(data, &pdb); err != nil {
@@ -186,6 +193,7 @@ func (c minAndMaxSpecifiedCheck) Run(data []byte, source string) []runtime.Findi
 			Path:    field.NewPath("spec").String(),
 			Message: "minAvailable and maxUnavailable cannot both be specified",
 			Kind:    pdb.Kind,
+			Name:    pdb.Metadata.Name,
 		},
 	}}
 }
@@ -211,21 +219,4 @@ func intOrStringFromInterface(v interface{}) (result intOrStringValue, ok bool) 
 	default:
 		return result, false
 	}
-}
-
-// Register registers all PodDisruptionBudget validation checks with the
-// check registry.
-//
-// Registration funnels through runtime.RegisterAll so that each check must
-// carry an UpstreamRef in upstreamRefs citing the exact upstream Kubernetes
-// function it ports; RegisterAll panics on a check with no valid citation.
-func Register() {
-	checks := []runtime.Check{
-		newSelectorInvalidCheck(),
-		newMinAvailableInvalidCheck(),
-		newMaxUnavailableInvalidCheck(),
-		newMinAndMaxSpecifiedCheck(),
-	}
-
-	runtime.RegisterAll(checks, upstreamRefs)
 }

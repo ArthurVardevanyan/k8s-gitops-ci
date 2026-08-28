@@ -26,7 +26,10 @@ func newScheduleInvalidCheck() scheduleInvalidCheck {
 
 func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var cj struct {
-		Kind string             `json:"kind"`
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
 		Spec cronJobSpecWrapper `json:"spec"`
 	}
 	if err := yaml.Unmarshal(data, &cj); err != nil {
@@ -47,6 +50,7 @@ func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 				Path:    field.NewPath("spec").Child("schedule").String(),
 				Message: fmt.Sprintf("schedule: invalid cron schedule: %s", err.Error()),
 				Kind:    cj.Kind,
+				Name:    cj.Metadata.Name,
 				Extra:   map[string]string{"schedule": schedule},
 			},
 		}}
@@ -68,7 +72,10 @@ func newConcurrencyPolicyInvalidCheck() concurrencyPolicyInvalidCheck {
 
 func (c concurrencyPolicyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var cj struct {
-		Kind string `json:"kind"`
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
 		Spec cronJobSpecWrapper
 	}
 	if err := yaml.Unmarshal(data, &cj); err != nil {
@@ -88,6 +95,7 @@ func (c concurrencyPolicyInvalidCheck) Run(data []byte, source string) []runtime
 			Path:    field.NewPath("spec").Child("concurrencyPolicy").String(),
 			Message: fmt.Sprintf("concurrencyPolicy: Unsupported value: %q", string(policy)),
 			Kind:    cj.Kind,
+			Name:    cj.Metadata.Name,
 			Extra:   map[string]string{"concurrencyPolicy": string(policy)},
 		},
 	}}

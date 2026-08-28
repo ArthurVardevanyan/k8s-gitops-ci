@@ -36,7 +36,10 @@ func nonNegativeIntFindings(
 	value func(nonNegativeSpecWrapper) (int64, bool),
 ) []runtime.Finding {
 	var obj struct {
-		Kind string                 `json:"kind"`
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
 		Spec nonNegativeSpecWrapper `json:"spec"`
 	}
 	if err := yaml.Unmarshal(data, &obj); err != nil {
@@ -56,6 +59,7 @@ func nonNegativeIntFindings(
 			Path:    field.NewPath("spec").Child(fieldName).String(),
 			Message: fmt.Sprintf("%s: must be >= 0, got %d", fieldName, val),
 			Kind:    obj.Kind,
+			Name:    obj.Metadata.Name,
 			Extra:   map[string]string{fieldName: strconv.FormatInt(val, 10)},
 		},
 	}}
