@@ -94,7 +94,7 @@ spec:
 		},
 	}
 
-	check := containerNameInvalidCheck{}
+	check := newContainerNameInvalidCheck()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			findings := check.Run([]byte(tt.manifest), "test.yaml")
@@ -189,7 +189,7 @@ spec:
 		},
 	}
 
-	check := containerPortNameInvalidCheck{}
+	check := newContainerPortNameInvalidCheck()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			findings := check.Run([]byte(tt.manifest), "test.yaml")

@@ -52,7 +52,6 @@ func nonNegativeIntFindings(
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child(fieldName).String(),
 			Message: fmt.Sprintf("%s: must be >= 0, got %d", fieldName, val),

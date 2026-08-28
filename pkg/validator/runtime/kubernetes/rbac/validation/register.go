@@ -11,9 +11,9 @@ import (
 // function it ports; RegisterAll panics on a check with no valid citation.
 func Register() {
 	checks := []runtime.Check{
-		roleBindingRoleRefInvalidCheck{},
-		clusterRoleBindingRoleRefInvalidCheck{},
-		clusterRoleBindingSubjectInvalidCheck{},
+		newRoleBindingRoleRefInvalidCheck(),
+		newClusterRoleBindingRoleRefInvalidCheck(),
+		newClusterRoleBindingSubjectInvalidCheck(),
 	}
 
 	runtime.RegisterAll(checks, upstreamRefs)

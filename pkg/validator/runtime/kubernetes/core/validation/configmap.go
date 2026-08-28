@@ -22,16 +22,15 @@ func isKind(data []byte, kind string) bool {
 	return ref.Kind == kind
 }
 
-type configMapDataSizeExceededCheck struct{}
+type configMapDataSizeExceededCheck struct{ runtime.Meta }
 
-func (c configMapDataSizeExceededCheck) ID() string { return "core/configmap-data-size-exceeded" }
-func (c configMapDataSizeExceededCheck) Title() string {
-	return "ConfigMap Data Size Must Not Exceed 1 MiB"
+func newConfigMapDataSizeExceededCheck() configMapDataSizeExceededCheck {
+	return configMapDataSizeExceededCheck{runtime.Meta{
+		RuleID:    "core/configmap-data-size-exceeded",
+		RuleTitle: "ConfigMap Data Size Must Not Exceed 1 MiB",
+		AppliesTo: configMapKinds,
+	}}
 }
-func (c configMapDataSizeExceededCheck) Category() string      { return "core" }
-func (c configMapDataSizeExceededCheck) Blocking() bool        { return true }
-func (c configMapDataSizeExceededCheck) RenderSensitive() bool { return true }
-func (c configMapDataSizeExceededCheck) Kinds() []string       { return configMapKinds }
 
 const maxConfigMapSize = 1048576
 
@@ -54,7 +53,6 @@ func (c configMapDataSizeExceededCheck) Run(data []byte, source string) []runtim
 		return []runtime.Finding{{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    "data",
 				Message: fmt.Sprintf("configmap %q: data/binaryData total size %d exceeds limit of %d bytes (1 MiB)", cm.GetName(), totalSize, maxConfigMapSize),

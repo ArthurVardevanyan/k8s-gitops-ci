@@ -17,30 +17,14 @@ var networkPolicyKinds = []string{"NetworkPolicy"}
 
 // policyTypeInvalidCheck validates that policyTypes only contains valid values.
 // Source: k8s.io/kubernetes/pkg/apis/networking/validation/validation.go
-type policyTypeInvalidCheck struct{}
+type policyTypeInvalidCheck struct{ runtime.Meta }
 
-func (c policyTypeInvalidCheck) ID() string {
-	return "network-policy/policy-type-invalid"
-}
-
-func (c policyTypeInvalidCheck) Title() string {
-	return "NetworkPolicy policyTypes Must Be Valid"
-}
-
-func (c policyTypeInvalidCheck) Category() string {
-	return "network-policy"
-}
-
-func (c policyTypeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c policyTypeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c policyTypeInvalidCheck) Kinds() []string {
-	return networkPolicyKinds
+func newPolicyTypeInvalidCheck() policyTypeInvalidCheck {
+	return policyTypeInvalidCheck{runtime.Meta{
+		RuleID:    "network-policy/policy-type-invalid",
+		RuleTitle: "NetworkPolicy policyTypes Must Be Valid",
+		AppliesTo: networkPolicyKinds,
+	}}
 }
 
 func (c policyTypeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -62,7 +46,6 @@ func (c policyTypeInvalidCheck) Run(data []byte, source string) []runtime.Findin
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    policyTypesPath.String(),
 					Message: fmt.Sprintf("policyTypes: Unsupported value: %q", string(pt)),
@@ -86,30 +69,14 @@ func getIntValue(v intstr.IntOrString) int32 {
 
 // portRangeInvalidCheck validates that port range end is >= start.
 // Source: k8s.io/kubernetes/pkg/apis/networking/validation/validation.go
-type portRangeInvalidCheck struct{}
+type portRangeInvalidCheck struct{ runtime.Meta }
 
-func (c portRangeInvalidCheck) ID() string {
-	return "network-policy/port-range-invalid"
-}
-
-func (c portRangeInvalidCheck) Title() string {
-	return "NetworkPolicy Port Range Must Be Valid"
-}
-
-func (c portRangeInvalidCheck) Category() string {
-	return "network-policy"
-}
-
-func (c portRangeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c portRangeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c portRangeInvalidCheck) Kinds() []string {
-	return networkPolicyKinds
+func newPortRangeInvalidCheck() portRangeInvalidCheck {
+	return portRangeInvalidCheck{runtime.Meta{
+		RuleID:    "network-policy/port-range-invalid",
+		RuleTitle: "NetworkPolicy Port Range Must Be Valid",
+		AppliesTo: networkPolicyKinds,
+	}}
 }
 
 func (c portRangeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -129,7 +96,6 @@ func (c portRangeInvalidCheck) Run(data []byte, source string) []runtime.Finding
 					findings = append(findings, runtime.Finding{
 						RuleID:    c.ID(),
 						RuleTitle: c.Title(),
-						Category:  c.Category(),
 						Finding: check.Finding{
 							Path:    portPath.Child("endPort").String(),
 							Message: fmt.Sprintf("port range end must be >= start: endPort %d < port %d", *port.EndPort, portInt),
@@ -142,7 +108,6 @@ func (c portRangeInvalidCheck) Run(data []byte, source string) []runtime.Finding
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:    portPath.Child("endPort").String(),
 						Message: "port range end must be >= start: endPort requires port to be specified",
@@ -169,30 +134,14 @@ func (c portRangeInvalidCheck) Run(data []byte, source string) []runtime.Finding
 
 // protocolInvalidCheck validates that protocol is one of TCP, UDP, SCTP.
 // Source: k8s.io/kubernetes/pkg/apis/networking/validation/validation.go
-type protocolInvalidCheck struct{}
+type protocolInvalidCheck struct{ runtime.Meta }
 
-func (c protocolInvalidCheck) ID() string {
-	return "network-policy/protocol-invalid"
-}
-
-func (c protocolInvalidCheck) Title() string {
-	return "NetworkPolicy Protocol Must Be Valid"
-}
-
-func (c protocolInvalidCheck) Category() string {
-	return "network-policy"
-}
-
-func (c protocolInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c protocolInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c protocolInvalidCheck) Kinds() []string {
-	return networkPolicyKinds
+func newProtocolInvalidCheck() protocolInvalidCheck {
+	return protocolInvalidCheck{runtime.Meta{
+		RuleID:    "network-policy/protocol-invalid",
+		RuleTitle: "NetworkPolicy Protocol Must Be Valid",
+		AppliesTo: networkPolicyKinds,
+	}}
 }
 
 func (c protocolInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -211,7 +160,6 @@ func (c protocolInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 					findings = append(findings, runtime.Finding{
 						RuleID:    c.ID(),
 						RuleTitle: c.Title(),
-						Category:  c.Category(),
 						Finding: check.Finding{
 							Path:    portPath.Child("protocol").String(),
 							Message: fmt.Sprintf("protocol: Unsupported value: %q", string(*port.Protocol)),

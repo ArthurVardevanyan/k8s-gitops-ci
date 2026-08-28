@@ -18,7 +18,7 @@ spec:
   storageClassName: standard
   hostPath:
     path: /tmp`)
-	check := pvAccessModesInvalidCheck{}
+	check := newPvAccessModesInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -43,7 +43,7 @@ spec:
   storageClassName: standard
   hostPath:
     path: /tmp`)
-	check := pvAccessModesInvalidCheck{}
+	check := newPvAccessModesInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -55,7 +55,7 @@ func TestPVAccessModesInvalidNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := pvAccessModesInvalidCheck{}
+	check := newPvAccessModesInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -72,7 +72,7 @@ spec:
   storageClassName: standard
   hostPath:
     path: /tmp`)
-	check := pvCapacityInvalidCheck{}
+	check := newPvCapacityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -97,7 +97,7 @@ spec:
   storageClassName: standard
   hostPath:
     path: /tmp`)
-	check := pvCapacityInvalidCheck{}
+	check := newPvCapacityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -109,7 +109,7 @@ func TestPVCapacityInvalidIsNotKindFiltered(t *testing.T) {
 metadata:
   name: test
 `)
-	check := pvCapacityInvalidCheck{}
+	check := newPvCapacityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	// This check does not filter by kind itself: dispatch is gated by the
 	// runtime adapter via Kinds(). Invoked directly it evaluates the fields
@@ -130,7 +130,7 @@ spec:
     requests:
       storage: 1Gi
   storageClassName: standard`)
-	check := pvcAccessModesInvalidCheck{}
+	check := newPvcAccessModesInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -154,7 +154,7 @@ spec:
     requests:
       storage: 1Gi
   storageClassName: standard`)
-	check := pvcAccessModesInvalidCheck{}
+	check := newPvcAccessModesInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -166,7 +166,7 @@ func TestPVCAccessModesInvalidNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := pvcAccessModesInvalidCheck{}
+	check := newPvcAccessModesInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -184,7 +184,7 @@ spec:
     requests:
       storage: 1Gi
   volumeMode: InvalidMode`)
-	check := pvcVolumeModeInvalidCheck{}
+	check := newPvcVolumeModeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -208,7 +208,7 @@ spec:
     requests:
       storage: 1Gi
   volumeMode: Filesystem`)
-	check := pvcVolumeModeInvalidCheck{}
+	check := newPvcVolumeModeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -220,7 +220,7 @@ func TestPVCVolumeModeInvalidNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := pvcVolumeModeInvalidCheck{}
+	check := newPvcVolumeModeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -232,7 +232,7 @@ func TestSCProvisionerInvalidCheck(t *testing.T) {
 metadata:
   name: test
 reclaimPolicy: Delete`)
-	check := scProvisionerInvalidCheck{}
+	check := newScProvisionerInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -251,7 +251,7 @@ metadata:
   name: test
 provisioner: valid.provisioner
 reclaimPolicy: Delete`)
-	check := scProvisionerInvalidCheck{}
+	check := newScProvisionerInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -263,7 +263,7 @@ func TestSCProvisionerInvalidIsNotKindFiltered(t *testing.T) {
 metadata:
   name: test
 `)
-	check := scProvisionerInvalidCheck{}
+	check := newScProvisionerInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	// This check does not filter by kind itself: dispatch is gated by the
 	// runtime adapter via Kinds(). Invoked directly it evaluates the fields
@@ -279,7 +279,7 @@ metadata:
   name: test
 provisioner: valid.provisioner
 reclaimPolicy: InvalidReclaim`)
-	check := scReclaimPolicyInvalidCheck{}
+	check := newScReclaimPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -298,7 +298,7 @@ metadata:
   name: test
 provisioner: valid.provisioner
 reclaimPolicy: Delete`)
-	check := scReclaimPolicyInvalidCheck{}
+	check := newScReclaimPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -310,7 +310,7 @@ func TestSCReclaimPolicyInvalidNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := scReclaimPolicyInvalidCheck{}
+	check := newScReclaimPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -323,7 +323,7 @@ metadata:
   name: test
 provisioner: valid.provisioner
 volumeBindingMode: InvalidMode`)
-	check := scVolumeBindingModeInvalidCheck{}
+	check := newScVolumeBindingModeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -342,7 +342,7 @@ metadata:
   name: test
 provisioner: valid.provisioner
 volumeBindingMode: WaitForFirstConsumer`)
-	check := scVolumeBindingModeInvalidCheck{}
+	check := newScVolumeBindingModeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -354,7 +354,7 @@ func TestSCVolumeBindingModeInvalidNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := scVolumeBindingModeInvalidCheck{}
+	check := newScVolumeBindingModeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -372,7 +372,7 @@ allowedTopologies:
     operator: In
     values:
     - us-east-1a`)
-	check := scAllowedTopologyRangeInvalidCheck{}
+	check := newScAllowedTopologyRangeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -396,7 +396,7 @@ allowedTopologies:
     operator: In
     values:
     - us-east-1a`)
-	check := scAllowedTopologyRangeInvalidCheck{}
+	check := newScAllowedTopologyRangeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -408,7 +408,7 @@ func TestSCAllowedTopologyRangeInvalidNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := scAllowedTopologyRangeInvalidCheck{}
+	check := newScAllowedTopologyRangeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -417,14 +417,14 @@ metadata:
 
 func TestAllChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
-		pvAccessModesInvalidCheck{},
-		pvCapacityInvalidCheck{},
-		pvcAccessModesInvalidCheck{},
-		pvcVolumeModeInvalidCheck{},
-		scProvisionerInvalidCheck{},
-		scReclaimPolicyInvalidCheck{},
-		scVolumeBindingModeInvalidCheck{},
-		scAllowedTopologyRangeInvalidCheck{},
+		newPvAccessModesInvalidCheck(),
+		newPvCapacityInvalidCheck(),
+		newPvcAccessModesInvalidCheck(),
+		newPvcVolumeModeInvalidCheck(),
+		newScProvisionerInvalidCheck(),
+		newScReclaimPolicyInvalidCheck(),
+		newScVolumeBindingModeInvalidCheck(),
+		newScAllowedTopologyRangeInvalidCheck(),
 	}
 	for _, c := range checks {
 		if c.ID() == "" {
@@ -433,7 +433,7 @@ func TestAllChecksImplementCheckInterface(t *testing.T) {
 		if c.Title() == "" {
 			t.Errorf("check %T has empty Title", c)
 		}
-		if c.Category() == "" {
+		if runtime.CategoryOf(c.ID()) == "" {
 			t.Errorf("check %T has empty Category", c)
 		}
 		if !c.Blocking() {

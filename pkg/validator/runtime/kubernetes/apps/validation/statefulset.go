@@ -12,30 +12,14 @@ import (
 
 // statefulSetReplicasInvalidCheck verifies replicas >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type statefulSetReplicasInvalidCheck struct{}
+type statefulSetReplicasInvalidCheck struct{ runtime.Meta }
 
-func (c statefulSetReplicasInvalidCheck) ID() string {
-	return "apps/statefulset-replicas-invalid"
-}
-
-func (c statefulSetReplicasInvalidCheck) Title() string {
-	return "Replicas Must Be >= 0"
-}
-
-func (c statefulSetReplicasInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c statefulSetReplicasInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c statefulSetReplicasInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c statefulSetReplicasInvalidCheck) Kinds() []string {
-	return []string{"StatefulSet"}
+func newStatefulSetReplicasInvalidCheck() statefulSetReplicasInvalidCheck {
+	return statefulSetReplicasInvalidCheck{runtime.Meta{
+		RuleID:    "apps/statefulset-replicas-invalid",
+		RuleTitle: "Replicas Must Be >= 0",
+		AppliesTo: []string{"StatefulSet"},
+	}}
 }
 
 func (c statefulSetReplicasInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -56,7 +40,6 @@ func (c statefulSetReplicasInvalidCheck) Run(data []byte, source string) []runti
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child("replicas").String(),
 			Message: fmt.Sprintf("replicas: must be >= 0, got %d", replicas),
@@ -69,30 +52,14 @@ func (c statefulSetReplicasInvalidCheck) Run(data []byte, source string) []runti
 
 // statefulSetPodManagementPolicyInvalidCheck verifies podManagementPolicy is valid.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type statefulSetPodManagementPolicyInvalidCheck struct{}
+type statefulSetPodManagementPolicyInvalidCheck struct{ runtime.Meta }
 
-func (c statefulSetPodManagementPolicyInvalidCheck) ID() string {
-	return "apps/statefulset-pod-management-policy-invalid"
-}
-
-func (c statefulSetPodManagementPolicyInvalidCheck) Title() string {
-	return "PodManagementPolicy Must Be Valid"
-}
-
-func (c statefulSetPodManagementPolicyInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c statefulSetPodManagementPolicyInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c statefulSetPodManagementPolicyInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c statefulSetPodManagementPolicyInvalidCheck) Kinds() []string {
-	return []string{"StatefulSet"}
+func newStatefulSetPodManagementPolicyInvalidCheck() statefulSetPodManagementPolicyInvalidCheck {
+	return statefulSetPodManagementPolicyInvalidCheck{runtime.Meta{
+		RuleID:    "apps/statefulset-pod-management-policy-invalid",
+		RuleTitle: "PodManagementPolicy Must Be Valid",
+		AppliesTo: []string{"StatefulSet"},
+	}}
 }
 
 func (c statefulSetPodManagementPolicyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -108,30 +75,14 @@ func (c statefulSetPodManagementPolicyInvalidCheck) Run(data []byte, source stri
 
 // statefulSetUpdateStrategyInvalidCheck verifies updateStrategy type is valid.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type statefulSetUpdateStrategyInvalidCheck struct{}
+type statefulSetUpdateStrategyInvalidCheck struct{ runtime.Meta }
 
-func (c statefulSetUpdateStrategyInvalidCheck) ID() string {
-	return "apps/statefulset-update-strategy-invalid"
-}
-
-func (c statefulSetUpdateStrategyInvalidCheck) Title() string {
-	return "UpdateStrategy Type Must Be Valid"
-}
-
-func (c statefulSetUpdateStrategyInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c statefulSetUpdateStrategyInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c statefulSetUpdateStrategyInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c statefulSetUpdateStrategyInvalidCheck) Kinds() []string {
-	return []string{"StatefulSet"}
+func newStatefulSetUpdateStrategyInvalidCheck() statefulSetUpdateStrategyInvalidCheck {
+	return statefulSetUpdateStrategyInvalidCheck{runtime.Meta{
+		RuleID:    "apps/statefulset-update-strategy-invalid",
+		RuleTitle: "UpdateStrategy Type Must Be Valid",
+		AppliesTo: []string{"StatefulSet"},
+	}}
 }
 
 func (c statefulSetUpdateStrategyInvalidCheck) Run(data []byte, source string) []runtime.Finding {

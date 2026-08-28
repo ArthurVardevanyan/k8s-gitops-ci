@@ -12,30 +12,14 @@ import (
 
 // daemonSetSelectorInvalidCheck verifies selector is a valid label selector.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type daemonSetSelectorInvalidCheck struct{}
+type daemonSetSelectorInvalidCheck struct{ runtime.Meta }
 
-func (c daemonSetSelectorInvalidCheck) ID() string {
-	return "apps/daemonset-selector-invalid"
-}
-
-func (c daemonSetSelectorInvalidCheck) Title() string {
-	return "Selector Must Be A Valid Label Selector"
-}
-
-func (c daemonSetSelectorInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c daemonSetSelectorInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c daemonSetSelectorInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c daemonSetSelectorInvalidCheck) Kinds() []string {
-	return []string{"DaemonSet"}
+func newDaemonSetSelectorInvalidCheck() daemonSetSelectorInvalidCheck {
+	return daemonSetSelectorInvalidCheck{runtime.Meta{
+		RuleID:    "apps/daemonset-selector-invalid",
+		RuleTitle: "Selector Must Be A Valid Label Selector",
+		AppliesTo: []string{"DaemonSet"},
+	}}
 }
 
 func (c daemonSetSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -46,30 +30,14 @@ func (c daemonSetSelectorInvalidCheck) Run(data []byte, source string) []runtime
 
 // daemonSetUpdateStrategyInvalidCheck verifies updateStrategy type is valid.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type daemonSetUpdateStrategyInvalidCheck struct{}
+type daemonSetUpdateStrategyInvalidCheck struct{ runtime.Meta }
 
-func (c daemonSetUpdateStrategyInvalidCheck) ID() string {
-	return "apps/daemonset-update-strategy-invalid"
-}
-
-func (c daemonSetUpdateStrategyInvalidCheck) Title() string {
-	return "UpdateStrategy Type Must Be Valid"
-}
-
-func (c daemonSetUpdateStrategyInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c daemonSetUpdateStrategyInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c daemonSetUpdateStrategyInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c daemonSetUpdateStrategyInvalidCheck) Kinds() []string {
-	return []string{"DaemonSet"}
+func newDaemonSetUpdateStrategyInvalidCheck() daemonSetUpdateStrategyInvalidCheck {
+	return daemonSetUpdateStrategyInvalidCheck{runtime.Meta{
+		RuleID:    "apps/daemonset-update-strategy-invalid",
+		RuleTitle: "UpdateStrategy Type Must Be Valid",
+		AppliesTo: []string{"DaemonSet"},
+	}}
 }
 
 func (c daemonSetUpdateStrategyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -85,30 +53,14 @@ func (c daemonSetUpdateStrategyInvalidCheck) Run(data []byte, source string) []r
 
 // daemonSetMinReadySecondsInvalidCheck verifies minReadySeconds >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type daemonSetMinReadySecondsInvalidCheck struct{}
+type daemonSetMinReadySecondsInvalidCheck struct{ runtime.Meta }
 
-func (c daemonSetMinReadySecondsInvalidCheck) ID() string {
-	return "apps/daemonset-min-ready-seconds-invalid"
-}
-
-func (c daemonSetMinReadySecondsInvalidCheck) Title() string {
-	return "MinReadySeconds Must Be >= 0"
-}
-
-func (c daemonSetMinReadySecondsInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c daemonSetMinReadySecondsInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c daemonSetMinReadySecondsInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c daemonSetMinReadySecondsInvalidCheck) Kinds() []string {
-	return []string{"DaemonSet"}
+func newDaemonSetMinReadySecondsInvalidCheck() daemonSetMinReadySecondsInvalidCheck {
+	return daemonSetMinReadySecondsInvalidCheck{runtime.Meta{
+		RuleID:    "apps/daemonset-min-ready-seconds-invalid",
+		RuleTitle: "MinReadySeconds Must Be >= 0",
+		AppliesTo: []string{"DaemonSet"},
+	}}
 }
 
 func (c daemonSetMinReadySecondsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -129,7 +81,6 @@ func (c daemonSetMinReadySecondsInvalidCheck) Run(data []byte, source string) []
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child("minReadySeconds").String(),
 			Message: fmt.Sprintf("minReadySeconds: must be >= 0, got %d", minReadySeconds),

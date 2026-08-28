@@ -15,30 +15,14 @@ var serviceKinds = []string{"Service"}
 
 // typeInvalidCheck validates that service type is one of the allowed values.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type typeInvalidCheck struct{}
+type typeInvalidCheck struct{ runtime.Meta }
 
-func (c typeInvalidCheck) ID() string {
-	return "service/type-invalid"
-}
-
-func (c typeInvalidCheck) Title() string {
-	return "Service Type Must Be Valid"
-}
-
-func (c typeInvalidCheck) Category() string {
-	return "service"
-}
-
-func (c typeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c typeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c typeInvalidCheck) Kinds() []string {
-	return serviceKinds
+func newTypeInvalidCheck() typeInvalidCheck {
+	return typeInvalidCheck{runtime.Meta{
+		RuleID:    "service/type-invalid",
+		RuleTitle: "Service Type Must Be Valid",
+		AppliesTo: serviceKinds,
+	}}
 }
 
 func (c typeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -61,7 +45,6 @@ func (c typeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    path.String(),
 				Message: fmt.Sprintf("type: Unsupported value: %q", string(svc.Spec.Type)),
@@ -76,30 +59,14 @@ func (c typeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 
 // sessionAffinityInvalidCheck validates that sessionAffinity is one of ClientIP, None.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type sessionAffinityInvalidCheck struct{}
+type sessionAffinityInvalidCheck struct{ runtime.Meta }
 
-func (c sessionAffinityInvalidCheck) ID() string {
-	return "service/session-affinity-invalid"
-}
-
-func (c sessionAffinityInvalidCheck) Title() string {
-	return "Service SessionAffinity Must Be Valid"
-}
-
-func (c sessionAffinityInvalidCheck) Category() string {
-	return "service"
-}
-
-func (c sessionAffinityInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c sessionAffinityInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c sessionAffinityInvalidCheck) Kinds() []string {
-	return serviceKinds
+func newSessionAffinityInvalidCheck() sessionAffinityInvalidCheck {
+	return sessionAffinityInvalidCheck{runtime.Meta{
+		RuleID:    "service/session-affinity-invalid",
+		RuleTitle: "Service SessionAffinity Must Be Valid",
+		AppliesTo: serviceKinds,
+	}}
 }
 
 func (c sessionAffinityInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -120,7 +87,6 @@ func (c sessionAffinityInvalidCheck) Run(data []byte, source string) []runtime.F
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    path.String(),
 				Message: fmt.Sprintf("sessionAffinity: Unsupported value: %q", string(svc.Spec.SessionAffinity)),

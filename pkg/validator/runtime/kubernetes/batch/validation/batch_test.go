@@ -9,7 +9,7 @@ import (
 )
 
 func TestParallelismInvalidCheck(t *testing.T) {
-	c := parallelismInvalidCheck{}
+	c := newParallelismInvalidCheck()
 
 	tests := []struct {
 		name        string
@@ -45,7 +45,7 @@ func TestParallelismInvalidCheck(t *testing.T) {
 }
 
 func TestBackoffLimitInvalidCheck(t *testing.T) {
-	c := backoffLimitInvalidCheck{}
+	c := newBackoffLimitInvalidCheck()
 
 	tests := []struct {
 		name         string
@@ -81,7 +81,7 @@ func TestBackoffLimitInvalidCheck(t *testing.T) {
 }
 
 func TestScheduleInvalidCheck(t *testing.T) {
-	c := scheduleInvalidCheck{}
+	c := newScheduleInvalidCheck()
 
 	tests := []struct {
 		name     string
@@ -125,7 +125,7 @@ func TestScheduleInvalidCheck(t *testing.T) {
 }
 
 func TestConcurrencyPolicyInvalidCheck(t *testing.T) {
-	c := concurrencyPolicyInvalidCheck{}
+	c := newConcurrencyPolicyInvalidCheck()
 
 	tests := []struct {
 		name              string
@@ -162,7 +162,7 @@ func TestConcurrencyPolicyInvalidCheck(t *testing.T) {
 }
 
 func TestFailedJobsHistoryLimitInvalidCheck(t *testing.T) {
-	c := failedJobsHistoryLimitInvalidCheck{}
+	c := newFailedJobsHistoryLimitInvalidCheck()
 
 	tests := []struct {
 		name                   string
@@ -198,7 +198,7 @@ func TestFailedJobsHistoryLimitInvalidCheck(t *testing.T) {
 }
 
 func TestSuccessfulJobsHistoryLimitInvalidCheck(t *testing.T) {
-	c := successfulJobsHistoryLimitInvalidCheck{}
+	c := newSuccessfulJobsHistoryLimitInvalidCheck()
 
 	tests := []struct {
 		name                       string
@@ -234,7 +234,7 @@ func TestSuccessfulJobsHistoryLimitInvalidCheck(t *testing.T) {
 }
 
 func TestStartingDeadlineSecondsInvalidCheck(t *testing.T) {
-	c := startingDeadlineSecondsInvalidCheck{}
+	c := newStartingDeadlineSecondsInvalidCheck()
 
 	tests := []struct {
 		name                    string
@@ -274,13 +274,13 @@ func TestCheckIDs(t *testing.T) {
 		id string
 		c  runtime.Check
 	}{
-		{"batch/parallelism-invalid", parallelismInvalidCheck{}},
-		{"batch/backoff-limit-invalid", backoffLimitInvalidCheck{}},
-		{"batch/schedule-invalid", scheduleInvalidCheck{}},
-		{"batch/concurrency-policy-invalid", concurrencyPolicyInvalidCheck{}},
-		{"batch/failed-jobs-history-limit-invalid", failedJobsHistoryLimitInvalidCheck{}},
-		{"batch/successful-jobs-history-limit-invalid", successfulJobsHistoryLimitInvalidCheck{}},
-		{"batch/starting-deadline-seconds-invalid", startingDeadlineSecondsInvalidCheck{}},
+		{"batch/parallelism-invalid", newParallelismInvalidCheck()},
+		{"batch/backoff-limit-invalid", newBackoffLimitInvalidCheck()},
+		{"batch/schedule-invalid", newScheduleInvalidCheck()},
+		{"batch/concurrency-policy-invalid", newConcurrencyPolicyInvalidCheck()},
+		{"batch/failed-jobs-history-limit-invalid", newFailedJobsHistoryLimitInvalidCheck()},
+		{"batch/successful-jobs-history-limit-invalid", newSuccessfulJobsHistoryLimitInvalidCheck()},
+		{"batch/starting-deadline-seconds-invalid", newStartingDeadlineSecondsInvalidCheck()},
 	}
 
 	for _, tc := range checks {
@@ -291,7 +291,7 @@ func TestCheckIDs(t *testing.T) {
 			if tc.c.Title() == "" {
 				t.Error("Title must not be empty")
 			}
-			if tc.c.Category() == "" {
+			if runtime.CategoryOf(tc.c.ID()) == "" {
 				t.Error("Category must not be empty")
 			}
 			if !tc.c.Blocking() {
@@ -308,7 +308,7 @@ func TestCheckIDs(t *testing.T) {
 }
 
 func TestJobFindingsHaveCorrectFields(t *testing.T) {
-	c := parallelismInvalidCheck{}
+	c := newParallelismInvalidCheck()
 	data := map[string]interface{}{
 		"kind": "Job",
 		"spec": map[string]interface{}{
@@ -335,7 +335,7 @@ func TestJobFindingsHaveCorrectFields(t *testing.T) {
 }
 
 func TestCronJobFindingsHaveCorrectFields(t *testing.T) {
-	c := scheduleInvalidCheck{}
+	c := newScheduleInvalidCheck()
 	data := map[string]interface{}{
 		"kind": "CronJob",
 		"metadata": map[string]interface{}{
@@ -395,7 +395,7 @@ func TestCronScheduleAcceptsEverythingTheAPIServerAccepts(t *testing.T) {
 		{"cron_tz prefix", "CRON_TZ=America/New_York 0 0 * * *"},
 	}
 
-	c := scheduleInvalidCheck{}
+	c := newScheduleInvalidCheck()
 	for _, tt := range valid {
 		t.Run(tt.name, func(t *testing.T) {
 			data := []byte("kind: CronJob\nmetadata:\n  name: test\nspec:\n  schedule: \"" + tt.schedule + "\"\n")
@@ -418,7 +418,7 @@ func TestCronScheduleRejectsInvalid(t *testing.T) {
 		{"bad symbolic name", "0 0 * * FUNDAY"},
 	}
 
-	c := scheduleInvalidCheck{}
+	c := newScheduleInvalidCheck()
 	for _, tt := range invalid {
 		t.Run(tt.name, func(t *testing.T) {
 			data := []byte("kind: CronJob\nmetadata:\n  name: test\nspec:\n  schedule: \"" + tt.schedule + "\"\n")
@@ -436,7 +436,7 @@ func TestCronScheduleRejectsInvalid(t *testing.T) {
 // rather than report one bad schedule.
 func TestCronScheduleMalformedTZDoesNotPanic(t *testing.T) {
 	data := []byte("kind: CronJob\nmetadata:\n  name: test\nspec:\n  schedule: \"TZ=0\"\n")
-	findings := scheduleInvalidCheck{}.Run(data, "test.yaml")
+	findings := newScheduleInvalidCheck().Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Errorf("expected 1 finding for a malformed TZ schedule, got %d", len(findings))
 	}

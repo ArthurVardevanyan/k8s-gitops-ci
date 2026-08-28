@@ -21,7 +21,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetReplicasInvalidCheck{}
+	check := newStatefulSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for positive replicas, got %d: %v", len(findings), findings)
@@ -43,7 +43,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetReplicasInvalidCheck{}
+	check := newStatefulSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for zero replicas, got %d: %v", len(findings), findings)
@@ -65,7 +65,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetReplicasInvalidCheck{}
+	check := newStatefulSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for negative replicas, got %d: %v", len(findings), findings)
@@ -87,7 +87,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := statefulSetReplicasInvalidCheck{}
+	check := newStatefulSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-StatefulSet kind, got %d: %v", len(findings), findings)
@@ -109,7 +109,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetPodManagementPolicyInvalidCheck{}
+	check := newStatefulSetPodManagementPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for OrderedReady, got %d: %v", len(findings), findings)
@@ -131,7 +131,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetPodManagementPolicyInvalidCheck{}
+	check := newStatefulSetPodManagementPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Parallel, got %d: %v", len(findings), findings)
@@ -152,7 +152,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetPodManagementPolicyInvalidCheck{}
+	check := newStatefulSetPodManagementPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when podManagementPolicy is absent, got %d: %v", len(findings), findings)
@@ -174,7 +174,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetPodManagementPolicyInvalidCheck{}
+	check := newStatefulSetPodManagementPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid podManagementPolicy, got %d: %v", len(findings), findings)
@@ -193,7 +193,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := statefulSetPodManagementPolicyInvalidCheck{}
+	check := newStatefulSetPodManagementPolicyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-StatefulSet kind, got %d: %v", len(findings), findings)
@@ -216,7 +216,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetUpdateStrategyInvalidCheck{}
+	check := newStatefulSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for RollingUpdate, got %d: %v", len(findings), findings)
@@ -239,7 +239,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetUpdateStrategyInvalidCheck{}
+	check := newStatefulSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for OnDelete, got %d: %v", len(findings), findings)
@@ -267,7 +267,7 @@ spec:
       labels:
         app: myapp
 `)
-	findings := statefulSetUpdateStrategyInvalidCheck{}.Run(data, "test.yaml")
+	findings := newStatefulSetUpdateStrategyInvalidCheck().Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Recreate, got %d: %v", len(findings), findings)
 	}
@@ -287,7 +287,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetUpdateStrategyInvalidCheck{}
+	check := newStatefulSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when updateStrategy is absent, got %d: %v", len(findings), findings)
@@ -310,7 +310,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := statefulSetUpdateStrategyInvalidCheck{}
+	check := newStatefulSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid updateStrategy, got %d: %v", len(findings), findings)
@@ -329,7 +329,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := statefulSetUpdateStrategyInvalidCheck{}
+	check := newStatefulSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-StatefulSet kind, got %d: %v", len(findings), findings)
@@ -342,9 +342,9 @@ func TestStatefulSet_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{statefulSetReplicasInvalidCheck{}, "apps/statefulset-replicas-invalid", "apps"},
-		{statefulSetPodManagementPolicyInvalidCheck{}, "apps/statefulset-pod-management-policy-invalid", "apps"},
-		{statefulSetUpdateStrategyInvalidCheck{}, "apps/statefulset-update-strategy-invalid", "apps"},
+		{newStatefulSetReplicasInvalidCheck(), "apps/statefulset-replicas-invalid", "apps"},
+		{newStatefulSetPodManagementPolicyInvalidCheck(), "apps/statefulset-pod-management-policy-invalid", "apps"},
+		{newStatefulSetUpdateStrategyInvalidCheck(), "apps/statefulset-update-strategy-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -352,7 +352,7 @@ func TestStatefulSet_Check_IDAndMetadata(t *testing.T) {
 			if got := tc.check.ID(); got != tc.wantID {
 				t.Errorf("ID() = %q, want %q", got, tc.wantID)
 			}
-			if got := tc.check.Category(); got != tc.wantCat {
+			if got := runtime.CategoryOf(tc.check.ID()); got != tc.wantCat {
 				t.Errorf("Category() = %q, want %q", got, tc.wantCat)
 			}
 			if !tc.check.Blocking() {

@@ -21,7 +21,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetSelectorInvalidCheck{}
+	check := newDaemonSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid selector keys, got %d: %v", len(findings), findings)
@@ -42,7 +42,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetSelectorInvalidCheck{}
+	check := newDaemonSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid selector key, got %d: %v", len(findings), findings)
@@ -71,7 +71,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetSelectorInvalidCheck{}
+	check := newDaemonSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid matchExpressions key, got %d: %v", len(findings), findings)
@@ -92,7 +92,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetSelectorInvalidCheck{}
+	check := newDaemonSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when selector is absent, got %d: %v", len(findings), findings)
@@ -105,7 +105,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := daemonSetSelectorInvalidCheck{}
+	check := newDaemonSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-DaemonSet kind, got %d: %v", len(findings), findings)
@@ -128,7 +128,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetUpdateStrategyInvalidCheck{}
+	check := newDaemonSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for RollingUpdate, got %d: %v", len(findings), findings)
@@ -151,7 +151,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetUpdateStrategyInvalidCheck{}
+	check := newDaemonSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for OnDelete, got %d: %v", len(findings), findings)
@@ -172,7 +172,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetUpdateStrategyInvalidCheck{}
+	check := newDaemonSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when updateStrategy is absent, got %d: %v", len(findings), findings)
@@ -195,7 +195,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetUpdateStrategyInvalidCheck{}
+	check := newDaemonSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid updateStrategy, got %d: %v", len(findings), findings)
@@ -214,7 +214,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := daemonSetUpdateStrategyInvalidCheck{}
+	check := newDaemonSetUpdateStrategyInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-DaemonSet kind, got %d: %v", len(findings), findings)
@@ -236,7 +236,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetMinReadySecondsInvalidCheck{}
+	check := newDaemonSetMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid minReadySeconds, got %d: %v", len(findings), findings)
@@ -258,7 +258,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetMinReadySecondsInvalidCheck{}
+	check := newDaemonSetMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for zero minReadySeconds, got %d: %v", len(findings), findings)
@@ -280,7 +280,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := daemonSetMinReadySecondsInvalidCheck{}
+	check := newDaemonSetMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for negative minReadySeconds, got %d: %v", len(findings), findings)
@@ -302,7 +302,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := daemonSetMinReadySecondsInvalidCheck{}
+	check := newDaemonSetMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-DaemonSet kind, got %d: %v", len(findings), findings)
@@ -315,9 +315,9 @@ func TestDaemonSet_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{daemonSetSelectorInvalidCheck{}, "apps/daemonset-selector-invalid", "apps"},
-		{daemonSetUpdateStrategyInvalidCheck{}, "apps/daemonset-update-strategy-invalid", "apps"},
-		{daemonSetMinReadySecondsInvalidCheck{}, "apps/daemonset-min-ready-seconds-invalid", "apps"},
+		{newDaemonSetSelectorInvalidCheck(), "apps/daemonset-selector-invalid", "apps"},
+		{newDaemonSetUpdateStrategyInvalidCheck(), "apps/daemonset-update-strategy-invalid", "apps"},
+		{newDaemonSetMinReadySecondsInvalidCheck(), "apps/daemonset-min-ready-seconds-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -325,7 +325,7 @@ func TestDaemonSet_Check_IDAndMetadata(t *testing.T) {
 			if got := tc.check.ID(); got != tc.wantID {
 				t.Errorf("ID() = %q, want %q", got, tc.wantID)
 			}
-			if got := tc.check.Category(); got != tc.wantCat {
+			if got := runtime.CategoryOf(tc.check.ID()); got != tc.wantCat {
 				t.Errorf("Category() = %q, want %q", got, tc.wantCat)
 			}
 			if !tc.check.Blocking() {

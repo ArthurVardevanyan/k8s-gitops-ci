@@ -13,30 +13,14 @@ import (
 // resourceRequestsGreaterThanLimitsCheck ensures that resource requests are
 // less than or equal to limits for each resource type.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type resourceRequestsGreaterThanLimitsCheck struct{}
+type resourceRequestsGreaterThanLimitsCheck struct{ runtime.Meta }
 
-func (c resourceRequestsGreaterThanLimitsCheck) ID() string {
-	return "resources/resource-requests-greater-than-limits"
-}
-
-func (c resourceRequestsGreaterThanLimitsCheck) Title() string {
-	return "Resource Requests Must Not Exceed Limits"
-}
-
-func (c resourceRequestsGreaterThanLimitsCheck) Category() string {
-	return "resources"
-}
-
-func (c resourceRequestsGreaterThanLimitsCheck) Blocking() bool {
-	return true
-}
-
-func (c resourceRequestsGreaterThanLimitsCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c resourceRequestsGreaterThanLimitsCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newResourceRequestsGreaterThanLimitsCheck() resourceRequestsGreaterThanLimitsCheck {
+	return resourceRequestsGreaterThanLimitsCheck{runtime.Meta{
+		RuleID:    "resources/resource-requests-greater-than-limits",
+		RuleTitle: "Resource Requests Must Not Exceed Limits",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c resourceRequestsGreaterThanLimitsCheck) Run(data []byte, source string) []runtime.Finding {
@@ -75,7 +59,6 @@ func (c resourceRequestsGreaterThanLimitsCheck) Run(data []byte, source string) 
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:      resPath.Child("requests").Child(string(resName)).String(),
 						Message:   fmt.Sprintf("container %q: %s request %s must be less than or equal to limit %s", ctr.Container.Name, resName, reqStr, limitStr),
@@ -96,30 +79,14 @@ func (c resourceRequestsGreaterThanLimitsCheck) Run(data []byte, source string) 
 // resourceQuantityNegativeCheck ensures that resource quantities are not
 // negative. This check catches quantities that compare as less than zero.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type resourceQuantityNegativeCheck struct{}
+type resourceQuantityNegativeCheck struct{ runtime.Meta }
 
-func (c resourceQuantityNegativeCheck) ID() string {
-	return "resources/resource-quantity-negative"
-}
-
-func (c resourceQuantityNegativeCheck) Title() string {
-	return "Resource Quantity Must Not Be Negative"
-}
-
-func (c resourceQuantityNegativeCheck) Category() string {
-	return "resources"
-}
-
-func (c resourceQuantityNegativeCheck) Blocking() bool {
-	return true
-}
-
-func (c resourceQuantityNegativeCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c resourceQuantityNegativeCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newResourceQuantityNegativeCheck() resourceQuantityNegativeCheck {
+	return resourceQuantityNegativeCheck{runtime.Meta{
+		RuleID:    "resources/resource-quantity-negative",
+		RuleTitle: "Resource Quantity Must Not Be Negative",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c resourceQuantityNegativeCheck) Run(data []byte, source string) []runtime.Finding {
@@ -146,7 +113,6 @@ func (c resourceQuantityNegativeCheck) Run(data []byte, source string) []runtime
 					findings = append(findings, runtime.Finding{
 						RuleID:    c.ID(),
 						RuleTitle: c.Title(),
-						Category:  c.Category(),
 						Finding: check.Finding{
 							Path:      path.Child(string(resName)).String(),
 							Message:   fmt.Sprintf("container %q: %s: resource quantity must not be negative", ctr.Container.Name, resName),

@@ -13,30 +13,14 @@ var pvKinds = []string{"PersistentVolume"}
 
 // accessModesInvalidCheck validates that accessModes contains only valid values.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type pvAccessModesInvalidCheck struct{}
+type pvAccessModesInvalidCheck struct{ runtime.Meta }
 
-func (c pvAccessModesInvalidCheck) ID() string {
-	return "persistent-volume/access-modes-invalid"
-}
-
-func (c pvAccessModesInvalidCheck) Title() string {
-	return "PersistentVolume Access Modes Must Be Valid"
-}
-
-func (c pvAccessModesInvalidCheck) Category() string {
-	return "persistent-volume"
-}
-
-func (c pvAccessModesInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c pvAccessModesInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c pvAccessModesInvalidCheck) Kinds() []string {
-	return pvKinds
+func newPvAccessModesInvalidCheck() pvAccessModesInvalidCheck {
+	return pvAccessModesInvalidCheck{runtime.Meta{
+		RuleID:    "persistent-volume/access-modes-invalid",
+		RuleTitle: "PersistentVolume Access Modes Must Be Valid",
+		AppliesTo: pvKinds,
+	}}
 }
 
 func (c pvAccessModesInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -50,30 +34,14 @@ func (c pvAccessModesInvalidCheck) Run(data []byte, source string) []runtime.Fin
 
 // capacityInvalidCheck validates that capacity specifies at least one resource.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type pvCapacityInvalidCheck struct{}
+type pvCapacityInvalidCheck struct{ runtime.Meta }
 
-func (c pvCapacityInvalidCheck) ID() string {
-	return "persistent-volume/capacity-invalid"
-}
-
-func (c pvCapacityInvalidCheck) Title() string {
-	return "PersistentVolume Capacity Must Specify At Least One Resource"
-}
-
-func (c pvCapacityInvalidCheck) Category() string {
-	return "persistent-volume"
-}
-
-func (c pvCapacityInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c pvCapacityInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c pvCapacityInvalidCheck) Kinds() []string {
-	return pvKinds
+func newPvCapacityInvalidCheck() pvCapacityInvalidCheck {
+	return pvCapacityInvalidCheck{runtime.Meta{
+		RuleID:    "persistent-volume/capacity-invalid",
+		RuleTitle: "PersistentVolume Capacity Must Specify At Least One Resource",
+		AppliesTo: pvKinds,
+	}}
 }
 
 func (c pvCapacityInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -88,7 +56,6 @@ func (c pvCapacityInvalidCheck) Run(data []byte, source string) []runtime.Findin
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    field.NewPath("spec").Child("capacity").String(),
 				Message: "capacity must specify at least one resource",

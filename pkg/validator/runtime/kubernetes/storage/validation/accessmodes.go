@@ -27,7 +27,6 @@ func accessModesInvalidFindings(c runtime.Check, modes []corev1.PersistentVolume
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    field.NewPath("spec").Child("accessModes").Index(i).String(),
 					Message: fmt.Sprintf("accessModes: Unsupported value: %q", string(mode)),

@@ -31,7 +31,6 @@ func selectorInvalidFindings(c runtime.Check, obj map[string]interface{}, kind, 
 		return []runtime.Finding{{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    path,
 				Message: fmt.Sprintf("invalid label selector key %q: %s", key, strings.Join(errs, ", ")),

@@ -13,18 +13,18 @@ var registerOnce sync.Once
 // Register and the tests derive from it so neither can drift from the other.
 func allChecks() []runtime.Check {
 	checks := []runtime.Check{
-		deploymentSelectorInvalidCheck{},
-		deploymentStrategyTypeInvalidCheck{},
-		deploymentReplicasInvalidCheck{},
-		deploymentMinReadySecondsInvalidCheck{},
-		statefulSetReplicasInvalidCheck{},
-		statefulSetPodManagementPolicyInvalidCheck{},
-		statefulSetUpdateStrategyInvalidCheck{},
-		daemonSetSelectorInvalidCheck{},
-		daemonSetUpdateStrategyInvalidCheck{},
-		daemonSetMinReadySecondsInvalidCheck{},
-		replicaSetSelectorInvalidCheck{},
-		replicaSetReplicasInvalidCheck{},
+		newDeploymentSelectorInvalidCheck(),
+		newDeploymentStrategyTypeInvalidCheck(),
+		newDeploymentReplicasInvalidCheck(),
+		newDeploymentMinReadySecondsInvalidCheck(),
+		newStatefulSetReplicasInvalidCheck(),
+		newStatefulSetPodManagementPolicyInvalidCheck(),
+		newStatefulSetUpdateStrategyInvalidCheck(),
+		newDaemonSetSelectorInvalidCheck(),
+		newDaemonSetUpdateStrategyInvalidCheck(),
+		newDaemonSetMinReadySecondsInvalidCheck(),
+		newReplicaSetSelectorInvalidCheck(),
+		newReplicaSetReplicasInvalidCheck(),
 	}
 	sort.Slice(checks, func(i, j int) bool {
 		return checks[i].ID() < checks[j].ID()

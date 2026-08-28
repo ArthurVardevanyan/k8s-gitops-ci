@@ -45,7 +45,6 @@ func TestRuntimeFindingCheckIDResolvesInRegistry(t *testing.T) {
 		f := runtimepkg.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  "some-category",
 		}.ToCheckFinding()
 
 		if f.CheckID != c.ID() {
@@ -76,7 +75,6 @@ func TestRuntimeFindingsAreClassifiedAsRuntime(t *testing.T) {
 			// would make the finding resolve even under the old
 			// CheckID-falls-back-to-Category behavior, so the test would
 			// pass against the very bug it exists to catch.
-			Category: "batch",
 		}.ToCheckFinding())
 	}
 
@@ -100,7 +98,6 @@ func TestRuntimeValidationSectionRenders(t *testing.T) {
 	f := runtimepkg.Finding{
 		RuleID:    "batch/schedule-invalid",
 		RuleTitle: "CronJob Schedule Must Be Valid",
-		Category:  "batch",
 		Finding: check.Finding{
 			File:    "overlays/prod/cronjob.yaml",
 			Kind:    "CronJob",
@@ -128,8 +125,7 @@ func TestRuntimeValidationSectionRenders(t *testing.T) {
 func TestRuntimeSectionGroupsByCategory(t *testing.T) {
 	mk := func(rule string) check.Finding {
 		return runtimepkg.Finding{
-			RuleID:   rule,
-			Category: "batch",
+			RuleID: rule,
 			Finding: check.Finding{
 				File:    "a.yaml",
 				Message: "boom " + rule,

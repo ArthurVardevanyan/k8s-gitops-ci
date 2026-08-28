@@ -15,30 +15,14 @@ var clusterRoleBindingKinds = []string{"ClusterRoleBinding"}
 
 // clusterRoleBindingRoleRefInvalidCheck validates that roleRef specifies a ClusterRole.
 // Source: k8s.io/kubernetes/pkg/apis/rbac/validation/validation.go
-type clusterRoleBindingRoleRefInvalidCheck struct{}
+type clusterRoleBindingRoleRefInvalidCheck struct{ runtime.Meta }
 
-func (c clusterRoleBindingRoleRefInvalidCheck) ID() string {
-	return "rbac/clusterrole-ref-invalid"
-}
-
-func (c clusterRoleBindingRoleRefInvalidCheck) Title() string {
-	return "ClusterRoleBinding roleRef Must Reference a ClusterRole"
-}
-
-func (c clusterRoleBindingRoleRefInvalidCheck) Category() string {
-	return "rbac"
-}
-
-func (c clusterRoleBindingRoleRefInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c clusterRoleBindingRoleRefInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c clusterRoleBindingRoleRefInvalidCheck) Kinds() []string {
-	return clusterRoleBindingKinds
+func newClusterRoleBindingRoleRefInvalidCheck() clusterRoleBindingRoleRefInvalidCheck {
+	return clusterRoleBindingRoleRefInvalidCheck{runtime.Meta{
+		RuleID:    "rbac/clusterrole-ref-invalid",
+		RuleTitle: "ClusterRoleBinding roleRef Must Reference a ClusterRole",
+		AppliesTo: clusterRoleBindingKinds,
+	}}
 }
 
 func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -55,7 +39,6 @@ func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) [
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    roleRefPath.Child("kind").String(),
 				Message: fmt.Sprintf("roleRef: invalid value: kind %q is not supported, must be ClusterRole", crb.RoleRef.Kind),
@@ -69,7 +52,6 @@ func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) [
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    roleRefPath.Child("name").String(),
 				Message: "roleRef: invalid value: name is required",
@@ -83,7 +65,6 @@ func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) [
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    roleRefPath.Child("apiGroup").String(),
 				Message: fmt.Sprintf("roleRef: invalid value: apiGroup %q does not match expected group %q", crb.RoleRef.APIGroup, rbacv1.GroupName),
@@ -98,30 +79,14 @@ func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) [
 
 // clusterRoleBindingSubjectInvalidCheck validates each subject has valid kind and name.
 // Source: k8s.io/kubernetes/pkg/apis/rbac/validation/validation.go
-type clusterRoleBindingSubjectInvalidCheck struct{}
+type clusterRoleBindingSubjectInvalidCheck struct{ runtime.Meta }
 
-func (c clusterRoleBindingSubjectInvalidCheck) ID() string {
-	return "rbac/clusterrolebinding-subject-invalid"
-}
-
-func (c clusterRoleBindingSubjectInvalidCheck) Title() string {
-	return "ClusterRoleBinding subjects Must Be Valid"
-}
-
-func (c clusterRoleBindingSubjectInvalidCheck) Category() string {
-	return "rbac"
-}
-
-func (c clusterRoleBindingSubjectInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c clusterRoleBindingSubjectInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c clusterRoleBindingSubjectInvalidCheck) Kinds() []string {
-	return clusterRoleBindingKinds
+func newClusterRoleBindingSubjectInvalidCheck() clusterRoleBindingSubjectInvalidCheck {
+	return clusterRoleBindingSubjectInvalidCheck{runtime.Meta{
+		RuleID:    "rbac/clusterrolebinding-subject-invalid",
+		RuleTitle: "ClusterRoleBinding subjects Must Be Valid",
+		AppliesTo: clusterRoleBindingKinds,
+	}}
 }
 
 func (c clusterRoleBindingSubjectInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -145,7 +110,6 @@ func (c clusterRoleBindingSubjectInvalidCheck) Run(data []byte, source string) [
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    subjectPath.Child("kind").String(),
 					Message: fmt.Sprintf("subjects: invalid value: kind %q is not supported, must be User, Group, or ServiceAccount", subject.Kind),
@@ -159,7 +123,6 @@ func (c clusterRoleBindingSubjectInvalidCheck) Run(data []byte, source string) [
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    subjectPath.Child("name").String(),
 					Message: "subjects: invalid value: name is required",

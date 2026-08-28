@@ -18,15 +18,15 @@ func Register() {
 	registerOnce.Do(func() {
 		checks := []runtime.Check{
 			// Job (pkg/apis/batch/validation validateJobSpec).
-			parallelismInvalidCheck{},
-			backoffLimitInvalidCheck{},
+			newParallelismInvalidCheck(),
+			newBackoffLimitInvalidCheck(),
 
 			// CronJob (validateCronJobSpec and the helpers it calls).
-			scheduleInvalidCheck{},
-			concurrencyPolicyInvalidCheck{},
-			failedJobsHistoryLimitInvalidCheck{},
-			successfulJobsHistoryLimitInvalidCheck{},
-			startingDeadlineSecondsInvalidCheck{},
+			newScheduleInvalidCheck(),
+			newConcurrencyPolicyInvalidCheck(),
+			newFailedJobsHistoryLimitInvalidCheck(),
+			newSuccessfulJobsHistoryLimitInvalidCheck(),
+			newStartingDeadlineSecondsInvalidCheck(),
 		}
 
 		runtime.RegisterAll(checks, upstreamRefs)

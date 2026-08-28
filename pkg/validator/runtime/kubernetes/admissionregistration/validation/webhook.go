@@ -38,7 +38,6 @@ type webhookCheckBase struct {
 	parse    func(data []byte) (*webhookConfiguration, bool)
 }
 
-func (b webhookCheckBase) Category() string      { return "admissionregistration" }
 func (b webhookCheckBase) Blocking() bool        { return true }
 func (b webhookCheckBase) RenderSensitive() bool { return true }
 func (b webhookCheckBase) Kinds() []string       { return b.kinds }
@@ -53,7 +52,6 @@ func (b webhookCheckBase) finding(c runtime.Check, cfg *webhookConfiguration, pa
 	return runtime.Finding{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    path,
 			Message: message,

@@ -16,7 +16,7 @@ metadata:
   name: test
 data:
   key: %s`, pad))
-	check := configMapDataSizeExceededCheck{}
+	check := newConfigMapDataSizeExceededCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -38,7 +38,7 @@ metadata:
   name: test
 data:
   key: ` + smallVal)
-	check := configMapDataSizeExceededCheck{}
+	check := newConfigMapDataSizeExceededCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d", len(findings))
@@ -51,7 +51,7 @@ kind: ConfigMap
 metadata:
   name: test
 `)
-	check := configMapDataSizeExceededCheck{}
+	check := newConfigMapDataSizeExceededCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty data, got %d", len(findings))
@@ -60,7 +60,7 @@ metadata:
 
 func TestConfigMap_Check_Interface(t *testing.T) {
 	checks := []runtime.Check{
-		configMapDataSizeExceededCheck{},
+		newConfigMapDataSizeExceededCheck(),
 	}
 	for _, c := range checks {
 		if c.ID() == "" {
@@ -69,8 +69,8 @@ func TestConfigMap_Check_Interface(t *testing.T) {
 		if c.Title() == "" {
 			t.Errorf("check %T has empty Title", c)
 		}
-		if c.Category() != "core" {
-			t.Errorf("check %T has wrong category: %s", c, c.Category())
+		if runtime.CategoryOf(c.ID()) != "core" {
+			t.Errorf("check %T has wrong category: %s", c, runtime.CategoryOf(c.ID()))
 		}
 		if !c.Blocking() {
 			t.Errorf("check %T should be blocking", c)

@@ -79,7 +79,7 @@ metadata:
 		},
 	}
 
-	check := objectMetaLabelsInvalidCheck{}
+	check := newObjectMetaLabelsInvalidCheck()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			findings := check.Run([]byte(tt.manifest), "test.yaml")
@@ -147,7 +147,7 @@ metadata:
 		},
 	}
 
-	check := objectMetaAnnotationsInvalidCheck{}
+	check := newObjectMetaAnnotationsInvalidCheck()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			findings := check.Run([]byte(tt.manifest), "test.yaml")
@@ -166,14 +166,14 @@ metadata:
 func TestObjectMetaAnnotationsSizeLimit(t *testing.T) {
 	underLimit := strings.Repeat("b", totalAnnotationSizeLimitB-100)
 	manifest := "kind: Deployment\nmetadata:\n  name: test\n  annotations:\n    a: " + underLimit + "\n"
-	findings := objectMetaAnnotationsInvalidCheck{}.Run([]byte(manifest), "test.yaml")
+	findings := newObjectMetaAnnotationsInvalidCheck().Run([]byte(manifest), "test.yaml")
 	if len(findings) != 0 {
 		t.Fatalf("expected no findings just under the limit, got %d", len(findings))
 	}
 
 	overLimit := strings.Repeat("b", totalAnnotationSizeLimitB+1)
 	manifest = "kind: Deployment\nmetadata:\n  name: test\n  annotations:\n    a: " + overLimit + "\n"
-	findings = objectMetaAnnotationsInvalidCheck{}.Run([]byte(manifest), "test.yaml")
+	findings = newObjectMetaAnnotationsInvalidCheck().Run([]byte(manifest), "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected exactly 1 finding over the limit, got %d", len(findings))
 	}
@@ -186,10 +186,10 @@ func TestObjectMetaAnnotationsSizeLimit(t *testing.T) {
 // kind-scoped: unlike the name rules they apply to every object, including
 // custom resources.
 func TestObjectMetaLabelsKindIndependent(t *testing.T) {
-	if kinds := (objectMetaLabelsInvalidCheck{}).Kinds(); len(kinds) != 0 {
+	if kinds := newObjectMetaLabelsInvalidCheck().Kinds(); len(kinds) != 0 {
 		t.Errorf("labels check must declare no kinds, got %v", kinds)
 	}
-	if kinds := (objectMetaAnnotationsInvalidCheck{}).Kinds(); len(kinds) != 0 {
+	if kinds := newObjectMetaAnnotationsInvalidCheck().Kinds(); len(kinds) != 0 {
 		t.Errorf("annotations check must declare no kinds, got %v", kinds)
 	}
 
@@ -199,7 +199,7 @@ metadata:
   labels:
     "bad key": value
 `
-	findings := objectMetaLabelsInvalidCheck{}.Run([]byte(manifest), "test.yaml")
+	findings := newObjectMetaLabelsInvalidCheck().Run([]byte(manifest), "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected the check to apply to a custom resource, got %d findings", len(findings))
 	}

@@ -15,41 +15,34 @@ type Finding struct {
 	RuleID string `json:"ruleId,omitempty"`
 	// RuleTitle is a human-readable title for the rule.
 	RuleTitle string `json:"ruleTitle,omitempty"`
-	// Category identifies the validation category (e.g. "security-context", "container").
-	Category string `json:"category,omitempty"`
 	check.Finding
 }
 
 // ToCheckFinding converts a Finding to a check.Finding.
 //
-// CheckID must be the *registered* check ID (the rule ID), not the broader
-// Category. The dispatcher resolves a finding's section by looking its
-// CheckID up in the check registry (check.ByID), and checks register under
-// their rule ID ("batch/schedule-invalid"), never under a category
-// ("batch"). Falling back to Category here meant every lookup missed, so no
-// finding was ever classified as runtime-validation: the Runtime Validation
-// section never rendered and the findings were then dropped by the
-// resource-compliance copy loop, which only emits IDs listed in
-// complianceCheckOrder. The net effect was an always-blocking,
-// non-exemptable check family that silently blocked nothing.
+// CheckID must be the registered rule ID. The dispatcher resolves a
+// finding's section by looking CheckID up in the check registry, and checks
+// register under their rule ID ("batch/schedule-invalid"), never under a
+// category ("batch"). A finding whose CheckID does not resolve is not
+// classified as runtime-validation, so it never reaches the Runtime
+// Validation section and is dropped by the resource-compliance copy loop,
+// which only emits IDs listed in complianceCheckOrder.
 //
-// Category is still useful for grouping the rendered section, so it travels
-// in Extra rather than masquerading as an identity.
+// The category is derived for grouping the rendered section and travels in
+// Extra, rather than being a second identity that could disagree with the
+// first.
 func (f Finding) ToCheckFinding() check.Finding {
 	cf := f.Finding
 	if cf.CheckID == "" {
 		cf.CheckID = f.RuleID
-	}
-	if cf.CheckID == "" {
-		cf.CheckID = f.Category
 	}
 	if cf.Extra == nil {
 		cf.Extra = make(map[string]string)
 	}
 	cf.Extra["ruleId"] = f.RuleID
 	cf.Extra["ruleTitle"] = f.RuleTitle
-	if f.Category != "" {
-		cf.Extra["category"] = f.Category
+	if cat := CategoryOf(f.RuleID); cat != "" {
+		cf.Extra["category"] = cat
 	}
 	// Surface the upstream rule this finding corresponds to, so a reviewer
 	// can see which API-server validation function rejects the manifest
@@ -71,8 +64,6 @@ type Check interface {
 	ID() string
 	// Title returns a human-readable title.
 	Title() string
-	// Category returns the validation category (used as CheckID in findings).
-	Category() string
 	// Blocking returns whether findings cause pipeline failure.
 	Blocking() bool
 	// RenderSensitive returns whether this check should run on rendered output.

@@ -15,30 +15,14 @@ var pvcKinds = []string{"PersistentVolumeClaim"}
 
 // accessModesInvalidCheck validates that accessModes contains only valid values.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type pvcAccessModesInvalidCheck struct{}
+type pvcAccessModesInvalidCheck struct{ runtime.Meta }
 
-func (c pvcAccessModesInvalidCheck) ID() string {
-	return "persistent-volume-claim/access-modes-invalid"
-}
-
-func (c pvcAccessModesInvalidCheck) Title() string {
-	return "PersistentVolumeClaim Access Modes Must Be Valid"
-}
-
-func (c pvcAccessModesInvalidCheck) Category() string {
-	return "persistent-volume-claim"
-}
-
-func (c pvcAccessModesInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c pvcAccessModesInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c pvcAccessModesInvalidCheck) Kinds() []string {
-	return pvcKinds
+func newPvcAccessModesInvalidCheck() pvcAccessModesInvalidCheck {
+	return pvcAccessModesInvalidCheck{runtime.Meta{
+		RuleID:    "persistent-volume-claim/access-modes-invalid",
+		RuleTitle: "PersistentVolumeClaim Access Modes Must Be Valid",
+		AppliesTo: pvcKinds,
+	}}
 }
 
 func (c pvcAccessModesInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -52,30 +36,14 @@ func (c pvcAccessModesInvalidCheck) Run(data []byte, source string) []runtime.Fi
 
 // volumeModeInvalidCheck validates that volumeMode is one of Filesystem or Block.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type pvcVolumeModeInvalidCheck struct{}
+type pvcVolumeModeInvalidCheck struct{ runtime.Meta }
 
-func (c pvcVolumeModeInvalidCheck) ID() string {
-	return "persistent-volume-claim/volume-mode-invalid"
-}
-
-func (c pvcVolumeModeInvalidCheck) Title() string {
-	return "PersistentVolumeClaim Volume Mode Must Be Valid"
-}
-
-func (c pvcVolumeModeInvalidCheck) Category() string {
-	return "persistent-volume-claim"
-}
-
-func (c pvcVolumeModeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c pvcVolumeModeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c pvcVolumeModeInvalidCheck) Kinds() []string {
-	return pvcKinds
+func newPvcVolumeModeInvalidCheck() pvcVolumeModeInvalidCheck {
+	return pvcVolumeModeInvalidCheck{runtime.Meta{
+		RuleID:    "persistent-volume-claim/volume-mode-invalid",
+		RuleTitle: "PersistentVolumeClaim Volume Mode Must Be Valid",
+		AppliesTo: pvcKinds,
+	}}
 }
 
 func (c pvcVolumeModeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -94,7 +62,6 @@ func (c pvcVolumeModeInvalidCheck) Run(data []byte, source string) []runtime.Fin
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    field.NewPath("spec").Child("volumeMode").String(),
 				Message: fmt.Sprintf("volumeMode: Unsupported value: %q", string(*pvc.Spec.VolumeMode)),

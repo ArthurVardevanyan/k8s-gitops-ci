@@ -17,7 +17,7 @@ spec:
   - name: shared
     emptyDir: {}
 `)
-	check := duplicateVolumeNamesCheck{}
+	check := newDuplicateVolumeNamesCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for duplicate volume names, got %d: %v", len(findings), findings)
@@ -38,7 +38,7 @@ spec:
   - name: vol2
     emptyDir: {}
 `)
-	check := duplicateVolumeNamesCheck{}
+	check := newDuplicateVolumeNamesCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for unique volume names, got %d", len(findings))
@@ -55,7 +55,7 @@ spec:
     secret:
       secretName: ""
 `)
-	check := secretVolumeCheck{}
+	check := newSecretVolumeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for empty secretName, got %d: %v", len(findings), findings)
@@ -75,7 +75,7 @@ spec:
     secret:
       secretName: my-secret
 `)
-	check := secretVolumeCheck{}
+	check := newSecretVolumeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid secretName, got %d", len(findings))
@@ -92,7 +92,7 @@ spec:
     configMap:
       name: ""
 `)
-	check := configmapVolumeCheck{}
+	check := newConfigmapVolumeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for empty configMap name, got %d: %v", len(findings), findings)
@@ -112,7 +112,7 @@ spec:
     configMap:
       name: my-config
 `)
-	check := configmapVolumeCheck{}
+	check := newConfigmapVolumeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid configMap name, got %d", len(findings))
@@ -121,9 +121,9 @@ spec:
 
 func TestVolumeChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
-		duplicateVolumeNamesCheck{},
-		secretVolumeCheck{},
-		configmapVolumeCheck{},
+		newDuplicateVolumeNamesCheck(),
+		newSecretVolumeCheck(),
+		newConfigmapVolumeCheck(),
 	}
 
 	for _, c := range checks {
@@ -133,7 +133,7 @@ func TestVolumeChecksImplementCheckInterface(t *testing.T) {
 		if c.Title() == "" {
 			t.Errorf("check %T has empty Title", c)
 		}
-		if c.Category() == "" {
+		if runtime.CategoryOf(c.ID()) == "" {
 			t.Errorf("check %T has empty Category", c)
 		}
 		if !c.Blocking() {

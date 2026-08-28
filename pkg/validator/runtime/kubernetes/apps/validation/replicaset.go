@@ -12,30 +12,14 @@ import (
 
 // replicaSetSelectorInvalidCheck verifies selector is a valid label selector.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type replicaSetSelectorInvalidCheck struct{}
+type replicaSetSelectorInvalidCheck struct{ runtime.Meta }
 
-func (c replicaSetSelectorInvalidCheck) ID() string {
-	return "apps/replicaset-selector-invalid"
-}
-
-func (c replicaSetSelectorInvalidCheck) Title() string {
-	return "Selector Must Be A Valid Label Selector"
-}
-
-func (c replicaSetSelectorInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c replicaSetSelectorInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c replicaSetSelectorInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c replicaSetSelectorInvalidCheck) Kinds() []string {
-	return []string{"ReplicaSet"}
+func newReplicaSetSelectorInvalidCheck() replicaSetSelectorInvalidCheck {
+	return replicaSetSelectorInvalidCheck{runtime.Meta{
+		RuleID:    "apps/replicaset-selector-invalid",
+		RuleTitle: "Selector Must Be A Valid Label Selector",
+		AppliesTo: []string{"ReplicaSet"},
+	}}
 }
 
 func (c replicaSetSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -46,30 +30,14 @@ func (c replicaSetSelectorInvalidCheck) Run(data []byte, source string) []runtim
 
 // replicaSetReplicasInvalidCheck verifies replicas >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type replicaSetReplicasInvalidCheck struct{}
+type replicaSetReplicasInvalidCheck struct{ runtime.Meta }
 
-func (c replicaSetReplicasInvalidCheck) ID() string {
-	return "apps/replicaset-replicas-invalid"
-}
-
-func (c replicaSetReplicasInvalidCheck) Title() string {
-	return "Replicas Must Be >= 0"
-}
-
-func (c replicaSetReplicasInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c replicaSetReplicasInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c replicaSetReplicasInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c replicaSetReplicasInvalidCheck) Kinds() []string {
-	return []string{"ReplicaSet"}
+func newReplicaSetReplicasInvalidCheck() replicaSetReplicasInvalidCheck {
+	return replicaSetReplicasInvalidCheck{runtime.Meta{
+		RuleID:    "apps/replicaset-replicas-invalid",
+		RuleTitle: "Replicas Must Be >= 0",
+		AppliesTo: []string{"ReplicaSet"},
+	}}
 }
 
 func (c replicaSetReplicasInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -90,7 +58,6 @@ func (c replicaSetReplicasInvalidCheck) Run(data []byte, source string) []runtim
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child("replicas").String(),
 			Message: fmt.Sprintf("replicas: must be >= 0, got %d", replicas),

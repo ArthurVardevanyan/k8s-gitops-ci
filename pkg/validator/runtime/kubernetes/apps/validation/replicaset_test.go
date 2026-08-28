@@ -21,7 +21,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := replicaSetSelectorInvalidCheck{}
+	check := newReplicaSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid selector keys, got %d: %v", len(findings), findings)
@@ -42,7 +42,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := replicaSetSelectorInvalidCheck{}
+	check := newReplicaSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid selector key, got %d: %v", len(findings), findings)
@@ -71,7 +71,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := replicaSetSelectorInvalidCheck{}
+	check := newReplicaSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid matchExpressions key, got %d: %v", len(findings), findings)
@@ -92,7 +92,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := replicaSetSelectorInvalidCheck{}
+	check := newReplicaSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when selector is absent, got %d: %v", len(findings), findings)
@@ -105,7 +105,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := replicaSetSelectorInvalidCheck{}
+	check := newReplicaSetSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-ReplicaSet kind, got %d: %v", len(findings), findings)
@@ -127,7 +127,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := replicaSetReplicasInvalidCheck{}
+	check := newReplicaSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for positive replicas, got %d: %v", len(findings), findings)
@@ -149,7 +149,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := replicaSetReplicasInvalidCheck{}
+	check := newReplicaSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for zero replicas, got %d: %v", len(findings), findings)
@@ -171,7 +171,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := replicaSetReplicasInvalidCheck{}
+	check := newReplicaSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for negative replicas, got %d: %v", len(findings), findings)
@@ -193,7 +193,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := replicaSetReplicasInvalidCheck{}
+	check := newReplicaSetReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-ReplicaSet kind, got %d: %v", len(findings), findings)
@@ -206,8 +206,8 @@ func TestReplicaSet_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{replicaSetSelectorInvalidCheck{}, "apps/replicaset-selector-invalid", "apps"},
-		{replicaSetReplicasInvalidCheck{}, "apps/replicaset-replicas-invalid", "apps"},
+		{newReplicaSetSelectorInvalidCheck(), "apps/replicaset-selector-invalid", "apps"},
+		{newReplicaSetReplicasInvalidCheck(), "apps/replicaset-replicas-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -215,7 +215,7 @@ func TestReplicaSet_Check_IDAndMetadata(t *testing.T) {
 			if got := tc.check.ID(); got != tc.wantID {
 				t.Errorf("ID() = %q, want %q", got, tc.wantID)
 			}
-			if got := tc.check.Category(); got != tc.wantCat {
+			if got := runtime.CategoryOf(tc.check.ID()); got != tc.wantCat {
 				t.Errorf("Category() = %q, want %q", got, tc.wantCat)
 			}
 			if !tc.check.Blocking() {

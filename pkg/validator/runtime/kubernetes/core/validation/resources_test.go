@@ -22,7 +22,7 @@ spec:
         cpu: "200m"
         memory: "256Mi"
 `)
-	check := resourceRequestsGreaterThanLimitsCheck{}
+	check := newResourceRequestsGreaterThanLimitsCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 2 {
 		t.Fatalf("expected 2 findings (cpu + memory), got %d: %v", len(findings), findings)
@@ -51,7 +51,7 @@ spec:
       limits:
         cpu: "100m"
 `)
-	check := resourceRequestsGreaterThanLimitsCheck{}
+	check := newResourceRequestsGreaterThanLimitsCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when requests equal limits, got %d: %v", len(findings), findings)
@@ -72,7 +72,7 @@ spec:
       limits:
         cpu: "500m"
 `)
-	check := resourceRequestsGreaterThanLimitsCheck{}
+	check := newResourceRequestsGreaterThanLimitsCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when requests less than limits, got %d: %v", len(findings), findings)
@@ -91,7 +91,7 @@ spec:
       requests:
         cpu: "500m"
 `)
-	check := resourceRequestsGreaterThanLimitsCheck{}
+	check := newResourceRequestsGreaterThanLimitsCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when no limits, got %d: %v", len(findings), findings)
@@ -115,7 +115,7 @@ spec:
 	// previously accepted 0 or 1 on the theory that the unmarshaler might
 	// reject it, which made the test pass whether or not the check worked -
 	// including if it silently stopped detecting negative quantities.
-	check := resourceQuantityNegativeCheck{}
+	check := newResourceQuantityNegativeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected exactly 1 finding for a negative quantity, got %d: %v", len(findings), findings)
@@ -141,7 +141,7 @@ spec:
         cpu: "200m"
         memory: "256Mi"
 `)
-	check := resourceQuantityNegativeCheck{}
+	check := newResourceQuantityNegativeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-negative quantities, got %d: %v", len(findings), findings)
@@ -192,7 +192,7 @@ spec:
       limits:
         memory: "512Mi"
 `)
-	check := resourceRequestsGreaterThanLimitsCheck{}
+	check := newResourceRequestsGreaterThanLimitsCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 2 {
 		t.Fatalf("expected 2 findings (one per container), got %d: %v", len(findings), findings)

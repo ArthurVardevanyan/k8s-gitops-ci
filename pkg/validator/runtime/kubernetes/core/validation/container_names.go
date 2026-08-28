@@ -23,16 +23,15 @@ import (
 //
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 // (validateContainerCommon)
-type containerNameInvalidCheck struct{}
+type containerNameInvalidCheck struct{ runtime.Meta }
 
-func (c containerNameInvalidCheck) ID() string { return "container/name-invalid" }
-func (c containerNameInvalidCheck) Title() string {
-	return "Container Name Must Be A DNS-1123 Label"
+func newContainerNameInvalidCheck() containerNameInvalidCheck {
+	return containerNameInvalidCheck{runtime.Meta{
+		RuleID:    "container/name-invalid",
+		RuleTitle: "Container Name Must Be A DNS-1123 Label",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
-func (c containerNameInvalidCheck) Category() string      { return "container" }
-func (c containerNameInvalidCheck) Blocking() bool        { return true }
-func (c containerNameInvalidCheck) RenderSensitive() bool { return true }
-func (c containerNameInvalidCheck) Kinds() []string       { return runtime.HasPodSpecKinds() }
 
 func (c containerNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	info, err := runtime.ExtractPodSpecInfo(data, source)
@@ -44,7 +43,6 @@ func (c containerNameInvalidCheck) Run(data []byte, source string) []runtime.Fin
 		return runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      ctr.Path.Child("name").String(),
 				Message:   message,
@@ -80,16 +78,15 @@ func (c containerNameInvalidCheck) Run(data []byte, source string) []runtime.Fin
 //
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
 // (validateContainerPorts)
-type containerPortNameInvalidCheck struct{}
+type containerPortNameInvalidCheck struct{ runtime.Meta }
 
-func (c containerPortNameInvalidCheck) ID() string { return "container/port-name-invalid" }
-func (c containerPortNameInvalidCheck) Title() string {
-	return "Container Port Name Must Be A Valid IANA Service Name"
+func newContainerPortNameInvalidCheck() containerPortNameInvalidCheck {
+	return containerPortNameInvalidCheck{runtime.Meta{
+		RuleID:    "container/port-name-invalid",
+		RuleTitle: "Container Port Name Must Be A Valid IANA Service Name",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
-func (c containerPortNameInvalidCheck) Category() string      { return "container" }
-func (c containerPortNameInvalidCheck) Blocking() bool        { return true }
-func (c containerPortNameInvalidCheck) RenderSensitive() bool { return true }
-func (c containerPortNameInvalidCheck) Kinds() []string       { return runtime.HasPodSpecKinds() }
 
 func (c containerPortNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	info, err := runtime.ExtractPodSpecInfo(data, source)
@@ -110,7 +107,6 @@ func (c containerPortNameInvalidCheck) Run(data []byte, source string) []runtime
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:      ctr.Path.Child("ports").Key(port.Name).Child("name").String(),
 						Message:   fmt.Sprintf("invalid port name %q: %s", port.Name, msg),

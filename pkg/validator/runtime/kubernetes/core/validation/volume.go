@@ -13,30 +13,14 @@ import (
 // Check 2: duplicate-volume-names
 // All volumes must have unique names within a Pod.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type duplicateVolumeNamesCheck struct{}
+type duplicateVolumeNamesCheck struct{ runtime.Meta }
 
-func (c duplicateVolumeNamesCheck) ID() string {
-	return "volume/duplicate-volume-names"
-}
-
-func (c duplicateVolumeNamesCheck) Title() string {
-	return "Duplicate Volume Names Not Allowed"
-}
-
-func (c duplicateVolumeNamesCheck) Category() string {
-	return "volume"
-}
-
-func (c duplicateVolumeNamesCheck) Blocking() bool {
-	return true
-}
-
-func (c duplicateVolumeNamesCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c duplicateVolumeNamesCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newDuplicateVolumeNamesCheck() duplicateVolumeNamesCheck {
+	return duplicateVolumeNamesCheck{runtime.Meta{
+		RuleID:    "volume/duplicate-volume-names",
+		RuleTitle: "Duplicate Volume Names Not Allowed",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c duplicateVolumeNamesCheck) Run(data []byte, source string) []runtime.Finding {
@@ -61,7 +45,6 @@ func (c duplicateVolumeNamesCheck) Run(data []byte, source string) []runtime.Fin
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:      field.NewPath(info.VolumesPath()).Key(name).String(),
 					Message:   fmt.Sprintf("duplicate volume name %q appears %d times", name, count),
@@ -84,30 +67,14 @@ func (c duplicateVolumeNamesCheck) Run(data []byte, source string) []runtime.Fin
 // here, since a Secret is frequently created by a separate controller or
 // secret manager rather than by the commit under review.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type secretVolumeCheck struct{}
+type secretVolumeCheck struct{ runtime.Meta }
 
-func (c secretVolumeCheck) ID() string {
-	return "volume/secret-name-required"
-}
-
-func (c secretVolumeCheck) Title() string {
-	return "Secret Volume Must Set secretName"
-}
-
-func (c secretVolumeCheck) Category() string {
-	return "volume"
-}
-
-func (c secretVolumeCheck) Blocking() bool {
-	return true
-}
-
-func (c secretVolumeCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c secretVolumeCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newSecretVolumeCheck() secretVolumeCheck {
+	return secretVolumeCheck{runtime.Meta{
+		RuleID:    "volume/secret-name-required",
+		RuleTitle: "Secret Volume Must Set secretName",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c secretVolumeCheck) Run(data []byte, source string) []runtime.Finding {
@@ -150,7 +117,6 @@ func volumeReferenceNameFindings(
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:      field.NewPath(info.VolumesPath()).Index(i).Child(volumeField).Child(nameField).String(),
 					Message:   fmt.Sprintf("volume %q: %s.%s: Required value", vol.Name, volumeField, nameField),
@@ -169,30 +135,14 @@ func volumeReferenceNameFindings(
 // A configMap volume must set a non-empty name. As with secret-name-required
 // this is the upstream field.Required rule, not an existence check.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type configmapVolumeCheck struct{}
+type configmapVolumeCheck struct{ runtime.Meta }
 
-func (c configmapVolumeCheck) ID() string {
-	return "volume/configmap-name-required"
-}
-
-func (c configmapVolumeCheck) Title() string {
-	return "ConfigMap Volume Must Set name"
-}
-
-func (c configmapVolumeCheck) Category() string {
-	return "volume"
-}
-
-func (c configmapVolumeCheck) Blocking() bool {
-	return true
-}
-
-func (c configmapVolumeCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c configmapVolumeCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newConfigmapVolumeCheck() configmapVolumeCheck {
+	return configmapVolumeCheck{runtime.Meta{
+		RuleID:    "volume/configmap-name-required",
+		RuleTitle: "ConfigMap Volume Must Set name",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c configmapVolumeCheck) Run(data []byte, source string) []runtime.Finding {

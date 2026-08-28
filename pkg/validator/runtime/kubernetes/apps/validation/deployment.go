@@ -12,30 +12,14 @@ import (
 
 // deploymentSelectorInvalidCheck verifies the selector is a valid label selector.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type deploymentSelectorInvalidCheck struct{}
+type deploymentSelectorInvalidCheck struct{ runtime.Meta }
 
-func (c deploymentSelectorInvalidCheck) ID() string {
-	return "apps/deployment-selector-invalid"
-}
-
-func (c deploymentSelectorInvalidCheck) Title() string {
-	return "Selector Must Be A Valid Label Selector"
-}
-
-func (c deploymentSelectorInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c deploymentSelectorInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c deploymentSelectorInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c deploymentSelectorInvalidCheck) Kinds() []string {
-	return []string{"Deployment"}
+func newDeploymentSelectorInvalidCheck() deploymentSelectorInvalidCheck {
+	return deploymentSelectorInvalidCheck{runtime.Meta{
+		RuleID:    "apps/deployment-selector-invalid",
+		RuleTitle: "Selector Must Be A Valid Label Selector",
+		AppliesTo: []string{"Deployment"},
+	}}
 }
 
 func (c deploymentSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -46,30 +30,14 @@ func (c deploymentSelectorInvalidCheck) Run(data []byte, source string) []runtim
 
 // deploymentStrategyTypeInvalidCheck verifies strategy type is valid.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type deploymentStrategyTypeInvalidCheck struct{}
+type deploymentStrategyTypeInvalidCheck struct{ runtime.Meta }
 
-func (c deploymentStrategyTypeInvalidCheck) ID() string {
-	return "apps/deployment-strategy-type-invalid"
-}
-
-func (c deploymentStrategyTypeInvalidCheck) Title() string {
-	return "Strategy Type Must Be Valid"
-}
-
-func (c deploymentStrategyTypeInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c deploymentStrategyTypeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c deploymentStrategyTypeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c deploymentStrategyTypeInvalidCheck) Kinds() []string {
-	return []string{"Deployment"}
+func newDeploymentStrategyTypeInvalidCheck() deploymentStrategyTypeInvalidCheck {
+	return deploymentStrategyTypeInvalidCheck{runtime.Meta{
+		RuleID:    "apps/deployment-strategy-type-invalid",
+		RuleTitle: "Strategy Type Must Be Valid",
+		AppliesTo: []string{"Deployment"},
+	}}
 }
 
 func (c deploymentStrategyTypeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -85,30 +53,14 @@ func (c deploymentStrategyTypeInvalidCheck) Run(data []byte, source string) []ru
 
 // deploymentReplicasInvalidCheck verifies replicas >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type deploymentReplicasInvalidCheck struct{}
+type deploymentReplicasInvalidCheck struct{ runtime.Meta }
 
-func (c deploymentReplicasInvalidCheck) ID() string {
-	return "apps/deployment-replicas-invalid"
-}
-
-func (c deploymentReplicasInvalidCheck) Title() string {
-	return "Replicas Must Be >= 0"
-}
-
-func (c deploymentReplicasInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c deploymentReplicasInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c deploymentReplicasInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c deploymentReplicasInvalidCheck) Kinds() []string {
-	return []string{"Deployment"}
+func newDeploymentReplicasInvalidCheck() deploymentReplicasInvalidCheck {
+	return deploymentReplicasInvalidCheck{runtime.Meta{
+		RuleID:    "apps/deployment-replicas-invalid",
+		RuleTitle: "Replicas Must Be >= 0",
+		AppliesTo: []string{"Deployment"},
+	}}
 }
 
 func (c deploymentReplicasInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -129,7 +81,6 @@ func (c deploymentReplicasInvalidCheck) Run(data []byte, source string) []runtim
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child("replicas").String(),
 			Message: fmt.Sprintf("replicas: must be >= 0, got %d", replicas),
@@ -142,30 +93,14 @@ func (c deploymentReplicasInvalidCheck) Run(data []byte, source string) []runtim
 
 // deploymentMinReadySecondsInvalidCheck verifies minReadySeconds >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type deploymentMinReadySecondsInvalidCheck struct{}
+type deploymentMinReadySecondsInvalidCheck struct{ runtime.Meta }
 
-func (c deploymentMinReadySecondsInvalidCheck) ID() string {
-	return "apps/deployment-min-ready-seconds-invalid"
-}
-
-func (c deploymentMinReadySecondsInvalidCheck) Title() string {
-	return "MinReadySeconds Must Be >= 0"
-}
-
-func (c deploymentMinReadySecondsInvalidCheck) Category() string {
-	return "apps"
-}
-
-func (c deploymentMinReadySecondsInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c deploymentMinReadySecondsInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c deploymentMinReadySecondsInvalidCheck) Kinds() []string {
-	return []string{"Deployment"}
+func newDeploymentMinReadySecondsInvalidCheck() deploymentMinReadySecondsInvalidCheck {
+	return deploymentMinReadySecondsInvalidCheck{runtime.Meta{
+		RuleID:    "apps/deployment-min-ready-seconds-invalid",
+		RuleTitle: "MinReadySeconds Must Be >= 0",
+		AppliesTo: []string{"Deployment"},
+	}}
 }
 
 func (c deploymentMinReadySecondsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -186,7 +121,6 @@ func (c deploymentMinReadySecondsInvalidCheck) Run(data []byte, source string) [
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child("minReadySeconds").String(),
 			Message: fmt.Sprintf("minReadySeconds: must be >= 0, got %d", minReadySeconds),

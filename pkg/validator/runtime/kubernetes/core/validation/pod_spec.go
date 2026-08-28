@@ -16,30 +16,14 @@ import (
 // Check 1: restart-policy-value
 // restartPolicy must be one of: Always, OnFailure, Never.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type podSpecRestartPolicyValueCheck struct{}
+type podSpecRestartPolicyValueCheck struct{ runtime.Meta }
 
-func (c podSpecRestartPolicyValueCheck) ID() string {
-	return "pod-spec/restart-policy-value"
-}
-
-func (c podSpecRestartPolicyValueCheck) Title() string {
-	return "RestartPolicy Must Be Valid"
-}
-
-func (c podSpecRestartPolicyValueCheck) Category() string {
-	return "pod-spec"
-}
-
-func (c podSpecRestartPolicyValueCheck) Blocking() bool {
-	return true
-}
-
-func (c podSpecRestartPolicyValueCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c podSpecRestartPolicyValueCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newPodSpecRestartPolicyValueCheck() podSpecRestartPolicyValueCheck {
+	return podSpecRestartPolicyValueCheck{runtime.Meta{
+		RuleID:    "pod-spec/restart-policy-value",
+		RuleTitle: "RestartPolicy Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c podSpecRestartPolicyValueCheck) Run(data []byte, source string) []runtime.Finding {
@@ -62,7 +46,6 @@ func (c podSpecRestartPolicyValueCheck) Run(data []byte, source string) []runtim
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:      field.NewPath(info.PodSpecPath).Child("restartPolicy").String(),
 			Message:   fmt.Sprintf("restartPolicy: Unsupported value: %q", string(policy)),
@@ -77,30 +60,14 @@ func (c podSpecRestartPolicyValueCheck) Run(data []byte, source string) []runtim
 // Check 5: dns-policy-value
 // dnsPolicy must be one of: ClusterFirst, Default, None, ClusterFirstWithHostNet.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type podSpecDNSPolicyValueCheck struct{}
+type podSpecDNSPolicyValueCheck struct{ runtime.Meta }
 
-func (c podSpecDNSPolicyValueCheck) ID() string {
-	return "pod-spec/dns-policy-value"
-}
-
-func (c podSpecDNSPolicyValueCheck) Title() string {
-	return "DNSPolicy Must Be Valid"
-}
-
-func (c podSpecDNSPolicyValueCheck) Category() string {
-	return "pod-spec"
-}
-
-func (c podSpecDNSPolicyValueCheck) Blocking() bool {
-	return true
-}
-
-func (c podSpecDNSPolicyValueCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c podSpecDNSPolicyValueCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newPodSpecDNSPolicyValueCheck() podSpecDNSPolicyValueCheck {
+	return podSpecDNSPolicyValueCheck{runtime.Meta{
+		RuleID:    "pod-spec/dns-policy-value",
+		RuleTitle: "DNSPolicy Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c podSpecDNSPolicyValueCheck) Run(data []byte, source string) []runtime.Finding {
@@ -124,7 +91,6 @@ func (c podSpecDNSPolicyValueCheck) Run(data []byte, source string) []runtime.Fi
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:      field.NewPath(info.PodSpecPath).Child("dnsPolicy").String(),
 			Message:   fmt.Sprintf("dnsPolicy: Unsupported value: %q", string(policy)),
@@ -139,30 +105,14 @@ func (c podSpecDNSPolicyValueCheck) Run(data []byte, source string) []runtime.Fi
 // Check 7: toleration-operator-value
 // toleration.operator must be one of: Exists, Equal.
 // Source: k8s.io/kubernetes/pkg/apis/core/validation/validation.go
-type podSpecTolerationOperatorValueCheck struct{}
+type podSpecTolerationOperatorValueCheck struct{ runtime.Meta }
 
-func (c podSpecTolerationOperatorValueCheck) ID() string {
-	return "pod-spec/toleration-operator-value"
-}
-
-func (c podSpecTolerationOperatorValueCheck) Title() string {
-	return "Toleration Operator Must Be Valid"
-}
-
-func (c podSpecTolerationOperatorValueCheck) Category() string {
-	return "pod-spec"
-}
-
-func (c podSpecTolerationOperatorValueCheck) Blocking() bool {
-	return true
-}
-
-func (c podSpecTolerationOperatorValueCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c podSpecTolerationOperatorValueCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newPodSpecTolerationOperatorValueCheck() podSpecTolerationOperatorValueCheck {
+	return podSpecTolerationOperatorValueCheck{runtime.Meta{
+		RuleID:    "pod-spec/toleration-operator-value",
+		RuleTitle: "Toleration Operator Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c podSpecTolerationOperatorValueCheck) Run(data []byte, source string) []runtime.Finding {
@@ -185,7 +135,6 @@ func (c podSpecTolerationOperatorValueCheck) Run(data []byte, source string) []r
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      field.NewPath(info.PodSpecPath).Child("tolerations").Index(i).Child("operator").String(),
 				Message:   fmt.Sprintf("toleration[%d]: operator: Unsupported value: %q: supported values: 'Exists', 'Equal'", i, string(op)),
@@ -201,17 +150,15 @@ func (c podSpecTolerationOperatorValueCheck) Run(data []byte, source string) []r
 }
 
 // Check 8: affinity-node-selector-invalid
-type podSpecNodeSelectorInvalidCheck struct{}
+type podSpecNodeSelectorInvalidCheck struct{ runtime.Meta }
 
-func (c podSpecNodeSelectorInvalidCheck) ID() string {
-	return "pod-spec/affinity-node-selector-invalid"
+func newPodSpecNodeSelectorInvalidCheck() podSpecNodeSelectorInvalidCheck {
+	return podSpecNodeSelectorInvalidCheck{runtime.Meta{
+		RuleID:    "pod-spec/affinity-node-selector-invalid",
+		RuleTitle: "NodeSelector Values Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
-
-func (c podSpecNodeSelectorInvalidCheck) Title() string         { return "NodeSelector Values Must Be Valid" }
-func (c podSpecNodeSelectorInvalidCheck) Category() string      { return "pod-spec" }
-func (c podSpecNodeSelectorInvalidCheck) Blocking() bool        { return true }
-func (c podSpecNodeSelectorInvalidCheck) RenderSensitive() bool { return true }
-func (c podSpecNodeSelectorInvalidCheck) Kinds() []string       { return runtime.HasPodSpecKinds() }
 
 func (c podSpecNodeSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	info, err := runtime.ExtractPodSpecInfo(data, source)
@@ -222,7 +169,7 @@ func (c podSpecNodeSelectorInvalidCheck) Run(data []byte, source string) []runti
 	for key, value := range info.PodSpec.NodeSelector {
 		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
 			findings = append(findings, runtime.Finding{
-				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+				RuleID: c.ID(), RuleTitle: c.Title(),
 				Finding: check.Finding{
 					Path:    field.NewPath(info.PodSpecPath).Child("nodeSelector").Key(key).String(),
 					Message: fmt.Sprintf("nodeSelector[%q]: invalid key: %s", key, strings.Join(errs, ", ")),
@@ -233,7 +180,7 @@ func (c podSpecNodeSelectorInvalidCheck) Run(data []byte, source string) []runti
 		}
 		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
 			findings = append(findings, runtime.Finding{
-				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+				RuleID: c.ID(), RuleTitle: c.Title(),
 				Finding: check.Finding{
 					Path:    field.NewPath(info.PodSpecPath).Child("nodeSelector").Key(key).String(),
 					Message: fmt.Sprintf("nodeSelector[%q]: invalid value: %s", key, strings.Join(errs, ", ")),
@@ -246,15 +193,15 @@ func (c podSpecNodeSelectorInvalidCheck) Run(data []byte, source string) []runti
 }
 
 // Check 9: pod-affinity-invalid
-type podSpecAffinityInvalidCheck struct{}
+type podSpecAffinityInvalidCheck struct{ runtime.Meta }
 
-func (c podSpecAffinityInvalidCheck) ID() string { return "pod-spec/pod-affinity-invalid" }
-
-func (c podSpecAffinityInvalidCheck) Title() string         { return "Pod Affinity Labels Must Be Valid" }
-func (c podSpecAffinityInvalidCheck) Category() string      { return "pod-spec" }
-func (c podSpecAffinityInvalidCheck) Blocking() bool        { return true }
-func (c podSpecAffinityInvalidCheck) RenderSensitive() bool { return true }
-func (c podSpecAffinityInvalidCheck) Kinds() []string       { return runtime.HasPodSpecKinds() }
+func newPodSpecAffinityInvalidCheck() podSpecAffinityInvalidCheck {
+	return podSpecAffinityInvalidCheck{runtime.Meta{
+		RuleID:    "pod-spec/pod-affinity-invalid",
+		RuleTitle: "Pod Affinity Labels Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
+}
 
 func (c podSpecAffinityInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	info, err := runtime.ExtractPodSpecInfo(data, source)
@@ -269,7 +216,7 @@ func (c podSpecAffinityInvalidCheck) Run(data []byte, source string) []runtime.F
 				for j, me := range term.MatchExpressions {
 					if errs := validation.IsQualifiedName(me.Key); len(errs) > 0 {
 						findings = append(findings, runtime.Finding{
-							RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+							RuleID: c.ID(), RuleTitle: c.Title(),
 							Finding: check.Finding{
 								Path:    field.NewPath(info.PodSpecPath).Child("affinity").Child("nodeAffinity").Child("requiredDuringSchedulingIgnoredDuringExecution").Child("nodeSelectorTerms").Index(i).Child("matchExpressions").Index(j).Child("key").String(),
 								Message: fmt.Sprintf("nodeAffinity matchExpressions[%d]: invalid key: %s", j, strings.Join(errs, ", ")),
@@ -281,7 +228,7 @@ func (c podSpecAffinityInvalidCheck) Run(data []byte, source string) []runtime.F
 				for j, mf := range term.MatchFields {
 					if errs := validation.IsQualifiedName(mf.Key); len(errs) > 0 {
 						findings = append(findings, runtime.Finding{
-							RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+							RuleID: c.ID(), RuleTitle: c.Title(),
 							Finding: check.Finding{
 								Path:    field.NewPath(info.PodSpecPath).Child("affinity").Child("nodeAffinity").Child("requiredDuringSchedulingIgnoredDuringExecution").Child("nodeSelectorTerms").Index(i).Child("matchFields").Index(j).Child("key").String(),
 								Message: fmt.Sprintf("nodeAffinity matchFields[%d]: invalid key: %s", j, strings.Join(errs, ", ")),
@@ -329,7 +276,7 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 	for j, expr := range selector.MatchExpressions {
 		if errs := validation.IsQualifiedName(expr.Key); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{
-				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid", Category: "pod-spec",
+				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
 				Finding: check.Finding{
 					Path:    psPath.Child("matchExpressions").Index(j).Child("key").String(),
 					Message: fmt.Sprintf("%s[%d]: invalid key: %s", msgPrefix, i, strings.Join(errs, ", ")),
@@ -341,7 +288,7 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 	for j, sel := range selector.MatchLabels {
 		if errs := validation.IsQualifiedName(j); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{
-				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid", Category: "pod-spec",
+				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
 				Finding: check.Finding{
 					Path:    psPath.Child("matchLabels").Key(j).String(),
 					Message: fmt.Sprintf("%s[%d]: invalid label key: %s", msgPrefix, i, strings.Join(errs, ", ")),
@@ -351,7 +298,7 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 		}
 		if errs := validation.IsValidLabelValue(sel); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{
-				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid", Category: "pod-spec",
+				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
 				Finding: check.Finding{
 					Path:    psPath.Child("matchLabels").Key(j).String(),
 					Message: fmt.Sprintf("%s[%d]: invalid label value for %q: %s", msgPrefix, i, j, strings.Join(errs, ", ")),
@@ -363,16 +310,15 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 }
 
 // Check 11: topology-spread-invalid
-type podSpecTopologySpreadInvalidCheck struct{}
+type podSpecTopologySpreadInvalidCheck struct{ runtime.Meta }
 
-func (c podSpecTopologySpreadInvalidCheck) ID() string { return "pod-spec/topology-spread-invalid" }
-func (c podSpecTopologySpreadInvalidCheck) Title() string {
-	return "TopologySpreadConstraints Labels Must Be Valid"
+func newPodSpecTopologySpreadInvalidCheck() podSpecTopologySpreadInvalidCheck {
+	return podSpecTopologySpreadInvalidCheck{runtime.Meta{
+		RuleID:    "pod-spec/topology-spread-invalid",
+		RuleTitle: "TopologySpreadConstraints Labels Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
-func (c podSpecTopologySpreadInvalidCheck) Category() string      { return "pod-spec" }
-func (c podSpecTopologySpreadInvalidCheck) Blocking() bool        { return true }
-func (c podSpecTopologySpreadInvalidCheck) RenderSensitive() bool { return true }
-func (c podSpecTopologySpreadInvalidCheck) Kinds() []string       { return runtime.HasPodSpecKinds() }
 
 func (c podSpecTopologySpreadInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	info, err := runtime.ExtractPodSpecInfo(data, source)
@@ -388,7 +334,7 @@ func (c podSpecTopologySpreadInvalidCheck) Run(data []byte, source string) []run
 		for j, expr := range tc.LabelSelector.MatchExpressions {
 			if errs := validation.IsQualifiedName(expr.Key); len(errs) > 0 {
 				findings = append(findings, runtime.Finding{
-					RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+					RuleID: c.ID(), RuleTitle: c.Title(),
 					Finding: check.Finding{
 						Path:    psPath.Child("matchExpressions").Index(j).Child("key").String(),
 						Message: fmt.Sprintf("topologySpreadConstraints[%d]: invalid key: %s", i, strings.Join(errs, ", ")),
@@ -400,7 +346,7 @@ func (c podSpecTopologySpreadInvalidCheck) Run(data []byte, source string) []run
 		for j, sel := range tc.LabelSelector.MatchLabels {
 			if errs := validation.IsQualifiedName(j); len(errs) > 0 {
 				findings = append(findings, runtime.Finding{
-					RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+					RuleID: c.ID(), RuleTitle: c.Title(),
 					Finding: check.Finding{
 						Path:    psPath.Child("matchLabels").Key(j).String(),
 						Message: fmt.Sprintf("topologySpreadConstraints[%d]: invalid label key: %s", i, strings.Join(errs, ", ")),
@@ -410,7 +356,7 @@ func (c podSpecTopologySpreadInvalidCheck) Run(data []byte, source string) []run
 			}
 			if errs := validation.IsValidLabelValue(sel); len(errs) > 0 {
 				findings = append(findings, runtime.Finding{
-					RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+					RuleID: c.ID(), RuleTitle: c.Title(),
 					Finding: check.Finding{
 						Path:    psPath.Child("matchLabels").Key(j).String(),
 						Message: fmt.Sprintf("topologySpreadConstraints[%d]: invalid label value for %q: %s", i, j, strings.Join(errs, ", ")),
@@ -424,20 +370,14 @@ func (c podSpecTopologySpreadInvalidCheck) Run(data []byte, source string) []run
 }
 
 // Check 13: service-account-name-invalid
-type podSpecServiceAccountNameInvalidCheck struct{}
+type podSpecServiceAccountNameInvalidCheck struct{ runtime.Meta }
 
-func (c podSpecServiceAccountNameInvalidCheck) ID() string {
-	return "pod-spec/service-account-name-invalid"
-}
-
-func (c podSpecServiceAccountNameInvalidCheck) Title() string {
-	return "ServiceAccountName Must Be Valid"
-}
-func (c podSpecServiceAccountNameInvalidCheck) Category() string      { return "pod-spec" }
-func (c podSpecServiceAccountNameInvalidCheck) Blocking() bool        { return true }
-func (c podSpecServiceAccountNameInvalidCheck) RenderSensitive() bool { return true }
-func (c podSpecServiceAccountNameInvalidCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newPodSpecServiceAccountNameInvalidCheck() podSpecServiceAccountNameInvalidCheck {
+	return podSpecServiceAccountNameInvalidCheck{runtime.Meta{
+		RuleID:    "pod-spec/service-account-name-invalid",
+		RuleTitle: "ServiceAccountName Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c podSpecServiceAccountNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -451,7 +391,7 @@ func (c podSpecServiceAccountNameInvalidCheck) Run(data []byte, source string) [
 	}
 	if errs := validation.IsDNS1123Subdomain(sa); len(errs) > 0 {
 		return []runtime.Finding{{
-			RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+			RuleID: c.ID(), RuleTitle: c.Title(),
 			Finding: check.Finding{
 				Path:    field.NewPath(info.PodSpecPath).Child("serviceAccountName").String(),
 				Message: fmt.Sprintf("serviceAccountName: invalid value: %s", strings.Join(errs, ", ")),
@@ -463,20 +403,14 @@ func (c podSpecServiceAccountNameInvalidCheck) Run(data []byte, source string) [
 }
 
 // Check 15: active-deadline-seconds-negative
-type podSpecActiveDeadlineSecondsNegativeCheck struct{}
+type podSpecActiveDeadlineSecondsNegativeCheck struct{ runtime.Meta }
 
-func (c podSpecActiveDeadlineSecondsNegativeCheck) ID() string {
-	return "pod-spec/active-deadline-seconds-negative"
-}
-
-func (c podSpecActiveDeadlineSecondsNegativeCheck) Title() string {
-	return "ActiveDeadlineSeconds Must Be >= 1"
-}
-func (c podSpecActiveDeadlineSecondsNegativeCheck) Category() string      { return "pod-spec" }
-func (c podSpecActiveDeadlineSecondsNegativeCheck) Blocking() bool        { return true }
-func (c podSpecActiveDeadlineSecondsNegativeCheck) RenderSensitive() bool { return true }
-func (c podSpecActiveDeadlineSecondsNegativeCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newPodSpecActiveDeadlineSecondsNegativeCheck() podSpecActiveDeadlineSecondsNegativeCheck {
+	return podSpecActiveDeadlineSecondsNegativeCheck{runtime.Meta{
+		RuleID:    "pod-spec/active-deadline-seconds-negative",
+		RuleTitle: "ActiveDeadlineSeconds Must Be >= 1",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c podSpecActiveDeadlineSecondsNegativeCheck) Run(data []byte, source string) []runtime.Finding {
@@ -489,7 +423,7 @@ func (c podSpecActiveDeadlineSecondsNegativeCheck) Run(data []byte, source strin
 		return nil
 	}
 	return []runtime.Finding{{
-		RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+		RuleID: c.ID(), RuleTitle: c.Title(),
 		Finding: check.Finding{
 			Path:    field.NewPath(info.PodSpecPath).Child("activeDeadlineSeconds").String(),
 			Message: fmt.Sprintf("activeDeadlineSeconds: must be >= 1, got %d", *ads),
@@ -499,16 +433,15 @@ func (c podSpecActiveDeadlineSecondsNegativeCheck) Run(data []byte, source strin
 }
 
 // Check 19: readiness-gate-invalid
-type podSpecReadinessGateInvalidCheck struct{}
+type podSpecReadinessGateInvalidCheck struct{ runtime.Meta }
 
-func (c podSpecReadinessGateInvalidCheck) ID() string { return "pod-spec/readiness-gate-invalid" }
-func (c podSpecReadinessGateInvalidCheck) Title() string {
-	return "ReadinessGate ConditionType Must Be Valid"
+func newPodSpecReadinessGateInvalidCheck() podSpecReadinessGateInvalidCheck {
+	return podSpecReadinessGateInvalidCheck{runtime.Meta{
+		RuleID:    "pod-spec/readiness-gate-invalid",
+		RuleTitle: "ReadinessGate ConditionType Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
-func (c podSpecReadinessGateInvalidCheck) Category() string      { return "pod-spec" }
-func (c podSpecReadinessGateInvalidCheck) Blocking() bool        { return true }
-func (c podSpecReadinessGateInvalidCheck) RenderSensitive() bool { return true }
-func (c podSpecReadinessGateInvalidCheck) Kinds() []string       { return runtime.HasPodSpecKinds() }
 
 func (c podSpecReadinessGateInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	info, err := runtime.ExtractPodSpecInfo(data, source)
@@ -519,7 +452,7 @@ func (c podSpecReadinessGateInvalidCheck) Run(data []byte, source string) []runt
 	for i, gate := range info.PodSpec.ReadinessGates {
 		if gate.ConditionType == "" {
 			findings = append(findings, runtime.Finding{
-				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+				RuleID: c.ID(), RuleTitle: c.Title(),
 				Finding: check.Finding{
 					Path:    field.NewPath(info.PodSpecPath).Child("readinessGates").Index(i).Child("conditionType").String(),
 					Message: fmt.Sprintf("readinessGates[%d]: conditionType must not be empty", i),
@@ -530,7 +463,7 @@ func (c podSpecReadinessGateInvalidCheck) Run(data []byte, source string) []runt
 		}
 		if errs := validation.IsQualifiedName(string(gate.ConditionType)); len(errs) > 0 {
 			findings = append(findings, runtime.Finding{
-				RuleID: c.ID(), RuleTitle: c.Title(), Category: c.Category(),
+				RuleID: c.ID(), RuleTitle: c.Title(),
 				Finding: check.Finding{
 					Path:    field.NewPath(info.PodSpecPath).Child("readinessGates").Index(i).Child("conditionType").String(),
 					Message: fmt.Sprintf("readinessGates[%d]: conditionType: invalid value: %s", i, strings.Join(errs, ", ")),

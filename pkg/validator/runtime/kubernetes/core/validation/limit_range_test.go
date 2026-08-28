@@ -21,7 +21,7 @@ spec:
     max:
       cpu: "500m"
 `)
-	check := limitRangeMaxMinInvalidCheck{}
+	check := newLimitRangeMaxMinInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -41,7 +41,7 @@ spec:
     max:
       cpu: "1"
 `)
-	check := limitRangeMaxMinInvalidCheck{}
+	check := newLimitRangeMaxMinInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when max=min, got %d", len(findings))
@@ -61,7 +61,7 @@ spec:
     max:
       cpu: "4"
 `)
-	check := limitRangeMaxMinInvalidCheck{}
+	check := newLimitRangeMaxMinInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when max>min, got %d", len(findings))
@@ -79,7 +79,7 @@ spec:
     max:
       cpu: "500m"
 `)
-	check := limitRangeMaxMinInvalidCheck{}
+	check := newLimitRangeMaxMinInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when no min, got %d", len(findings))
@@ -88,14 +88,14 @@ spec:
 
 func TestLimitRange_Check_Interface(t *testing.T) {
 	checks := []runtime.Check{
-		limitRangeMaxMinInvalidCheck{},
+		newLimitRangeMaxMinInvalidCheck(),
 	}
 	for _, c := range checks {
 		if c.ID() == "" {
 			t.Errorf("check %T has empty ID", c)
 		}
-		if c.Category() != "core" {
-			t.Errorf("check %T has wrong category: %s", c, c.Category())
+		if runtime.CategoryOf(c.ID()) != "core" {
+			t.Errorf("check %T has wrong category: %s", c, runtime.CategoryOf(c.ID()))
 		}
 		if !c.Blocking() {
 			t.Errorf("check %T should be blocking", c)

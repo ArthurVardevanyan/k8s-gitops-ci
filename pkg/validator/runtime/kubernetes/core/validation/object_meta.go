@@ -180,16 +180,15 @@ func parseObjectMeta(data []byte) (kind string, meta objectMeta, ok bool) {
 //
 // Source: k8s.io/apimachinery/pkg/api/validation/objectmeta.go
 // (ValidateObjectMetaAccessor)
-type objectMetaNameInvalidCheck struct{}
+type objectMetaNameInvalidCheck struct{ runtime.Meta }
 
-func (c objectMetaNameInvalidCheck) ID() string { return "core/object-meta-name-invalid" }
-func (c objectMetaNameInvalidCheck) Title() string {
-	return "Object Name Must Be Valid For Its Kind"
+func newObjectMetaNameInvalidCheck() objectMetaNameInvalidCheck {
+	return objectMetaNameInvalidCheck{runtime.Meta{
+		RuleID:    "core/object-meta-name-invalid",
+		RuleTitle: "Object Name Must Be Valid For Its Kind",
+		AppliesTo: objectMetaKinds(),
+	}}
 }
-func (c objectMetaNameInvalidCheck) Category() string      { return "core" }
-func (c objectMetaNameInvalidCheck) Blocking() bool        { return true }
-func (c objectMetaNameInvalidCheck) RenderSensitive() bool { return true }
-func (c objectMetaNameInvalidCheck) Kinds() []string       { return objectMetaKinds() }
 
 func (c objectMetaNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	kind, meta, ok := parseObjectMeta(data)
@@ -205,7 +204,6 @@ func (c objectMetaNameInvalidCheck) Run(data []byte, source string) []runtime.Fi
 		return runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      path,
 				Message:   message,
@@ -260,16 +258,15 @@ func (c objectMetaNameInvalidCheck) Run(data []byte, source string) []runtime.Fi
 //
 // Source: k8s.io/apimachinery/pkg/api/validation/objectmeta.go
 // (validateObjectMetaAccessorWithOptsCommon -> ValidateNamespaceName)
-type objectMetaNamespaceInvalidCheck struct{}
+type objectMetaNamespaceInvalidCheck struct{ runtime.Meta }
 
-func (c objectMetaNamespaceInvalidCheck) ID() string { return "core/object-meta-namespace-invalid" }
-func (c objectMetaNamespaceInvalidCheck) Title() string {
-	return "Object Namespace Must Be A Valid DNS Label"
+func newObjectMetaNamespaceInvalidCheck() objectMetaNamespaceInvalidCheck {
+	return objectMetaNamespaceInvalidCheck{runtime.Meta{
+		RuleID:    "core/object-meta-namespace-invalid",
+		RuleTitle: "Object Namespace Must Be A Valid DNS Label",
+		AppliesTo: objectMetaKinds(),
+	}}
 }
-func (c objectMetaNamespaceInvalidCheck) Category() string      { return "core" }
-func (c objectMetaNamespaceInvalidCheck) Blocking() bool        { return true }
-func (c objectMetaNamespaceInvalidCheck) RenderSensitive() bool { return true }
-func (c objectMetaNamespaceInvalidCheck) Kinds() []string       { return objectMetaKinds() }
 
 func (c objectMetaNamespaceInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	kind, meta, ok := parseObjectMeta(data)
@@ -288,7 +285,6 @@ func (c objectMetaNamespaceInvalidCheck) Run(data []byte, source string) []runti
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      "metadata.namespace",
 				Message:   fmt.Sprintf("metadata.namespace: invalid value %q: %s", meta.Namespace, msg),

@@ -12,7 +12,7 @@ metadata:
   name: test-hpa
 spec:
   maxReplicas: 0`)
-	check := maxReplicasInvalidCheck{}
+	check := newMaxReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -31,7 +31,7 @@ metadata:
   name: test-hpa
 spec:
   maxReplicas: 10`)
-	check := maxReplicasInvalidCheck{}
+	check := newMaxReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -44,7 +44,7 @@ metadata:
   name: test-hpa
 spec:
   maxReplicas: -1`)
-	check := maxReplicasInvalidCheck{}
+	check := newMaxReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -60,7 +60,7 @@ spec:
   behavior:
     scaleDown:
       stabilizationWindowSeconds: -1`)
-	check := scaleDownInvalidCheck{}
+	check := newScaleDownInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -79,7 +79,7 @@ spec:
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 60`)
-	check := scaleDownInvalidCheck{}
+	check := newScaleDownInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -95,7 +95,7 @@ spec:
   behavior:
     scaleUp:
       stabilizationWindowSeconds: -1`)
-	check := scaleUpInvalidCheck{}
+	check := newScaleUpInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -114,7 +114,7 @@ spec:
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 60`)
-	check := scaleUpInvalidCheck{}
+	check := newScaleUpInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -125,7 +125,7 @@ func TestHPANonMatchingKind(t *testing.T) {
 	data := []byte(`kind: Service
 metadata:
   name: test`)
-	check := maxReplicasInvalidCheck{}
+	check := newMaxReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -133,7 +133,7 @@ metadata:
 }
 
 func TestAllHPAChecksImplementCheckInterface(t *testing.T) {
-	var _ runtime.Check = maxReplicasInvalidCheck{}
-	var _ runtime.Check = scaleDownInvalidCheck{}
-	var _ runtime.Check = scaleUpInvalidCheck{}
+	var _ runtime.Check = newMaxReplicasInvalidCheck()
+	var _ runtime.Check = newScaleDownInvalidCheck()
+	var _ runtime.Check = newScaleUpInvalidCheck()
 }

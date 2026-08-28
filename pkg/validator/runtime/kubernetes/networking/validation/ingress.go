@@ -15,30 +15,14 @@ var ingressKinds = []string{"Ingress"}
 
 // pathTypeInvalidCheck validates that pathType is one of the allowed values.
 // Source: k8s.io/kubernetes/pkg/apis/networking/validation/validation.go
-type pathTypeInvalidCheck struct{}
+type pathTypeInvalidCheck struct{ runtime.Meta }
 
-func (c pathTypeInvalidCheck) ID() string {
-	return "ingress/path-type-invalid"
-}
-
-func (c pathTypeInvalidCheck) Title() string {
-	return "Ingress PathType Must Be Valid"
-}
-
-func (c pathTypeInvalidCheck) Category() string {
-	return "ingress"
-}
-
-func (c pathTypeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c pathTypeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c pathTypeInvalidCheck) Kinds() []string {
-	return ingressKinds
+func newPathTypeInvalidCheck() pathTypeInvalidCheck {
+	return pathTypeInvalidCheck{runtime.Meta{
+		RuleID:    "ingress/path-type-invalid",
+		RuleTitle: "Ingress PathType Must Be Valid",
+		AppliesTo: ingressKinds,
+	}}
 }
 
 func (c pathTypeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -73,7 +57,6 @@ func (c pathTypeInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:    pathPath.Child("pathType").String(),
 						Message: fmt.Sprintf("pathType: Unsupported value: %q", string(*path.PathType)),

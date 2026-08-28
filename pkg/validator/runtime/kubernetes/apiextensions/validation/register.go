@@ -11,7 +11,7 @@ import (
 // function it ports; RegisterAll panics on a check with no valid citation.
 func Register() {
 	checks := []runtime.Check{
-		storageVersionInvalidCheck{},
+		newStorageVersionInvalidCheck(),
 	}
 
 	runtime.RegisterAll(checks, upstreamRefs)

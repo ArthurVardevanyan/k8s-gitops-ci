@@ -21,7 +21,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentSelectorInvalidCheck{}
+	check := newDeploymentSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid selector keys, got %d: %v", len(findings), findings)
@@ -42,7 +42,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentSelectorInvalidCheck{}
+	check := newDeploymentSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid selector key, got %d: %v", len(findings), findings)
@@ -71,7 +71,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentSelectorInvalidCheck{}
+	check := newDeploymentSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid matchExpressions key, got %d: %v", len(findings), findings)
@@ -92,7 +92,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentSelectorInvalidCheck{}
+	check := newDeploymentSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when selector is absent, got %d: %v", len(findings), findings)
@@ -109,7 +109,7 @@ spec:
     matchLabels:
       app: myapp
 `)
-	check := deploymentSelectorInvalidCheck{}
+	check := newDeploymentSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
@@ -129,7 +129,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentStrategyTypeInvalidCheck{}
+	check := newDeploymentStrategyTypeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for RollingUpdate, got %d: %v", len(findings), findings)
@@ -149,7 +149,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentStrategyTypeInvalidCheck{}
+	check := newDeploymentStrategyTypeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Recreate, got %d: %v", len(findings), findings)
@@ -167,7 +167,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentStrategyTypeInvalidCheck{}
+	check := newDeploymentStrategyTypeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings when strategy is absent, got %d: %v", len(findings), findings)
@@ -187,7 +187,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentStrategyTypeInvalidCheck{}
+	check := newDeploymentStrategyTypeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid strategy type, got %d: %v", len(findings), findings)
@@ -206,7 +206,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := deploymentStrategyTypeInvalidCheck{}
+	check := newDeploymentStrategyTypeInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
@@ -225,7 +225,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentReplicasInvalidCheck{}
+	check := newDeploymentReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for positive replicas, got %d: %v", len(findings), findings)
@@ -244,7 +244,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentReplicasInvalidCheck{}
+	check := newDeploymentReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for zero replicas, got %d: %v", len(findings), findings)
@@ -263,7 +263,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentReplicasInvalidCheck{}
+	check := newDeploymentReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for negative replicas, got %d: %v", len(findings), findings)
@@ -282,7 +282,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := deploymentReplicasInvalidCheck{}
+	check := newDeploymentReplicasInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
@@ -301,7 +301,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentMinReadySecondsInvalidCheck{}
+	check := newDeploymentMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid minReadySeconds, got %d: %v", len(findings), findings)
@@ -320,7 +320,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentMinReadySecondsInvalidCheck{}
+	check := newDeploymentMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for zero minReadySeconds, got %d: %v", len(findings), findings)
@@ -339,7 +339,7 @@ spec:
       labels:
         app: myapp
 `)
-	check := deploymentMinReadySecondsInvalidCheck{}
+	check := newDeploymentMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for negative minReadySeconds, got %d: %v", len(findings), findings)
@@ -358,7 +358,7 @@ kind: Service
 metadata:
   name: test
 `)
-	check := deploymentMinReadySecondsInvalidCheck{}
+	check := newDeploymentMinReadySecondsInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
@@ -371,10 +371,10 @@ func TestDeployment_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{deploymentSelectorInvalidCheck{}, "apps/deployment-selector-invalid", "apps"},
-		{deploymentStrategyTypeInvalidCheck{}, "apps/deployment-strategy-type-invalid", "apps"},
-		{deploymentReplicasInvalidCheck{}, "apps/deployment-replicas-invalid", "apps"},
-		{deploymentMinReadySecondsInvalidCheck{}, "apps/deployment-min-ready-seconds-invalid", "apps"},
+		{newDeploymentSelectorInvalidCheck(), "apps/deployment-selector-invalid", "apps"},
+		{newDeploymentStrategyTypeInvalidCheck(), "apps/deployment-strategy-type-invalid", "apps"},
+		{newDeploymentReplicasInvalidCheck(), "apps/deployment-replicas-invalid", "apps"},
+		{newDeploymentMinReadySecondsInvalidCheck(), "apps/deployment-min-ready-seconds-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -382,7 +382,7 @@ func TestDeployment_Check_IDAndMetadata(t *testing.T) {
 			if got := tc.check.ID(); got != tc.wantID {
 				t.Errorf("ID() = %q, want %q", got, tc.wantID)
 			}
-			if got := tc.check.Category(); got != tc.wantCat {
+			if got := runtime.CategoryOf(tc.check.ID()); got != tc.wantCat {
 				t.Errorf("Category() = %q, want %q", got, tc.wantCat)
 			}
 			if !tc.check.Blocking() {

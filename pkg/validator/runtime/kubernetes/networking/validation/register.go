@@ -12,16 +12,16 @@ import (
 func Register() {
 	checks := []runtime.Check{
 		// Ingress.
-		pathTypeInvalidCheck{},
+		newPathTypeInvalidCheck(),
 
 		// NetworkPolicy.
-		policyTypeInvalidCheck{},
-		portRangeInvalidCheck{},
-		protocolInvalidCheck{},
+		newPolicyTypeInvalidCheck(),
+		newPortRangeInvalidCheck(),
+		newProtocolInvalidCheck(),
 
 		// Service.
-		typeInvalidCheck{},
-		sessionAffinityInvalidCheck{},
+		newTypeInvalidCheck(),
+		newSessionAffinityInvalidCheck(),
 	}
 
 	runtime.RegisterAll(checks, upstreamRefs)

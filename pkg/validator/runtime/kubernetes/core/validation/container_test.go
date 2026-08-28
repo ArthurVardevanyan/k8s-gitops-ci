@@ -13,7 +13,7 @@ spec:
   - name: shared
     image: redis
 `)
-	check := duplicateContainerNamesCheck{}
+	check := newDuplicateContainerNamesCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for duplicate container names, got %d", len(findings))
@@ -35,7 +35,7 @@ spec:
   - name: shared
     image: nginx
 `)
-	check := duplicateContainerNamesCheck{}
+	check := newDuplicateContainerNamesCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for duplicate init/container names, got %d", len(findings))
@@ -56,7 +56,7 @@ spec:
   - name: init
     image: busybox
 `)
-	check := duplicateContainerNamesCheck{}
+	check := newDuplicateContainerNamesCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for unique container names, got %d", len(findings))
@@ -77,7 +77,7 @@ spec:
     - name: http
       containerPort: 8080
 `)
-	check := duplicatePortNamesCheck{}
+	check := newDuplicatePortNamesCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for duplicate port names, got %d", len(findings))
@@ -98,7 +98,7 @@ spec:
     - name: https
       containerPort: 443
 `)
-	check := duplicatePortNamesCheck{}
+	check := newDuplicatePortNamesCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for unique port names, got %d", len(findings))
@@ -117,7 +117,7 @@ spec:
     - name: http
       containerPort: 70000
 `)
-	check := portNumberRangeCheck{}
+	check := newPortNumberRangeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid port number, got %d", len(findings))
@@ -136,7 +136,7 @@ spec:
     - name: http
       containerPort: 0
 `)
-	check := portNumberRangeCheck{}
+	check := newPortNumberRangeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for port number 0, got %d", len(findings))
@@ -157,7 +157,7 @@ spec:
     - name: https
       containerPort: 65535
 `)
-	check := portNumberRangeCheck{}
+	check := newPortNumberRangeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid port numbers, got %d", len(findings))
@@ -174,7 +174,7 @@ spec:
     image: nginx
     imagePullPolicy: Always
 `)
-	check := imagePullPolicyCheck{}
+	check := newImagePullPolicyCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Always policy, got %d", len(findings))
@@ -191,7 +191,7 @@ spec:
     image: nginx
     imagePullPolicy: InvalidPolicy
 `)
-	check := imagePullPolicyCheck{}
+	check := newImagePullPolicyCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid imagePullPolicy, got %d: %v", len(findings), findings)
@@ -210,7 +210,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := imagePullPolicyCheck{}
+	check := newImagePullPolicyCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty imagePullPolicy, got %d", len(findings))
@@ -233,7 +233,7 @@ spec:
   - name: vol
     emptyDir: {}
 `)
-	check := mountPropagationValueCheck{}
+	check := newMountPropagationValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for None propagation, got %d", len(findings))
@@ -256,7 +256,7 @@ spec:
   - name: vol
     emptyDir: {}
 `)
-	check := mountPropagationValueCheck{}
+	check := newMountPropagationValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid mountPropagation, got %d", len(findings))
@@ -278,7 +278,7 @@ spec:
   - name: vol
     emptyDir: {}
 `)
-	check := mountPropagationValueCheck{}
+	check := newMountPropagationValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for nil mountPropagation, got %d", len(findings))
@@ -295,7 +295,7 @@ spec:
     image: nginx
     terminationMessagePolicy: File
 `)
-	check := terminationMessagePolicyValueCheck{}
+	check := newTerminationMessagePolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for File policy, got %d", len(findings))
@@ -312,7 +312,7 @@ spec:
     image: nginx
     terminationMessagePolicy: InvalidPolicy
 `)
-	check := terminationMessagePolicyValueCheck{}
+	check := newTerminationMessagePolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid termination message policy, got %d", len(findings))
@@ -328,7 +328,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := terminationMessagePolicyValueCheck{}
+	check := newTerminationMessagePolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty termination message policy, got %d", len(findings))
@@ -350,7 +350,7 @@ spec:
   - name: other
     emptyDir: {}
 `)
-	check := volumeMountNameUndefinedCheck{}
+	check := newVolumeMountNameUndefinedCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for missing volume mount, got %d", len(findings))
@@ -375,7 +375,7 @@ spec:
   - name: myvol
     emptyDir: {}
 `)
-	check := volumeMountNameUndefinedCheck{}
+	check := newVolumeMountNameUndefinedCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid volume mount, got %d", len(findings))

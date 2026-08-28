@@ -12,18 +12,18 @@ import (
 func Register() {
 	checks := []runtime.Check{
 		// StorageClass.
-		scProvisionerInvalidCheck{},
-		scReclaimPolicyInvalidCheck{},
-		scVolumeBindingModeInvalidCheck{},
-		scAllowedTopologyRangeInvalidCheck{},
+		newScProvisionerInvalidCheck(),
+		newScReclaimPolicyInvalidCheck(),
+		newScVolumeBindingModeInvalidCheck(),
+		newScAllowedTopologyRangeInvalidCheck(),
 
 		// PersistentVolume.
-		pvAccessModesInvalidCheck{},
-		pvCapacityInvalidCheck{},
+		newPvAccessModesInvalidCheck(),
+		newPvCapacityInvalidCheck(),
 
 		// PersistentVolumeClaim.
-		pvcAccessModesInvalidCheck{},
-		pvcVolumeModeInvalidCheck{},
+		newPvcAccessModesInvalidCheck(),
+		newPvcVolumeModeInvalidCheck(),
 	}
 
 	runtime.RegisterAll(checks, upstreamRefs)

@@ -17,30 +17,14 @@ var scKinds = []string{"StorageClass"}
 
 // provisionerInvalidCheck validates that provisioner is specified and non-empty.
 // Source: k8s.io/kubernetes/pkg/apis/storage/validation/validation.go
-type scProvisionerInvalidCheck struct{}
+type scProvisionerInvalidCheck struct{ runtime.Meta }
 
-func (c scProvisionerInvalidCheck) ID() string {
-	return "storage-class/provisioner-invalid"
-}
-
-func (c scProvisionerInvalidCheck) Title() string {
-	return "StorageClass Provisioner Must Be Specified"
-}
-
-func (c scProvisionerInvalidCheck) Category() string {
-	return "storage-class"
-}
-
-func (c scProvisionerInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c scProvisionerInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c scProvisionerInvalidCheck) Kinds() []string {
-	return scKinds
+func newScProvisionerInvalidCheck() scProvisionerInvalidCheck {
+	return scProvisionerInvalidCheck{runtime.Meta{
+		RuleID:    "storage-class/provisioner-invalid",
+		RuleTitle: "StorageClass Provisioner Must Be Specified",
+		AppliesTo: scKinds,
+	}}
 }
 
 func (c scProvisionerInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -56,7 +40,6 @@ func (c scProvisionerInvalidCheck) Run(data []byte, source string) []runtime.Fin
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    provisionerPath.String(),
 				Message: "provisioner: required value",
@@ -92,7 +75,6 @@ func scEnumFieldFindings(
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    field.NewPath(fieldName).String(),
 				Message: fmt.Sprintf("%s: Unsupported value: %q", fieldName, val),
@@ -108,30 +90,14 @@ func scEnumFieldFindings(
 
 // reclaimPolicyInvalidCheck validates that reclaimPolicy is one of Delete or Retain.
 // Source: k8s.io/kubernetes/pkg/apis/storage/validation/validation.go
-type scReclaimPolicyInvalidCheck struct{}
+type scReclaimPolicyInvalidCheck struct{ runtime.Meta }
 
-func (c scReclaimPolicyInvalidCheck) ID() string {
-	return "storage-class/reclaim-policy-invalid"
-}
-
-func (c scReclaimPolicyInvalidCheck) Title() string {
-	return "StorageClass Reclaim Policy Must Be Valid"
-}
-
-func (c scReclaimPolicyInvalidCheck) Category() string {
-	return "storage-class"
-}
-
-func (c scReclaimPolicyInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c scReclaimPolicyInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c scReclaimPolicyInvalidCheck) Kinds() []string {
-	return scKinds
+func newScReclaimPolicyInvalidCheck() scReclaimPolicyInvalidCheck {
+	return scReclaimPolicyInvalidCheck{runtime.Meta{
+		RuleID:    "storage-class/reclaim-policy-invalid",
+		RuleTitle: "StorageClass Reclaim Policy Must Be Valid",
+		AppliesTo: scKinds,
+	}}
 }
 
 func (c scReclaimPolicyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -149,30 +115,14 @@ func (c scReclaimPolicyInvalidCheck) Run(data []byte, source string) []runtime.F
 // volumeBindingModeInvalidCheck validates that volumeBindingMode is one of
 // WaitForFirstConsumer or Immediate.
 // Source: k8s.io/kubernetes/pkg/apis/storage/validation/validation.go
-type scVolumeBindingModeInvalidCheck struct{}
+type scVolumeBindingModeInvalidCheck struct{ runtime.Meta }
 
-func (c scVolumeBindingModeInvalidCheck) ID() string {
-	return "storage-class/volume-binding-mode-invalid"
-}
-
-func (c scVolumeBindingModeInvalidCheck) Title() string {
-	return "StorageClass Volume Binding Mode Must Be Valid"
-}
-
-func (c scVolumeBindingModeInvalidCheck) Category() string {
-	return "storage-class"
-}
-
-func (c scVolumeBindingModeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c scVolumeBindingModeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c scVolumeBindingModeInvalidCheck) Kinds() []string {
-	return scKinds
+func newScVolumeBindingModeInvalidCheck() scVolumeBindingModeInvalidCheck {
+	return scVolumeBindingModeInvalidCheck{runtime.Meta{
+		RuleID:    "storage-class/volume-binding-mode-invalid",
+		RuleTitle: "StorageClass Volume Binding Mode Must Be Valid",
+		AppliesTo: scKinds,
+	}}
 }
 
 func (c scVolumeBindingModeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -190,30 +140,14 @@ func (c scVolumeBindingModeInvalidCheck) Run(data []byte, source string) []runti
 // allowedTopologyRangeInvalidCheck validates that allowedTopologies have
 // valid label selectors (key must be a valid label key).
 // Source: k8s.io/kubernetes/pkg/apis/storage/validation/validation.go
-type scAllowedTopologyRangeInvalidCheck struct{}
+type scAllowedTopologyRangeInvalidCheck struct{ runtime.Meta }
 
-func (c scAllowedTopologyRangeInvalidCheck) ID() string {
-	return "storage-class/allowed-topology-range-invalid"
-}
-
-func (c scAllowedTopologyRangeInvalidCheck) Title() string {
-	return "StorageClass Allowed Topologies Must Have Valid Label Selectors"
-}
-
-func (c scAllowedTopologyRangeInvalidCheck) Category() string {
-	return "storage-class"
-}
-
-func (c scAllowedTopologyRangeInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c scAllowedTopologyRangeInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c scAllowedTopologyRangeInvalidCheck) Kinds() []string {
-	return scKinds
+func newScAllowedTopologyRangeInvalidCheck() scAllowedTopologyRangeInvalidCheck {
+	return scAllowedTopologyRangeInvalidCheck{runtime.Meta{
+		RuleID:    "storage-class/allowed-topology-range-invalid",
+		RuleTitle: "StorageClass Allowed Topologies Must Have Valid Label Selectors",
+		AppliesTo: scKinds,
+	}}
 }
 
 func (c scAllowedTopologyRangeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -234,7 +168,6 @@ func (c scAllowedTopologyRangeInvalidCheck) Run(data []byte, source string) []ru
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:    exprPath.Child("key").String(),
 						Message: "allowedTopologies: invalid label selector — key is required",
@@ -246,7 +179,6 @@ func (c scAllowedTopologyRangeInvalidCheck) Run(data []byte, source string) []ru
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:    exprPath.Child("key").String(),
 						Message: fmt.Sprintf("allowedTopologies: invalid label selector: %s", errs[0]),

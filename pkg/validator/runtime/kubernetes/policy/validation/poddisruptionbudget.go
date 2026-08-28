@@ -21,14 +21,15 @@ type podDisruptionBudgetSpecWrapper struct {
 
 // selectorInvalidCheck validates that the PDB selector is a valid label selector.
 // Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
-type selectorInvalidCheck struct{}
+type selectorInvalidCheck struct{ runtime.Meta }
 
-func (c selectorInvalidCheck) ID() string            { return "policy/selector-invalid" }
-func (c selectorInvalidCheck) Title() string         { return "PDB Selector Must Be A Valid Label Selector" }
-func (c selectorInvalidCheck) Category() string      { return "policy" }
-func (c selectorInvalidCheck) Blocking() bool        { return true }
-func (c selectorInvalidCheck) RenderSensitive() bool { return true }
-func (c selectorInvalidCheck) Kinds() []string       { return []string{"PodDisruptionBudget"} }
+func newSelectorInvalidCheck() selectorInvalidCheck {
+	return selectorInvalidCheck{runtime.Meta{
+		RuleID:    "policy/selector-invalid",
+		RuleTitle: "PDB Selector Must Be A Valid Label Selector",
+		AppliesTo: []string{"PodDisruptionBudget"},
+	}}
+}
 
 func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var pdb struct {
@@ -75,7 +76,6 @@ func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    err.Field,
 				Message: "selector: " + err.ErrorBody(),
@@ -112,7 +112,6 @@ func pdbNonNegativeFindings(c runtime.Check, data []byte, fieldName string, valu
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child(fieldName).String(),
 			Message: fieldName + ": must be >= 0",
@@ -124,14 +123,15 @@ func pdbNonNegativeFindings(c runtime.Check, data []byte, fieldName string, valu
 
 // minAvailableInvalidCheck validates that minAvailable >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
-type minAvailableInvalidCheck struct{}
+type minAvailableInvalidCheck struct{ runtime.Meta }
 
-func (c minAvailableInvalidCheck) ID() string            { return "policy/min-available-invalid" }
-func (c minAvailableInvalidCheck) Title() string         { return "PDB minAvailable Must Be >= 0" }
-func (c minAvailableInvalidCheck) Category() string      { return "policy" }
-func (c minAvailableInvalidCheck) Blocking() bool        { return true }
-func (c minAvailableInvalidCheck) RenderSensitive() bool { return true }
-func (c minAvailableInvalidCheck) Kinds() []string       { return []string{"PodDisruptionBudget"} }
+func newMinAvailableInvalidCheck() minAvailableInvalidCheck {
+	return minAvailableInvalidCheck{runtime.Meta{
+		RuleID:    "policy/min-available-invalid",
+		RuleTitle: "PDB minAvailable Must Be >= 0",
+		AppliesTo: []string{"PodDisruptionBudget"},
+	}}
+}
 
 func (c minAvailableInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	return pdbNonNegativeFindings(c, data, "minAvailable", func(spec podDisruptionBudgetSpecWrapper) interface{} {
@@ -141,18 +141,14 @@ func (c minAvailableInvalidCheck) Run(data []byte, source string) []runtime.Find
 
 // maxUnavailableInvalidCheck validates that maxUnavailable >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
-type maxUnavailableInvalidCheck struct{}
+type maxUnavailableInvalidCheck struct{ runtime.Meta }
 
-func (c maxUnavailableInvalidCheck) ID() string { return "policy/max-unavailable-invalid" }
-
-func (c maxUnavailableInvalidCheck) Title() string {
-	return "PDB maxUnavailable Must Be >= 0"
-}
-func (c maxUnavailableInvalidCheck) Category() string      { return "policy" }
-func (c maxUnavailableInvalidCheck) Blocking() bool        { return true }
-func (c maxUnavailableInvalidCheck) RenderSensitive() bool { return true }
-func (c maxUnavailableInvalidCheck) Kinds() []string {
-	return []string{"PodDisruptionBudget"}
+func newMaxUnavailableInvalidCheck() maxUnavailableInvalidCheck {
+	return maxUnavailableInvalidCheck{runtime.Meta{
+		RuleID:    "policy/max-unavailable-invalid",
+		RuleTitle: "PDB maxUnavailable Must Be >= 0",
+		AppliesTo: []string{"PodDisruptionBudget"},
+	}}
 }
 
 func (c maxUnavailableInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -164,14 +160,15 @@ func (c maxUnavailableInvalidCheck) Run(data []byte, source string) []runtime.Fi
 // minAndMaxSpecifiedCheck validates that minAvailable and maxUnavailable
 // cannot both be specified.
 // Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
-type minAndMaxSpecifiedCheck struct{}
+type minAndMaxSpecifiedCheck struct{ runtime.Meta }
 
-func (c minAndMaxSpecifiedCheck) ID() string            { return "policy/min-and-max-specified" }
-func (c minAndMaxSpecifiedCheck) Title() string         { return "PDB Must Specify Only One Disruption Target" }
-func (c minAndMaxSpecifiedCheck) Category() string      { return "policy" }
-func (c minAndMaxSpecifiedCheck) Blocking() bool        { return true }
-func (c minAndMaxSpecifiedCheck) RenderSensitive() bool { return true }
-func (c minAndMaxSpecifiedCheck) Kinds() []string       { return []string{"PodDisruptionBudget"} }
+func newMinAndMaxSpecifiedCheck() minAndMaxSpecifiedCheck {
+	return minAndMaxSpecifiedCheck{runtime.Meta{
+		RuleID:    "policy/min-and-max-specified",
+		RuleTitle: "PDB Must Specify Only One Disruption Target",
+		AppliesTo: []string{"PodDisruptionBudget"},
+	}}
+}
 
 func (c minAndMaxSpecifiedCheck) Run(data []byte, source string) []runtime.Finding {
 	var pdb struct {
@@ -192,7 +189,6 @@ func (c minAndMaxSpecifiedCheck) Run(data []byte, source string) []runtime.Findi
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").String(),
 			Message: "minAvailable and maxUnavailable cannot both be specified",
@@ -232,10 +228,10 @@ func intOrStringFromInterface(v interface{}) (result intOrStringValue, ok bool) 
 // function it ports; RegisterAll panics on a check with no valid citation.
 func Register() {
 	checks := []runtime.Check{
-		selectorInvalidCheck{},
-		minAvailableInvalidCheck{},
-		maxUnavailableInvalidCheck{},
-		minAndMaxSpecifiedCheck{},
+		newSelectorInvalidCheck(),
+		newMinAvailableInvalidCheck(),
+		newMaxUnavailableInvalidCheck(),
+		newMinAndMaxSpecifiedCheck(),
 	}
 
 	runtime.RegisterAll(checks, upstreamRefs)

@@ -94,7 +94,7 @@ func TestVolumeFindingPathMatchesWorkloadNesting(t *testing.T) {
 		{"CronJob", "spec.jobTemplate.spec.template.spec.volumes"},
 	}
 
-	c := duplicateVolumeNamesCheck{}
+	c := newDuplicateVolumeNamesCheck()
 	for _, tt := range tests {
 		t.Run(tt.kind, func(t *testing.T) {
 			findings := c.Run(duplicateVolumeDoc(tt.kind), "test.yaml")
@@ -131,7 +131,7 @@ spec:
         image: nginx@sha256:0000000000000000000000000000000000000000000000000000000000000000
 `)
 
-	findings := podSpecRestartPolicyValueCheck{}.Run(deployment, "test.yaml")
+	findings := newPodSpecRestartPolicyValueCheck().Run(deployment, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 restartPolicy finding, got %d: %v", len(findings), findings)
 	}

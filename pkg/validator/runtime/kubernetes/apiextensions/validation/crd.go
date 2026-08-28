@@ -15,17 +15,15 @@ var crdKinds = []string{"CustomResourceDefinition"}
 
 // storageVersionInvalidCheck validates that exactly one version has storage=true.
 // Source: k8s.io/kubernetes/pkg/apis/apiextensions/validation/validation.go
-type storageVersionInvalidCheck struct{}
+type storageVersionInvalidCheck struct{ runtime.Meta }
 
-func (c storageVersionInvalidCheck) ID() string { return "apiextensions/crd-storage-version-invalid" }
-
-func (c storageVersionInvalidCheck) Title() string {
-	return "CRD Must Have Exactly One Storage Version"
+func newStorageVersionInvalidCheck() storageVersionInvalidCheck {
+	return storageVersionInvalidCheck{runtime.Meta{
+		RuleID:    "apiextensions/crd-storage-version-invalid",
+		RuleTitle: "CRD Must Have Exactly One Storage Version",
+		AppliesTo: crdKinds,
+	}}
 }
-func (c storageVersionInvalidCheck) Category() string      { return "apiextensions" }
-func (c storageVersionInvalidCheck) Blocking() bool        { return true }
-func (c storageVersionInvalidCheck) RenderSensitive() bool { return true }
-func (c storageVersionInvalidCheck) Kinds() []string       { return crdKinds }
 
 func (c storageVersionInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var crd apiextensionsv1.CustomResourceDefinition
@@ -58,7 +56,6 @@ func (c storageVersionInvalidCheck) Run(data []byte, source string) []runtime.Fi
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    path.String(),
 					Message: fmt.Sprintf("storage: must not have more than one version with storage=true (found %q and %q)", storageName, v.Name),
@@ -73,7 +70,6 @@ func (c storageVersionInvalidCheck) Run(data []byte, source string) []runtime.Fi
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    field.NewPath("spec").Child("versions").String(),
 				Message: "exactly one version must have storage=true",

@@ -24,7 +24,7 @@ spec:
     served: true
     storage: false
 `)
-	check := storageVersionInvalidCheck{}
+	check := newStorageVersionInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -52,7 +52,7 @@ spec:
     served: true
     storage: true
 `)
-	check := storageVersionInvalidCheck{}
+	check := newStorageVersionInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -88,7 +88,7 @@ spec:
     served: true
     storage: false
 `)
-	check := storageVersionInvalidCheck{}
+	check := newStorageVersionInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -100,7 +100,7 @@ func TestCRDStorageVersionInvalid_Check_NonCRD(t *testing.T) {
 metadata:
   name: test
 `)
-	check := storageVersionInvalidCheck{}
+	check := newStorageVersionInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-CRD, got %d", len(findings))
@@ -111,7 +111,7 @@ metadata:
 
 func TestAllCRDChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
-		storageVersionInvalidCheck{},
+		newStorageVersionInvalidCheck(),
 	}
 
 	for _, c := range checks {
@@ -121,7 +121,7 @@ func TestAllCRDChecksImplementCheckInterface(t *testing.T) {
 		if c.Title() == "" {
 			t.Errorf("check %T has empty Title", c)
 		}
-		if c.Category() == "" {
+		if runtime.CategoryOf(c.ID()) == "" {
 			t.Errorf("check %T has empty Category", c)
 		}
 		if !c.Blocking() {

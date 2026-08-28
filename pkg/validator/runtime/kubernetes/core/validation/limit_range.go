@@ -13,15 +13,15 @@ import (
 
 var limitRangeKinds = []string{"LimitRange"}
 
-type limitRangeMaxMinInvalidCheck struct{}
+type limitRangeMaxMinInvalidCheck struct{ runtime.Meta }
 
-func (c limitRangeMaxMinInvalidCheck) ID() string { return "core/limitrange-max-min-invalid" }
-
-func (c limitRangeMaxMinInvalidCheck) Title() string         { return "LimitRange Max Must Be >= Min" }
-func (c limitRangeMaxMinInvalidCheck) Category() string      { return "core" }
-func (c limitRangeMaxMinInvalidCheck) Blocking() bool        { return true }
-func (c limitRangeMaxMinInvalidCheck) RenderSensitive() bool { return true }
-func (c limitRangeMaxMinInvalidCheck) Kinds() []string       { return limitRangeKinds }
+func newLimitRangeMaxMinInvalidCheck() limitRangeMaxMinInvalidCheck {
+	return limitRangeMaxMinInvalidCheck{runtime.Meta{
+		RuleID:    "core/limitrange-max-min-invalid",
+		RuleTitle: "LimitRange Max Must Be >= Min",
+		AppliesTo: limitRangeKinds,
+	}}
+}
 
 func (c limitRangeMaxMinInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var ref struct {
@@ -48,7 +48,6 @@ func (c limitRangeMaxMinInvalidCheck) Run(data []byte, source string) []runtime.
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:    field.NewPath("spec").Child("limits").Index(i).Child("max").Key(string(name)).String(),
 						Message: fmt.Sprintf("limits[%d]: max.%s (%s) must be >= min.%s (%s)", i, name, maxVal.String(), name, minVal.String()),

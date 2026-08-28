@@ -89,7 +89,6 @@ func enumFieldFindings(
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    fieldPath.String(),
 			Message: fmt.Sprintf("%s: Unsupported value: %q: supported values: %s", label, value, strings.Join(quoted, ", ")),

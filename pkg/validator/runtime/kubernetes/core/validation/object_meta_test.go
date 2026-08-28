@@ -77,7 +77,7 @@ func TestObjectMetaNameInvalidCheck(t *testing.T) {
 		{name: "CRD deliberately not covered here", kind: "CustomResourceDefinition", objectName: "BadName", wantFinding: false},
 	}
 
-	c := objectMetaNameInvalidCheck{}
+	c := newObjectMetaNameInvalidCheck()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := c.Run(objectMetaDoc(tt.kind, tt.objectName, "", ""), "test.yaml")
@@ -96,7 +96,7 @@ func TestObjectMetaNameInvalidCheck(t *testing.T) {
 // object supplying only generateName is valid, and the previous per-kind
 // checks got this wrong.
 func TestObjectMetaNameGenerateName(t *testing.T) {
-	c := objectMetaNameInvalidCheck{}
+	c := newObjectMetaNameInvalidCheck()
 
 	t.Run("generateName only is valid", func(t *testing.T) {
 		if got := c.Run(objectMetaDoc("ConfigMap", "", "my-prefix-", ""), "t.yaml"); len(got) != 0 {
@@ -140,7 +140,7 @@ func TestObjectMetaNamespaceInvalidCheck(t *testing.T) {
 		{name: "64 chars rejected", namespace: strings.Repeat("a", 64), wantFinding: true},
 	}
 
-	c := objectMetaNamespaceInvalidCheck{}
+	c := newObjectMetaNamespaceInvalidCheck()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := c.Run(objectMetaDoc("ConfigMap", "cm", "", tt.namespace), "test.yaml")
@@ -159,7 +159,7 @@ func TestObjectMetaNamespaceInvalidCheck(t *testing.T) {
 // metadata.namespace belong to the exemptable "namespace" static check, which
 // owns the generated resource-scope map. This check validates format only.
 func TestObjectMetaNamespaceScopeNotChecked(t *testing.T) {
-	c := objectMetaNamespaceInvalidCheck{}
+	c := newObjectMetaNamespaceInvalidCheck()
 
 	if got := c.Run(objectMetaDoc("ConfigMap", "cm", "", ""), "t.yaml"); len(got) != 0 {
 		t.Errorf("a missing namespace must not be reported here, got: %s", got[0].Message)
@@ -177,8 +177,8 @@ func TestObjectMetaChecksMetadata(t *testing.T) {
 		Kinds() []string
 		Blocking() bool
 	}{
-		objectMetaNameInvalidCheck{},
-		objectMetaNamespaceInvalidCheck{},
+		newObjectMetaNameInvalidCheck(),
+		newObjectMetaNamespaceInvalidCheck(),
 	} {
 		if len(c.Kinds()) == 0 {
 			t.Errorf("check %s should declare Kinds", c.ID())

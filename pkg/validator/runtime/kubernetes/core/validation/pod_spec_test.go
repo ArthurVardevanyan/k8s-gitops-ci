@@ -16,7 +16,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Always restart policy, got %d", len(findings))
@@ -33,7 +33,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for OnFailure restart policy, got %d", len(findings))
@@ -50,7 +50,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Never restart policy, got %d", len(findings))
@@ -66,7 +66,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty restartPolicy, got %d", len(findings))
@@ -83,7 +83,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid restartPolicy, got %d", len(findings))
@@ -109,7 +109,7 @@ spec:
       - name: c
         image: nginx
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Deployment with valid restartPolicy, got %d", len(findings))
@@ -126,7 +126,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for ClusterFirst dnsPolicy, got %d", len(findings))
@@ -143,7 +143,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for None dnsPolicy, got %d", len(findings))
@@ -160,7 +160,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Default dnsPolicy, got %d", len(findings))
@@ -178,7 +178,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for ClusterFirstWithHostNet, got %d", len(findings))
@@ -194,7 +194,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty dnsPolicy, got %d", len(findings))
@@ -211,7 +211,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid dnsPolicy, got %d", len(findings))
@@ -237,7 +237,7 @@ spec:
     operator: Exists
     effect: NoExecute
 `)
-	check := podSpecTolerationOperatorValueCheck{}
+	check := newPodSpecTolerationOperatorValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Exists operator, got %d", len(findings))
@@ -258,7 +258,7 @@ spec:
     value: "true"
     effect: NoSchedule
 `)
-	check := podSpecTolerationOperatorValueCheck{}
+	check := newPodSpecTolerationOperatorValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for Equal operator, got %d", len(findings))
@@ -277,7 +277,7 @@ spec:
   - key: node.kubernetes.io/not-ready
     effect: NoExecute
 `)
-	check := podSpecTolerationOperatorValueCheck{}
+	check := newPodSpecTolerationOperatorValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty operator, got %d", len(findings))
@@ -297,7 +297,7 @@ spec:
     operator: InvalidOperator
     effect: NoSchedule
 `)
-	check := podSpecTolerationOperatorValueCheck{}
+	check := newPodSpecTolerationOperatorValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid operator, got %d", len(findings))
@@ -326,7 +326,7 @@ spec:
   - key: key3
     operator: Invalid2
 `)
-	check := podSpecTolerationOperatorValueCheck{}
+	check := newPodSpecTolerationOperatorValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 2 {
 		t.Fatalf("expected 2 findings for two invalid operators, got %d", len(findings))
@@ -345,7 +345,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecNodeSelectorInvalidCheck{}
+	check := newPodSpecNodeSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid nodeSelector, got %d", len(findings))
@@ -363,7 +363,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecNodeSelectorInvalidCheck{}
+	check := newPodSpecNodeSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid nodeSelector key, got %d", len(findings))
@@ -387,7 +387,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecNodeSelectorInvalidCheck{}
+	check := newPodSpecNodeSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid nodeSelector value, got %d", len(findings))
@@ -406,7 +406,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecNodeSelectorInvalidCheck{}
+	check := newPodSpecNodeSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty nodeSelector, got %d", len(findings))
@@ -424,7 +424,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecNodeSelectorInvalidCheck{}
+	check := newPodSpecNodeSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for azure.com/region key, got %d", len(findings))
@@ -458,7 +458,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid affinity, got %d: %v", len(findings), findings)
@@ -483,7 +483,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid nodeAffinity key, got %d: %v", len(findings), findings)
@@ -509,7 +509,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid podAffinity label key, got %d: %v", len(findings), findings)
@@ -535,7 +535,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid podAffinity label value, got %d: %v", len(findings), findings)
@@ -564,7 +564,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid matchExpressions key, got %d: %v", len(findings), findings)
@@ -592,7 +592,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid weighted podAffinity, got %d: %v", len(findings), findings)
@@ -618,7 +618,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid node matchFields key, got %d: %v", len(findings), findings)
@@ -637,7 +637,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for no affinity, got %d", len(findings))
@@ -657,7 +657,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for nil labelSelector, got %d", len(findings))
@@ -680,7 +680,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecTopologySpreadInvalidCheck{}
+	check := newPodSpecTopologySpreadInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid topologySpreadConstraints, got %d", len(findings))
@@ -703,7 +703,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecTopologySpreadInvalidCheck{}
+	check := newPodSpecTopologySpreadInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid topologySpread label key, got %d", len(findings))
@@ -729,7 +729,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecTopologySpreadInvalidCheck{}
+	check := newPodSpecTopologySpreadInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid topologySpread label value, got %d", len(findings))
@@ -758,7 +758,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecTopologySpreadInvalidCheck{}
+	check := newPodSpecTopologySpreadInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid topologySpread matchExpressions key, got %d", len(findings))
@@ -780,7 +780,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecTopologySpreadInvalidCheck{}
+	check := newPodSpecTopologySpreadInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for nil labelSelector, got %d", len(findings))
@@ -809,7 +809,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecTopologySpreadInvalidCheck{}
+	check := newPodSpecTopologySpreadInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for second constraint with invalid key, got %d", len(findings))
@@ -826,7 +826,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecServiceAccountNameInvalidCheck{}
+	check := newPodSpecServiceAccountNameInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid serviceAccountName, got %d", len(findings))
@@ -842,7 +842,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecServiceAccountNameInvalidCheck{}
+	check := newPodSpecServiceAccountNameInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty serviceAccountName, got %d", len(findings))
@@ -859,7 +859,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecServiceAccountNameInvalidCheck{}
+	check := newPodSpecServiceAccountNameInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid serviceAccountName, got %d", len(findings))
@@ -879,7 +879,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecActiveDeadlineSecondsNegativeCheck{}
+	check := newPodSpecActiveDeadlineSecondsNegativeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid activeDeadlineSeconds, got %d", len(findings))
@@ -896,7 +896,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecActiveDeadlineSecondsNegativeCheck{}
+	check := newPodSpecActiveDeadlineSecondsNegativeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for activeDeadlineSeconds=0, got %d", len(findings))
@@ -916,7 +916,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecActiveDeadlineSecondsNegativeCheck{}
+	check := newPodSpecActiveDeadlineSecondsNegativeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for activeDeadlineSeconds=-1, got %d", len(findings))
@@ -935,7 +935,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecActiveDeadlineSecondsNegativeCheck{}
+	check := newPodSpecActiveDeadlineSecondsNegativeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty activeDeadlineSeconds, got %d", len(findings))
@@ -952,7 +952,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecActiveDeadlineSecondsNegativeCheck{}
+	check := newPodSpecActiveDeadlineSecondsNegativeCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for large activeDeadlineSeconds, got %d", len(findings))
@@ -970,7 +970,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecReadinessGateInvalidCheck{}
+	check := newPodSpecReadinessGateInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for valid readinessGate, got %d", len(findings))
@@ -988,7 +988,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecReadinessGateInvalidCheck{}
+	check := newPodSpecReadinessGateInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for empty conditionType, got %d", len(findings))
@@ -1012,7 +1012,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecReadinessGateInvalidCheck{}
+	check := newPodSpecReadinessGateInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid conditionType, got %d", len(findings))
@@ -1035,7 +1035,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecReadinessGateInvalidCheck{}
+	check := newPodSpecReadinessGateInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid second gate, got %d", len(findings))
@@ -1052,7 +1052,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecReadinessGateInvalidCheck{}
+	check := newPodSpecReadinessGateInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for empty readinessGates, got %d", len(findings))
@@ -1068,7 +1068,7 @@ spec:
   - name: c
     image: nginx
 `)
-	check := podSpecReadinessGateInvalidCheck{}
+	check := newPodSpecReadinessGateInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for no readinessGates, got %d", len(findings))
@@ -1091,7 +1091,7 @@ spec:
           - name: c
             image: nginx
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for CronJob with valid restartPolicy, got %d", len(findings))
@@ -1106,7 +1106,7 @@ spec:
   ports:
   - port: 80
 `)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for Service, got %v", findings)
@@ -1121,7 +1121,7 @@ metadata:
 data:
   key: value
 `)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for ConfigMap, got %v", findings)
@@ -1136,7 +1136,7 @@ spec:
   ports:
   - port: 80
 `)
-	check := podSpecAffinityInvalidCheck{}
+	check := newPodSpecAffinityInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for Service, got %v", findings)
@@ -1145,7 +1145,7 @@ spec:
 
 func TestPodSpecRestartPolicyValue_Check_InvalidYAML(t *testing.T) {
 	data := []byte(`not valid yaml {{`)
-	check := podSpecRestartPolicyValueCheck{}
+	check := newPodSpecRestartPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for invalid YAML, got %v", findings)
@@ -1154,7 +1154,7 @@ func TestPodSpecRestartPolicyValue_Check_InvalidYAML(t *testing.T) {
 
 func TestPodSpecDNSPolicyValue_Check_InvalidYAML(t *testing.T) {
 	data := []byte(`---`)
-	check := podSpecDNSPolicyValueCheck{}
+	check := newPodSpecDNSPolicyValueCheck()
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for invalid YAML, got %v", findings)
@@ -1163,15 +1163,15 @@ func TestPodSpecDNSPolicyValue_Check_InvalidYAML(t *testing.T) {
 
 func TestPodSpecChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
-		podSpecRestartPolicyValueCheck{},
-		podSpecDNSPolicyValueCheck{},
-		podSpecTolerationOperatorValueCheck{},
-		podSpecNodeSelectorInvalidCheck{},
-		podSpecAffinityInvalidCheck{},
-		podSpecTopologySpreadInvalidCheck{},
-		podSpecServiceAccountNameInvalidCheck{},
-		podSpecActiveDeadlineSecondsNegativeCheck{},
-		podSpecReadinessGateInvalidCheck{},
+		newPodSpecRestartPolicyValueCheck(),
+		newPodSpecDNSPolicyValueCheck(),
+		newPodSpecTolerationOperatorValueCheck(),
+		newPodSpecNodeSelectorInvalidCheck(),
+		newPodSpecAffinityInvalidCheck(),
+		newPodSpecTopologySpreadInvalidCheck(),
+		newPodSpecServiceAccountNameInvalidCheck(),
+		newPodSpecActiveDeadlineSecondsNegativeCheck(),
+		newPodSpecReadinessGateInvalidCheck(),
 	}
 
 	for _, c := range checks {
@@ -1181,7 +1181,7 @@ func TestPodSpecChecksImplementCheckInterface(t *testing.T) {
 		if c.Title() == "" {
 			t.Errorf("check %T has empty Title", c)
 		}
-		if c.Category() == "" {
+		if runtime.CategoryOf(c.ID()) == "" {
 			t.Errorf("check %T has empty Category", c)
 		}
 		if !c.Blocking() {

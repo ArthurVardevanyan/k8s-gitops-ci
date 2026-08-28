@@ -14,16 +14,15 @@ import (
 
 var resourceQuotaKinds = []string{"ResourceQuota"}
 
-type resourceQuotaHardInvalidCheck struct{}
+type resourceQuotaHardInvalidCheck struct{ runtime.Meta }
 
-func (c resourceQuotaHardInvalidCheck) ID() string { return "core/resourcequota-hard-invalid" }
-func (c resourceQuotaHardInvalidCheck) Title() string {
-	return "ResourceQuota Hard Values Must Be Valid Resources"
+func newResourceQuotaHardInvalidCheck() resourceQuotaHardInvalidCheck {
+	return resourceQuotaHardInvalidCheck{runtime.Meta{
+		RuleID:    "core/resourcequota-hard-invalid",
+		RuleTitle: "ResourceQuota Hard Values Must Be Valid Resources",
+		AppliesTo: resourceQuotaKinds,
+	}}
 }
-func (c resourceQuotaHardInvalidCheck) Category() string      { return "core" }
-func (c resourceQuotaHardInvalidCheck) Blocking() bool        { return true }
-func (c resourceQuotaHardInvalidCheck) RenderSensitive() bool { return true }
-func (c resourceQuotaHardInvalidCheck) Kinds() []string       { return resourceQuotaKinds }
 
 func (c resourceQuotaHardInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var ref struct {
@@ -42,7 +41,6 @@ func (c resourceQuotaHardInvalidCheck) Run(data []byte, source string) []runtime
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    field.NewPath("spec").Child("hard").Key(string(name)).String(),
 					Message: fmt.Sprintf("hard[%q]: invalid resource name: %s", name, errors[0]),
@@ -55,16 +53,15 @@ func (c resourceQuotaHardInvalidCheck) Run(data []byte, source string) []runtime
 	return findings
 }
 
-type resourceQuotaHardNegativeCheck struct{}
+type resourceQuotaHardNegativeCheck struct{ runtime.Meta }
 
-func (c resourceQuotaHardNegativeCheck) ID() string { return "core/resourcequota-hard-negative" }
-func (c resourceQuotaHardNegativeCheck) Title() string {
-	return "ResourceQuota Hard Values Must Not Be Negative"
+func newResourceQuotaHardNegativeCheck() resourceQuotaHardNegativeCheck {
+	return resourceQuotaHardNegativeCheck{runtime.Meta{
+		RuleID:    "core/resourcequota-hard-negative",
+		RuleTitle: "ResourceQuota Hard Values Must Not Be Negative",
+		AppliesTo: resourceQuotaKinds,
+	}}
 }
-func (c resourceQuotaHardNegativeCheck) Category() string      { return "core" }
-func (c resourceQuotaHardNegativeCheck) Blocking() bool        { return true }
-func (c resourceQuotaHardNegativeCheck) RenderSensitive() bool { return true }
-func (c resourceQuotaHardNegativeCheck) Kinds() []string       { return resourceQuotaKinds }
 
 func (c resourceQuotaHardNegativeCheck) Run(data []byte, source string) []runtime.Finding {
 	var ref struct {
@@ -83,7 +80,6 @@ func (c resourceQuotaHardNegativeCheck) Run(data []byte, source string) []runtim
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    field.NewPath("spec").Child("hard").Key(string(name)).String(),
 					Message: fmt.Sprintf("hard[%q]: %s must not be negative", name, val.String()),

@@ -59,7 +59,7 @@ func TestPDBSelectorCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			data := []byte("kind: PodDisruptionBudget\nmetadata:\n  name: test\nspec:\n" + tt.spec + "\n")
-			findings := selectorInvalidCheck{}.Run(data, "test.yaml")
+			findings := newSelectorInvalidCheck().Run(data, "test.yaml")
 			if len(findings) == 0 {
 				t.Fatalf("expected at least 1 finding, got none")
 			}
@@ -83,7 +83,7 @@ spec:
       app: "test"
   minAvailable: 1
 `)
-	check := selectorInvalidCheck{}
+	check := newSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -95,7 +95,7 @@ func TestPDBSelectorNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := selectorInvalidCheck{}
+	check := newSelectorInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -112,7 +112,7 @@ spec:
       app: "test"
   minAvailable: -1
 `)
-	check := minAvailableInvalidCheck{}
+	check := newMinAvailableInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -135,7 +135,7 @@ spec:
       app: "test"
   minAvailable: 1
 `)
-	check := minAvailableInvalidCheck{}
+	check := newMinAvailableInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -147,7 +147,7 @@ func TestPDBMinAvailableNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := minAvailableInvalidCheck{}
+	check := newMinAvailableInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -164,7 +164,7 @@ spec:
       app: "test"
   maxUnavailable: -1
 `)
-	check := maxUnavailableInvalidCheck{}
+	check := newMaxUnavailableInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -187,7 +187,7 @@ spec:
       app: "test"
   maxUnavailable: 1
 `)
-	check := maxUnavailableInvalidCheck{}
+	check := newMaxUnavailableInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -199,7 +199,7 @@ func TestPDBMaxUnavailableNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := maxUnavailableInvalidCheck{}
+	check := newMaxUnavailableInvalidCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -217,7 +217,7 @@ spec:
   minAvailable: 1
   maxUnavailable: 1
 `)
-	check := minAndMaxSpecifiedCheck{}
+	check := newMinAndMaxSpecifiedCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
@@ -240,7 +240,7 @@ spec:
       app: "test"
   minAvailable: 1
 `)
-	check := minAndMaxSpecifiedCheck{}
+	check := newMinAndMaxSpecifiedCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
@@ -252,7 +252,7 @@ func TestPDBMinAndMaxSpecifiedNonMatchingKind(t *testing.T) {
 metadata:
   name: test
 `)
-	check := minAndMaxSpecifiedCheck{}
+	check := newMinAndMaxSpecifiedCheck()
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
@@ -261,10 +261,10 @@ metadata:
 
 func TestAllChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
-		selectorInvalidCheck{},
-		minAvailableInvalidCheck{},
-		maxUnavailableInvalidCheck{},
-		minAndMaxSpecifiedCheck{},
+		newSelectorInvalidCheck(),
+		newMinAvailableInvalidCheck(),
+		newMaxUnavailableInvalidCheck(),
+		newMinAndMaxSpecifiedCheck(),
 	}
 	for _, c := range checks {
 		if c.ID() == "" {
@@ -273,7 +273,7 @@ func TestAllChecksImplementCheckInterface(t *testing.T) {
 		if c.Title() == "" {
 			t.Errorf("check %T has empty Title", c)
 		}
-		if c.Category() == "" {
+		if runtime.CategoryOf(c.ID()) == "" {
 			t.Errorf("check %T has empty Category", c)
 		}
 		if !c.Blocking() {

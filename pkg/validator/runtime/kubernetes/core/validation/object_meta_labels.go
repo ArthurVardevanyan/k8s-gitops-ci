@@ -72,16 +72,14 @@ func sortedKeys(m map[string]string) []string {
 //
 // Source: k8s.io/apimachinery/pkg/apis/meta/v1/validation/validation.go
 // (ValidateLabels, ValidateLabelName)
-type objectMetaLabelsInvalidCheck struct{}
+type objectMetaLabelsInvalidCheck struct{ runtime.Meta }
 
-func (c objectMetaLabelsInvalidCheck) ID() string { return "core/object-meta-labels-invalid" }
-func (c objectMetaLabelsInvalidCheck) Title() string {
-	return "Object Labels Must Be Valid"
+func newObjectMetaLabelsInvalidCheck() objectMetaLabelsInvalidCheck {
+	return objectMetaLabelsInvalidCheck{runtime.Meta{
+		RuleID:    "core/object-meta-labels-invalid",
+		RuleTitle: "Object Labels Must Be Valid",
+	}}
 }
-func (c objectMetaLabelsInvalidCheck) Category() string      { return "core" }
-func (c objectMetaLabelsInvalidCheck) Blocking() bool        { return true }
-func (c objectMetaLabelsInvalidCheck) RenderSensitive() bool { return true }
-func (c objectMetaLabelsInvalidCheck) Kinds() []string       { return nil }
 
 func (c objectMetaLabelsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	kind, meta, ok := parseLabelledMeta(data)
@@ -93,7 +91,6 @@ func (c objectMetaLabelsInvalidCheck) Run(data []byte, source string) []runtime.
 		return runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      "metadata.labels",
 				Message:   message,
@@ -130,19 +127,14 @@ func (c objectMetaLabelsInvalidCheck) Run(data []byte, source string) []runtime.
 //
 // Source: k8s.io/apimachinery/pkg/api/validation/objectmeta.go
 // (ValidateAnnotations, ValidateAnnotationsSize)
-type objectMetaAnnotationsInvalidCheck struct{}
+type objectMetaAnnotationsInvalidCheck struct{ runtime.Meta }
 
-func (c objectMetaAnnotationsInvalidCheck) ID() string {
-	return "core/object-meta-annotations-invalid"
+func newObjectMetaAnnotationsInvalidCheck() objectMetaAnnotationsInvalidCheck {
+	return objectMetaAnnotationsInvalidCheck{runtime.Meta{
+		RuleID:    "core/object-meta-annotations-invalid",
+		RuleTitle: "Object Annotations Must Be Valid",
+	}}
 }
-
-func (c objectMetaAnnotationsInvalidCheck) Title() string {
-	return "Object Annotations Must Be Valid"
-}
-func (c objectMetaAnnotationsInvalidCheck) Category() string      { return "core" }
-func (c objectMetaAnnotationsInvalidCheck) Blocking() bool        { return true }
-func (c objectMetaAnnotationsInvalidCheck) RenderSensitive() bool { return true }
-func (c objectMetaAnnotationsInvalidCheck) Kinds() []string       { return nil }
 
 func (c objectMetaAnnotationsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	kind, meta, ok := parseLabelledMeta(data)
@@ -154,7 +146,6 @@ func (c objectMetaAnnotationsInvalidCheck) Run(data []byte, source string) []run
 		return runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      "metadata.annotations",
 				Message:   message,

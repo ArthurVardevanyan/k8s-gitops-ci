@@ -88,30 +88,14 @@ func parseHPA(data []byte) (map[string]interface{}, error) {
 
 // maxReplicasInvalidCheck validates that maxReplicas > 0.
 // Source: k8s.io/kubernetes/pkg/apis/autoscaling/validation/validation.go
-type maxReplicasInvalidCheck struct{}
+type maxReplicasInvalidCheck struct{ runtime.Meta }
 
-func (c maxReplicasInvalidCheck) ID() string {
-	return "autoscaling/max-replicas-invalid"
-}
-
-func (c maxReplicasInvalidCheck) Title() string {
-	return "HPA maxReplicas Must Be Greater Than Zero"
-}
-
-func (c maxReplicasInvalidCheck) Category() string {
-	return "autoscaling"
-}
-
-func (c maxReplicasInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c maxReplicasInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c maxReplicasInvalidCheck) Kinds() []string {
-	return hpaKinds
+func newMaxReplicasInvalidCheck() maxReplicasInvalidCheck {
+	return maxReplicasInvalidCheck{runtime.Meta{
+		RuleID:    "autoscaling/max-replicas-invalid",
+		RuleTitle: "HPA maxReplicas Must Be Greater Than Zero",
+		AppliesTo: hpaKinds,
+	}}
 }
 
 func (c maxReplicasInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -138,7 +122,6 @@ func (c maxReplicasInvalidCheck) Run(data []byte, source string) []runtime.Findi
 			{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:    field.NewPath("spec").Child("maxReplicas").String(),
 					Message: fmt.Sprintf("spec.maxReplicas: invalid value: %d: must be greater than 0", val),
@@ -154,30 +137,14 @@ func (c maxReplicasInvalidCheck) Run(data []byte, source string) []runtime.Findi
 
 // scaleDownInvalidCheck validates scaleDown stabilizationWindowSeconds.
 // Source: k8s.io/kubernetes/pkg/apis/autoscaling/validation/validation.go
-type scaleDownInvalidCheck struct{}
+type scaleDownInvalidCheck struct{ runtime.Meta }
 
-func (c scaleDownInvalidCheck) ID() string {
-	return "autoscaling/scale-down-invalid"
-}
-
-func (c scaleDownInvalidCheck) Title() string {
-	return "HPA scaleDown stabilizationWindowSeconds Must Be >= 0"
-}
-
-func (c scaleDownInvalidCheck) Category() string {
-	return "autoscaling"
-}
-
-func (c scaleDownInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c scaleDownInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c scaleDownInvalidCheck) Kinds() []string {
-	return hpaKinds
+func newScaleDownInvalidCheck() scaleDownInvalidCheck {
+	return scaleDownInvalidCheck{runtime.Meta{
+		RuleID:    "autoscaling/scale-down-invalid",
+		RuleTitle: "HPA scaleDown stabilizationWindowSeconds Must Be >= 0",
+		AppliesTo: hpaKinds,
+	}}
 }
 
 func (c scaleDownInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -186,30 +153,14 @@ func (c scaleDownInvalidCheck) Run(data []byte, source string) []runtime.Finding
 
 // scaleUpInvalidCheck validates scaleUp stabilizationWindowSeconds.
 // Source: k8s.io/kubernetes/pkg/apis/autoscaling/validation/validation.go
-type scaleUpInvalidCheck struct{}
+type scaleUpInvalidCheck struct{ runtime.Meta }
 
-func (c scaleUpInvalidCheck) ID() string {
-	return "autoscaling/scale-up-invalid"
-}
-
-func (c scaleUpInvalidCheck) Title() string {
-	return "HPA scaleUp stabilizationWindowSeconds Must Be >= 0"
-}
-
-func (c scaleUpInvalidCheck) Category() string {
-	return "autoscaling"
-}
-
-func (c scaleUpInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c scaleUpInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c scaleUpInvalidCheck) Kinds() []string {
-	return hpaKinds
+func newScaleUpInvalidCheck() scaleUpInvalidCheck {
+	return scaleUpInvalidCheck{runtime.Meta{
+		RuleID:    "autoscaling/scale-up-invalid",
+		RuleTitle: "HPA scaleUp stabilizationWindowSeconds Must Be >= 0",
+		AppliesTo: hpaKinds,
+	}}
 }
 
 func (c scaleUpInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -240,7 +191,6 @@ func behaviorStabilizationWindowFindings(c runtime.Check, data []byte, behaviorF
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:    entryPath.Child("stabilizationWindowSeconds").String(),
 						Message: fmt.Sprintf("behavior.%s[%d].stabilizationWindowSeconds: invalid value: %d: must be >= 0", behaviorField, i, val),
@@ -262,9 +212,9 @@ func behaviorStabilizationWindowFindings(c runtime.Check, data []byte, behaviorF
 // function it ports; RegisterAll panics on a check with no valid citation.
 func init() {
 	checks := []runtime.Check{
-		maxReplicasInvalidCheck{},
-		scaleDownInvalidCheck{},
-		scaleUpInvalidCheck{},
+		newMaxReplicasInvalidCheck(),
+		newScaleDownInvalidCheck(),
+		newScaleUpInvalidCheck(),
 	}
 
 	runtime.RegisterAll(checks, upstreamRefs)

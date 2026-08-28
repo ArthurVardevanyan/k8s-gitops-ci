@@ -14,14 +14,15 @@ import (
 
 // scheduleInvalidCheck validates the cron schedule field.
 // Source: k8s.io/kubernetes/pkg/apis/batch/validation/validation.go
-type scheduleInvalidCheck struct{}
+type scheduleInvalidCheck struct{ runtime.Meta }
 
-func (c scheduleInvalidCheck) ID() string            { return "batch/schedule-invalid" }
-func (c scheduleInvalidCheck) Title() string         { return "CronJob Schedule Must Be Valid" }
-func (c scheduleInvalidCheck) Category() string      { return "batch" }
-func (c scheduleInvalidCheck) Blocking() bool        { return true }
-func (c scheduleInvalidCheck) RenderSensitive() bool { return true }
-func (c scheduleInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
+func newScheduleInvalidCheck() scheduleInvalidCheck {
+	return scheduleInvalidCheck{runtime.Meta{
+		RuleID:    "batch/schedule-invalid",
+		RuleTitle: "CronJob Schedule Must Be Valid",
+		AppliesTo: []string{"CronJob"},
+	}}
+}
 
 func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var cj struct {
@@ -42,7 +43,6 @@ func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 		return []runtime.Finding{{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    field.NewPath("spec").Child("schedule").String(),
 				Message: fmt.Sprintf("schedule: invalid cron schedule: %s", err.Error()),
@@ -56,15 +56,15 @@ func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 
 // concurrencyPolicyInvalidCheck validates concurrencyPolicy.
 // Source: k8s.io/kubernetes/pkg/apis/batch/validation/validation.go
-type concurrencyPolicyInvalidCheck struct{}
+type concurrencyPolicyInvalidCheck struct{ runtime.Meta }
 
-func (c concurrencyPolicyInvalidCheck) ID() string { return "batch/concurrency-policy-invalid" }
-
-func (c concurrencyPolicyInvalidCheck) Title() string         { return "ConcurrencyPolicy Must Be Valid" }
-func (c concurrencyPolicyInvalidCheck) Category() string      { return "batch" }
-func (c concurrencyPolicyInvalidCheck) Blocking() bool        { return true }
-func (c concurrencyPolicyInvalidCheck) RenderSensitive() bool { return true }
-func (c concurrencyPolicyInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
+func newConcurrencyPolicyInvalidCheck() concurrencyPolicyInvalidCheck {
+	return concurrencyPolicyInvalidCheck{runtime.Meta{
+		RuleID:    "batch/concurrency-policy-invalid",
+		RuleTitle: "ConcurrencyPolicy Must Be Valid",
+		AppliesTo: []string{"CronJob"},
+	}}
+}
 
 func (c concurrencyPolicyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var cj struct {
@@ -84,7 +84,6 @@ func (c concurrencyPolicyInvalidCheck) Run(data []byte, source string) []runtime
 	return []runtime.Finding{{
 		RuleID:    c.ID(),
 		RuleTitle: c.Title(),
-		Category:  c.Category(),
 		Finding: check.Finding{
 			Path:    field.NewPath("spec").Child("concurrencyPolicy").String(),
 			Message: fmt.Sprintf("concurrencyPolicy: Unsupported value: %q", string(policy)),
@@ -96,19 +95,15 @@ func (c concurrencyPolicyInvalidCheck) Run(data []byte, source string) []runtime
 
 // failedJobsHistoryLimitInvalidCheck validates failedJobsHistoryLimit.
 // Source: k8s.io/kubernetes/pkg/apis/batch/validation/validation.go
-type failedJobsHistoryLimitInvalidCheck struct{}
+type failedJobsHistoryLimitInvalidCheck struct{ runtime.Meta }
 
-func (c failedJobsHistoryLimitInvalidCheck) ID() string {
-	return "batch/failed-jobs-history-limit-invalid"
+func newFailedJobsHistoryLimitInvalidCheck() failedJobsHistoryLimitInvalidCheck {
+	return failedJobsHistoryLimitInvalidCheck{runtime.Meta{
+		RuleID:    "batch/failed-jobs-history-limit-invalid",
+		RuleTitle: "FailedJobsHistoryLimit Must Be >= 0",
+		AppliesTo: []string{"CronJob"},
+	}}
 }
-
-func (c failedJobsHistoryLimitInvalidCheck) Title() string {
-	return "FailedJobsHistoryLimit Must Be >= 0"
-}
-func (c failedJobsHistoryLimitInvalidCheck) Category() string      { return "batch" }
-func (c failedJobsHistoryLimitInvalidCheck) Blocking() bool        { return true }
-func (c failedJobsHistoryLimitInvalidCheck) RenderSensitive() bool { return true }
-func (c failedJobsHistoryLimitInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c failedJobsHistoryLimitInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	return nonNegativeIntFindings(c, data, "CronJob", "failedJobsHistoryLimit", func(spec nonNegativeSpecWrapper) (int64, bool) {
@@ -118,19 +113,15 @@ func (c failedJobsHistoryLimitInvalidCheck) Run(data []byte, source string) []ru
 
 // successfulJobsHistoryLimitInvalidCheck validates successfulJobsHistoryLimit.
 // Source: k8s.io/kubernetes/pkg/apis/batch/validation/validation.go
-type successfulJobsHistoryLimitInvalidCheck struct{}
+type successfulJobsHistoryLimitInvalidCheck struct{ runtime.Meta }
 
-func (c successfulJobsHistoryLimitInvalidCheck) ID() string {
-	return "batch/successful-jobs-history-limit-invalid"
+func newSuccessfulJobsHistoryLimitInvalidCheck() successfulJobsHistoryLimitInvalidCheck {
+	return successfulJobsHistoryLimitInvalidCheck{runtime.Meta{
+		RuleID:    "batch/successful-jobs-history-limit-invalid",
+		RuleTitle: "SuccessfulJobsHistoryLimit Must Be >= 0",
+		AppliesTo: []string{"CronJob"},
+	}}
 }
-
-func (c successfulJobsHistoryLimitInvalidCheck) Title() string {
-	return "SuccessfulJobsHistoryLimit Must Be >= 0"
-}
-func (c successfulJobsHistoryLimitInvalidCheck) Category() string      { return "batch" }
-func (c successfulJobsHistoryLimitInvalidCheck) Blocking() bool        { return true }
-func (c successfulJobsHistoryLimitInvalidCheck) RenderSensitive() bool { return true }
-func (c successfulJobsHistoryLimitInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c successfulJobsHistoryLimitInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	return nonNegativeIntFindings(c, data, "CronJob", "successfulJobsHistoryLimit", func(spec nonNegativeSpecWrapper) (int64, bool) {
@@ -140,19 +131,15 @@ func (c successfulJobsHistoryLimitInvalidCheck) Run(data []byte, source string) 
 
 // startingDeadlineSecondsInvalidCheck validates startingDeadlineSeconds.
 // Source: k8s.io/kubernetes/pkg/apis/batch/validation/validation.go
-type startingDeadlineSecondsInvalidCheck struct{}
+type startingDeadlineSecondsInvalidCheck struct{ runtime.Meta }
 
-func (c startingDeadlineSecondsInvalidCheck) ID() string {
-	return "batch/starting-deadline-seconds-invalid"
+func newStartingDeadlineSecondsInvalidCheck() startingDeadlineSecondsInvalidCheck {
+	return startingDeadlineSecondsInvalidCheck{runtime.Meta{
+		RuleID:    "batch/starting-deadline-seconds-invalid",
+		RuleTitle: "StartingDeadlineSeconds Must Be >= 0",
+		AppliesTo: []string{"CronJob"},
+	}}
 }
-
-func (c startingDeadlineSecondsInvalidCheck) Title() string {
-	return "StartingDeadlineSeconds Must Be >= 0"
-}
-func (c startingDeadlineSecondsInvalidCheck) Category() string      { return "batch" }
-func (c startingDeadlineSecondsInvalidCheck) Blocking() bool        { return true }
-func (c startingDeadlineSecondsInvalidCheck) RenderSensitive() bool { return true }
-func (c startingDeadlineSecondsInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c startingDeadlineSecondsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	return nonNegativeIntFindings(c, data, "CronJob", "startingDeadlineSeconds", func(spec nonNegativeSpecWrapper) (int64, bool) {

@@ -10,30 +10,14 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-type duplicateContainerNamesCheck struct{}
+type duplicateContainerNamesCheck struct{ runtime.Meta }
 
-func (c duplicateContainerNamesCheck) ID() string {
-	return "container/duplicate-container-names"
-}
-
-func (c duplicateContainerNamesCheck) Title() string {
-	return "Duplicate Container Names Not Allowed"
-}
-
-func (c duplicateContainerNamesCheck) Category() string {
-	return "container"
-}
-
-func (c duplicateContainerNamesCheck) Blocking() bool {
-	return true
-}
-
-func (c duplicateContainerNamesCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c duplicateContainerNamesCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newDuplicateContainerNamesCheck() duplicateContainerNamesCheck {
+	return duplicateContainerNamesCheck{runtime.Meta{
+		RuleID:    "container/duplicate-container-names",
+		RuleTitle: "Duplicate Container Names Not Allowed",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c duplicateContainerNamesCheck) Run(data []byte, source string) []runtime.Finding {
@@ -58,7 +42,6 @@ func (c duplicateContainerNamesCheck) Run(data []byte, source string) []runtime.
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:      field.NewPath(info.PodSpecPath).Child("containers").Key(name).String(),
 					Message:   fmt.Sprintf("duplicate container name %q appears %d times", name, count),
@@ -73,30 +56,14 @@ func (c duplicateContainerNamesCheck) Run(data []byte, source string) []runtime.
 	return findings
 }
 
-type duplicatePortNamesCheck struct{}
+type duplicatePortNamesCheck struct{ runtime.Meta }
 
-func (c duplicatePortNamesCheck) ID() string {
-	return "container/duplicate-port-names"
-}
-
-func (c duplicatePortNamesCheck) Title() string {
-	return "Duplicate Port Names Not Allowed"
-}
-
-func (c duplicatePortNamesCheck) Category() string {
-	return "container"
-}
-
-func (c duplicatePortNamesCheck) Blocking() bool {
-	return true
-}
-
-func (c duplicatePortNamesCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c duplicatePortNamesCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newDuplicatePortNamesCheck() duplicatePortNamesCheck {
+	return duplicatePortNamesCheck{runtime.Meta{
+		RuleID:    "container/duplicate-port-names",
+		RuleTitle: "Duplicate Port Names Not Allowed",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c duplicatePortNamesCheck) Run(data []byte, source string) []runtime.Finding {
@@ -119,7 +86,6 @@ func (c duplicatePortNamesCheck) Run(data []byte, source string) []runtime.Findi
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:      ctr.Path.Child("ports").Key(name).Child("name").String(),
 						Message:   fmt.Sprintf("duplicate port name %q in container %q", name, ctr.Container.Name),
@@ -139,30 +105,14 @@ func (c duplicatePortNamesCheck) Run(data []byte, source string) []runtime.Findi
 	return findings
 }
 
-type portNumberRangeCheck struct{}
+type portNumberRangeCheck struct{ runtime.Meta }
 
-func (c portNumberRangeCheck) ID() string {
-	return "container/port-number-range"
-}
-
-func (c portNumberRangeCheck) Title() string {
-	return "Port Number Must Be In Range 1-65535"
-}
-
-func (c portNumberRangeCheck) Category() string {
-	return "container"
-}
-
-func (c portNumberRangeCheck) Blocking() bool {
-	return true
-}
-
-func (c portNumberRangeCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c portNumberRangeCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newPortNumberRangeCheck() portNumberRangeCheck {
+	return portNumberRangeCheck{runtime.Meta{
+		RuleID:    "container/port-number-range",
+		RuleTitle: "Port Number Must Be In Range 1-65535",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c portNumberRangeCheck) Run(data []byte, source string) []runtime.Finding {
@@ -181,7 +131,6 @@ func (c portNumberRangeCheck) Run(data []byte, source string) []runtime.Finding 
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:      ctr.Path.Child("ports").Index(idx).Child("containerPort").String(),
 						Message:   fmt.Sprintf("invalid port %d in container %q: port must be 1-65535", port.ContainerPort, ctr.Container.Name),
@@ -208,30 +157,14 @@ func getPortIndex(ports []corev1.ContainerPort, target corev1.ContainerPort) int
 	return 0
 }
 
-type imagePullPolicyCheck struct{}
+type imagePullPolicyCheck struct{ runtime.Meta }
 
-func (c imagePullPolicyCheck) ID() string {
-	return "container/image-pull-policy"
-}
-
-func (c imagePullPolicyCheck) Title() string {
-	return "ImagePullPolicy Must Be Valid"
-}
-
-func (c imagePullPolicyCheck) Category() string {
-	return "container"
-}
-
-func (c imagePullPolicyCheck) Blocking() bool {
-	return true
-}
-
-func (c imagePullPolicyCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c imagePullPolicyCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newImagePullPolicyCheck() imagePullPolicyCheck {
+	return imagePullPolicyCheck{runtime.Meta{
+		RuleID:    "container/image-pull-policy",
+		RuleTitle: "ImagePullPolicy Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c imagePullPolicyCheck) Run(data []byte, source string) []runtime.Finding {
@@ -258,7 +191,6 @@ func (c imagePullPolicyCheck) Run(data []byte, source string) []runtime.Finding 
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      ctr.Path.Child("imagePullPolicy").String(),
 				Message:   fmt.Sprintf("container %q: imagePullPolicy: Unsupported value: %q: supported values: 'Always', 'Never', 'IfNotPresent'", ctr.Container.Name, string(policy)),
@@ -274,30 +206,14 @@ func (c imagePullPolicyCheck) Run(data []byte, source string) []runtime.Finding 
 	return findings
 }
 
-type mountPropagationValueCheck struct{}
+type mountPropagationValueCheck struct{ runtime.Meta }
 
-func (c mountPropagationValueCheck) ID() string {
-	return "container/mount-propagation-value"
-}
-
-func (c mountPropagationValueCheck) Title() string {
-	return "MountPropagation Must Be Valid"
-}
-
-func (c mountPropagationValueCheck) Category() string {
-	return "container"
-}
-
-func (c mountPropagationValueCheck) Blocking() bool {
-	return true
-}
-
-func (c mountPropagationValueCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c mountPropagationValueCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newMountPropagationValueCheck() mountPropagationValueCheck {
+	return mountPropagationValueCheck{runtime.Meta{
+		RuleID:    "container/mount-propagation-value",
+		RuleTitle: "MountPropagation Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c mountPropagationValueCheck) Run(data []byte, source string) []runtime.Finding {
@@ -324,7 +240,6 @@ func (c mountPropagationValueCheck) Run(data []byte, source string) []runtime.Fi
 			findings = append(findings, runtime.Finding{
 				RuleID:    c.ID(),
 				RuleTitle: c.Title(),
-				Category:  c.Category(),
 				Finding: check.Finding{
 					Path:      ctr.Path.Child("volumeMounts").Index(i).Child("mountPropagation").String(),
 					Message:   fmt.Sprintf("container %q volumeMount %q: mountPropagation: Unsupported value: %q", ctr.Container.Name, vm.Name, string(*vm.MountPropagation)),
@@ -341,30 +256,14 @@ func (c mountPropagationValueCheck) Run(data []byte, source string) []runtime.Fi
 	return findings
 }
 
-type terminationMessagePolicyValueCheck struct{}
+type terminationMessagePolicyValueCheck struct{ runtime.Meta }
 
-func (c terminationMessagePolicyValueCheck) ID() string {
-	return "container/termination-message-policy-value"
-}
-
-func (c terminationMessagePolicyValueCheck) Title() string {
-	return "TerminationMessagePolicy Must Be Valid"
-}
-
-func (c terminationMessagePolicyValueCheck) Category() string {
-	return "container"
-}
-
-func (c terminationMessagePolicyValueCheck) Blocking() bool {
-	return true
-}
-
-func (c terminationMessagePolicyValueCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c terminationMessagePolicyValueCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newTerminationMessagePolicyValueCheck() terminationMessagePolicyValueCheck {
+	return terminationMessagePolicyValueCheck{runtime.Meta{
+		RuleID:    "container/termination-message-policy-value",
+		RuleTitle: "TerminationMessagePolicy Must Be Valid",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c terminationMessagePolicyValueCheck) Run(data []byte, source string) []runtime.Finding {
@@ -390,7 +289,6 @@ func (c terminationMessagePolicyValueCheck) Run(data []byte, source string) []ru
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:      ctr.Path.Child("terminationMessagePolicy").String(),
 				Message:   fmt.Sprintf("container %q: terminationMessagePolicy: Unsupported value: %q", ctr.Container.Name, string(policy)),
@@ -406,30 +304,14 @@ func (c terminationMessagePolicyValueCheck) Run(data []byte, source string) []ru
 	return findings
 }
 
-type volumeMountNameUndefinedCheck struct{}
+type volumeMountNameUndefinedCheck struct{ runtime.Meta }
 
-func (c volumeMountNameUndefinedCheck) ID() string {
-	return "container/volume-mount-name-undefined"
-}
-
-func (c volumeMountNameUndefinedCheck) Title() string {
-	return "VolumeMount Name Must Match a Volume Definition"
-}
-
-func (c volumeMountNameUndefinedCheck) Category() string {
-	return "container"
-}
-
-func (c volumeMountNameUndefinedCheck) Blocking() bool {
-	return true
-}
-
-func (c volumeMountNameUndefinedCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c volumeMountNameUndefinedCheck) Kinds() []string {
-	return runtime.HasPodSpecKinds()
+func newVolumeMountNameUndefinedCheck() volumeMountNameUndefinedCheck {
+	return volumeMountNameUndefinedCheck{runtime.Meta{
+		RuleID:    "container/volume-mount-name-undefined",
+		RuleTitle: "VolumeMount Name Must Match a Volume Definition",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
 }
 
 func (c volumeMountNameUndefinedCheck) Run(data []byte, source string) []runtime.Finding {
@@ -453,7 +335,6 @@ func (c volumeMountNameUndefinedCheck) Run(data []byte, source string) []runtime
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
-					Category:  c.Category(),
 					Finding: check.Finding{
 						Path:      ctr.Path.Child("volumeMounts").Index(i).Child("name").String(),
 						Message:   fmt.Sprintf("container %q volumeMount %q: volumeMounts.name: not found \u2014 no volume named %q is defined", ctr.Container.Name, vm.Name, vm.Name),

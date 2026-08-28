@@ -15,30 +15,14 @@ var roleBindingKinds = []string{"RoleBinding"}
 
 // roleBindingRoleRefInvalidCheck validates that roleRef specifies a valid Role or ClusterRole.
 // Source: k8s.io/kubernetes/pkg/apis/rbac/validation/validation.go
-type roleBindingRoleRefInvalidCheck struct{}
+type roleBindingRoleRefInvalidCheck struct{ runtime.Meta }
 
-func (c roleBindingRoleRefInvalidCheck) ID() string {
-	return "rbac/role-ref-invalid"
-}
-
-func (c roleBindingRoleRefInvalidCheck) Title() string {
-	return "RoleBinding roleRef Must Be Valid"
-}
-
-func (c roleBindingRoleRefInvalidCheck) Category() string {
-	return "rbac"
-}
-
-func (c roleBindingRoleRefInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c roleBindingRoleRefInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c roleBindingRoleRefInvalidCheck) Kinds() []string {
-	return roleBindingKinds
+func newRoleBindingRoleRefInvalidCheck() roleBindingRoleRefInvalidCheck {
+	return roleBindingRoleRefInvalidCheck{runtime.Meta{
+		RuleID:    "rbac/role-ref-invalid",
+		RuleTitle: "RoleBinding roleRef Must Be Valid",
+		AppliesTo: roleBindingKinds,
+	}}
 }
 
 func (c roleBindingRoleRefInvalidCheck) Run(data []byte, source string) []runtime.Finding {
@@ -55,7 +39,6 @@ func (c roleBindingRoleRefInvalidCheck) Run(data []byte, source string) []runtim
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    roleRefPath.Child("kind").String(),
 				Message: fmt.Sprintf("roleRef: invalid value: kind %q is not supported, must be Role or ClusterRole", rb.RoleRef.Kind),
@@ -69,7 +52,6 @@ func (c roleBindingRoleRefInvalidCheck) Run(data []byte, source string) []runtim
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    roleRefPath.Child("name").String(),
 				Message: "roleRef: invalid value: name is required",
@@ -83,7 +65,6 @@ func (c roleBindingRoleRefInvalidCheck) Run(data []byte, source string) []runtim
 		findings = append(findings, runtime.Finding{
 			RuleID:    c.ID(),
 			RuleTitle: c.Title(),
-			Category:  c.Category(),
 			Finding: check.Finding{
 				Path:    roleRefPath.Child("apiGroup").String(),
 				Message: fmt.Sprintf("roleRef: invalid value: apiGroup %q does not match expected group %q", rb.RoleRef.APIGroup, rbacv1.GroupName),
