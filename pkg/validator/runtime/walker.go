@@ -18,6 +18,26 @@ type ContainerWithPath struct {
 	IsInit    bool
 }
 
+// AllContainers builds the full container list (regular + init) with path context.
+func AllContainers(info *PodSpecInfo) []ContainerWithPath {
+	out := make([]ContainerWithPath, 0, len(info.Containers)+len(info.InitContainers))
+	for i := range info.Containers {
+		out = append(out, ContainerWithPath{
+			Container: info.Containers[i],
+			Path:      field.NewPath(info.ContainersPath).Key(info.Containers[i].Name),
+			IsInit:    false,
+		})
+	}
+	for i := range info.InitContainers {
+		out = append(out, ContainerWithPath{
+			Container: info.InitContainers[i],
+			Path:      field.NewPath(info.InitContainersPath).Key(info.InitContainers[i].Name),
+			IsInit:    true,
+		})
+	}
+	return out
+}
+
 // PodSpecInfo holds extracted pod spec information for validation.
 type PodSpecInfo struct {
 	Kind               string
