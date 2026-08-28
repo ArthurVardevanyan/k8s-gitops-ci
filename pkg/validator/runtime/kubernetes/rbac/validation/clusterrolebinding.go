@@ -37,7 +37,7 @@ func (c clusterRoleBindingRoleRefInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c clusterRoleBindingRoleRefInvalidCheck) DocSkipper() []string {
+func (c clusterRoleBindingRoleRefInvalidCheck) Kinds() []string {
 	return clusterRoleBindingKinds
 }
 
@@ -96,59 +96,6 @@ func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) [
 	return findings
 }
 
-// clusterRoleBindingSubjectsInvalidCheck validates that subjects are not empty.
-// Source: k8s.io/kubernetes/pkg/apis/rbac/validation/validation.go
-type clusterRoleBindingSubjectsInvalidCheck struct{}
-
-func (c clusterRoleBindingSubjectsInvalidCheck) ID() string {
-	return "rbac/clusterrolebinding-subjects-invalid"
-}
-
-func (c clusterRoleBindingSubjectsInvalidCheck) Title() string {
-	return "ClusterRoleBinding subjects Must Not Be Empty"
-}
-
-func (c clusterRoleBindingSubjectsInvalidCheck) Category() string {
-	return "rbac"
-}
-
-func (c clusterRoleBindingSubjectsInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c clusterRoleBindingSubjectsInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c clusterRoleBindingSubjectsInvalidCheck) DocSkipper() []string {
-	return clusterRoleBindingKinds
-}
-
-func (c clusterRoleBindingSubjectsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var crb rbacv1.ClusterRoleBinding
-	if err := yaml.Unmarshal(data, &crb); err != nil {
-		return nil
-	}
-
-	var findings []runtime.Finding
-
-	if len(crb.Subjects) == 0 {
-		findings = append(findings, runtime.Finding{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Category:  c.Category(),
-			Finding: check.Finding{
-				Path:    field.NewPath("subjects").String(),
-				Message: "subjects: must not be empty",
-				Kind:    "ClusterRoleBinding",
-				Name:    crb.GetName(),
-			},
-		})
-	}
-
-	return findings
-}
-
 // clusterRoleBindingSubjectInvalidCheck validates each subject has valid kind and name.
 // Source: k8s.io/kubernetes/pkg/apis/rbac/validation/validation.go
 type clusterRoleBindingSubjectInvalidCheck struct{}
@@ -173,7 +120,7 @@ func (c clusterRoleBindingSubjectInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c clusterRoleBindingSubjectInvalidCheck) DocSkipper() []string {
+func (c clusterRoleBindingSubjectInvalidCheck) Kinds() []string {
 	return clusterRoleBindingKinds
 }
 
@@ -226,69 +173,10 @@ func (c clusterRoleBindingSubjectInvalidCheck) Run(data []byte, source string) [
 	return findings
 }
 
-// clusterRoleBindingNamespaceNotAllowedCheck validates that namespace is not specified
-// on subjects in a ClusterRoleBinding (ClusterRoleBindings are cluster-scoped).
-// Source: k8s.io/kubernetes/pkg/apis/rbac/validation/validation.go
-type clusterRoleBindingNamespaceNotAllowedCheck struct{}
-
-func (c clusterRoleBindingNamespaceNotAllowedCheck) ID() string {
-	return "rbac/namespace-not-allowed"
-}
-
-func (c clusterRoleBindingNamespaceNotAllowedCheck) Title() string {
-	return "ClusterRoleBinding subjects Must Not Have Namespace"
-}
-
-func (c clusterRoleBindingNamespaceNotAllowedCheck) Category() string {
-	return "rbac"
-}
-
-func (c clusterRoleBindingNamespaceNotAllowedCheck) Blocking() bool {
-	return true
-}
-
-func (c clusterRoleBindingNamespaceNotAllowedCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c clusterRoleBindingNamespaceNotAllowedCheck) DocSkipper() []string {
-	return clusterRoleBindingKinds
-}
-
-func (c clusterRoleBindingNamespaceNotAllowedCheck) Run(data []byte, source string) []runtime.Finding {
-	var crb rbacv1.ClusterRoleBinding
-	if err := yaml.Unmarshal(data, &crb); err != nil {
-		return nil
-	}
-
-	var findings []runtime.Finding
-
-	for i, subject := range crb.Subjects {
-		if subject.Namespace != "" {
-			subjectPath := field.NewPath("subjects").Index(i).Child("namespace")
-			findings = append(findings, runtime.Finding{
-				RuleID:    c.ID(),
-				RuleTitle: c.Title(),
-				Category:  c.Category(),
-				Finding: check.Finding{
-					Path:    subjectPath.String(),
-					Message: fmt.Sprintf("subjects.namespace: must not be specified: subject %q is in a cluster-scoped binding", subject.Name),
-					Kind:    "ClusterRoleBinding",
-					Name:    crb.GetName(),
-				},
-			})
-		}
-	}
-
-	return findings
-}
-
 func init() {
 	checks := []runtime.Check{
 		clusterRoleBindingRoleRefInvalidCheck{},
-		clusterRoleBindingSubjectsInvalidCheck{},
 		clusterRoleBindingSubjectInvalidCheck{},
-		clusterRoleBindingNamespaceNotAllowedCheck{},
 	}
 
 	for _, c := range checks {

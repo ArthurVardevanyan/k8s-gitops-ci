@@ -198,61 +198,12 @@ metadata:
 	}
 }
 
-func TestPDBSelectorAndPodTemplateHashCheck(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "minAvailable": 1, "labels": {"app": "test"}}
-}`)
-	check := selectorAndPodTemplateHashInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "policy/selector-and-pod-template-hash-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PodDisruptionBudget" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPDBSelectorAndPodTemplateHashValid(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "minAvailable": 1, "labels": {"app": "other"}}
-}`)
-	check := selectorAndPodTemplateHashInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPDBSelectorAndPodTemplateHashNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := selectorAndPodTemplateHashInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestAllChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
 		selectorInvalidCheck{},
 		minAvailableInvalidCheck{},
 		maxUnavailableInvalidCheck{},
 		minAndMaxSpecifiedCheck{},
-		selectorAndPodTemplateHashInvalidCheck{},
 	}
 	for _, c := range checks {
 		if c.ID() == "" {
@@ -270,8 +221,8 @@ func TestAllChecksImplementCheckInterface(t *testing.T) {
 		if !c.RenderSensitive() {
 			t.Errorf("check %T should render sensitive", c)
 		}
-		if len(c.DocSkipper()) == 0 {
-			t.Errorf("check %T should have DocSkipper", c)
+		if len(c.Kinds()) == 0 {
+			t.Errorf("check %T should declare Kinds", c)
 		}
 	}
 }

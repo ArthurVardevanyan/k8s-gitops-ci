@@ -6,109 +6,6 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-func TestDeploymentSelectorMustMatch_Check_Match(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  selector:
-    app: myapp
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for matching selector, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentSelectorMustMatch_Check_Mismatch(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  selector:
-    app: myapp
-    tier: frontend
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for mismatched selector, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "apps/deployment-selector-must-match" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "Deployment" || findings[0].Name != "test" {
-		t.Errorf("unexpected kind/name: %s/%s", findings[0].Kind, findings[0].Name)
-	}
-}
-
-func TestDeploymentSelectorMustMatch_Check_MissingSelector(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when selector is absent, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentSelectorMustMatch_Check_MultipleSelectorsMismatch(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  selector:
-    app: myapp
-    tier: frontend
-  template:
-    metadata:
-      labels:
-        app: myapp
-        tier: backend
-`)
-	check := deploymentSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for first mismatched selector, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentSelectorMustMatch_Check_NotDeployment(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: Service
-metadata:
-  name: test
-spec:
-  selector:
-    app: myapp
-`)
-	check := deploymentSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestDeploymentSelectorInvalid_Check_ValidKeys(t *testing.T) {
 	data := []byte(`apiVersion: apps/v1
 kind: Deployment
@@ -209,82 +106,6 @@ spec:
     app: myapp
 `)
 	check := deploymentSelectorInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentStrategyUndefined_Check_Defined(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentStrategyUndefinedCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when strategy is defined, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentStrategyUndefined_Check_Undefined(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentStrategyUndefinedCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for missing strategy, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "apps/deployment-strategy-undefined" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "Deployment" || findings[0].Name != "test" {
-		t.Errorf("unexpected kind/name: %s/%s", findings[0].Kind, findings[0].Name)
-	}
-}
-
-func TestDeploymentStrategyUndefined_Check_EmptyStrategy(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy: {}
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentStrategyUndefinedCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when strategy object exists (even if empty), got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentStrategyUndefined_Check_NotDeployment(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: Service
-metadata:
-  name: test
-`)
-	check := deploymentStrategyUndefinedCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
@@ -540,218 +361,16 @@ metadata:
 	}
 }
 
-func TestDeploymentMaxUnavailableInvalid_Check_ValidInt(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxUnavailableInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid maxUnavailable int, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxUnavailableInvalid_Check_ValidPercentage(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: "25%"
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxUnavailableInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid maxUnavailable percentage, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxUnavailableInvalid_Check_InvalidPercentage(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: "abc%"
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxUnavailableInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid percentage, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxUnavailableInvalid_Check_NoRollingUpdate(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxUnavailableInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when no rollingUpdate, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxUnavailableInvalid_Check_NotDeployment(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: Service
-metadata:
-  name: test
-`)
-	check := deploymentMaxUnavailableInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxSurgeInvalid_Check_ValidInt(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxSurgeInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid maxSurge int, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxSurgeInvalid_Check_ValidPercentage(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: "25%"
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxSurgeInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid maxSurge percentage, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxSurgeInvalid_Check_InvalidPercentage(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: "abc%"
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxSurgeInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid percentage, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxSurgeInvalid_Check_NoRollingUpdate(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := deploymentMaxSurgeInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when no rollingUpdate, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDeploymentMaxSurgeInvalid_Check_NotDeployment(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: Service
-metadata:
-  name: test
-`)
-	check := deploymentMaxSurgeInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-Deployment kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestDeployment_Check_IDAndMetadata(t *testing.T) {
 	tests := []struct {
 		check   runtime.Check
 		wantID  string
 		wantCat string
 	}{
-		{deploymentSelectorMustMatchCheck{}, "apps/deployment-selector-must-match", "apps"},
 		{deploymentSelectorInvalidCheck{}, "apps/deployment-selector-invalid", "apps"},
-		{deploymentStrategyUndefinedCheck{}, "apps/deployment-strategy-undefined", "apps"},
 		{deploymentStrategyTypeInvalidCheck{}, "apps/deployment-strategy-type-invalid", "apps"},
 		{deploymentReplicasInvalidCheck{}, "apps/deployment-replicas-invalid", "apps"},
 		{deploymentMinReadySecondsInvalidCheck{}, "apps/deployment-min-ready-seconds-invalid", "apps"},
-		{deploymentMaxUnavailableInvalidCheck{}, "apps/deployment-max-unavailable-invalid", "apps"},
-		{deploymentMaxSurgeInvalidCheck{}, "apps/deployment-max-surge-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -768,8 +387,8 @@ func TestDeployment_Check_IDAndMetadata(t *testing.T) {
 			if !tc.check.RenderSensitive() {
 				t.Errorf("%s should render sensitive", tc.wantID)
 			}
-			if len(tc.check.DocSkipper()) == 0 {
-				t.Errorf("%s should have DocSkipper", tc.wantID)
+			if len(tc.check.Kinds()) == 0 {
+				t.Errorf("%s should declare Kinds", tc.wantID)
 			}
 		})
 	}
@@ -803,9 +422,6 @@ spec:
 	}
 	if !ruleIDs["apps/deployment-strategy-type-invalid"] {
 		t.Error("expected deployment-strategy-type-invalid finding")
-	}
-	if !ruleIDs["apps/deployment-selector-must-match"] {
-		t.Error("expected deployment-selector-must-match finding")
 	}
 }
 

@@ -1,6 +1,8 @@
 package runtime
 
 import (
+	"slices"
+
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
 
@@ -48,8 +50,11 @@ type Check interface {
 	Blocking() bool
 	// RenderSensitive returns whether this check should run on rendered output.
 	RenderSensitive() bool
-	// DocSkipper returns kinds this check should skip (e.g. CRDs).
-	DocSkipper() []string
+	// Kinds returns the resource kinds this check applies to. An empty
+	// slice means "all kinds". The adapter inverts this into the
+	// check.DocSkipper contract (SkipDoc), so a check is never handed a
+	// document whose kind it doesn't care about.
+	Kinds() []string
 	// Run validates the given document data and returns findings.
 	Run(data []byte, source string) []Finding
 }
@@ -82,8 +87,27 @@ func (a adapter) RenderSensitive() bool {
 	return a.c.RenderSensitive()
 }
 
-func (a adapter) DocSkipper() []string {
-	return a.c.DocSkipper()
+// SkipDoc implements check.DocSkipper. Check.Kinds() declares the kinds a
+// check applies to, so the dispatcher skips every other kind - inverting
+// applies-to into skip-if. An empty Kinds() means "applies to everything"
+// and never skips.
+//
+// This must stay a `SkipDoc(kind string) bool` method: check.DocSkipper is
+// satisfied structurally, and an adapter that merely exposes the raw kind
+// slice silently satisfies nothing, causing every check to be handed every
+// document.
+func (a adapter) SkipDoc(kind string) bool {
+	kinds := a.c.Kinds()
+	if len(kinds) == 0 {
+		return false
+	}
+	return !slices.Contains(kinds, kind)
+}
+
+// NonExemptable implements check.NonExemptable. Runtime findings describe
+// manifests the API server itself rejects, so they are never suppressible.
+func (a adapter) NonExemptable() bool {
+	return true
 }
 
 func (a adapter) CheckDoc(data []byte, source string) []check.Finding {

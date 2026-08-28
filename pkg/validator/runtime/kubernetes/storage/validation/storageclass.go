@@ -39,7 +39,7 @@ func (c scProvisionerInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c scProvisionerInvalidCheck) DocSkipper() []string {
+func (c scProvisionerInvalidCheck) Kinds() []string {
 	return scKinds
 }
 
@@ -62,6 +62,43 @@ func (c scProvisionerInvalidCheck) Run(data []byte, source string) []runtime.Fin
 				Message: "provisioner: required value",
 				Kind:    "StorageClass",
 				Name:    sc.GetName(),
+			},
+		})
+	}
+
+	return findings
+}
+
+// scEnumFieldFindings validates that an optional enum-typed StorageClass field
+// holds one of the recognized values. reclaimPolicy and volumeBindingMode
+// share this logic.
+// Source: k8s.io/kubernetes/pkg/apis/storage/validation/validation.go
+func scEnumFieldFindings(
+	c runtime.Check,
+	data []byte,
+	fieldName string,
+	value func(storagev1.StorageClass) (string, bool),
+	valid map[string]bool,
+) []runtime.Finding {
+	var sc storagev1.StorageClass
+	if err := yaml.Unmarshal(data, &sc); err != nil {
+		return nil
+	}
+
+	var findings []runtime.Finding
+
+	val, ok := value(sc)
+	if ok && !valid[val] {
+		findings = append(findings, runtime.Finding{
+			RuleID:    c.ID(),
+			RuleTitle: c.Title(),
+			Category:  c.Category(),
+			Finding: check.Finding{
+				Path:    field.NewPath(fieldName).String(),
+				Message: fmt.Sprintf("%s: Unsupported value: %q", fieldName, val),
+				Kind:    "StorageClass",
+				Name:    sc.GetName(),
+				Value:   val,
 			},
 		})
 	}
@@ -93,38 +130,20 @@ func (c scReclaimPolicyInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c scReclaimPolicyInvalidCheck) DocSkipper() []string {
+func (c scReclaimPolicyInvalidCheck) Kinds() []string {
 	return scKinds
 }
 
 func (c scReclaimPolicyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var sc storagev1.StorageClass
-	if err := yaml.Unmarshal(data, &sc); err != nil {
-		return nil
-	}
-
-	var findings []runtime.Finding
-	validPolicies := map[corev1.PersistentVolumeReclaimPolicy]bool{
-		corev1.PersistentVolumeReclaimDelete: true,
-		corev1.PersistentVolumeReclaimRetain: true,
-	}
-
-	if sc.ReclaimPolicy != nil && !validPolicies[*sc.ReclaimPolicy] {
-		findings = append(findings, runtime.Finding{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Category:  c.Category(),
-			Finding: check.Finding{
-				Path:    field.NewPath("reclaimPolicy").String(),
-				Message: fmt.Sprintf("reclaimPolicy: Unsupported value: %q", string(*sc.ReclaimPolicy)),
-				Kind:    "StorageClass",
-				Name:    sc.GetName(),
-				Value:   string(*sc.ReclaimPolicy),
-			},
-		})
-	}
-
-	return findings
+	return scEnumFieldFindings(c, data, "reclaimPolicy", func(sc storagev1.StorageClass) (string, bool) {
+		if sc.ReclaimPolicy == nil {
+			return "", false
+		}
+		return string(*sc.ReclaimPolicy), true
+	}, map[string]bool{
+		string(corev1.PersistentVolumeReclaimDelete): true,
+		string(corev1.PersistentVolumeReclaimRetain): true,
+	})
 }
 
 // volumeBindingModeInvalidCheck validates that volumeBindingMode is one of
@@ -152,38 +171,20 @@ func (c scVolumeBindingModeInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c scVolumeBindingModeInvalidCheck) DocSkipper() []string {
+func (c scVolumeBindingModeInvalidCheck) Kinds() []string {
 	return scKinds
 }
 
 func (c scVolumeBindingModeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var sc storagev1.StorageClass
-	if err := yaml.Unmarshal(data, &sc); err != nil {
-		return nil
-	}
-
-	var findings []runtime.Finding
-	validModes := map[storagev1.VolumeBindingMode]bool{
-		storagev1.VolumeBindingImmediate:            true,
-		storagev1.VolumeBindingWaitForFirstConsumer: true,
-	}
-
-	if sc.VolumeBindingMode != nil && !validModes[*sc.VolumeBindingMode] {
-		findings = append(findings, runtime.Finding{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Category:  c.Category(),
-			Finding: check.Finding{
-				Path:    field.NewPath("volumeBindingMode").String(),
-				Message: fmt.Sprintf("volumeBindingMode: Unsupported value: %q", string(*sc.VolumeBindingMode)),
-				Kind:    "StorageClass",
-				Name:    sc.GetName(),
-				Value:   string(*sc.VolumeBindingMode),
-			},
-		})
-	}
-
-	return findings
+	return scEnumFieldFindings(c, data, "volumeBindingMode", func(sc storagev1.StorageClass) (string, bool) {
+		if sc.VolumeBindingMode == nil {
+			return "", false
+		}
+		return string(*sc.VolumeBindingMode), true
+	}, map[string]bool{
+		string(storagev1.VolumeBindingImmediate):            true,
+		string(storagev1.VolumeBindingWaitForFirstConsumer): true,
+	})
 }
 
 // allowedTopologyRangeInvalidCheck validates that allowedTopologies have
@@ -211,7 +212,7 @@ func (c scAllowedTopologyRangeInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c scAllowedTopologyRangeInvalidCheck) DocSkipper() []string {
+func (c scAllowedTopologyRangeInvalidCheck) Kinds() []string {
 	return scKinds
 }
 
@@ -261,68 +262,12 @@ func (c scAllowedTopologyRangeInvalidCheck) Run(data []byte, source string) []ru
 	return findings
 }
 
-// mountOptionsInvalidCheck validates that mountOptions are non-empty strings.
-// Source: k8s.io/kubernetes/pkg/apis/storage/validation/validation.go
-type scMountOptionsInvalidCheck struct{}
-
-func (c scMountOptionsInvalidCheck) ID() string {
-	return "storage-class/mount-options-invalid"
-}
-
-func (c scMountOptionsInvalidCheck) Title() string {
-	return "StorageClass Mount Options Must Be Non-Empty"
-}
-
-func (c scMountOptionsInvalidCheck) Category() string {
-	return "storage-class"
-}
-
-func (c scMountOptionsInvalidCheck) Blocking() bool {
-	return true
-}
-
-func (c scMountOptionsInvalidCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c scMountOptionsInvalidCheck) DocSkipper() []string {
-	return scKinds
-}
-
-func (c scMountOptionsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var sc storagev1.StorageClass
-	if err := yaml.Unmarshal(data, &sc); err != nil {
-		return nil
-	}
-
-	var findings []runtime.Finding
-
-	for i, option := range sc.MountOptions {
-		if option == "" {
-			findings = append(findings, runtime.Finding{
-				RuleID:    c.ID(),
-				RuleTitle: c.Title(),
-				Category:  c.Category(),
-				Finding: check.Finding{
-					Path:    field.NewPath("mountOptions").Index(i).String(),
-					Message: "mountOptions: invalid value — must be a non-empty string",
-					Kind:    "StorageClass",
-					Name:    sc.GetName(),
-				},
-			})
-		}
-	}
-
-	return findings
-}
-
 func init() {
 	checks := []runtime.Check{
 		scProvisionerInvalidCheck{},
 		scReclaimPolicyInvalidCheck{},
 		scVolumeBindingModeInvalidCheck{},
 		scAllowedTopologyRangeInvalidCheck{},
-		scMountOptionsInvalidCheck{},
 	}
 
 	for _, c := range checks {

@@ -22,7 +22,7 @@ func (c scheduleInvalidCheck) Title() string         { return "CronJob Schedule 
 func (c scheduleInvalidCheck) Category() string      { return "batch" }
 func (c scheduleInvalidCheck) Blocking() bool        { return true }
 func (c scheduleInvalidCheck) RenderSensitive() bool { return true }
-func (c scheduleInvalidCheck) DocSkipper() []string  { return []string{"CronJob"} }
+func (c scheduleInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var cj struct {
@@ -56,54 +56,6 @@ func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 	return nil
 }
 
-// timezoneInvalidCheck validates the timezone field.
-// Source: k8s.io/kubernetes/pkg/apis/batch/validation/validation.go
-type timezoneInvalidCheck struct{}
-
-func (c timezoneInvalidCheck) ID() string            { return "batch/timezone-invalid" }
-func (c timezoneInvalidCheck) Title() string         { return "CronJob Timezone Must Be Valid" }
-func (c timezoneInvalidCheck) Category() string      { return "batch" }
-func (c timezoneInvalidCheck) Blocking() bool        { return true }
-func (c timezoneInvalidCheck) RenderSensitive() bool { return true }
-func (c timezoneInvalidCheck) DocSkipper() []string  { return []string{"CronJob"} }
-
-func (c timezoneInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var cj struct {
-		Kind string `json:"kind"`
-		Spec cronJobSpecWrapper
-	}
-	if err := json.Unmarshal(data, &cj); err != nil {
-		return nil
-	}
-	if cj.Kind != "CronJob" {
-		return nil
-	}
-	tz := cj.Spec.Timezone
-	if tz == "" {
-		return nil
-	}
-	// time.LoadLocation doesn't support named offsets like "UTC+5", so handle those
-	// Also supports "EST5EDT", "America/New_York", etc.
-	if loc, err := time.LoadLocation(tz); loc != nil && err == nil {
-		return nil
-	}
-	// Try to parse fixed offset names like UTC+5, UTC-8, etc.
-	if _, err := parseFixedOffset(tz); err == nil {
-		return nil
-	}
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("timezone").String(),
-			Message: fmt.Sprintf("timezone: invalid timezone: %s", tz),
-			Kind:    cj.Kind,
-			Extra:   map[string]string{"timezone": tz},
-		},
-	}}
-}
-
 // concurrencyPolicyInvalidCheck validates concurrencyPolicy.
 // Source: k8s.io/kubernetes/pkg/apis/batch/validation/validation.go
 type concurrencyPolicyInvalidCheck struct{}
@@ -114,7 +66,7 @@ func (c concurrencyPolicyInvalidCheck) Title() string         { return "Concurre
 func (c concurrencyPolicyInvalidCheck) Category() string      { return "batch" }
 func (c concurrencyPolicyInvalidCheck) Blocking() bool        { return true }
 func (c concurrencyPolicyInvalidCheck) RenderSensitive() bool { return true }
-func (c concurrencyPolicyInvalidCheck) DocSkipper() []string  { return []string{"CronJob"} }
+func (c concurrencyPolicyInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c concurrencyPolicyInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var cj struct {
@@ -158,33 +110,12 @@ func (c failedJobsHistoryLimitInvalidCheck) Title() string {
 func (c failedJobsHistoryLimitInvalidCheck) Category() string      { return "batch" }
 func (c failedJobsHistoryLimitInvalidCheck) Blocking() bool        { return true }
 func (c failedJobsHistoryLimitInvalidCheck) RenderSensitive() bool { return true }
-func (c failedJobsHistoryLimitInvalidCheck) DocSkipper() []string  { return []string{"CronJob"} }
+func (c failedJobsHistoryLimitInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c failedJobsHistoryLimitInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var cj struct {
-		Kind string `json:"kind"`
-		Spec cronJobSpecWrapper
-	}
-	if err := json.Unmarshal(data, &cj); err != nil {
-		return nil
-	}
-	if cj.Kind != "CronJob" {
-		return nil
-	}
-	if cj.Spec.FailedJobsHistoryLimit == nil || *cj.Spec.FailedJobsHistoryLimit >= 0 {
-		return nil
-	}
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("failedJobsHistoryLimit").String(),
-			Message: fmt.Sprintf("failedJobsHistoryLimit: must be >= 0, got %d", *cj.Spec.FailedJobsHistoryLimit),
-			Kind:    cj.Kind,
-			Extra:   map[string]string{"failedJobsHistoryLimit": strconv.Itoa(int(*cj.Spec.FailedJobsHistoryLimit))},
-		},
-	}}
+	return nonNegativeIntFindings(c, data, "CronJob", "failedJobsHistoryLimit", func(spec nonNegativeSpecWrapper) (int64, bool) {
+		return int32Value(spec.FailedJobsHistoryLimit)
+	})
 }
 
 // successfulJobsHistoryLimitInvalidCheck validates successfulJobsHistoryLimit.
@@ -201,33 +132,12 @@ func (c successfulJobsHistoryLimitInvalidCheck) Title() string {
 func (c successfulJobsHistoryLimitInvalidCheck) Category() string      { return "batch" }
 func (c successfulJobsHistoryLimitInvalidCheck) Blocking() bool        { return true }
 func (c successfulJobsHistoryLimitInvalidCheck) RenderSensitive() bool { return true }
-func (c successfulJobsHistoryLimitInvalidCheck) DocSkipper() []string  { return []string{"CronJob"} }
+func (c successfulJobsHistoryLimitInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c successfulJobsHistoryLimitInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var cj struct {
-		Kind string `json:"kind"`
-		Spec cronJobSpecWrapper
-	}
-	if err := json.Unmarshal(data, &cj); err != nil {
-		return nil
-	}
-	if cj.Kind != "CronJob" {
-		return nil
-	}
-	if cj.Spec.SuccessfulJobsHistoryLimit == nil || *cj.Spec.SuccessfulJobsHistoryLimit >= 0 {
-		return nil
-	}
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("successfulJobsHistoryLimit").String(),
-			Message: fmt.Sprintf("successfulJobsHistoryLimit: must be >= 0, got %d", *cj.Spec.SuccessfulJobsHistoryLimit),
-			Kind:    cj.Kind,
-			Extra:   map[string]string{"successfulJobsHistoryLimit": strconv.Itoa(int(*cj.Spec.SuccessfulJobsHistoryLimit))},
-		},
-	}}
+	return nonNegativeIntFindings(c, data, "CronJob", "successfulJobsHistoryLimit", func(spec nonNegativeSpecWrapper) (int64, bool) {
+		return int32Value(spec.SuccessfulJobsHistoryLimit)
+	})
 }
 
 // startingDeadlineSecondsInvalidCheck validates startingDeadlineSeconds.
@@ -244,43 +154,19 @@ func (c startingDeadlineSecondsInvalidCheck) Title() string {
 func (c startingDeadlineSecondsInvalidCheck) Category() string      { return "batch" }
 func (c startingDeadlineSecondsInvalidCheck) Blocking() bool        { return true }
 func (c startingDeadlineSecondsInvalidCheck) RenderSensitive() bool { return true }
-func (c startingDeadlineSecondsInvalidCheck) DocSkipper() []string  { return []string{"CronJob"} }
+func (c startingDeadlineSecondsInvalidCheck) Kinds() []string       { return []string{"CronJob"} }
 
 func (c startingDeadlineSecondsInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var cj struct {
-		Kind string `json:"kind"`
-		Spec cronJobSpecWrapper
-	}
-	if err := json.Unmarshal(data, &cj); err != nil {
-		return nil
-	}
-	if cj.Kind != "CronJob" {
-		return nil
-	}
-	if cj.Spec.StartingDeadlineSeconds == nil || *cj.Spec.StartingDeadlineSeconds >= 0 {
-		return nil
-	}
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("startingDeadlineSeconds").String(),
-			Message: fmt.Sprintf("startingDeadlineSeconds: must be >= 0, got %d", *cj.Spec.StartingDeadlineSeconds),
-			Kind:    cj.Kind,
-			Extra:   map[string]string{"startingDeadlineSeconds": strconv.FormatInt(*cj.Spec.StartingDeadlineSeconds, 10)},
-		},
-	}}
+	return nonNegativeIntFindings(c, data, "CronJob", "startingDeadlineSeconds", func(spec nonNegativeSpecWrapper) (int64, bool) {
+		return int64Value(spec.StartingDeadlineSeconds)
+	})
 }
 
 // cronJobSpecWrapper holds batch/v1.CronJobSpec fields we need to validate.
+// The numeric "must be >= 0" fields live in nonNegativeSpecWrapper.
 type cronJobSpecWrapper struct {
-	Schedule                   string `json:"schedule"`
-	Timezone                   string `json:"timezone"`
-	ConcurrencyPolicy          string `json:"concurrencyPolicy"`
-	FailedJobsHistoryLimit     *int32 `json:"failedJobsHistoryLimit"`
-	SuccessfulJobsHistoryLimit *int32 `json:"successfulJobsHistoryLimit"`
-	StartingDeadlineSeconds    *int64 `json:"startingDeadlineSeconds"`
+	Schedule          string `json:"schedule"`
+	ConcurrencyPolicy string `json:"concurrencyPolicy"`
 }
 
 // parseCronSchedule attempts to parse a cron schedule string.
@@ -452,89 +338,10 @@ func splitBy(s string, sep byte) []string {
 	return parts
 }
 
-// parseFixedOffset parses a fixed offset timezone like "UTC+5", "UTC-8", "GMT+1".
-// Returns the offset in seconds from UTC, or an error if the format is invalid.
-func parseFixedOffset(s string) (int, error) {
-	if !strings.HasPrefix(s, "UTC") && !strings.HasPrefix(s, "GMT") && !strings.HasPrefix(s, "Z") {
-		return 0, fmt.Errorf("not a fixed offset format")
-	}
-	suffix := strings.TrimPrefix(s, "UTC")
-	suffix = strings.TrimPrefix(suffix, "GMT")
-	suffix = strings.TrimPrefix(suffix, "Z")
-
-	if suffix == "" {
-		return 0, nil
-	}
-
-	if len(suffix) < 2 {
-		return 0, fmt.Errorf("invalid fixed offset: %s", s)
-	}
-
-	start := 0
-	var sign int64
-	switch suffix[0] {
-	case '+':
-		sign = 1
-		start = 1
-	case '-':
-		sign = -1
-		start = 1
-	default:
-		return 0, fmt.Errorf("invalid fixed offset: %s", s)
-	}
-
-	// Handle both 1-digit (e.g. "+5") and 2-digit (e.g. "+05") hour formats
-	remaining := suffix[start:]
-	hrsStr := ""
-	minStr := ""
-
-	if len(remaining) >= 2 && remaining[1] >= '0' && remaining[1] <= '9' {
-		// Two-digit hours
-		if remaining[2] == ':' && len(remaining) >= 5 {
-			hrsStr = remaining[:2]
-			minStr = remaining[3:5]
-		} else if len(remaining) >= 2 {
-			hrsStr = remaining[:2]
-		}
-	} else if len(remaining) == 1 {
-		// Single-digit hour
-		if remaining[0] >= '0' && remaining[0] <= '9' {
-			hrsStr = remaining[:1]
-		}
-	}
-
-	if hrsStr == "" {
-		return 0, fmt.Errorf("invalid fixed offset hours: %s", s)
-	}
-
-	hours, err := strconv.Atoi(hrsStr)
-	if err != nil {
-		return 0, fmt.Errorf("invalid fixed offset hours: %s", s)
-	}
-
-	if hours < 0 || hours > 23 {
-		return 0, fmt.Errorf("fixed offset hours out of range: %d", hours)
-	}
-
-	if minStr != "" {
-		minutes, err := strconv.Atoi(minStr)
-		if err != nil {
-			return 0, fmt.Errorf("invalid fixed offset minutes: %s", s)
-		}
-		if minutes < 0 || minutes > 59 {
-			return 0, fmt.Errorf("fixed offset minutes out of range: %d", minutes)
-		}
-		return int(sign * (int64(hours)*3600 + int64(minutes)*60)), nil
-	}
-
-	return int(sign * int64(hours) * 3600), nil
-}
-
 // Register registers all CronJob validation checks with the check registry.
-func RegisterCronJob() {
+func registerCronJob() {
 	checks := []runtime.Check{
 		scheduleInvalidCheck{},
-		timezoneInvalidCheck{},
 		concurrencyPolicyInvalidCheck{},
 		failedJobsHistoryLimitInvalidCheck{},
 		successfulJobsHistoryLimitInvalidCheck{},

@@ -183,6 +183,18 @@ type ColumnedCheck interface {
 	Table() TableSpec
 }
 
+// NonExemptable is implemented by a Check that must never be suppressible
+// via an exemption annotation or EXEMPTIONS=(...) selector. Register skips
+// exempt.RegisterExemptable for these, so exempt.Known reports false and no
+// selector can ever match them.
+//
+// Runtime-validation checks (pkg/validator/runtime) implement this: they
+// describe manifests the API server itself would reject, so "exempting" one
+// would only hide a failure that reappears at apply time.
+type NonExemptable interface {
+	NonExemptable() bool
+}
+
 var registry sync.Map
 
 // Register adds a check to the global registry.
@@ -192,6 +204,9 @@ func Register(c Check) {
 	}
 	if _, loaded := registry.LoadOrStore(c.ID(), c); loaded {
 		panic("duplicate check id: " + c.ID())
+	}
+	if ne, ok := c.(NonExemptable); ok && ne.NonExemptable() {
+		return
 	}
 	exempt.RegisterExemptable(c.ID())
 }

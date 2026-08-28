@@ -23,7 +23,7 @@ func (c resourceQuotaHardInvalidCheck) Title() string {
 func (c resourceQuotaHardInvalidCheck) Category() string      { return "core" }
 func (c resourceQuotaHardInvalidCheck) Blocking() bool        { return true }
 func (c resourceQuotaHardInvalidCheck) RenderSensitive() bool { return true }
-func (c resourceQuotaHardInvalidCheck) DocSkipper() []string  { return resourceQuotaKinds }
+func (c resourceQuotaHardInvalidCheck) Kinds() []string       { return resourceQuotaKinds }
 
 func (c resourceQuotaHardInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var ref struct {
@@ -64,7 +64,7 @@ func (c resourceQuotaHardNegativeCheck) Title() string {
 func (c resourceQuotaHardNegativeCheck) Category() string      { return "core" }
 func (c resourceQuotaHardNegativeCheck) Blocking() bool        { return true }
 func (c resourceQuotaHardNegativeCheck) RenderSensitive() bool { return true }
-func (c resourceQuotaHardNegativeCheck) DocSkipper() []string  { return resourceQuotaKinds }
+func (c resourceQuotaHardNegativeCheck) Kinds() []string       { return resourceQuotaKinds }
 
 func (c resourceQuotaHardNegativeCheck) Run(data []byte, source string) []runtime.Finding {
 	var ref struct {
@@ -105,7 +105,7 @@ func (c resourceQuotaNameInvalidCheck) Title() string         { return "Resource
 func (c resourceQuotaNameInvalidCheck) Category() string      { return "core" }
 func (c resourceQuotaNameInvalidCheck) Blocking() bool        { return true }
 func (c resourceQuotaNameInvalidCheck) RenderSensitive() bool { return true }
-func (c resourceQuotaNameInvalidCheck) DocSkipper() []string  { return resourceQuotaKinds }
+func (c resourceQuotaNameInvalidCheck) Kinds() []string       { return resourceQuotaKinds }
 
 func (c resourceQuotaNameInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var ref struct {

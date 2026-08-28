@@ -14,28 +14,18 @@ var registerOnce sync.Once
 func Register() {
 	registerOnce.Do(func() {
 		checks := []runtime.Check{
-			deploymentSelectorMustMatchCheck{},
 			deploymentSelectorInvalidCheck{},
-			deploymentStrategyUndefinedCheck{},
 			deploymentStrategyTypeInvalidCheck{},
 			deploymentReplicasInvalidCheck{},
 			deploymentMinReadySecondsInvalidCheck{},
-			deploymentMaxUnavailableInvalidCheck{},
-			deploymentMaxSurgeInvalidCheck{},
 			statefulSetReplicasInvalidCheck{},
-			statefulSetSelectorMustMatchCheck{},
 			statefulSetPodManagementPolicyInvalidCheck{},
 			statefulSetUpdateStrategyInvalidCheck{},
-			statefulSetServiceNameInvalidCheck{},
-			statefulSetVolumeClaimTemplatesEmptyCheck{},
-			daemonSetSelectorMustMatchCheck{},
 			daemonSetSelectorInvalidCheck{},
 			daemonSetUpdateStrategyInvalidCheck{},
 			daemonSetMinReadySecondsInvalidCheck{},
-			replicaSetSelectorMustMatchCheck{},
 			replicaSetSelectorInvalidCheck{},
 			replicaSetReplicasInvalidCheck{},
-			replicaSetRestartPolicyInvalidCheck{},
 		}
 		sort.Slice(checks, func(i, j int) bool {
 			return checks[i].ID() < checks[j].ID()

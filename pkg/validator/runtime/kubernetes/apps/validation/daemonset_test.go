@@ -6,84 +6,6 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-func TestDaemonSetSelectorMustMatch_Check_Match(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: test
-spec:
-  selector:
-    app: myapp
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := daemonSetSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for matching selector, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDaemonSetSelectorMustMatch_Check_Mismatch(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: test
-spec:
-  selector:
-    app: myapp
-    tier: frontend
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := daemonSetSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for mismatched selector, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "apps/daemonset-selector-must-match" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "DaemonSet" || findings[0].Name != "test" {
-		t.Errorf("unexpected kind/name: %s/%s", findings[0].Kind, findings[0].Name)
-	}
-}
-
-func TestDaemonSetSelectorMustMatch_Check_MissingSelector(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: test
-spec:
-  template:
-    metadata:
-      labels:
-        app: myapp
-`)
-	check := daemonSetSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when selector is absent, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestDaemonSetSelectorMustMatch_Check_NotDaemonSet(t *testing.T) {
-	data := []byte(`apiVersion: v1
-kind: Service
-metadata:
-  name: test
-`)
-	check := daemonSetSelectorMustMatchCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-DaemonSet kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestDaemonSetSelectorInvalid_Check_ValidKeys(t *testing.T) {
 	data := []byte(`apiVersion: apps/v1
 kind: DaemonSet
@@ -383,7 +305,6 @@ func TestDaemonSet_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{daemonSetSelectorMustMatchCheck{}, "apps/daemonset-selector-must-match", "apps"},
 		{daemonSetSelectorInvalidCheck{}, "apps/daemonset-selector-invalid", "apps"},
 		{daemonSetUpdateStrategyInvalidCheck{}, "apps/daemonset-update-strategy-invalid", "apps"},
 		{daemonSetMinReadySecondsInvalidCheck{}, "apps/daemonset-min-ready-seconds-invalid", "apps"},
@@ -403,8 +324,8 @@ func TestDaemonSet_Check_IDAndMetadata(t *testing.T) {
 			if !tc.check.RenderSensitive() {
 				t.Errorf("%s should render sensitive", tc.wantID)
 			}
-			if len(tc.check.DocSkipper()) == 0 {
-				t.Errorf("%s should have DocSkipper", tc.wantID)
+			if len(tc.check.Kinds()) == 0 {
+				t.Errorf("%s should declare Kinds", tc.wantID)
 			}
 		})
 	}
@@ -438,9 +359,6 @@ spec:
 	}
 	if !ruleIDs["apps/daemonset-update-strategy-invalid"] {
 		t.Error("expected daemonset-update-strategy-invalid finding")
-	}
-	if !ruleIDs["apps/daemonset-selector-must-match"] {
-		t.Error("expected daemonset-selector-must-match finding")
 	}
 }
 

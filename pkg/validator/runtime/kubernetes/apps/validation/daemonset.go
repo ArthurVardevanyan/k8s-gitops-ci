@@ -2,80 +2,14 @@ package validation
 
 import (
 	"fmt"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
-
-// daemonSetSelectorMustMatchCheck verifies selector matches template labels.
-// Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
-type daemonSetSelectorMustMatchCheck struct{}
-
-func (c daemonSetSelectorMustMatchCheck) ID() string {
-	return "apps/daemonset-selector-must-match"
-}
-
-func (c daemonSetSelectorMustMatchCheck) Title() string {
-	return "Selector Must Match Template Labels"
-}
-
-func (c daemonSetSelectorMustMatchCheck) Category() string {
-	return "apps"
-}
-
-func (c daemonSetSelectorMustMatchCheck) Blocking() bool {
-	return true
-}
-
-func (c daemonSetSelectorMustMatchCheck) RenderSensitive() bool {
-	return true
-}
-
-func (c daemonSetSelectorMustMatchCheck) DocSkipper() []string {
-	return runtime.HasPodSpecKinds()
-}
-
-func (c daemonSetSelectorMustMatchCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseDaemonSet(data)
-	if specMap == nil {
-		return nil
-	}
-
-	selector, _, err := unstructured.NestedStringMap(specMap, "spec", "selector")
-	if err != nil {
-		return nil
-	}
-
-	templateLabels, _, err := unstructured.NestedStringMap(specMap, "spec", "template", "metadata", "labels")
-	if err != nil {
-		return nil
-	}
-
-	for key, value := range selector {
-		templateValue, exists := templateLabels[key]
-		if !exists || templateValue != value {
-			return []runtime.Finding{{
-				RuleID:    c.ID(),
-				RuleTitle: c.Title(),
-				Category:  c.Category(),
-				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("selector").Key(key).String(),
-					Message: fmt.Sprintf("selector[%q=%q] does not match template labels", key, value),
-					Kind:    "DaemonSet",
-					Name:    name,
-				},
-			}}
-		}
-	}
-
-	return nil
-}
 
 // daemonSetSelectorInvalidCheck verifies selector is a valid label selector.
 // Source: k8s.io/kubernetes/pkg/apis/apps/validation/validation.go
@@ -101,72 +35,14 @@ func (c daemonSetSelectorInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c daemonSetSelectorInvalidCheck) DocSkipper() []string {
+func (c daemonSetSelectorInvalidCheck) Kinds() []string {
 	return runtime.HasPodSpecKinds()
 }
 
 func (c daemonSetSelectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	specMap, name := parseDaemonSet(data)
-	if specMap == nil {
-		return nil
-	}
+	obj, name := parseDaemonSet(data)
 
-	selectorMap, found, _ := unstructured.NestedMap(specMap, "spec", "selector")
-	if !found {
-		return nil
-	}
-
-	// Check matchLabels keys (only string values in the selector map)
-	for key, val := range selectorMap {
-		if _, ok := val.(string); !ok {
-			continue
-		}
-		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
-			return []runtime.Finding{{
-				RuleID:    c.ID(),
-				RuleTitle: c.Title(),
-				Category:  c.Category(),
-				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("selector").Child("matchLabels").Key(key).String(),
-					Message: fmt.Sprintf("invalid label selector key %q: %s", key, strings.Join(errs, ", ")),
-					Kind:    "DaemonSet",
-					Name:    name,
-				},
-			}}
-		}
-	}
-
-	// Check matchExpressions keys
-	matchExpressionsList, found, err := unstructured.NestedSlice(specMap, "spec", "selector", "matchExpressions")
-	if err != nil || !found {
-		return nil
-	}
-
-	for _, rawExpr := range matchExpressionsList {
-		exprMap, ok := rawExpr.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		key, _ := exprMap["key"].(string)
-		if key == "" {
-			continue
-		}
-		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
-			return []runtime.Finding{{
-				RuleID:    c.ID(),
-				RuleTitle: c.Title(),
-				Category:  c.Category(),
-				Finding: check.Finding{
-					Path:    field.NewPath("spec").Child("selector").Child("matchExpressions").Child("key").String(),
-					Message: fmt.Sprintf("invalid label selector key %q: %s", key, strings.Join(errs, ", ")),
-					Kind:    "DaemonSet",
-					Name:    name,
-				},
-			}}
-		}
-	}
-
-	return nil
+	return selectorInvalidFindings(c, obj, "DaemonSet", name)
 }
 
 // daemonSetUpdateStrategyInvalidCheck verifies updateStrategy type is valid.
@@ -193,7 +69,7 @@ func (c daemonSetUpdateStrategyInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c daemonSetUpdateStrategyInvalidCheck) DocSkipper() []string {
+func (c daemonSetUpdateStrategyInvalidCheck) Kinds() []string {
 	return runtime.HasPodSpecKinds()
 }
 
@@ -251,7 +127,7 @@ func (c daemonSetMinReadySecondsInvalidCheck) RenderSensitive() bool {
 	return true
 }
 
-func (c daemonSetMinReadySecondsInvalidCheck) DocSkipper() []string {
+func (c daemonSetMinReadySecondsInvalidCheck) Kinds() []string {
 	return runtime.HasPodSpecKinds()
 }
 
@@ -305,7 +181,6 @@ func parseDaemonSet(data []byte) (specMap map[string]interface{}, name string) {
 // ValidateDaemonSet runs all daemonset validation checks and returns findings.
 func ValidateDaemonSet(data []byte, source string) []runtime.Finding {
 	checks := []runtime.Check{
-		daemonSetSelectorMustMatchCheck{},
 		daemonSetSelectorInvalidCheck{},
 		daemonSetUpdateStrategyInvalidCheck{},
 		daemonSetMinReadySecondsInvalidCheck{},

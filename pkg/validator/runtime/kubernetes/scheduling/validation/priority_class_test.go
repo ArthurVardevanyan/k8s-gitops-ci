@@ -88,132 +88,13 @@ metadata:
 
 // --- value-invalid tests ---
 
-func TestPriorityClassValueInvalid_Check_NegativeValue(t *testing.T) {
-	data := []byte(`apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: "test"
-value: -1
-`)
-	check := valueInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "scheduling/priorityclass-value-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-func TestPriorityClassValueInvalid_Check_ZeroValue(t *testing.T) {
-	data := []byte(`apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: "test"
-value: 0
-`)
-	check := valueInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for zero value, got %d", len(findings))
-	}
-}
-
-func TestPriorityClassValueInvalid_Check_PositiveValue(t *testing.T) {
-	data := []byte(`apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: "test"
-value: 100
-`)
-	check := valueInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for positive value, got %d", len(findings))
-	}
-}
-
-func TestPriorityClassValueInvalid_Check_NonPriorityClass(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := valueInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-PriorityClass, got %d", len(findings))
-	}
-}
-
 // --- global-default-invalid tests ---
-
-func TestPriorityClassGlobalDefaultInvalid_Check_GlobalDefaultTrueWithZero(t *testing.T) {
-	data := []byte(`apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: "test"
-value: 0
-globalDefault: true
-`)
-	check := globalDefaultInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "scheduling/priorityclass-global-default-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-func TestPriorityClassGlobalDefaultInvalid_Check_GlobalDefaultTrueWithPositiveValue(t *testing.T) {
-	data := []byte(`apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: "test"
-value: 100
-globalDefault: true
-`)
-	check := globalDefaultInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPriorityClassGlobalDefaultInvalid_Check_GlobalDefaultFalse(t *testing.T) {
-	data := []byte(`apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: "test"
-value: 0
-globalDefault: false
-`)
-	check := globalDefaultInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPriorityClassGlobalDefaultInvalid_Check_NonPriorityClass(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := globalDefaultInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-PriorityClass, got %d", len(findings))
-	}
-}
 
 // --- Check interface implementation verification ---
 
 func TestAllPriorityClassChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
 		nameInvalidCheck{},
-		valueInvalidCheck{},
-		globalDefaultInvalidCheck{},
 	}
 
 	for _, c := range checks {
@@ -232,8 +113,8 @@ func TestAllPriorityClassChecksImplementCheckInterface(t *testing.T) {
 		if !c.RenderSensitive() {
 			t.Errorf("check %T should render sensitive", c)
 		}
-		if len(c.DocSkipper()) == 0 {
-			t.Errorf("check %T should have DocSkipper", c)
+		if len(c.Kinds()) == 0 {
+			t.Errorf("check %T should declare Kinds", c)
 		}
 	}
 }

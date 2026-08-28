@@ -6,8 +6,6 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
-// --- restart-policy-value ---
-
 func TestPodSpecRestartPolicyValue_Check_Always(t *testing.T) {
 	data := []byte(`kind: Pod
 metadata:
@@ -118,196 +116,6 @@ spec:
 	}
 }
 
-// --- host-network ---
-
-func TestPodSpecHostNetwork_Check_Disabled(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostNetwork: false
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostNetworkCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for disabled hostNetwork, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostNetwork_Check_DisabledDefault(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostNetworkCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for unset hostNetwork, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostNetwork_Check_Enabled(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostNetwork: true
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostNetworkCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for enabled hostNetwork, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/host-network" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Value != "true" {
-		t.Errorf("unexpected value: %s", findings[0].Value)
-	}
-}
-
-func TestPodSpecHostNetwork_Check_Deployment(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  template:
-    spec:
-      hostNetwork: true
-      containers:
-      - name: c
-        image: nginx
-`)
-	check := podSpecHostNetworkCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for Deployment with hostNetwork, got %d", len(findings))
-	}
-	if findings[0].Kind != "Deployment" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-// --- host-pid ---
-
-func TestPodSpecHostPID_Check_Disabled(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostPID: false
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostPIDCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for disabled hostPID, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostPID_Check_Enabled(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostPID: true
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostPIDCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for enabled hostPID, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/host-pid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Message != "hostPID is set to true: pod shares the host process namespace" {
-		t.Errorf("unexpected message: %s", findings[0].Message)
-	}
-}
-
-func TestPodSpecHostPID_Check_StatefulSet(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: test
-spec:
-  template:
-    spec:
-      hostPID: true
-      containers:
-      - name: c
-        image: nginx
-`)
-	check := podSpecHostPIDCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for StatefulSet with hostPID, got %d", len(findings))
-	}
-	if findings[0].Kind != "StatefulSet" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-// --- host-ipc ---
-
-func TestPodSpecHostIPC_Check_Disabled(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostIPC: false
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostIPCCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for disabled hostIPC, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostIPC_Check_Enabled(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostIPC: true
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostIPCCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for enabled hostIPC, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/host-ipc" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Message != "hostIPC is set to true: pod shares the host IPC namespace" {
-		t.Errorf("unexpected message: %s", findings[0].Message)
-	}
-}
-
-// --- dns-policy-value ---
-
 func TestPodSpecDNSPolicyValue_Check_ClusterFirst(t *testing.T) {
 	data := []byte(`kind: Pod
 metadata:
@@ -415,129 +223,6 @@ spec:
 		t.Errorf("unexpected value: %s", findings[0].Value)
 	}
 }
-
-// --- dns-config-invalid ---
-
-func TestPodSpecDNSConfigInvalid_Check_DNSPolicyNoneWithConfig(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: None
-  dnsConfig:
-    nameservers:
-    - 8.8.8.8
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecDNSConfigInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for dnsPolicy None with dnsConfig, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSConfigInvalid_Check_DNSPolicyNoneEmptyConfig(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: None
-  dnsConfig: {}
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecDNSConfigInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for dnsPolicy None with empty dnsConfig, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/dns-config-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Message != "dnsConfig is required when dnsPolicy is None" {
-		t.Errorf("unexpected message: %s", findings[0].Message)
-	}
-}
-
-func TestPodSpecDNSConfigInvalid_Check_DNSPolicyNoneNoConfig(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: None
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecDNSConfigInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for dnsPolicy None without dnsConfig, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSConfigInvalid_Check_DNSPolicyClusterFirst(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: ClusterFirst
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecDNSConfigInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for dnsPolicy ClusterFirst, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSConfigInvalid_Check_DNSPolicyNoneSearches(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: None
-  dnsConfig:
-    searches:
-    - my.svc.cluster.local
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecDNSConfigInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for dnsPolicy None with dnsConfig searches, got %d", len(findings))
-	}
-}
-
-func TestPodSpecDNSConfigInvalid_Check_DNSPolicyNoneOptions(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  dnsPolicy: None
-  dnsConfig:
-    options:
-    - name: ndots
-      value: "5"
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecDNSConfigInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for dnsPolicy None with dnsConfig options, got %d", len(findings))
-	}
-}
-
-// --- toleration-operator-value ---
 
 func TestPodSpecTolerationOperatorValue_Check_Exists(t *testing.T) {
 	data := []byte(`kind: Pod
@@ -648,8 +333,6 @@ spec:
 	}
 }
 
-// --- affinity-node-selector-invalid ---
-
 func TestPodSpecNodeSelectorInvalid_Check_Valid(t *testing.T) {
 	data := []byte(`kind: Pod
 metadata:
@@ -747,8 +430,6 @@ spec:
 		t.Errorf("expected no findings for azure.com/region key, got %d", len(findings))
 	}
 }
-
-// --- pod-affinity-invalid ---
 
 func TestPodSpecAffinityInvalid_Check_ValidAffinity(t *testing.T) {
 	data := []byte(`kind: Pod
@@ -983,85 +664,6 @@ spec:
 	}
 }
 
-// --- pod-anti-affinity-invalid ---
-
-func TestPodSpecAntiAffinityInvalid_Check_Valid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchLabels:
-            app: web
-        topologyKey: kubernetes.io/hostname
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecAntiAffinityInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid pod anti-affinity, got %d", len(findings))
-	}
-}
-
-func TestPodSpecAntiAffinityInvalid_Check_InvalidKey(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchLabels:
-            invalid key!: web
-        topologyKey: kubernetes.io/hostname
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecAntiAffinityInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid anti-affinity key, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/pod-affinity-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-func TestPodSpecAntiAffinityInvalid_Check_StatefulSet(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: test
-spec:
-  template:
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                app: web
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - name: c
-        image: nginx
-`)
-	check := podSpecAntiAffinityInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for StatefulSet valid anti-affinity, got %d", len(findings))
-	}
-}
-
-// --- topology-spread-invalid ---
-
 func TestPodSpecTopologySpreadInvalid_Check_Valid(t *testing.T) {
 	data := []byte(`kind: Pod
 metadata:
@@ -1214,80 +816,6 @@ spec:
 	}
 }
 
-// --- scheduler-name-invalid ---
-
-func TestPodSpecSchedulerName_Check_Valid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  schedulerName: my-scheduler
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecSchedulerNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid schedulerName, got %d", len(findings))
-	}
-}
-
-func TestPodSpecSchedulerName_Check_DefaultScheduler(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  schedulerName: default-scheduler
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecSchedulerNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for default-scheduler, got %d", len(findings))
-	}
-}
-
-func TestPodSpecSchedulerName_Check_Empty(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecSchedulerNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for empty schedulerName, got %d", len(findings))
-	}
-}
-
-func TestPodSpecSchedulerName_Check_Invalid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  schedulerName: invalid scheduler!
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecSchedulerNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid schedulerName, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/scheduler-name-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-// --- service-account-name-invalid ---
-
 func TestPodSpecServiceAccountName_Check_Valid(t *testing.T) {
 	data := []byte(`kind: Pod
 metadata:
@@ -1340,60 +868,6 @@ spec:
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
-
-// --- automount-sa-token-value (no-op, always valid) ---
-
-func TestPodSpecAutomountSATokenValue_Check_Valid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  automountServiceAccountToken: true
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecAutomountSATokenValueCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings (no-op check), got %d", len(findings))
-	}
-}
-
-func TestPodSpecAutomountSATokenValue_Check_False(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  automountServiceAccountToken: false
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecAutomountSATokenValueCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings (no-op check), got %d", len(findings))
-	}
-}
-
-func TestPodSpecAutomountSATokenValue_Check_Empty(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecAutomountSATokenValueCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings (no-op check), got %d", len(findings))
-	}
-}
-
-// --- active-deadline-seconds-negative ---
 
 func TestPodSpecActiveDeadlineSeconds_Check_Valid(t *testing.T) {
 	data := []byte(`kind: Pod
@@ -1484,136 +958,6 @@ spec:
 		t.Errorf("expected no findings for large activeDeadlineSeconds, got %d", len(findings))
 	}
 }
-
-// --- subdomain-invalid ---
-
-func TestPodSpecSubdomain_Check_Valid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  subdomain: my-subdomain
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecSubdomainInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid subdomain, got %d", len(findings))
-	}
-}
-
-func TestPodSpecSubdomain_Check_Empty(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecSubdomainInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for empty subdomain, got %d", len(findings))
-	}
-}
-
-func TestPodSpecSubdomain_Check_Invalid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  subdomain: INVALID/SUBDOMAIN
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecSubdomainInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid subdomain, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/subdomain-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-// --- set-hostname-invalid ---
-
-func TestPodSpecHostname_Check_Valid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostname: my-host
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostnameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for valid hostname, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostname_Check_Empty(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostnameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for empty hostname, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostname_Check_Invalid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostname: INVALID/HOST!
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecHostnameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for invalid hostname, got %d", len(findings))
-	}
-	if findings[0].RuleID != "pod-spec/set-hostname-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-}
-
-// --- set-domain-name-invalid (no-op, field doesn't exist) ---
-
-func TestPodSpecDomainNameInvalid_Check_AlwaysValid(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c
-    image: nginx
-`)
-	check := podSpecDomainNameInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings (no-op check), got %d", len(findings))
-	}
-}
-
-// --- readiness-gate-invalid ---
 
 func TestPodSpecReadinessGate_Check_Valid(t *testing.T) {
 	data := []byte(`kind: Pod
@@ -1731,179 +1075,6 @@ spec:
 	}
 }
 
-// --- host-ports-overlap ---
-
-func TestPodSpecHostPortsOverlap_Check_NoHostNetwork(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  containers:
-  - name: c1
-    image: nginx
-    ports:
-    - containerPort: 80
-  - name: c2
-    image: nginx
-    ports:
-    - containerPort: 80
-`)
-	check := podSpecHostPortsOverlapCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when hostNetwork=false, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostPortsOverlap_Check_NoHostPorts(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostNetwork: true
-  containers:
-  - name: c1
-    image: nginx
-    ports:
-    - containerPort: 80
-  - name: c2
-    image: nginx
-    ports:
-    - containerPort: 443
-`)
-	check := podSpecHostPortsOverlapCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings when no hostPorts, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostPortsOverlap_Check_SameHostPortDifferentProto(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostNetwork: true
-  containers:
-  - name: c1
-    image: nginx
-    ports:
-    - containerPort: 80
-      hostPort: 8080
-      protocol: TCP
-  - name: c2
-    image: nginx
-    ports:
-    - containerPort: 443
-      hostPort: 8080
-      protocol: UDP
-`)
-	check := podSpecHostPortsOverlapCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for same hostPort with different protocols, got %d", len(findings))
-	}
-}
-
-func TestPodSpecHostPortsOverlap_Check_SameHostPortSameProto(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostNetwork: true
-  containers:
-  - name: c1
-    image: nginx
-    ports:
-    - containerPort: 80
-      hostPort: 8080
-      protocol: TCP
-  - name: c2
-    image: nginx
-    ports:
-    - containerPort: 443
-      hostPort: 8080
-      protocol: TCP
-`)
-	check := podSpecHostPortsOverlapCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for overlapping hostPort, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "pod-spec/host-ports-overlap" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Container != "c2" {
-		t.Errorf("unexpected container: %s", findings[0].Container)
-	}
-}
-
-func TestPodSpecHostPortsOverlap_Check_Deployment(t *testing.T) {
-	data := []byte(`apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test
-spec:
-  template:
-    spec:
-      hostNetwork: true
-      containers:
-      - name: c1
-        image: nginx
-        ports:
-        - containerPort: 80
-          hostPort: 8080
-          protocol: TCP
-      - name: c2
-        image: nginx
-        ports:
-        - containerPort: 443
-          hostPort: 8080
-          protocol: TCP
-`)
-	check := podSpecHostPortsOverlapCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for Deployment hostPort overlap, got %d", len(findings))
-	}
-	if findings[0].Kind != "Deployment" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPodSpecHostPortsOverlap_Check_InitContainer(t *testing.T) {
-	data := []byte(`kind: Pod
-metadata:
-  name: test
-spec:
-  hostNetwork: true
-  initContainers:
-  - name: init
-    image: nginx
-    ports:
-    - containerPort: 80
-      hostPort: 8080
-      protocol: TCP
-  containers:
-  - name: c1
-    image: nginx
-    ports:
-    - containerPort: 80
-      hostPort: 8080
-      protocol: TCP
-`)
-	check := podSpecHostPortsOverlapCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for initContainer hostPort overlap, got %d", len(findings))
-	}
-	if findings[0].Container != "init" {
-		t.Errorf("unexpected container: %s", findings[0].Container)
-	}
-}
-
-// --- CronJob tests ---
-
 func TestPodSpecRestartPolicyValue_Check_CronJob(t *testing.T) {
 	data := []byte(`apiVersion: batch/v1
 kind: CronJob
@@ -1927,63 +1098,6 @@ spec:
 	}
 }
 
-func TestPodSpecHostNetwork_Check_CronJob(t *testing.T) {
-	data := []byte(`apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: test
-spec:
-  schedule: "*/1 * * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          hostNetwork: true
-          containers:
-          - name: c
-            image: nginx
-`)
-	check := podSpecHostNetworkCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding for CronJob with hostNetwork, got %d", len(findings))
-	}
-	if findings[0].Kind != "CronJob" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPodSpecAntiAffinityInvalid_Check_CronJob(t *testing.T) {
-	data := []byte(`apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: test
-spec:
-  schedule: "*/1 * * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          affinity:
-            podAntiAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchLabels:
-                    app: web
-                topologyKey: kubernetes.io/hostname
-          containers:
-          - name: c
-            image: nginx
-`)
-	check := podSpecAntiAffinityInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for CronJob valid anti-affinity, got %d", len(findings))
-	}
-}
-
-// --- Non-workload kinds ---
-
 func TestPodSpecRestartPolicyValue_Check_Service(t *testing.T) {
 	data := []byte(`kind: Service
 metadata:
@@ -1993,21 +1107,6 @@ spec:
   - port: 80
 `)
 	check := podSpecRestartPolicyValueCheck{}
-	findings := check.Run(data, "test.yaml")
-	if findings != nil {
-		t.Errorf("expected nil for Service, got %v", findings)
-	}
-}
-
-func TestPodSpecHostNetwork_Check_Service(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-spec:
-  ports:
-  - port: 80
-`)
-	check := podSpecHostNetworkCheck{}
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for Service, got %v", findings)
@@ -2044,35 +1143,9 @@ spec:
 	}
 }
 
-func TestPodSpecHostPortsOverlap_Check_Service(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-spec:
-  ports:
-  - port: 80
-`)
-	check := podSpecHostPortsOverlapCheck{}
-	findings := check.Run(data, "test.yaml")
-	if findings != nil {
-		t.Errorf("expected nil for Service, got %v", findings)
-	}
-}
-
-// --- Invalid YAML ---
-
 func TestPodSpecRestartPolicyValue_Check_InvalidYAML(t *testing.T) {
 	data := []byte(`not valid yaml {{`)
 	check := podSpecRestartPolicyValueCheck{}
-	findings := check.Run(data, "test.yaml")
-	if findings != nil {
-		t.Errorf("expected nil for invalid YAML, got %v", findings)
-	}
-}
-
-func TestPodSpecHostNetwork_Check_InvalidYAML(t *testing.T) {
-	data := []byte(`{{invalid yaml`)
-	check := podSpecHostNetworkCheck{}
 	findings := check.Run(data, "test.yaml")
 	if findings != nil {
 		t.Errorf("expected nil for invalid YAML, got %v", findings)
@@ -2088,30 +1161,17 @@ func TestPodSpecDNSPolicyValue_Check_InvalidYAML(t *testing.T) {
 	}
 }
 
-// --- Interface conformance ---
-
 func TestPodSpecChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
 		podSpecRestartPolicyValueCheck{},
-		podSpecHostNetworkCheck{},
-		podSpecHostPIDCheck{},
-		podSpecHostIPCCheck{},
 		podSpecDNSPolicyValueCheck{},
-		podSpecDNSConfigInvalidCheck{},
 		podSpecTolerationOperatorValueCheck{},
 		podSpecNodeSelectorInvalidCheck{},
 		podSpecAffinityInvalidCheck{},
-		podSpecAntiAffinityInvalidCheck{},
 		podSpecTopologySpreadInvalidCheck{},
-		podSpecSchedulerNameInvalidCheck{},
 		podSpecServiceAccountNameInvalidCheck{},
-		podSpecAutomountSATokenValueCheck{},
 		podSpecActiveDeadlineSecondsNegativeCheck{},
-		podSpecSubdomainInvalidCheck{},
-		podSpecHostnameInvalidCheck{},
-		podSpecDomainNameInvalidCheck{},
 		podSpecReadinessGateInvalidCheck{},
-		podSpecHostPortsOverlapCheck{},
 	}
 
 	for _, c := range checks {
@@ -2130,13 +1190,8 @@ func TestPodSpecChecksImplementCheckInterface(t *testing.T) {
 		if !c.RenderSensitive() {
 			t.Errorf("check %T should render sensitive", c)
 		}
-		if len(c.DocSkipper()) == 0 {
-			t.Errorf("check %T should have DocSkipper", c)
+		if len(c.Kinds()) == 0 {
+			t.Errorf("check %T should declare Kinds", c)
 		}
 	}
 }
-
-// --- Register conformance ---
-
-// Note: TestRegister in security_context_test.go verifies that Register() can
-// be called without panicking (including all pod-spec checks).

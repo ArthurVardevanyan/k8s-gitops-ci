@@ -14,10 +14,9 @@ import (
 
 // podDisruptionBudgetSpecWrapper holds policy/v1.PodDisruptionBudgetSpec fields we need to validate.
 type podDisruptionBudgetSpecWrapper struct {
-	MinAvailable   interface{}       `json:"minAvailable"`
-	MaxUnavailable interface{}       `json:"maxUnavailable"`
-	Selector       interface{}       `json:"selector"`
-	TemplateLabels map[string]string `json:"labels"`
+	MinAvailable   interface{} `json:"minAvailable"`
+	MaxUnavailable interface{} `json:"maxUnavailable"`
+	Selector       interface{} `json:"selector"`
 }
 
 // selectorInvalidCheck validates that the PDB selector is a valid label selector.
@@ -29,7 +28,7 @@ func (c selectorInvalidCheck) Title() string         { return "PDB Selector Must
 func (c selectorInvalidCheck) Category() string      { return "policy" }
 func (c selectorInvalidCheck) Blocking() bool        { return true }
 func (c selectorInvalidCheck) RenderSensitive() bool { return true }
-func (c selectorInvalidCheck) DocSkipper() []string  { return []string{"PodDisruptionBudget"} }
+func (c selectorInvalidCheck) Kinds() []string       { return []string{"PodDisruptionBudget"} }
 
 func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var pdb struct {
@@ -63,18 +62,11 @@ func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 	return nil
 }
 
-// minAvailableInvalidCheck validates that minAvailable >= 0.
+// pdbNonNegativeFindings validates that the named PodDisruptionBudget spec
+// field, an IntOrString, is not negative. minAvailable and maxUnavailable
+// share this logic.
 // Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
-type minAvailableInvalidCheck struct{}
-
-func (c minAvailableInvalidCheck) ID() string            { return "policy/min-available-invalid" }
-func (c minAvailableInvalidCheck) Title() string         { return "PDB minAvailable Must Be >= 0" }
-func (c minAvailableInvalidCheck) Category() string      { return "policy" }
-func (c minAvailableInvalidCheck) Blocking() bool        { return true }
-func (c minAvailableInvalidCheck) RenderSensitive() bool { return true }
-func (c minAvailableInvalidCheck) DocSkipper() []string  { return []string{"PodDisruptionBudget"} }
-
-func (c minAvailableInvalidCheck) Run(data []byte, source string) []runtime.Finding {
+func pdbNonNegativeFindings(c runtime.Check, data []byte, fieldName string, value func(podDisruptionBudgetSpecWrapper) interface{}) []runtime.Finding {
 	var pdb struct {
 		Kind string                         `json:"kind"`
 		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
@@ -85,7 +77,7 @@ func (c minAvailableInvalidCheck) Run(data []byte, source string) []runtime.Find
 	if pdb.Kind != "PodDisruptionBudget" {
 		return nil
 	}
-	av, ok := intOrStringFromInterface(pdb.Spec.MinAvailable)
+	av, ok := intOrStringFromInterface(value(pdb.Spec))
 	if !ok {
 		return nil
 	}
@@ -97,18 +89,33 @@ func (c minAvailableInvalidCheck) Run(data []byte, source string) []runtime.Find
 		RuleTitle: c.Title(),
 		Category:  c.Category(),
 		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("minAvailable").String(),
-			Message: "minAvailable: must be >= 0",
+			Path:    field.NewPath("spec").Child(fieldName).String(),
+			Message: fieldName + ": must be >= 0",
 			Kind:    pdb.Kind,
-			Extra:   map[string]string{"minAvailable": strconv.Itoa(int(av.IntVal))},
+			Extra:   map[string]string{fieldName: strconv.Itoa(int(av.IntVal))},
 		},
 	}}
 }
 
+// minAvailableInvalidCheck validates that minAvailable >= 0.
+// Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
+type minAvailableInvalidCheck struct{}
+
+func (c minAvailableInvalidCheck) ID() string            { return "policy/min-available-invalid" }
+func (c minAvailableInvalidCheck) Title() string         { return "PDB minAvailable Must Be >= 0" }
+func (c minAvailableInvalidCheck) Category() string      { return "policy" }
+func (c minAvailableInvalidCheck) Blocking() bool        { return true }
+func (c minAvailableInvalidCheck) RenderSensitive() bool { return true }
+func (c minAvailableInvalidCheck) Kinds() []string       { return []string{"PodDisruptionBudget"} }
+
+func (c minAvailableInvalidCheck) Run(data []byte, source string) []runtime.Finding {
+	return pdbNonNegativeFindings(c, data, "minAvailable", func(spec podDisruptionBudgetSpecWrapper) interface{} {
+		return spec.MinAvailable
+	})
+}
+
 // maxUnavailableInvalidCheck validates that maxUnavailable >= 0.
 // Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
-//
-//nolint:dupl // structurally identical to minAvailableInvalidCheck for a different field
 type maxUnavailableInvalidCheck struct{}
 
 func (c maxUnavailableInvalidCheck) ID() string { return "policy/max-unavailable-invalid" }
@@ -119,39 +126,14 @@ func (c maxUnavailableInvalidCheck) Title() string {
 func (c maxUnavailableInvalidCheck) Category() string      { return "policy" }
 func (c maxUnavailableInvalidCheck) Blocking() bool        { return true }
 func (c maxUnavailableInvalidCheck) RenderSensitive() bool { return true }
-func (c maxUnavailableInvalidCheck) DocSkipper() []string {
+func (c maxUnavailableInvalidCheck) Kinds() []string {
 	return []string{"PodDisruptionBudget"}
 }
 
 func (c maxUnavailableInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var pdb struct {
-		Kind string                         `json:"kind"`
-		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
-	}
-	if err := json.Unmarshal(data, &pdb); err != nil {
-		return nil
-	}
-	if pdb.Kind != "PodDisruptionBudget" {
-		return nil
-	}
-	av, ok := intOrStringFromInterface(pdb.Spec.MaxUnavailable)
-	if !ok {
-		return nil
-	}
-	if av.IntVal >= 0 {
-		return nil
-	}
-	return []runtime.Finding{{
-		RuleID:    c.ID(),
-		RuleTitle: c.Title(),
-		Category:  c.Category(),
-		Finding: check.Finding{
-			Path:    field.NewPath("spec").Child("maxUnavailable").String(),
-			Message: "maxUnavailable: must be >= 0",
-			Kind:    pdb.Kind,
-			Extra:   map[string]string{"maxUnavailable": strconv.Itoa(int(av.IntVal))},
-		},
-	}}
+	return pdbNonNegativeFindings(c, data, "maxUnavailable", func(spec podDisruptionBudgetSpecWrapper) interface{} {
+		return spec.MaxUnavailable
+	})
 }
 
 // minAndMaxSpecifiedCheck validates that minAvailable and maxUnavailable
@@ -164,7 +146,7 @@ func (c minAndMaxSpecifiedCheck) Title() string         { return "PDB Must Speci
 func (c minAndMaxSpecifiedCheck) Category() string      { return "policy" }
 func (c minAndMaxSpecifiedCheck) Blocking() bool        { return true }
 func (c minAndMaxSpecifiedCheck) RenderSensitive() bool { return true }
-func (c minAndMaxSpecifiedCheck) DocSkipper() []string  { return []string{"PodDisruptionBudget"} }
+func (c minAndMaxSpecifiedCheck) Kinds() []string       { return []string{"PodDisruptionBudget"} }
 
 func (c minAndMaxSpecifiedCheck) Run(data []byte, source string) []runtime.Finding {
 	var pdb struct {
@@ -192,74 +174,6 @@ func (c minAndMaxSpecifiedCheck) Run(data []byte, source string) []runtime.Findi
 			Kind:    pdb.Kind,
 		},
 	}}
-}
-
-// selectorAndPodTemplateHashInvalidCheck validates that the PDB selector
-// does not match the pod template labels. If the selector matches the
-// pod template labels, the PDB will be unable to select any existing pods
-// because the selector targets pods that no longer exist.
-// Source: k8s.io/kubernetes/pkg/apis/policy/validation/validation.go
-type selectorAndPodTemplateHashInvalidCheck struct{}
-
-func (c selectorAndPodTemplateHashInvalidCheck) ID() string {
-	return "policy/selector-and-pod-template-hash-invalid"
-}
-
-func (c selectorAndPodTemplateHashInvalidCheck) Title() string {
-	return "PDB Selector Must Not Match Pod Template Labels"
-}
-func (c selectorAndPodTemplateHashInvalidCheck) Category() string      { return "policy" }
-func (c selectorAndPodTemplateHashInvalidCheck) Blocking() bool        { return true }
-func (c selectorAndPodTemplateHashInvalidCheck) RenderSensitive() bool { return true }
-func (c selectorAndPodTemplateHashInvalidCheck) DocSkipper() []string {
-	return []string{"PodDisruptionBudget"}
-}
-
-func (c selectorAndPodTemplateHashInvalidCheck) Run(data []byte, source string) []runtime.Finding {
-	var pdb struct {
-		Kind string                         `json:"kind"`
-		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
-	}
-	if err := json.Unmarshal(data, &pdb); err != nil {
-		return nil
-	}
-	if pdb.Kind != "PodDisruptionBudget" {
-		return nil
-	}
-
-	selectorStr := extractSelectorString(pdb.Spec.Selector)
-	if selectorStr == "" {
-		return nil
-	}
-
-	selector, err := labels.Parse(selectorStr)
-	if err != nil {
-		// Skip if selector is invalid — that's caught by selector-invalid check
-		return nil
-	}
-
-	templateLabels := pdb.Spec.TemplateLabels
-	if len(templateLabels) == 0 {
-		return nil
-	}
-
-	// Check if the PDB selector could select pods with these template labels.
-	// If the selector matches the pod template's labels, the PDB cannot
-	// select any existing pods since the template labels define new pods.
-	if selector.Matches(labels.Set(templateLabels)) {
-		return []runtime.Finding{{
-			RuleID:    c.ID(),
-			RuleTitle: c.Title(),
-			Category:  c.Category(),
-			Finding: check.Finding{
-				Path:    field.NewPath("spec").Child("selector").String(),
-				Message: "selector should not match pod template labels",
-				Kind:    pdb.Kind,
-				Extra:   map[string]string{"selector": selectorStr},
-			},
-		}}
-	}
-	return nil
 }
 
 // intOrStringFromInterface extracts an intstr.IntOrString from the
@@ -318,7 +232,6 @@ func Register() {
 		minAvailableInvalidCheck{},
 		maxUnavailableInvalidCheck{},
 		minAndMaxSpecifiedCheck{},
-		selectorAndPodTemplateHashInvalidCheck{},
 	}
 
 	for _, c := range checks {

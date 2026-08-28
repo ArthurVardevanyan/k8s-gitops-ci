@@ -1561,8 +1561,7 @@ func finalizeCompliance(findings []check.Finding, changedFiles map[string]bool) 
 // whose registered Section() returns "runtime-validation") and everything
 // else (resource-compliance). Uses the check registry to look up each
 // finding's CheckID.
-func separateFindingsBySection(findings []check.Finding) ([]check.Finding, []check.Finding) {
-	var runtimeFindings, complianceFindings []check.Finding
+func separateFindingsBySection(findings []check.Finding) (runtimeFindings, complianceFindings []check.Finding) {
 	for _, f := range findings {
 		if c, ok := check.ByID(f.CheckID); ok && c.Section() == "runtime-validation" {
 			runtimeFindings = append(runtimeFindings, f)

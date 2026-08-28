@@ -173,8 +173,8 @@ func TestResourceQuota_Check_Interface(t *testing.T) {
 		if !c.RenderSensitive() {
 			t.Errorf("check %T should render sensitive", c)
 		}
-		if len(c.DocSkipper()) == 0 {
-			t.Errorf("check %T should have DocSkipper", c)
+		if len(c.Kinds()) == 0 {
+			t.Errorf("check %T should declare Kinds", c)
 		}
 	}
 }

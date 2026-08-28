@@ -68,68 +68,6 @@ metadata:
 	}
 }
 
-func TestPVStorageClassInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  capacity:
-    storage: 1Gi
-  storageClassName: "  "
-  hostPath:
-    path: /tmp`)
-	check := pvStorageClassInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume/storage-class-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolume" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPVStorageClassInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  capacity:
-    storage: 1Gi
-  storageClassName: standard
-  hostPath:
-    path: /tmp`)
-	check := pvStorageClassInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPVStorageClassInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := pvStorageClassInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("PVStorageClassInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
-	}
-}
-
 func TestPVCapacityInvalidCheck(t *testing.T) {
 	data := []byte(`kind: PersistentVolume
 metadata:
@@ -182,74 +120,6 @@ metadata:
 	if true {
 		if len(findings) != 1 {
 			t.Fatalf("PVCapacityInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
-	}
-}
-
-func TestPVClaimRefInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  capacity:
-    storage: 1Gi
-  storageClassName: standard
-  hostPath:
-    path: /tmp
-  claimRef:
-    namespace: ""
-    name: valid`)
-	check := pvClaimRefInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume/persistent-volume-claim-ref-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolume" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPVClaimRefInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolume
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  capacity:
-    storage: 1Gi
-  storageClassName: standard
-  hostPath:
-    path: /tmp
-  claimRef:
-    namespace: default
-    name: valid`)
-	check := pvClaimRefInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPVClaimRefInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := pvClaimRefInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("PVClaimRefInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
 		}
 	} else {
 		if len(findings) != 0 {
@@ -318,66 +188,6 @@ metadata:
 	}
 }
 
-func TestPVCStorageClassInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: "  "`)
-	check := pvcStorageClassInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume-claim/storage-class-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolumeClaim" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPVCStorageClassInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: standard`)
-	check := pvcStorageClassInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPVCStorageClassInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := pvcStorageClassInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("PVCStorageClassInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
-	}
-}
-
 func TestPVCVolumeModeInvalidCheck(t *testing.T) {
 	data := []byte(`kind: PersistentVolumeClaim
 metadata:
@@ -430,63 +240,6 @@ metadata:
 	if false {
 		if len(findings) != 1 {
 			t.Fatalf("PVCVolumeModeInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
-	}
-}
-
-func TestPVCResourcesInvalidCheck(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  storageClassName: standard`)
-	check := pvcResourcesInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "persistent-volume-claim/resources-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "PersistentVolumeClaim" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestPVCResourcesInvalidValid(t *testing.T) {
-	data := []byte(`kind: PersistentVolumeClaim
-metadata:
-  name: test
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
-  storageClassName: standard`)
-	check := pvcResourcesInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPVCResourcesInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := pvcResourcesInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if true {
-		if len(findings) != 1 {
-			t.Fatalf("PVCResourcesInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
 		}
 	} else {
 		if len(findings) != 0 {
@@ -704,75 +457,16 @@ metadata:
 	}
 }
 
-func TestSCMountOptionsInvalidCheck(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-mountOptions:
-- ""
-- debug`)
-	check := scMountOptionsInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
-	}
-	if findings[0].RuleID != "storage-class/mount-options-invalid" {
-		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
-	}
-	if findings[0].Kind != "StorageClass" {
-		t.Errorf("unexpected kind: %s", findings[0].Kind)
-	}
-}
-
-func TestSCMountOptionsInvalidValid(t *testing.T) {
-	data := []byte(`kind: StorageClass
-metadata:
-  name: test
-provisioner: valid.provisioner
-mountOptions:
-- debug
-- another-option`)
-	check := scMountOptionsInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCMountOptionsInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := scMountOptionsInvalidCheck{}
-	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("SCMountOptionsInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
-	}
-}
-
 func TestAllChecksImplementCheckInterface(t *testing.T) {
 	checks := []runtime.Check{
 		pvAccessModesInvalidCheck{},
-		pvStorageClassInvalidCheck{},
 		pvCapacityInvalidCheck{},
-		pvClaimRefInvalidCheck{},
 		pvcAccessModesInvalidCheck{},
-		pvcStorageClassInvalidCheck{},
 		pvcVolumeModeInvalidCheck{},
-		pvcResourcesInvalidCheck{},
 		scProvisionerInvalidCheck{},
 		scReclaimPolicyInvalidCheck{},
 		scVolumeBindingModeInvalidCheck{},
 		scAllowedTopologyRangeInvalidCheck{},
-		scMountOptionsInvalidCheck{},
 	}
 	for _, c := range checks {
 		if c.ID() == "" {
@@ -790,8 +484,8 @@ func TestAllChecksImplementCheckInterface(t *testing.T) {
 		if !c.RenderSensitive() {
 			t.Errorf("check %T should render sensitive", c)
 		}
-		if len(c.DocSkipper()) == 0 {
-			t.Errorf("check %T should have DocSkipper", c)
+		if len(c.Kinds()) == 0 {
+			t.Errorf("check %T should declare Kinds", c)
 		}
 	}
 }
