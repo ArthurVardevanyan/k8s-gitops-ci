@@ -867,6 +867,17 @@ and add the entry. If no specific upstream function implements the rule,
 the check does not belong in this family — put it in the exemptable
 resource-compliance family instead.
 
+A digest covers only the bodies of the functions named in `Functions`. When
+a cited function **delegates** part of its work to a helper in another file,
+a change confined to that helper leaves the caller's digest unchanged, so
+verification can report `81 ok` while the ported rule has shifted
+underneath it. `Functions` is a list precisely so a check can cite the
+callee it actually ports, and a check whose rule lives entirely in a shared
+helper should call that helper rather than reimplement it — as
+`policy/selector-invalid` does with apimachinery's `ValidateLabelSelector`.
+Resolving callees transitively would close the gap generally; it is not
+implemented.
+
 ##### Version skew and feature gates (known limitation)
 
 Runtime checks are ports of **one** Kubernetes version's validation logic —
