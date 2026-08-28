@@ -378,12 +378,21 @@ tasks:
           # Reinstalls whenever the pinned version changes, not just when the
           # binary is missing — otherwise a stale local .tool/ cache silently
           # drifts from the version pinned here (see #105 gofumpt incident).
+          #
+          # The marker also records the Go toolchain the binary was built with.
+          # A tool compiled by an older Go cannot load packages that declare a
+          # newer `go` directive: govulncheck built with 1.26 fails every
+          # package in the module with "requires newer Go version go1.27" once
+          # go.mod moves to 1.27, even though its own pinned version is
+          # unchanged. Keying on version alone would skip the rebuild and leave
+          # the tool permanently broken after a Go upgrade.
           local name="$1" pkg="$2" version="$3"
           local marker="{{.TOOLS_BIN}}/.${name}.version"
-          if [[ ! -x "{{.TOOLS_BIN}}/$name" ]] || [[ "$(cat "$marker" 2>/dev/null)" != "$version" ]]; then
-            echo "[install] $name@$version"
+          local stamp="${version} $(go env GOVERSION)"
+          if [[ ! -x "{{.TOOLS_BIN}}/$name" ]] || [[ "$(cat "$marker" 2>/dev/null)" != "$stamp" ]]; then
+            echo "[install] $name@$version ($(go env GOVERSION))"
             go install "${pkg}@${version}"
-            echo "$version" > "$marker"
+            echo "$stamp" > "$marker"
           fi
         }
         install_tool golangci-lint "github.com/golangci/golangci-lint/v2/cmd/golangci-lint" "{{.GOLANGCI_LINT_VERSION}}"
