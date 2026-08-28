@@ -17,17 +17,14 @@ import (
 //
 // Checks are handed raw manifest bytes, which in this pipeline are YAML.
 // encoding/json cannot parse YAML, so a check decoding with json.Unmarshal
-// returns a parse error on every real document and - because these checks
-// treat a decode failure as "not my kind" and return nil - silently reports
-// nothing. Three packages did exactly this, disabling roughly ten checks,
-// and it went unnoticed because their unit tests used JSON fixtures.
+// fails on every real document and - because these checks treat a decode
+// failure as "not my kind" and return nil - silently reports nothing.
 //
-// The failure is invisible in every way that normally catches a bug: the
-// checks are registered, they run, they pass, and they are non-exemptable
-// so no one is reviewing suppressions for them. Only the absence of
-// findings would reveal it, and absence is exactly what a passing CI run
-// looks like. So the constraint is enforced structurally instead: use
-// sigs.k8s.io/yaml (which accepts JSON too, since JSON is a YAML subset).
+// That failure is invisible in every way that normally catches a bug: the
+// check is registered, runs, passes, and is non-exemptable so no one
+// reviews suppressions for it. Only the absence of findings would reveal
+// it, and absence is what a passing run looks like. Hence a structural
+// rule: use sigs.k8s.io/yaml, which accepts JSON too.
 func TestRuntimeChecksDoNotDecodeWithEncodingJSON(t *testing.T) {
 	fset := token.NewFileSet()
 	var offenders []string

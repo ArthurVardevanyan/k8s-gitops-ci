@@ -158,24 +158,17 @@ type cronJobSpecWrapper struct {
 //
 // Upstream's validateScheduleFormat calls
 // k8s.io/kubernetes/pkg/util/parsers.ParseCronScheduleWithPanicRecovery,
-// which is cron.ParseStandard from github.com/robfig/cron/v3 wrapped in a
-// panic recovery. This calls the same parser at the same version
-// Kubernetes pins, so the rule is a genuine 1:1 port rather than an
-// approximation of one.
+// which is cron.ParseStandard from github.com/robfig/cron/v3 at the
+// revision Kubernetes pins, wrapped in a panic recovery. Calling the same
+// parser is what makes this a port rather than an approximation: a
+// hand-written one rejects the symbolic names (MON-FRI, JAN), the
+// @daily/@hourly descriptors and the TZ=/CRON_TZ= prefix that
+// ParseStandard accepts, and a non-exemptable check cannot afford to
+// reject a schedule the cluster admits.
 //
-// It previously used a hand-rolled 5-field structural parser. That parser
-// was documented as accepting a superset of what the API server accepts -
-// "never stricter" - but it was not: it resolved every field with
-// strconv.Atoi, so the symbolic names cron.ParseStandard supports (MON-SUN,
-// JAN-DEC) were rejected, as were the @daily/@hourly descriptors and the
-// TZ=/CRON_TZ= prefix. Those are valid schedules the cluster accepts, and
-// this check is non-exemptable, so each was an unsuppressible failure on a
-// correct manifest.
-//
-// The panic recovery is part of the ported behavior, not defensive
-// programming: cron.ParseStandard panics on some malformed input (upstream
-// cites "TZ=0"), and a panic here would take down the whole run instead of
-// reporting one invalid schedule.
+// The recovery is ported behavior, not caution: ParseStandard panics on
+// some malformed input (upstream cites "TZ=0"), which would otherwise
+// abort the whole run instead of reporting one bad schedule.
 func parseCronSchedule(schedule string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {

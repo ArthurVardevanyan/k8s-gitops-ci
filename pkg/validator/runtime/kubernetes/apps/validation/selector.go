@@ -40,15 +40,9 @@ func selectorInvalidFindings(c runtime.Check, obj map[string]interface{}, kind, 
 		}}
 	}
 
-	// Validate matchLabels keys.
-	//
-	// This must read spec.selector.matchLabels, not spec.selector. Iterating
-	// the selector object itself yields the keys "matchLabels" and
-	// "matchExpressions", whose values are a map and a slice respectively -
-	// so a filter for string values skipped every real label key and the
-	// rule validated nothing. The unit tests used a bare
-	// `selector: {app: ...}`, which is not the API shape, and so did not
-	// catch it.
+	// Validate matchLabels keys. This must read spec.selector.matchLabels,
+	// not spec.selector, whose own values are a map and a slice rather than
+	// label keys.
 	matchLabels, found, err := unstructured.NestedMap(obj, "spec", "selector", "matchLabels")
 	if err == nil && found {
 		// Sorted so that a selector with more than one invalid key reports

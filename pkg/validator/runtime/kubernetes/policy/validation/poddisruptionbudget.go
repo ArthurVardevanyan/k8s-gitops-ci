@@ -52,22 +52,15 @@ func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 		return nil
 	}
 
-	// Call the same apimachinery helper upstream calls, rather than
-	// approximating it.
-	//
-	// This previously flattened the selector to a string and handed it to
-	// labels.Parse. A string has no representation for matchExpressions, so
-	// every operator/values rule was silently skipped: a selector whose only
-	// error was in a matchExpression passed. It also accepted a bare string
-	// selector, which is not a valid PodDisruptionBudget shape at all - the
-	// test fixture used one, so the check was exercised only on input the
-	// API server would already have rejected.
+	// Call the same apimachinery helper upstream calls rather than
+	// approximating it: a stringified selector has no representation for
+	// matchExpressions, so every operator and values rule would be skipped.
 	//
 	// AllowInvalidLabelValueInSelector is set because the API server sets it
-	// when an object already carries such a value, and this tool cannot see
-	// whether the object exists. Taking the permissive branch is the
-	// standing policy for non-exemptable checks: a missed finding is
-	// recoverable, an unsuppressible false positive is not.
+	// when an object already carries such a value, which this tool cannot
+	// observe. Taking the permissive branch is the standing policy for
+	// non-exemptable checks: a missed finding is recoverable, an
+	// unsuppressible false positive is not.
 	opts := metav1validation.LabelSelectorValidationOptions{AllowInvalidLabelValueInSelector: true}
 	errs := metav1validation.ValidateLabelSelector(pdb.Spec.Selector, opts, field.NewPath("spec").Child("selector"))
 

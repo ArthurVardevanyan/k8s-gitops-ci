@@ -6,16 +6,12 @@ import (
 	"testing"
 )
 
-// A finding's Path tells the reader where in *their* manifest the problem
-// is. Pod-spec checks receive an already-extracted PodSpec, so the workload
-// kind is invisible at the point the finding is built; hard-coding "spec.*"
-// there produced a path that is only correct for a bare Pod. Every
-// controller nests its pod spec under spec.template.spec, and a CronJob
-// under spec.jobTemplate.spec.template.spec, so those findings pointed at a
-// field that does not exist in the document.
-//
-// Nothing caught this because no test asserted a Path on anything but a
-// Pod. These do, for each nesting depth.
+// A finding's Path tells the reader where in their manifest the problem is.
+// Pod-spec checks receive an already-extracted PodSpec, so the workload kind
+// is invisible where the finding is built, and a hard-coded "spec.*" is
+// correct only for a bare Pod: controllers nest under spec.template.spec and
+// CronJob under spec.jobTemplate.spec.template.spec. These assert the path
+// at each nesting depth.
 
 func duplicateVolumeDoc(kind string) []byte {
 	vols := `      volumes:
