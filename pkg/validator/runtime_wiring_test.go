@@ -234,3 +234,50 @@ func TestRuntimeSectionRendersRuleAndCitation(t *testing.T) {
 		t.Errorf("an identical finding rendered %d times, want 1:\n%s", n, dup.Body)
 	}
 }
+
+// TestRuntimeSectionCellsSurviveHostileValues pins that values copied out of a
+// manifest cannot break the report table.
+//
+// Resource names and field values are attacker-adjacent in the sense that they
+// come from the file under test rather than from this tool. A newline in one
+// of them splits a single row into several, so the rest of the table renders
+// as prose and the remaining findings become unreadable. A pipe does the same
+// to the column count. The renderer previously escaped only the pipe.
+func TestRuntimeSectionCellsSurviveHostileValues(t *testing.T) {
+	f := runtimepkg.Finding{
+		RuleID:    "core/object-name-invalid",
+		RuleTitle: "Object Name Must Be Valid",
+		Finding: check.Finding{
+			File:    "a.yaml",
+			Kind:    "Pod",
+			Name:    "evil\n| x | y |\nmore",
+			Path:    "metadata.name",
+			Message: "name: invalid | value\nsecond line",
+		},
+	}.ToCheckFinding()
+
+	sec := ComposeRuntimeValidationSection([]check.Finding{f})
+
+	// A table row is one line. If a value's newline survives, the row's later
+	// cells are pushed onto following lines, so locate the row by its rule ID
+	// and require every other cell to still be on it.
+	var row string
+	for _, line := range strings.Split(sec.Body, "\n") {
+		if strings.Contains(line, "core/object-name-invalid") {
+			row = line
+			break
+		}
+	}
+	if row == "" {
+		t.Fatalf("no table row for the finding:\n%s", sec.Body)
+	}
+	for _, want := range []string{"Pod/evil", "a.yaml", "metadata.name", "second line"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("cell %q is not on the finding's row - an embedded newline split it:\n%s",
+				want, sec.Body)
+		}
+	}
+	if strings.Contains(sec.Body, "invalid | value") {
+		t.Errorf("an embedded pipe was left unescaped:\n%s", sec.Body)
+	}
+}

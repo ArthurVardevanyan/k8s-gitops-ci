@@ -326,7 +326,11 @@ func renderRuntimeSub(findings []check.Finding) (count int, body string) {
 		if s == "" {
 			return "—"
 		}
-		return strings.ReplaceAll(s, "|", "\\|")
+		// sanitizeCell escapes pipes and folds newlines. A resource name or
+		// field value is copied from the manifest, so it can contain either;
+		// an unescaped newline splits one row into several and corrupts the
+		// rest of the table.
+		return sanitizeCell(s)
 	}
 
 	var b strings.Builder
