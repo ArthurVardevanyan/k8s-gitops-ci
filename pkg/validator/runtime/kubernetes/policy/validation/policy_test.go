@@ -90,18 +90,6 @@ spec:
 	}
 }
 
-func TestPDBSelectorNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newSelectorInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestPDBMinAvailableCheck(t *testing.T) {
 	data := []byte(`kind: "PodDisruptionBudget"
 metadata:
@@ -139,18 +127,6 @@ spec:
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPDBMinAvailableNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newMinAvailableInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -194,18 +170,6 @@ spec:
 	}
 }
 
-func TestPDBMaxUnavailableNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newMaxUnavailableInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestPDBMinAndMaxSpecifiedCheck(t *testing.T) {
 	data := []byte(`kind: "PodDisruptionBudget"
 metadata:
@@ -244,18 +208,6 @@ spec:
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestPDBMinAndMaxSpecifiedNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newMinAndMaxSpecifiedCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 

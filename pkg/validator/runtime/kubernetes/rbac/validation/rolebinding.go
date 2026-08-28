@@ -30,6 +30,9 @@ func (c roleBindingRoleRefInvalidCheck) Run(data []byte, source string) []runtim
 	if err := yaml.Unmarshal(data, &rb); err != nil {
 		return nil
 	}
+	if rb.Kind != "RoleBinding" {
+		return nil
+	}
 
 	var findings []runtime.Finding
 

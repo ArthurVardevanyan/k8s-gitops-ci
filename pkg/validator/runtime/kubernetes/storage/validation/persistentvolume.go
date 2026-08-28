@@ -49,6 +49,9 @@ func (c pvCapacityInvalidCheck) Run(data []byte, source string) []runtime.Findin
 	if err := yaml.Unmarshal(data, &pv); err != nil {
 		return nil
 	}
+	if pv.Kind != "PersistentVolume" {
+		return nil
+	}
 
 	var findings []runtime.Finding
 

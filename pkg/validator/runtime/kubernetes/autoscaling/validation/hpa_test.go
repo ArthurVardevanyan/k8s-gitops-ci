@@ -121,17 +121,6 @@ spec:
 	}
 }
 
-func TestHPANonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test`)
-	check := newMaxReplicasInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestAllHPAChecksImplementCheckInterface(t *testing.T) {
 	var _ runtime.Check = newMaxReplicasInvalidCheck()
 	var _ runtime.Check = newScaleDownInvalidCheck()

@@ -32,6 +32,9 @@ func (c scProvisionerInvalidCheck) Run(data []byte, source string) []runtime.Fin
 	if err := yaml.Unmarshal(data, &sc); err != nil {
 		return nil
 	}
+	if sc.Kind != "StorageClass" {
+		return nil
+	}
 
 	var findings []runtime.Finding
 	provisionerPath := field.NewPath("provisioner")
@@ -65,6 +68,9 @@ func scEnumFieldFindings(
 ) []runtime.Finding {
 	var sc storagev1.StorageClass
 	if err := yaml.Unmarshal(data, &sc); err != nil {
+		return nil
+	}
+	if sc.Kind != "StorageClass" {
 		return nil
 	}
 
@@ -153,6 +159,9 @@ func newScAllowedTopologyRangeInvalidCheck() scAllowedTopologyRangeInvalidCheck 
 func (c scAllowedTopologyRangeInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var sc storagev1.StorageClass
 	if err := yaml.Unmarshal(data, &sc); err != nil {
+		return nil
+	}
+	if sc.Kind != "StorageClass" {
 		return nil
 	}
 

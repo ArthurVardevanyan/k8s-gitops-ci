@@ -50,18 +50,6 @@ spec:
 	}
 }
 
-func TestPVAccessModesInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newPvAccessModesInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestPVCapacityInvalidCheck(t *testing.T) {
 	data := []byte(`kind: PersistentVolume
 metadata:
@@ -104,18 +92,17 @@ spec:
 	}
 }
 
-func TestPVCapacityInvalidIsNotKindFiltered(t *testing.T) {
+func TestPVCapacityInvalidGuardsOnKind(t *testing.T) {
 	data := []byte(`kind: Service
 metadata:
   name: test
 `)
-	check := newPvCapacityInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	// This check does not filter by kind itself: dispatch is gated by the
-	// runtime adapter via Kinds(). Invoked directly it evaluates the fields
-	// regardless of kind, so a Service still yields a finding here.
-	if len(findings) != 1 {
-		t.Fatalf("PVCapacityInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
+	// The check guards on kind itself rather than relying solely on the
+	// adapter to gate dispatch. Without that guard it decodes any
+	// document into a PersistentVolume and reports its required fields as
+	// missing - attributing the finding to a kind the document is not.
+	if findings := newPvCapacityInvalidCheck().Run(data, "test.yaml"); len(findings) != 0 {
+		t.Fatalf("expected no findings for a non-PersistentVolume document, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -161,18 +148,6 @@ spec:
 	}
 }
 
-func TestPVCAccessModesInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newPvcAccessModesInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestPVCVolumeModeInvalidCheck(t *testing.T) {
 	data := []byte(`kind: PersistentVolumeClaim
 metadata:
@@ -215,18 +190,6 @@ spec:
 	}
 }
 
-func TestPVCVolumeModeInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newPvcVolumeModeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestSCProvisionerInvalidCheck(t *testing.T) {
 	data := []byte(`kind: StorageClass
 metadata:
@@ -258,18 +221,17 @@ reclaimPolicy: Delete`)
 	}
 }
 
-func TestSCProvisionerInvalidIsNotKindFiltered(t *testing.T) {
+func TestSCProvisionerInvalidGuardsOnKind(t *testing.T) {
 	data := []byte(`kind: Service
 metadata:
   name: test
 `)
-	check := newScProvisionerInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	// This check does not filter by kind itself: dispatch is gated by the
-	// runtime adapter via Kinds(). Invoked directly it evaluates the fields
-	// regardless of kind, so a Service still yields a finding here.
-	if len(findings) != 1 {
-		t.Fatalf("SCProvisionerInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
+	// The check guards on kind itself rather than relying solely on the
+	// adapter to gate dispatch. Without that guard it decodes any
+	// document into a StorageClass and reports its required fields as
+	// missing - attributing the finding to a kind the document is not.
+	if findings := newScProvisionerInvalidCheck().Run(data, "test.yaml"); len(findings) != 0 {
+		t.Fatalf("expected no findings for a non-StorageClass document, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -305,18 +267,6 @@ reclaimPolicy: Delete`)
 	}
 }
 
-func TestSCReclaimPolicyInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newScReclaimPolicyInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-	}
-}
-
 func TestSCVolumeBindingModeInvalidCheck(t *testing.T) {
 	data := []byte(`kind: StorageClass
 metadata:
@@ -346,18 +296,6 @@ volumeBindingMode: WaitForFirstConsumer`)
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCVolumeBindingModeInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newScVolumeBindingModeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -400,18 +338,6 @@ allowedTopologies:
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
 		t.Errorf("expected no findings, got %d: %v", len(findings), findings)
-	}
-}
-
-func TestSCAllowedTopologyRangeInvalidNonMatchingKind(t *testing.T) {
-	data := []byte(`kind: Service
-metadata:
-  name: test
-`)
-	check := newScAllowedTopologyRangeInvalidCheck()
-	findings := check.Run(data, "test.yaml")
-	if len(findings) != 0 {
-		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 

@@ -30,6 +30,9 @@ func (c clusterRoleBindingRoleRefInvalidCheck) Run(data []byte, source string) [
 	if err := yaml.Unmarshal(data, &crb); err != nil {
 		return nil
 	}
+	if crb.Kind != "ClusterRoleBinding" {
+		return nil
+	}
 
 	var findings []runtime.Finding
 
@@ -92,6 +95,9 @@ func newClusterRoleBindingSubjectInvalidCheck() clusterRoleBindingSubjectInvalid
 func (c clusterRoleBindingSubjectInvalidCheck) Run(data []byte, source string) []runtime.Finding {
 	var crb rbacv1.ClusterRoleBinding
 	if err := yaml.Unmarshal(data, &crb); err != nil {
+		return nil
+	}
+	if crb.Kind != "ClusterRoleBinding" {
 		return nil
 	}
 

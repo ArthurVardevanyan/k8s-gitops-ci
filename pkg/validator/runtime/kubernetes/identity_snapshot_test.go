@@ -45,6 +45,15 @@ var probeKinds = []string{
 	"NotAKubernetesKindControl",
 }
 
+// kindsOf returns the kinds a check is dispatched for, empty meaning all.
+func kindsOf(c check.Check) []string {
+	k, ok := c.(interface{ Kinds() []string })
+	if !ok {
+		return nil
+	}
+	return k.Kinds()
+}
+
 func collectCheckIdentities(t *testing.T) []checkIdentity {
 	t.Helper()
 
@@ -168,5 +177,45 @@ func TestRegisteredCheckIdentityIsStable(t *testing.T) {
 
 	if len(got) != len(wantIDs) {
 		t.Errorf("check count changed: %d -> %d", len(wantIDs), len(got))
+	}
+}
+
+// TestChecksIgnoreKindsTheyDoNotDeclare asserts the applies-to contract for
+// every registered check at once: a check handed a kind outside its list
+// must be skipped by the dispatcher and, if run anyway, must report nothing.
+//
+// This replaces a per-package family of near-identical "NonMatchingKind"
+// tests, each of which sampled a single check. Driving it from the registry
+// covers all of them, including any check added later - which is the case
+// the hand-written versions could never cover.
+func TestChecksIgnoreKindsTheyDoNotDeclare(t *testing.T) {
+	// A syntactically valid document of a kind no runtime check declares.
+	const foreign = "apiVersion: example.com/v1\nkind: NotAKubernetesKindControl\nmetadata:\n  name: test\n"
+
+	for _, c := range check.All() {
+		if c.Section() != "runtime-validation" {
+			continue
+		}
+		t.Run(c.ID(), func(t *testing.T) {
+			sd, ok := c.(interface{ SkipDoc(string) bool })
+			if !ok {
+				t.Fatalf("check %q does not implement SkipDoc, so the dispatcher hands it every document", c.ID())
+			}
+			// A check that declares no kinds applies to all of them
+			// (object metadata rules), so it is expected not to skip.
+			// Its Run must still find nothing on an unrelated document.
+			if !sd.SkipDoc("NotAKubernetesKindControl") && len(kindsOf(c)) != 0 {
+				t.Errorf("check %q claims a kind it has no rules for", c.ID())
+			}
+			dc, ok := c.(interface {
+				CheckDoc(data []byte, source string) []check.Finding
+			})
+			if !ok {
+				t.Fatalf("check %q is not a DocCheck", c.ID())
+			}
+			if got := dc.CheckDoc([]byte(foreign), "test.yaml"); len(got) != 0 {
+				t.Errorf("check %q reported %d finding(s) on an unrelated kind: %v", c.ID(), len(got), got)
+			}
+		})
 	}
 }
