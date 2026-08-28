@@ -1,8 +1,9 @@
 package validation
 
 import (
-	"encoding/json"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
@@ -31,7 +32,7 @@ func TestParallelismInvalidCheck(t *testing.T) {
 					"parallelism": tt.parallelism,
 				},
 			}
-			bytes, _ := json.Marshal(data)
+			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
 				t.Error("expected findings, got none")
@@ -67,7 +68,7 @@ func TestBackoffLimitInvalidCheck(t *testing.T) {
 					"backoffLimit": tt.backoffLimit,
 				},
 			}
-			bytes, _ := json.Marshal(data)
+			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
 				t.Error("expected findings, got none")
@@ -106,7 +107,7 @@ func TestScheduleInvalidCheck(t *testing.T) {
 					"schedule": tt.schedule,
 				},
 			}
-			bytes, _ := json.Marshal(data)
+			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
 				t.Error("expected findings, got none")
@@ -143,7 +144,7 @@ func TestConcurrencyPolicyInvalidCheck(t *testing.T) {
 					"concurrencyPolicy": tt.concurrencyPolicy,
 				},
 			}
-			bytes, _ := json.Marshal(data)
+			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
 				t.Error("expected findings, got none")
@@ -179,7 +180,7 @@ func TestFailedJobsHistoryLimitInvalidCheck(t *testing.T) {
 					"failedJobsHistoryLimit": tt.failedJobsHistoryLimit,
 				},
 			}
-			bytes, _ := json.Marshal(data)
+			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
 				t.Error("expected findings, got none")
@@ -215,7 +216,7 @@ func TestSuccessfulJobsHistoryLimitInvalidCheck(t *testing.T) {
 					"successfulJobsHistoryLimit": tt.successfulJobsHistoryLimit,
 				},
 			}
-			bytes, _ := json.Marshal(data)
+			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
 				t.Error("expected findings, got none")
@@ -251,7 +252,7 @@ func TestStartingDeadlineSecondsInvalidCheck(t *testing.T) {
 					"startingDeadlineSeconds": tt.startingDeadlineSeconds,
 				},
 			}
-			bytes, _ := json.Marshal(data)
+			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
 				t.Error("expected findings, got none")
@@ -309,7 +310,7 @@ func TestJobFindingsHaveCorrectFields(t *testing.T) {
 			"parallelism": -1,
 		},
 	}
-	bytes, _ := json.Marshal(data)
+	bytes, _ := yaml.Marshal(data)
 	findings := c.Run(bytes, "test.yaml")
 
 	if len(findings) != 1 {
@@ -340,7 +341,7 @@ func TestCronJobFindingsHaveCorrectFields(t *testing.T) {
 			"schedule": "invalid",
 		},
 	}
-	bytes, _ := json.Marshal(data)
+	bytes, _ := yaml.Marshal(data)
 	findings := c.Run(bytes, "test.yaml")
 
 	if len(findings) != 1 {

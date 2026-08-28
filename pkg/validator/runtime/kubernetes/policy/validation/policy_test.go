@@ -7,13 +7,13 @@ import (
 )
 
 func TestPDBSelectorCheck(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": "invalid=invalid[", "minAvailable": 1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector: "invalid=invalid["
+  minAvailable: 1
+`)
 	check := selectorInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
@@ -28,13 +28,15 @@ func TestPDBSelectorCheck(t *testing.T) {
 }
 
 func TestPDBSelectorValid(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "minAvailable": 1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector:
+    matchLabels:
+      app: "test"
+  minAvailable: 1
+`)
 	check := selectorInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
@@ -55,13 +57,15 @@ metadata:
 }
 
 func TestPDBMinAvailableCheck(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "minAvailable": -1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector:
+    matchLabels:
+      app: "test"
+  minAvailable: -1
+`)
 	check := minAvailableInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
@@ -76,13 +80,15 @@ func TestPDBMinAvailableCheck(t *testing.T) {
 }
 
 func TestPDBMinAvailableValid(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "minAvailable": 1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector:
+    matchLabels:
+      app: "test"
+  minAvailable: 1
+`)
 	check := minAvailableInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
@@ -103,13 +109,15 @@ metadata:
 }
 
 func TestPDBMaxUnavailableCheck(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "maxUnavailable": -1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector:
+    matchLabels:
+      app: "test"
+  maxUnavailable: -1
+`)
 	check := maxUnavailableInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
@@ -124,13 +132,15 @@ func TestPDBMaxUnavailableCheck(t *testing.T) {
 }
 
 func TestPDBMaxUnavailableValid(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "maxUnavailable": 1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector:
+    matchLabels:
+      app: "test"
+  maxUnavailable: 1
+`)
 	check := maxUnavailableInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {
@@ -151,13 +161,16 @@ metadata:
 }
 
 func TestPDBMinAndMaxSpecifiedCheck(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "minAvailable": 1, "maxUnavailable": 1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector:
+    matchLabels:
+      app: "test"
+  minAvailable: 1
+  maxUnavailable: 1
+`)
 	check := minAndMaxSpecifiedCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 1 {
@@ -172,13 +185,15 @@ func TestPDBMinAndMaxSpecifiedCheck(t *testing.T) {
 }
 
 func TestPDBMinAndMaxSpecifiedValid(t *testing.T) {
-	data := []byte(`{
-  "kind": "PodDisruptionBudget",
-  "metadata": {
-    "name": "test"
-  },
-  "spec": {"selector": {"matchLabels": {"app": "test"}}, "minAvailable": 1}
-}`)
+	data := []byte(`kind: "PodDisruptionBudget"
+metadata:
+  name: "test"
+spec:
+  selector:
+    matchLabels:
+      app: "test"
+  minAvailable: 1
+`)
 	check := minAndMaxSpecifiedCheck{}
 	findings := check.Run(data, "test.yaml")
 	if len(findings) != 0 {

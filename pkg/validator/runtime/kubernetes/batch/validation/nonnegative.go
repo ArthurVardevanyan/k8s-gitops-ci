@@ -1,11 +1,11 @@
 package validation
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -39,7 +39,7 @@ func nonNegativeIntFindings(
 		Kind string                 `json:"kind"`
 		Spec nonNegativeSpecWrapper `json:"spec"`
 	}
-	if err := json.Unmarshal(data, &obj); err != nil {
+	if err := yaml.Unmarshal(data, &obj); err != nil {
 		return nil
 	}
 	if obj.Kind != kind {

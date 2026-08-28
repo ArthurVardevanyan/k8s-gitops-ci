@@ -1,12 +1,12 @@
 package validation
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -35,7 +35,7 @@ func (c selectorInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 		Kind string                         `json:"kind"`
 		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
 	}
-	if err := json.Unmarshal(data, &pdb); err != nil {
+	if err := yaml.Unmarshal(data, &pdb); err != nil {
 		return nil
 	}
 	if pdb.Kind != "PodDisruptionBudget" {
@@ -71,7 +71,7 @@ func pdbNonNegativeFindings(c runtime.Check, data []byte, fieldName string, valu
 		Kind string                         `json:"kind"`
 		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
 	}
-	if err := json.Unmarshal(data, &pdb); err != nil {
+	if err := yaml.Unmarshal(data, &pdb); err != nil {
 		return nil
 	}
 	if pdb.Kind != "PodDisruptionBudget" {
@@ -153,7 +153,7 @@ func (c minAndMaxSpecifiedCheck) Run(data []byte, source string) []runtime.Findi
 		Kind string                         `json:"kind"`
 		Spec podDisruptionBudgetSpecWrapper `json:"spec"`
 	}
-	if err := json.Unmarshal(data, &pdb); err != nil {
+	if err := yaml.Unmarshal(data, &pdb); err != nil {
 		return nil
 	}
 	if pdb.Kind != "PodDisruptionBudget" {

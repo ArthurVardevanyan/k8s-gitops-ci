@@ -1,12 +1,12 @@
 package validation
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/yaml"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -28,7 +28,7 @@ func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 		Kind string             `json:"kind"`
 		Spec cronJobSpecWrapper `json:"spec"`
 	}
-	if err := json.Unmarshal(data, &cj); err != nil {
+	if err := yaml.Unmarshal(data, &cj); err != nil {
 		return nil
 	}
 	if cj.Kind != "CronJob" {
@@ -71,7 +71,7 @@ func (c concurrencyPolicyInvalidCheck) Run(data []byte, source string) []runtime
 		Kind string `json:"kind"`
 		Spec cronJobSpecWrapper
 	}
-	if err := json.Unmarshal(data, &cj); err != nil {
+	if err := yaml.Unmarshal(data, &cj); err != nil {
 		return nil
 	}
 	if cj.Kind != "CronJob" {
