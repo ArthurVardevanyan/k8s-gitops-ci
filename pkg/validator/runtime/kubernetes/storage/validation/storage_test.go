@@ -57,14 +57,8 @@ metadata:
 `)
 	check := pvAccessModesInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("PVAccessModesInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -110,21 +104,18 @@ spec:
 	}
 }
 
-func TestPVCapacityInvalidNonMatchingKind(t *testing.T) {
+func TestPVCapacityInvalidIsNotKindFiltered(t *testing.T) {
 	data := []byte(`kind: Service
 metadata:
   name: test
 `)
 	check := pvCapacityInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if true {
-		if len(findings) != 1 {
-			t.Fatalf("PVCapacityInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	// This check does not filter by kind itself: dispatch is gated by the
+	// runtime adapter via Kinds(). Invoked directly it evaluates the fields
+	// regardless of kind, so a Service still yields a finding here.
+	if len(findings) != 1 {
+		t.Fatalf("PVCapacityInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
 	}
 }
 
@@ -177,14 +168,8 @@ metadata:
 `)
 	check := pvcAccessModesInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("PVCAccessModesInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -237,14 +222,8 @@ metadata:
 `)
 	check := pvcVolumeModeInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("PVCVolumeModeInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -279,21 +258,18 @@ reclaimPolicy: Delete`)
 	}
 }
 
-func TestSCProvisionerInvalidNonMatchingKind(t *testing.T) {
+func TestSCProvisionerInvalidIsNotKindFiltered(t *testing.T) {
 	data := []byte(`kind: Service
 metadata:
   name: test
 `)
 	check := scProvisionerInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if true {
-		if len(findings) != 1 {
-			t.Fatalf("SCProvisionerInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	// This check does not filter by kind itself: dispatch is gated by the
+	// runtime adapter via Kinds(). Invoked directly it evaluates the fields
+	// regardless of kind, so a Service still yields a finding here.
+	if len(findings) != 1 {
+		t.Fatalf("SCProvisionerInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
 	}
 }
 
@@ -336,14 +312,8 @@ metadata:
 `)
 	check := scReclaimPolicyInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("SCReclaimPolicyInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -386,14 +356,8 @@ metadata:
 `)
 	check := scVolumeBindingModeInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("SCVolumeBindingModeInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
@@ -446,14 +410,8 @@ metadata:
 `)
 	check := scAllowedTopologyRangeInvalidCheck{}
 	findings := check.Run(data, "test.yaml")
-	if false {
-		if len(findings) != 1 {
-			t.Fatalf("SCAllowedTopologyRangeInvalid check triggers on Service (kind not validated), got %d findings", len(findings))
-		}
-	} else {
-		if len(findings) != 0 {
-			t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
-		}
+	if len(findings) != 0 {
+		t.Errorf("expected no findings for non-matching kind, got %d: %v", len(findings), findings)
 	}
 }
 
