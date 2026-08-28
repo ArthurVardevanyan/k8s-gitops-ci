@@ -377,7 +377,7 @@ var desiredFor func(field, id string) (string, bool)
 // entriesReferencing returns the check IDs whose entry sets field to the
 // identifier name.
 func entriesReferencing(file, field, name string) []string {
-	var out []string
+	out := make([]string, 0, 4)
 	re := regexp.MustCompile(`"([^"]+)": \{(?s:.*?)` + field + `:\s*` + name + `\b`)
 	for _, m := range re.FindAllStringSubmatch(file, -1) {
 		out = append(out, m[1])
@@ -392,7 +392,7 @@ func entriesReferencing(file, field, name string) []string {
 // Rewriting a shared constant changes every entry using it, so a conflicting
 // value is reported rather than applied - silently restamping unrelated
 // checks would assert a human re-validated ports they never looked at.
-func setRefField(entry, file, field, value, id, path string) (string, string, error) {
+func setRefField(entry, file, field, value, id, path string) (newEntry, newFile string, err error) {
 	lit := regexp.MustCompile(field + `:(\s*)"[^"]*"`)
 	if loc := lit.FindStringSubmatchIndex(entry); loc != nil {
 		pad := entry[loc[2]:loc[3]]

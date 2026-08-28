@@ -43,37 +43,6 @@ func extractNestedInt(data map[string]interface{}, path ...string) (int64, bool)
 	return 0, false
 }
 
-func extractNestedSlice(data map[string]interface{}, path ...string) ([]map[string]interface{}, bool) {
-	if len(path) == 0 {
-		return nil, false
-	}
-	cur := data
-	for _, p := range path[:len(path)-1] {
-		next, ok := cur[p].(map[string]interface{})
-		if !ok {
-			return nil, false
-		}
-		cur = next
-	}
-	raw := cur[path[len(path)-1]]
-	// Handle single map entry (YAML: key: {...})
-	if m, ok := raw.(map[string]interface{}); ok {
-		return []map[string]interface{}{m}, true
-	}
-	// Handle array of maps (YAML: key: [{...}, {...}])
-	arr, ok := raw.([]interface{})
-	if !ok {
-		return nil, false
-	}
-	result := make([]map[string]interface{}, 0, len(arr))
-	for _, item := range arr {
-		if m, ok := item.(map[string]interface{}); ok {
-			result = append(result, m)
-		}
-	}
-	return result, true
-}
-
 func parseHPA(data []byte) (map[string]interface{}, error) {
 	var raw map[string]interface{}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
