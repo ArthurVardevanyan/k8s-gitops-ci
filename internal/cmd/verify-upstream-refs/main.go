@@ -795,13 +795,21 @@ func entriesReferencing(file, field, name string) []string {
 // value is reported rather than applied - silently restamping unrelated
 // checks would assert a human re-validated ports they never looked at.
 func setRefField(entry, file, field, value, id, path string) (newEntry, newFile string, err error) {
-	lit := regexp.MustCompile(field + `:(\s*)"[^"]*"`)
+	// Anchored to the entry's own indent (two tabs). An Additional citation
+	// is nested a level deeper and carries its own Digest/ValidatedAt, so an
+	// unanchored match takes whichever comes first in the source. Field order
+	// within a struct literal is arbitrary and gofmt will not normalise it,
+	// so an entry that simply declares Additional before Digest would have
+	// had the parent's digest written into the supporting citation - blanking
+	// a citation nobody re-read while leaving the real one stale.
+	lit := regexp.MustCompile(`(?m)^\t\t` + field + `:(\s*)"[^"]*"`)
 	if loc := lit.FindStringSubmatchIndex(entry); loc != nil {
 		pad := entry[loc[2]:loc[3]]
-		return entry[:loc[0]] + field + ":" + pad + strconv.Quote(value) + entry[loc[1]:], file, nil
+		// loc[0] includes the anchored indent, so re-emit it.
+		return entry[:loc[0]] + "\t\t" + field + ":" + pad + strconv.Quote(value) + entry[loc[1]:], file, nil
 	}
 
-	ident := regexp.MustCompile(field + `:(\s*)([A-Za-z_][A-Za-z0-9_]*)`)
+	ident := regexp.MustCompile(`(?m)^\t\t` + field + `:(\s*)([A-Za-z_][A-Za-z0-9_]*)`)
 	loc := ident.FindStringSubmatchIndex(entry)
 	if loc == nil {
 		return entry, file, fmt.Errorf("%s: entry %s has no %s field to update", path, id, field)

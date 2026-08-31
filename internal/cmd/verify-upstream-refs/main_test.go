@@ -628,3 +628,35 @@ func TestCachePathForIsInjective(t *testing.T) {
 		t.Fatal("no triple was accepted; the test is proving nothing")
 	}
 }
+
+// An Additional citation is nested a level deeper than its parent and has
+// its own Digest/ValidatedAt. Field order inside a struct literal is
+// arbitrary and gofmt does not normalise it, so --update must target the
+// parent's field by position in the struct, not by whichever match comes
+// first in the text.
+func TestSetRefFieldIgnoresNestedAdditional(t *testing.T) {
+	entry := "\t\"some/check\": {\n" +
+		"\t\tPath:      \"pkg/a.go\",\n" +
+		"\t\tFunctions: []string{\"F\"},\n" +
+		"\t\tAdditional: []runtime.UpstreamRef{{\n" +
+		"\t\t\tPath:        \"pkg/b.go\",\n" +
+		"\t\t\tDigest:      \"sha256:supporting\",\n" +
+		"\t\t\tValidatedAt: \"v1.0.0\",\n" +
+		"\t\t}},\n" +
+		"\t\tDigest:      \"sha256:toplevel\",\n" +
+		"\t\tValidatedAt: \"v1.0.0\",\n"
+
+	got, _, err := setRefField(entry, "", "Digest", "sha256:new", "some/check", "f.go")
+	if err != nil {
+		t.Fatalf("setRefField: %v", err)
+	}
+	if !strings.Contains(got, `Digest:      "sha256:supporting"`) {
+		t.Error("the supporting citation's digest was overwritten")
+	}
+	if strings.Contains(got, "sha256:toplevel") {
+		t.Error("the top-level digest was left unchanged")
+	}
+	if !strings.Contains(got, "\t\tDigest:      \"sha256:new\"") {
+		t.Errorf("top-level digest not rewritten with its indent intact:\n%s", got)
+	}
+}
