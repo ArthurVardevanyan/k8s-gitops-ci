@@ -265,45 +265,91 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 	return composeParentFromChildren("Static Checks", children)
 }
 
-// ComposeRuntimeValidationSection renders runtime validation findings
-// grouped by CheckID into per-check nested <details> sub-sections.
-// Runtime checks (core, rbac, policy, apps, batch, networking, storage,
-// admissionregistration) return Section() == "runtime-validation" and are
-// always blocking — the cluster rejects non-compliant manifests regardless
-// of any exemptions, so this section never shows ⚠️ or StatusWarning, only
-// ❌/StatusError or ✅/StatusPassed. Check IDs are sorted for deterministic
-// output.
+// ComposeRuntimeValidationSection renders runtime validation findings grouped
+// by family, then by category, into nested <details> sub-sections.
+//
+// Runtime checks return Section() == "runtime-validation" and are always
+// blocking, so this section never shows ⚠️ or StatusWarning, only
+// ❌/StatusError or ✅/StatusPassed. Keys are sorted for deterministic output.
+//
+// The family level exists because the strength of "the cluster rejects this"
+// varies by upstream: an API-server rule always holds, whereas a rule owned by
+// an operator only holds where that operator is installed. Grouping by family
+// puts that qualifier in the report's structure instead of leaving it to prose
+// a reviewer may not read. It is omitted entirely when only one family is
+// present, so a single-family run renders exactly as it did before families
+// existed rather than growing a wrapper around one child.
 func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 	// Group by category ("core", "batch", ...), not CheckID. CheckID is the
 	// rule ID, so grouping on it would render one <details> block per rule -
 	// dozens of single-finding sub-sections. Category keeps the section
 	// readable while CheckID remains the finding's true identity for
 	// dispatch and registry lookups.
-	byCheck := map[string][]check.Finding{}
+	byFamily := map[string]map[string][]check.Finding{}
 	for _, f := range findings {
 		key := f.Extra["category"]
 		if key == "" {
 			key = f.CheckID
 		}
-		byCheck[key] = append(byCheck[key], f)
+		fam := f.Extra["family"]
+		if byFamily[fam] == nil {
+			byFamily[fam] = map[string][]check.Finding{}
+		}
+		byFamily[fam][key] = append(byFamily[fam][key], f)
 	}
-	if len(byCheck) == 0 {
+	if len(byFamily) == 0 {
 		return ReportSection{Name: "Runtime Validation", Status: StatusPassed, Body: "No runtime validation findings."}
 	}
 
 	var b strings.Builder
-	b.WriteString("These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject.\n\n")
+	b.WriteString("These are structural/runtime validation rules enforced by the cluster. Findings here indicate manifests that the cluster would reject.\n\n")
 
-	for _, id := range orderedComplianceIDs(byCheck) {
-		findings := byCheck[id]
-		icon := "❌"
-		count, body := renderRuntimeSub(findings)
-		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, complianceTitle(id), count)
-		b.WriteString(body)
-		b.WriteString("\n</details>\n\n")
+	families := make([]string, 0, len(byFamily))
+	for fam := range byFamily {
+		families = append(families, fam)
+	}
+	sort.Strings(families)
+	nested := len(families) > 1
+
+	for _, fam := range families {
+		byCheck := byFamily[fam]
+		depth := 1
+		if nested {
+			total := 0
+			for _, fs := range byCheck {
+				total += len(fs)
+			}
+			fmt.Fprintf(&b, "<details open>\n<summary>%s❌ %s (%d finding(s))</summary>\n\n",
+				summaryIndent(1), runtimeFamilyTitle(fam), total)
+			depth = 2
+		}
+		for _, id := range orderedComplianceIDs(byCheck) {
+			findings := byCheck[id]
+			count, body := renderRuntimeSub(findings)
+			fmt.Fprintf(&b, "<details>\n<summary>%s❌ %s (%d finding(s))</summary>\n\n", summaryIndent(depth), complianceTitle(id), count)
+			b.WriteString(body)
+			b.WriteString("\n</details>\n\n")
+		}
+		if nested {
+			b.WriteString("</details>\n\n")
+		}
 	}
 
 	return ReportSection{Name: "Runtime Validation", Body: b.String(), Status: StatusError}
+}
+
+// runtimeFamilyTitle renders a family key as a report heading, including what
+// its findings actually guarantee - the qualifier that distinguishes the
+// families and the only reason the family level is rendered at all.
+func runtimeFamilyTitle(family string) string {
+	switch family {
+	case "":
+		return "Runtime"
+	case "kubernetes":
+		return "Kubernetes — rejected by the API server"
+	default:
+		return displayName(family)
+	}
 }
 
 // renderRuntimeSub renders one category's runtime findings.

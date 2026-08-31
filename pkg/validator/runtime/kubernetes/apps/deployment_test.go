@@ -82,7 +82,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid strategy type, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "apps/deployment-strategy-type-invalid" {
+	if findings[0].RuleID != "kubernetes/apps/deployment-strategy-type-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 	if findings[0].Value != "BlueGreen" {
@@ -96,10 +96,10 @@ func TestDeployment_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{newDeploymentSelectorInvalidCheck(), "apps/deployment-selector-invalid", "apps"},
-		{newDeploymentStrategyTypeInvalidCheck(), "apps/deployment-strategy-type-invalid", "apps"},
-		{newDeploymentReplicasInvalidCheck(), "apps/deployment-replicas-invalid", "apps"},
-		{newDeploymentMinReadySecondsInvalidCheck(), "apps/deployment-min-ready-seconds-invalid", "apps"},
+		{newDeploymentSelectorInvalidCheck(), "kubernetes/apps/deployment-selector-invalid", "apps"},
+		{newDeploymentStrategyTypeInvalidCheck(), "kubernetes/apps/deployment-strategy-type-invalid", "apps"},
+		{newDeploymentReplicasInvalidCheck(), "kubernetes/apps/deployment-replicas-invalid", "apps"},
+		{newDeploymentMinReadySecondsInvalidCheck(), "kubernetes/apps/deployment-min-ready-seconds-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -147,10 +147,10 @@ spec:
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
 	}
-	if !ruleIDs["apps/deployment-replicas-invalid"] {
+	if !ruleIDs["kubernetes/apps/deployment-replicas-invalid"] {
 		t.Error("expected deployment-replicas-invalid finding")
 	}
-	if !ruleIDs["apps/deployment-strategy-type-invalid"] {
+	if !ruleIDs["kubernetes/apps/deployment-strategy-type-invalid"] {
 		t.Error("expected deployment-strategy-type-invalid finding")
 	}
 }

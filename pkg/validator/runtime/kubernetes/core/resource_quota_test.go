@@ -21,7 +21,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "core/resourcequota-hard-invalid" {
+	if findings[0].RuleID != "kubernetes/core/resourcequota-hard-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
@@ -59,7 +59,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "core/resourcequota-hard-negative" {
+	if findings[0].RuleID != "kubernetes/core/resourcequota-hard-negative" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }

@@ -850,13 +850,13 @@ func TestRunAll_RuntimeFindingsAppearInStructuredResult(t *testing.T) {
 
 	var found bool
 	for _, f := range res.Check.Findings {
-		if f.CheckID == "container/port-number-range" {
+		if f.CheckID == "kubernetes/container/port-number-range" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected the container/port-number-range finding in Check.Findings, got %d finding(s): %+v",
+		t.Errorf("expected the kubernetes/container/port-number-range finding in Check.Findings, got %d finding(s): %+v",
 			len(res.Check.Findings), res.Check.Findings)
 	}
 

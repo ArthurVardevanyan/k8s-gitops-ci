@@ -18,7 +18,7 @@ type scheduleInvalidCheck struct{ runtime.Meta }
 
 func newScheduleInvalidCheck() scheduleInvalidCheck {
 	return scheduleInvalidCheck{runtime.Meta{
-		RuleID:    "batch/schedule-invalid",
+		RuleID:    "kubernetes/batch/schedule-invalid",
 		RuleTitle: "CronJob Schedule Must Be Valid",
 		AppliesTo: []string{"CronJob"},
 	}}
@@ -82,7 +82,7 @@ type concurrencyPolicyInvalidCheck struct{ runtime.Meta }
 
 func newConcurrencyPolicyInvalidCheck() concurrencyPolicyInvalidCheck {
 	return concurrencyPolicyInvalidCheck{runtime.Meta{
-		RuleID:    "batch/concurrency-policy-invalid",
+		RuleID:    "kubernetes/batch/concurrency-policy-invalid",
 		RuleTitle: "ConcurrencyPolicy Must Be Valid",
 		AppliesTo: []string{"CronJob"},
 	}}
@@ -125,7 +125,7 @@ type failedJobsHistoryLimitInvalidCheck struct{ runtime.Meta }
 
 func newFailedJobsHistoryLimitInvalidCheck() failedJobsHistoryLimitInvalidCheck {
 	return failedJobsHistoryLimitInvalidCheck{runtime.Meta{
-		RuleID:    "batch/failed-jobs-history-limit-invalid",
+		RuleID:    "kubernetes/batch/failed-jobs-history-limit-invalid",
 		RuleTitle: "FailedJobsHistoryLimit Must Be >= 0",
 		AppliesTo: []string{"CronJob"},
 	}}
@@ -143,7 +143,7 @@ type successfulJobsHistoryLimitInvalidCheck struct{ runtime.Meta }
 
 func newSuccessfulJobsHistoryLimitInvalidCheck() successfulJobsHistoryLimitInvalidCheck {
 	return successfulJobsHistoryLimitInvalidCheck{runtime.Meta{
-		RuleID:    "batch/successful-jobs-history-limit-invalid",
+		RuleID:    "kubernetes/batch/successful-jobs-history-limit-invalid",
 		RuleTitle: "SuccessfulJobsHistoryLimit Must Be >= 0",
 		AppliesTo: []string{"CronJob"},
 	}}
@@ -161,7 +161,7 @@ type startingDeadlineSecondsInvalidCheck struct{ runtime.Meta }
 
 func newStartingDeadlineSecondsInvalidCheck() startingDeadlineSecondsInvalidCheck {
 	return startingDeadlineSecondsInvalidCheck{runtime.Meta{
-		RuleID:    "batch/starting-deadline-seconds-invalid",
+		RuleID:    "kubernetes/batch/starting-deadline-seconds-invalid",
 		RuleTitle: "StartingDeadlineSeconds Must Be >= 0",
 		AppliesTo: []string{"CronJob"},
 	}}

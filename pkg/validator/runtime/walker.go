@@ -194,7 +194,7 @@ func addVolumeClaimTemplateVolumes(obj *unstructured.Unstructured, info *PodSpec
 		// name, so two templates sharing a name contribute one synthetic
 		// volume; validateVolumeClaimTemplates does not reject the duplicate
 		// name either. Appending both here synthesized a name collision that
-		// upstream never sees, and volume/duplicate-volume-names then
+		// upstream never sees, and kubernetes/volume/duplicate-volume-names then
 		// reported it - a finding no manifest change could satisfy and no
 		// exemption could suppress.
 		//

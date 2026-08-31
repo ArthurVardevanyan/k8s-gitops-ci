@@ -21,14 +21,14 @@ const validatedAt = "v1.37.0"
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
 	// --- StorageClass ------------------------------------------------------
-	"storage-class/provisioner-invalid": {
+	"kubernetes/storage-class/provisioner-invalid": {
 		Path:        storageValidationPath,
 		Functions:   []string{"validateProvisioner"},
 		Digest:      "sha256:9099cca3d73276b96e2072b386dc8584c9587212100db107cb3a656c1570d5a7",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the len(provisioner) == 0 -> field.Required branch. The IsQualifiedName branch on a non-empty provisioner is not ported.",
 	},
-	"storage-class/reclaim-policy-invalid": {
+	"kubernetes/storage-class/reclaim-policy-invalid": {
 		Path:        storageValidationPath,
 		Functions:   []string{"validateReclaimPolicy"},
 		Digest:      "sha256:791ebb715d65b5a33bfbfb742a971db7513c53b2a343d5e3610a8c874fe50064",
@@ -40,7 +40,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"len(string(*reclaimPolicy)) > 0 guard, so the API server accepts reclaimPolicy: \"\". " +
 			"There is no Required branch in the cited function. Note this guard is specific to " +
 			"this field - validateVolumeBindingMode in the same file has none, so " +
-			"storage-class/volume-binding-mode-invalid correctly reports an empty value.",
+			"kubernetes/storage-class/volume-binding-mode-invalid correctly reports an empty value.",
 		Additional: []runtime.UpstreamRef{{
 			Path:        storageValidationPath,
 			Functions:   []string{"supportedReclaimPolicy"},
@@ -49,7 +49,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"storage-class/volume-binding-mode-invalid": {
+	"kubernetes/storage-class/volume-binding-mode-invalid": {
 		Path:        storageValidationPath,
 		Functions:   []string{"validateVolumeBindingMode"},
 		Digest:      "sha256:4d6f232bcacebc818c011eef7d9e7fd277ae8a47e8a7b85b839888ab3d6ca29b",
@@ -63,7 +63,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"storage-class/allowed-topology-range-invalid": {
+	"kubernetes/storage-class/allowed-topology-range-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateTopologySelectorTerm", "validateTopologySelectorLabelRequirement"},
 		Digest:      "sha256:ac518bc1edccd06c88fd6110f27819116b6e6fa752e122b7651615e786100b94",
@@ -77,7 +77,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- PersistentVolume --------------------------------------------------
-	"persistent-volume/access-modes-invalid": {
+	"kubernetes/persistent-volume/access-modes-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePersistentVolumeSpec"},
 		Digest:      "sha256:6d6f8faa74e72b0624928a93d4d965ede0be1767d12329bf11fb8dd2669d20dc",
@@ -91,7 +91,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"persistent-volume/volume-mode-invalid": {
+	"kubernetes/persistent-volume/volume-mode-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePersistentVolumeSpec"},
 		Digest:      "sha256:6d6f8faa74e72b0624928a93d4d965ede0be1767d12329bf11fb8dd2669d20dc",
@@ -110,7 +110,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"persistent-volume/capacity-invalid": {
+	"kubernetes/persistent-volume/capacity-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePersistentVolumeSpec"},
 		Digest:      "sha256:6d6f8faa74e72b0624928a93d4d965ede0be1767d12329bf11fb8dd2669d20dc",
@@ -119,7 +119,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- PersistentVolumeClaim ---------------------------------------------
-	"persistent-volume-claim/access-modes-invalid": {
+	"kubernetes/persistent-volume-claim/access-modes-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePersistentVolumeClaimSpec"},
 		Digest:      "sha256:9ca3d57d0c139d824644173c0daa8d64e1a23dabee01c9a132d60769d667eba2",
@@ -133,7 +133,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"persistent-volume-claim/volume-mode-invalid": {
+	"kubernetes/persistent-volume-claim/volume-mode-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePersistentVolumeClaimSpec"},
 		Digest:      "sha256:9ca3d57d0c139d824644173c0daa8d64e1a23dabee01c9a132d60769d667eba2",

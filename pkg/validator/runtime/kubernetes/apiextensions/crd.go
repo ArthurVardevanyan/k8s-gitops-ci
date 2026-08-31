@@ -19,7 +19,7 @@ type storageVersionInvalidCheck struct{ runtime.Meta }
 
 func newStorageVersionInvalidCheck() storageVersionInvalidCheck {
 	return storageVersionInvalidCheck{runtime.Meta{
-		RuleID:    "apiextensions/crd-storage-version-invalid",
+		RuleID:    "kubernetes/apiextensions/crd-storage-version-invalid",
 		RuleTitle: "CRD Must Have Exactly One Storage Version",
 		AppliesTo: crdKinds,
 	}}

@@ -10,7 +10,7 @@ import (
 // The networking rules had no behavioral coverage at all: the only test
 // touching them proved one rule ID was registered. That is enough to keep a
 // check in the report and nothing like enough to know it validates anything,
-// which is how network-policy/port-range-invalid came to accept an endPort
+// which is how kubernetes/network-policy/port-range-invalid came to accept an endPort
 // paired with a named port - the branch upstream rejects outright.
 
 type netCase struct {

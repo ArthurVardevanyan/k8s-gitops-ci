@@ -19,7 +19,7 @@ data:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "core/configmap-data-size-exceeded" {
+	if findings[0].RuleID != "kubernetes/core/configmap-data-size-exceeded" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }

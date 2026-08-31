@@ -65,7 +65,7 @@ type replicationControllerReplicasInvalidCheck struct{ runtime.Meta }
 
 func newReplicationControllerReplicasInvalidCheck() replicationControllerReplicasInvalidCheck {
 	return replicationControllerReplicasInvalidCheck{runtime.Meta{
-		RuleID:    "core/replicationcontroller-replicas-invalid",
+		RuleID:    "kubernetes/core/replicationcontroller-replicas-invalid",
 		RuleTitle: "ReplicationController Replicas Must Be >= 0",
 		AppliesTo: []string{replicationControllerKind},
 	}}
@@ -103,7 +103,7 @@ type replicationControllerSelectorInvalidCheck struct{ runtime.Meta }
 
 func newReplicationControllerSelectorInvalidCheck() replicationControllerSelectorInvalidCheck {
 	return replicationControllerSelectorInvalidCheck{runtime.Meta{
-		RuleID:    "core/replicationcontroller-selector-invalid",
+		RuleID:    "kubernetes/core/replicationcontroller-selector-invalid",
 		RuleTitle: "ReplicationController Selector Must Not Be Empty",
 		AppliesTo: []string{replicationControllerKind},
 	}}
@@ -149,7 +149,7 @@ type replicationControllerMinReadySecondsInvalidCheck struct{ runtime.Meta }
 
 func newReplicationControllerMinReadySecondsInvalidCheck() replicationControllerMinReadySecondsInvalidCheck {
 	return replicationControllerMinReadySecondsInvalidCheck{runtime.Meta{
-		RuleID:    "core/replicationcontroller-min-ready-seconds-invalid",
+		RuleID:    "kubernetes/core/replicationcontroller-min-ready-seconds-invalid",
 		RuleTitle: "ReplicationController MinReadySeconds Must Be >= 0",
 		AppliesTo: []string{replicationControllerKind},
 	}}

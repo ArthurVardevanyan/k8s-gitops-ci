@@ -1,89 +1,89 @@
 # Registered runtime checks: <rule id>\t<title>\t<kinds, comma-separated, * = all>
 # Regenerate: task update:checks
-admissionregistration/failure-policy-invalid	Webhook FailurePolicy Must Be Valid	MutatingWebhookConfiguration
-admissionregistration/service-invalid	Webhook Service Reference Must Be Valid	MutatingWebhookConfiguration
-admissionregistration/timeout-invalid	Webhook TimeoutSeconds Must Be Between 1 and 30	MutatingWebhookConfiguration
-admissionregistration/validating-failure-policy-invalid	Webhook FailurePolicy Must Be Valid	ValidatingWebhookConfiguration
-admissionregistration/validating-service-invalid	Webhook Service Reference Must Be Valid	ValidatingWebhookConfiguration
-admissionregistration/validating-timeout-invalid	Webhook TimeoutSeconds Must Be Between 1 and 30	ValidatingWebhookConfiguration
-apiextensions/crd-storage-version-invalid	CRD Must Have Exactly One Storage Version	CustomResourceDefinition
-apps/daemonset-min-ready-seconds-invalid	MinReadySeconds Must Be >= 0	DaemonSet
-apps/daemonset-selector-invalid	Selector Must Be A Valid Label Selector	DaemonSet
-apps/daemonset-update-strategy-invalid	UpdateStrategy Type Must Be Valid	DaemonSet
-apps/deployment-min-ready-seconds-invalid	MinReadySeconds Must Be >= 0	Deployment
-apps/deployment-replicas-invalid	Replicas Must Be >= 0	Deployment
-apps/deployment-selector-invalid	Selector Must Be A Valid Label Selector	Deployment
-apps/deployment-strategy-type-invalid	Strategy Type Must Be Valid	Deployment
-apps/replicaset-replicas-invalid	Replicas Must Be >= 0	ReplicaSet
-apps/replicaset-selector-invalid	Selector Must Be A Valid Label Selector	ReplicaSet
-apps/statefulset-pod-management-policy-invalid	PodManagementPolicy Must Be Valid	StatefulSet
-apps/statefulset-replicas-invalid	Replicas Must Be >= 0	StatefulSet
-apps/statefulset-update-strategy-invalid	UpdateStrategy Type Must Be Valid	StatefulSet
-autoscaling/max-replicas-invalid	HPA maxReplicas Must Be Greater Than Zero	HorizontalPodAutoscaler
-autoscaling/scale-down-invalid	HPA scaleDown stabilizationWindowSeconds Must Be >= 0	HorizontalPodAutoscaler
-autoscaling/scale-up-invalid	HPA scaleUp stabilizationWindowSeconds Must Be >= 0	HorizontalPodAutoscaler
-batch/backoff-limit-invalid	BackoffLimit Must Be >= 0	Job
-batch/concurrency-policy-invalid	ConcurrencyPolicy Must Be Valid	CronJob
-batch/failed-jobs-history-limit-invalid	FailedJobsHistoryLimit Must Be >= 0	CronJob
-batch/parallelism-invalid	Parallelism Must Be >= 0	Job
-batch/schedule-invalid	CronJob Schedule Must Be Valid	CronJob
-batch/starting-deadline-seconds-invalid	StartingDeadlineSeconds Must Be >= 0	CronJob
-batch/successful-jobs-history-limit-invalid	SuccessfulJobsHistoryLimit Must Be >= 0	CronJob
-container/duplicate-container-names	Duplicate Container Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/duplicate-port-names	Duplicate Port Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/host-port-range	Host Port Must Be In Range 1-65535	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/image-pull-policy	ImagePullPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/mount-propagation-value	MountPropagation Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/name-invalid	Container Name Must Be A DNS-1123 Label	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/port-name-invalid	Container Port Name Must Be A Valid IANA Service Name	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/port-number-range	Port Number Must Be In Range 1-65535	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/port-protocol-invalid	Container Port Protocol Must Be TCP, UDP or SCTP	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/termination-message-policy-value	TerminationMessagePolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-container/volume-mount-name-undefined	VolumeMount Name Must Match a Volume Definition	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-core/configmap-data-size-exceeded	ConfigMap Data Size Must Not Exceed 1 MiB	ConfigMap
-core/limitrange-max-min-invalid	LimitRange Max Must Be >= Min	LimitRange
-core/object-meta-annotations-invalid	Object Annotations Must Be Valid	*
-core/object-meta-labels-invalid	Object Labels Must Be Valid	*
-core/object-meta-name-invalid	Object Name Must Be Valid For Its Kind	ClusterRole,ClusterRoleBinding,ConfigMap,CronJob,DaemonSet,Deployment,HorizontalPodAutoscaler,Ingress,IngressClass,Job,LimitRange,MutatingWebhookConfiguration,Namespace,NetworkPolicy,PersistentVolume,PersistentVolumeClaim,Pod,ReplicaSet,ResourceQuota,Role,RoleBinding,Secret,Service,ServiceAccount,StatefulSet,StorageClass,ValidatingWebhookConfiguration
-core/object-meta-namespace-invalid	Object Namespace Must Be A Valid DNS Label	ClusterRole,ClusterRoleBinding,ConfigMap,CronJob,DaemonSet,Deployment,HorizontalPodAutoscaler,Ingress,IngressClass,Job,LimitRange,MutatingWebhookConfiguration,Namespace,NetworkPolicy,PersistentVolume,PersistentVolumeClaim,Pod,ReplicaSet,ResourceQuota,Role,RoleBinding,Secret,Service,ServiceAccount,StatefulSet,StorageClass,ValidatingWebhookConfiguration
-core/replicationcontroller-min-ready-seconds-invalid	ReplicationController MinReadySeconds Must Be >= 0	ReplicationController
-core/replicationcontroller-replicas-invalid	ReplicationController Replicas Must Be >= 0	ReplicationController
-core/replicationcontroller-selector-invalid	ReplicationController Selector Must Not Be Empty	ReplicationController
-core/resourcequota-hard-invalid	ResourceQuota Hard Values Must Be Valid Resources	ResourceQuota
-core/resourcequota-hard-negative	ResourceQuota Hard Values Must Not Be Negative	ResourceQuota
-ingress/path-type-invalid	Ingress PathType Must Be Valid	Ingress
-network-policy/policy-type-invalid	NetworkPolicy policyTypes Must Be Valid	NetworkPolicy
-network-policy/port-range-invalid	NetworkPolicy Port Range Must Be Valid	NetworkPolicy
-network-policy/protocol-invalid	NetworkPolicy Protocol Must Be Valid	NetworkPolicy
-persistent-volume-claim/access-modes-invalid	PersistentVolumeClaim Access Modes Must Be Valid	PersistentVolumeClaim
-persistent-volume-claim/volume-mode-invalid	PersistentVolumeClaim Volume Mode Must Be Valid	PersistentVolumeClaim
-persistent-volume/access-modes-invalid	PersistentVolume Access Modes Must Be Valid	PersistentVolume
-persistent-volume/capacity-invalid	PersistentVolume Capacity Must Specify At Least One Resource	PersistentVolume
-persistent-volume/volume-mode-invalid	PersistentVolume Volume Mode Must Be Valid	PersistentVolume
-pod-spec/active-deadline-seconds-negative	ActiveDeadlineSeconds Must Be >= 1	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/affinity-node-selector-invalid	NodeSelector Values Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/dns-policy-value	DNSPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/pod-affinity-invalid	Pod Affinity Labels Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/readiness-gate-invalid	ReadinessGate ConditionType Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/restart-policy-value	RestartPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/service-account-name-invalid	ServiceAccountName Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/toleration-operator-value	Toleration Operator Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-pod-spec/topology-spread-invalid	TopologySpreadConstraints Labels Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-policy/max-unavailable-invalid	PDB maxUnavailable Must Be >= 0	PodDisruptionBudget
-policy/min-and-max-specified	PDB Must Specify Only One Disruption Target	PodDisruptionBudget
-policy/min-available-invalid	PDB minAvailable Must Be >= 0	PodDisruptionBudget
-policy/selector-invalid	PDB Selector Must Be A Valid Label Selector	PodDisruptionBudget
-rbac/clusterrole-ref-invalid	ClusterRoleBinding roleRef Must Reference a ClusterRole	ClusterRoleBinding
-rbac/clusterrolebinding-subject-invalid	ClusterRoleBinding subjects Must Be Valid	ClusterRoleBinding
-rbac/role-ref-invalid	RoleBinding roleRef Must Be Valid	RoleBinding
-resources/resource-quantity-negative	Resource Quantity Must Not Be Negative	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-resources/resource-requests-greater-than-limits	Resource Requests Must Not Exceed Limits	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-service/session-affinity-invalid	Service SessionAffinity Must Be Valid	Service
-service/type-invalid	Service Type Must Be Valid	Service
-storage-class/allowed-topology-range-invalid	StorageClass Allowed Topologies Must Have Valid Label Selectors	StorageClass
-storage-class/provisioner-invalid	StorageClass Provisioner Must Be Specified	StorageClass
-storage-class/reclaim-policy-invalid	StorageClass Reclaim Policy Must Be Valid	StorageClass
-storage-class/volume-binding-mode-invalid	StorageClass Volume Binding Mode Must Be Valid	StorageClass
-volume/configmap-name-required	ConfigMap Volume Must Set name	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-volume/duplicate-volume-names	Duplicate Volume Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
-volume/secret-name-required	Secret Volume Must Set secretName	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/admissionregistration/failure-policy-invalid	Webhook FailurePolicy Must Be Valid	MutatingWebhookConfiguration
+kubernetes/admissionregistration/service-invalid	Webhook Service Reference Must Be Valid	MutatingWebhookConfiguration
+kubernetes/admissionregistration/timeout-invalid	Webhook TimeoutSeconds Must Be Between 1 and 30	MutatingWebhookConfiguration
+kubernetes/admissionregistration/validating-failure-policy-invalid	Webhook FailurePolicy Must Be Valid	ValidatingWebhookConfiguration
+kubernetes/admissionregistration/validating-service-invalid	Webhook Service Reference Must Be Valid	ValidatingWebhookConfiguration
+kubernetes/admissionregistration/validating-timeout-invalid	Webhook TimeoutSeconds Must Be Between 1 and 30	ValidatingWebhookConfiguration
+kubernetes/apiextensions/crd-storage-version-invalid	CRD Must Have Exactly One Storage Version	CustomResourceDefinition
+kubernetes/apps/daemonset-min-ready-seconds-invalid	MinReadySeconds Must Be >= 0	DaemonSet
+kubernetes/apps/daemonset-selector-invalid	Selector Must Be A Valid Label Selector	DaemonSet
+kubernetes/apps/daemonset-update-strategy-invalid	UpdateStrategy Type Must Be Valid	DaemonSet
+kubernetes/apps/deployment-min-ready-seconds-invalid	MinReadySeconds Must Be >= 0	Deployment
+kubernetes/apps/deployment-replicas-invalid	Replicas Must Be >= 0	Deployment
+kubernetes/apps/deployment-selector-invalid	Selector Must Be A Valid Label Selector	Deployment
+kubernetes/apps/deployment-strategy-type-invalid	Strategy Type Must Be Valid	Deployment
+kubernetes/apps/replicaset-replicas-invalid	Replicas Must Be >= 0	ReplicaSet
+kubernetes/apps/replicaset-selector-invalid	Selector Must Be A Valid Label Selector	ReplicaSet
+kubernetes/apps/statefulset-pod-management-policy-invalid	PodManagementPolicy Must Be Valid	StatefulSet
+kubernetes/apps/statefulset-replicas-invalid	Replicas Must Be >= 0	StatefulSet
+kubernetes/apps/statefulset-update-strategy-invalid	UpdateStrategy Type Must Be Valid	StatefulSet
+kubernetes/autoscaling/max-replicas-invalid	HPA maxReplicas Must Be Greater Than Zero	HorizontalPodAutoscaler
+kubernetes/autoscaling/scale-down-invalid	HPA scaleDown stabilizationWindowSeconds Must Be >= 0	HorizontalPodAutoscaler
+kubernetes/autoscaling/scale-up-invalid	HPA scaleUp stabilizationWindowSeconds Must Be >= 0	HorizontalPodAutoscaler
+kubernetes/batch/backoff-limit-invalid	BackoffLimit Must Be >= 0	Job
+kubernetes/batch/concurrency-policy-invalid	ConcurrencyPolicy Must Be Valid	CronJob
+kubernetes/batch/failed-jobs-history-limit-invalid	FailedJobsHistoryLimit Must Be >= 0	CronJob
+kubernetes/batch/parallelism-invalid	Parallelism Must Be >= 0	Job
+kubernetes/batch/schedule-invalid	CronJob Schedule Must Be Valid	CronJob
+kubernetes/batch/starting-deadline-seconds-invalid	StartingDeadlineSeconds Must Be >= 0	CronJob
+kubernetes/batch/successful-jobs-history-limit-invalid	SuccessfulJobsHistoryLimit Must Be >= 0	CronJob
+kubernetes/container/duplicate-container-names	Duplicate Container Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/duplicate-port-names	Duplicate Port Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/host-port-range	Host Port Must Be In Range 1-65535	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/image-pull-policy	ImagePullPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/mount-propagation-value	MountPropagation Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/name-invalid	Container Name Must Be A DNS-1123 Label	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/port-name-invalid	Container Port Name Must Be A Valid IANA Service Name	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/port-number-range	Port Number Must Be In Range 1-65535	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/port-protocol-invalid	Container Port Protocol Must Be TCP, UDP or SCTP	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/termination-message-policy-value	TerminationMessagePolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/container/volume-mount-name-undefined	VolumeMount Name Must Match a Volume Definition	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/core/configmap-data-size-exceeded	ConfigMap Data Size Must Not Exceed 1 MiB	ConfigMap
+kubernetes/core/limitrange-max-min-invalid	LimitRange Max Must Be >= Min	LimitRange
+kubernetes/core/object-meta-annotations-invalid	Object Annotations Must Be Valid	*
+kubernetes/core/object-meta-labels-invalid	Object Labels Must Be Valid	*
+kubernetes/core/object-meta-name-invalid	Object Name Must Be Valid For Its Kind	ClusterRole,ClusterRoleBinding,ConfigMap,CronJob,DaemonSet,Deployment,HorizontalPodAutoscaler,Ingress,IngressClass,Job,LimitRange,MutatingWebhookConfiguration,Namespace,NetworkPolicy,PersistentVolume,PersistentVolumeClaim,Pod,ReplicaSet,ResourceQuota,Role,RoleBinding,Secret,Service,ServiceAccount,StatefulSet,StorageClass,ValidatingWebhookConfiguration
+kubernetes/core/object-meta-namespace-invalid	Object Namespace Must Be A Valid DNS Label	ClusterRole,ClusterRoleBinding,ConfigMap,CronJob,DaemonSet,Deployment,HorizontalPodAutoscaler,Ingress,IngressClass,Job,LimitRange,MutatingWebhookConfiguration,Namespace,NetworkPolicy,PersistentVolume,PersistentVolumeClaim,Pod,ReplicaSet,ResourceQuota,Role,RoleBinding,Secret,Service,ServiceAccount,StatefulSet,StorageClass,ValidatingWebhookConfiguration
+kubernetes/core/replicationcontroller-min-ready-seconds-invalid	ReplicationController MinReadySeconds Must Be >= 0	ReplicationController
+kubernetes/core/replicationcontroller-replicas-invalid	ReplicationController Replicas Must Be >= 0	ReplicationController
+kubernetes/core/replicationcontroller-selector-invalid	ReplicationController Selector Must Not Be Empty	ReplicationController
+kubernetes/core/resourcequota-hard-invalid	ResourceQuota Hard Values Must Be Valid Resources	ResourceQuota
+kubernetes/core/resourcequota-hard-negative	ResourceQuota Hard Values Must Not Be Negative	ResourceQuota
+kubernetes/ingress/path-type-invalid	Ingress PathType Must Be Valid	Ingress
+kubernetes/network-policy/policy-type-invalid	NetworkPolicy policyTypes Must Be Valid	NetworkPolicy
+kubernetes/network-policy/port-range-invalid	NetworkPolicy Port Range Must Be Valid	NetworkPolicy
+kubernetes/network-policy/protocol-invalid	NetworkPolicy Protocol Must Be Valid	NetworkPolicy
+kubernetes/persistent-volume-claim/access-modes-invalid	PersistentVolumeClaim Access Modes Must Be Valid	PersistentVolumeClaim
+kubernetes/persistent-volume-claim/volume-mode-invalid	PersistentVolumeClaim Volume Mode Must Be Valid	PersistentVolumeClaim
+kubernetes/persistent-volume/access-modes-invalid	PersistentVolume Access Modes Must Be Valid	PersistentVolume
+kubernetes/persistent-volume/capacity-invalid	PersistentVolume Capacity Must Specify At Least One Resource	PersistentVolume
+kubernetes/persistent-volume/volume-mode-invalid	PersistentVolume Volume Mode Must Be Valid	PersistentVolume
+kubernetes/pod-spec/active-deadline-seconds-negative	ActiveDeadlineSeconds Must Be >= 1	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/affinity-node-selector-invalid	NodeSelector Values Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/dns-policy-value	DNSPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/pod-affinity-invalid	Pod Affinity Labels Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/readiness-gate-invalid	ReadinessGate ConditionType Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/restart-policy-value	RestartPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/service-account-name-invalid	ServiceAccountName Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/toleration-operator-value	Toleration Operator Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/pod-spec/topology-spread-invalid	TopologySpreadConstraints Labels Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/policy/max-unavailable-invalid	PDB maxUnavailable Must Be >= 0	PodDisruptionBudget
+kubernetes/policy/min-and-max-specified	PDB Must Specify Only One Disruption Target	PodDisruptionBudget
+kubernetes/policy/min-available-invalid	PDB minAvailable Must Be >= 0	PodDisruptionBudget
+kubernetes/policy/selector-invalid	PDB Selector Must Be A Valid Label Selector	PodDisruptionBudget
+kubernetes/rbac/clusterrole-ref-invalid	ClusterRoleBinding roleRef Must Reference a ClusterRole	ClusterRoleBinding
+kubernetes/rbac/clusterrolebinding-subject-invalid	ClusterRoleBinding subjects Must Be Valid	ClusterRoleBinding
+kubernetes/rbac/role-ref-invalid	RoleBinding roleRef Must Be Valid	RoleBinding
+kubernetes/resources/resource-quantity-negative	Resource Quantity Must Not Be Negative	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/resources/resource-requests-greater-than-limits	Resource Requests Must Not Exceed Limits	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/service/session-affinity-invalid	Service SessionAffinity Must Be Valid	Service
+kubernetes/service/type-invalid	Service Type Must Be Valid	Service
+kubernetes/storage-class/allowed-topology-range-invalid	StorageClass Allowed Topologies Must Have Valid Label Selectors	StorageClass
+kubernetes/storage-class/provisioner-invalid	StorageClass Provisioner Must Be Specified	StorageClass
+kubernetes/storage-class/reclaim-policy-invalid	StorageClass Reclaim Policy Must Be Valid	StorageClass
+kubernetes/storage-class/volume-binding-mode-invalid	StorageClass Volume Binding Mode Must Be Valid	StorageClass
+kubernetes/volume/configmap-name-required	ConfigMap Volume Must Set name	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/volume/duplicate-volume-names	Duplicate Volume Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+kubernetes/volume/secret-name-required	Secret Volume Must Set secretName	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet

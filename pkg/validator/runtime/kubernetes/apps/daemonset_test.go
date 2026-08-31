@@ -12,9 +12,9 @@ func TestDaemonSet_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{newDaemonSetSelectorInvalidCheck(), "apps/daemonset-selector-invalid", "apps"},
-		{newDaemonSetUpdateStrategyInvalidCheck(), "apps/daemonset-update-strategy-invalid", "apps"},
-		{newDaemonSetMinReadySecondsInvalidCheck(), "apps/daemonset-min-ready-seconds-invalid", "apps"},
+		{newDaemonSetSelectorInvalidCheck(), "kubernetes/apps/daemonset-selector-invalid", "apps"},
+		{newDaemonSetUpdateStrategyInvalidCheck(), "kubernetes/apps/daemonset-update-strategy-invalid", "apps"},
+		{newDaemonSetMinReadySecondsInvalidCheck(), "kubernetes/apps/daemonset-min-ready-seconds-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -62,10 +62,10 @@ spec:
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
 	}
-	if !ruleIDs["apps/daemonset-min-ready-seconds-invalid"] {
+	if !ruleIDs["kubernetes/apps/daemonset-min-ready-seconds-invalid"] {
 		t.Error("expected daemonset-min-ready-seconds-invalid finding")
 	}
-	if !ruleIDs["apps/daemonset-update-strategy-invalid"] {
+	if !ruleIDs["kubernetes/apps/daemonset-update-strategy-invalid"] {
 		t.Error("expected daemonset-update-strategy-invalid finding")
 	}
 }

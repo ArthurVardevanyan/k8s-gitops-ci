@@ -233,7 +233,13 @@ func TestIsUpstreamValidationPath(t *testing.T) {
 }
 
 // checkIDPattern matches a check ID as it appears in note prose.
-var checkIDPattern = regexp.MustCompile(`[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*`)
+//
+// IDs are "<family>/<category>/<rule>", so this must be greedy across all
+// three segments: a two-segment pattern would match the "family/category"
+// prefix of a three-segment ID and then report that truncation as an
+// unresolvable deferral, which is exactly what it did when the family prefix
+// was introduced.
+var checkIDPattern = regexp.MustCompile(`[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*){2}`)
 
 // coveredByTargets returns every check ID a note defers a branch to.
 //
@@ -360,18 +366,18 @@ func sharesFunction(a, b runtime.UpstreamRef) bool {
 // the failure that matters in practice: an existing set citation being dropped
 // or pointed at the wrong file.
 var enumBackedChecks = map[string]string{
-	"service/type-invalid":                                    "supportedServiceType",
-	"service/session-affinity-invalid":                        "supportedSessionAffinityType",
-	"ingress/path-type-invalid":                               "supportedPathTypes",
-	"persistent-volume/access-modes-invalid":                  "supportedAccessModes",
-	"persistent-volume-claim/access-modes-invalid":            "supportedAccessModes",
-	"persistent-volume/volume-mode-invalid":                   "supportedVolumeModes",
-	"persistent-volume-claim/volume-mode-invalid":             "supportedVolumeModes",
-	"storage-class/reclaim-policy-invalid":                    "supportedReclaimPolicy",
-	"storage-class/volume-binding-mode-invalid":               "supportedVolumeBindingModes",
-	"admissionregistration/failure-policy-invalid":            "supportedFailurePolicies",
-	"admissionregistration/validating-failure-policy-invalid": "supportedFailurePolicies",
-	"container/port-protocol-invalid":                         "supportedPortProtocols",
+	"kubernetes/service/type-invalid":                                    "supportedServiceType",
+	"kubernetes/service/session-affinity-invalid":                        "supportedSessionAffinityType",
+	"kubernetes/ingress/path-type-invalid":                               "supportedPathTypes",
+	"kubernetes/persistent-volume/access-modes-invalid":                  "supportedAccessModes",
+	"kubernetes/persistent-volume-claim/access-modes-invalid":            "supportedAccessModes",
+	"kubernetes/persistent-volume/volume-mode-invalid":                   "supportedVolumeModes",
+	"kubernetes/persistent-volume-claim/volume-mode-invalid":             "supportedVolumeModes",
+	"kubernetes/storage-class/reclaim-policy-invalid":                    "supportedReclaimPolicy",
+	"kubernetes/storage-class/volume-binding-mode-invalid":               "supportedVolumeBindingModes",
+	"kubernetes/admissionregistration/failure-policy-invalid":            "supportedFailurePolicies",
+	"kubernetes/admissionregistration/validating-failure-policy-invalid": "supportedFailurePolicies",
+	"kubernetes/container/port-protocol-invalid":                         "supportedPortProtocols",
 }
 
 func TestEnumBackedChecksCiteTheirUpstreamSet(t *testing.T) {

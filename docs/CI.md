@@ -771,6 +771,30 @@ checks themselves), and they render as their **own report section,
 "Runtime Validation"** (`Section()` returns `"runtime-validation"`),
 separate from Resource Compliance.
 
+##### Check IDs are `<family>/<category>/<rule>`
+
+A runtime check ID has three segments, for example
+`kubernetes/batch/schedule-invalid`:
+
+- **family** — the upstream project whose rejection the check mirrors.
+  This is what makes the family prefix worth carrying: how strongly
+  "the cluster rejects this" holds varies by upstream. A
+  `kubernetes` rule is enforced by the API server and always holds; a
+  rule owned by an operator only holds on clusters where that operator
+  is installed.
+- **category** — the grouping within that family, usually the API group
+  or the kind the rule concerns (`batch`, `container`, `pod-spec`).
+- **rule** — the rule itself.
+
+Both `runtime.FamilyOf` and `runtime.CategoryOf` derive their answer from
+the ID rather than reading a declared field, so the two can never
+disagree with the identity findings are keyed by.
+
+The report groups by family and then by category. The family level is
+**omitted when only one family is present**, so a single-family run
+renders exactly as it did before families existed rather than wrapping
+the whole section in one redundant `<details>`.
+
 Three properties distinguish this family from the registered checks
 table above:
 
@@ -823,7 +847,7 @@ That standard is enforced, not merely stated. Each check supplies an
 `UpstreamRef` in its package's `upstream_refs.go`:
 
 ```go
-"apps/deployment-replicas-invalid": {
+"kubernetes/apps/deployment-replicas-invalid": {
     Path:        "pkg/apis/apps/validation/validation.go",
     Functions:   []string{"ValidateDeploymentSpec"},
     Digest:      "sha256:...",
@@ -993,7 +1017,7 @@ type deploymentReplicasInvalidCheck struct{ runtime.Meta }
 
 func newDeploymentReplicasInvalidCheck() deploymentReplicasInvalidCheck {
     return deploymentReplicasInvalidCheck{runtime.Meta{
-        RuleID:    "apps/deployment-replicas-invalid",
+        RuleID:    "kubernetes/apps/deployment-replicas-invalid",
         RuleTitle: "Replicas Must Be >= 0",
         AppliesTo: []string{"Deployment"},
     }}
@@ -1028,7 +1052,7 @@ verification can report all-clear while the ported rule has shifted
 underneath it. `Functions` is a list precisely so a check can cite the
 callee it actually ports, and a check whose rule lives entirely in a shared
 helper should call that helper rather than reimplement it — as
-`policy/selector-invalid` does with apimachinery's `ValidateLabelSelector`.
+`kubernetes/policy/selector-invalid` does with apimachinery's `ValidateLabelSelector`.
 Resolving callees transitively would close the gap generally; it is not
 implemented.
 
@@ -1036,7 +1060,7 @@ The same gap runs in the other direction, and that one has bitten. Where the
 API server **prepares the input** before calling the function that reports
 the error, the preparation is part of the rule: porting only the callee
 applies correct logic to the wrong data.
-`container/volume-mount-name-undefined` rejected nearly every real
+`kubernetes/container/volume-mount-name-undefined` rejected nearly every real
 StatefulSet for exactly this reason — it ported `ValidateVolumeMounts`
 faithfully, but upstream's caller first synthesizes a volume for each
 `volumeClaimTemplate`, so the mount it flagged does resolve. The digest over
@@ -1083,7 +1107,7 @@ Cite supporting code in `Additional`, a list of refs in other files verified
 exactly like the primary one:
 
 ```go
-"container/volume-mount-name-undefined": {
+"kubernetes/container/volume-mount-name-undefined": {
     Path:      coreValidationPath,
     Functions: []string{"ValidateVolumeMounts", "IsMatchedVolume"},
     // ...
@@ -1171,7 +1195,8 @@ The remaining checks group by API group:
 | `runtime/kubernetes/policy/validation`                | PodDisruptionBudget                                                                                                                                                     |
 
 `pkg/validator/runtime/kubernetes/` is the authoritative list — the check
-IDs (`<category>/<rule>`, e.g. `apps/daemonset-min-ready-seconds-invalid`)
+IDs (`<family>/<category>/<rule>`, e.g.
+`kubernetes/apps/daemonset-min-ready-seconds-invalid`)
 are declared next to the rules they enforce, and this table is a map, not
 an inventory.
 
@@ -1202,7 +1227,7 @@ exactly what they are checking.
 
 ##### Object name validation
 
-`core/object-meta-name-invalid` covers `metadata.name` and
+`kubernetes/core/object-meta-name-invalid` covers `metadata.name` and
 `metadata.generateName` for every kind in one place. This is worth a
 separate note because the rules are **not uniform** — assuming a blanket
 DNS-1123 subdomain rule produces false positives on valid manifests:
@@ -1239,7 +1264,7 @@ blocking valid manifests — and these findings are non-exemptable.
 cross-field `<plural>.<group>` form and belongs with the other
 apiextensions checks.
 
-`core/object-meta-namespace-invalid` validates the **format** of
+`kubernetes/core/object-meta-namespace-invalid` validates the **format** of
 `metadata.namespace` (a DNS-1123 label) when one is set. It deliberately
 does not check whether a namespace is present or forbidden for the
 object's scope — that rule belongs to the exemptable `namespace` static
@@ -1247,8 +1272,8 @@ check, which owns the generated cluster resource-scope map. Duplicating it
 would double-report and would turn an exemptable policy decision into an
 unexemptable one.
 
-`core/object-meta-labels-invalid` and
-`core/object-meta-annotations-invalid` validate `metadata.labels` and
+`kubernetes/core/object-meta-labels-invalid` and
+`kubernetes/core/object-meta-annotations-invalid` validate `metadata.labels` and
 `metadata.annotations`. Unlike the name rules above these are **not
 kind-scoped**: the API server applies them to every object it accepts, so
 both checks declare no `Kinds()` and run against every document, custom

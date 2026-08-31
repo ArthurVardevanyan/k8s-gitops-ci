@@ -16,7 +16,7 @@ type daemonSetSelectorInvalidCheck struct{ runtime.Meta }
 
 func newDaemonSetSelectorInvalidCheck() daemonSetSelectorInvalidCheck {
 	return daemonSetSelectorInvalidCheck{runtime.Meta{
-		RuleID:    "apps/daemonset-selector-invalid",
+		RuleID:    "kubernetes/apps/daemonset-selector-invalid",
 		RuleTitle: "Selector Must Be A Valid Label Selector",
 		AppliesTo: []string{"DaemonSet"},
 	}}
@@ -34,7 +34,7 @@ type daemonSetUpdateStrategyInvalidCheck struct{ runtime.Meta }
 
 func newDaemonSetUpdateStrategyInvalidCheck() daemonSetUpdateStrategyInvalidCheck {
 	return daemonSetUpdateStrategyInvalidCheck{runtime.Meta{
-		RuleID:    "apps/daemonset-update-strategy-invalid",
+		RuleID:    "kubernetes/apps/daemonset-update-strategy-invalid",
 		RuleTitle: "UpdateStrategy Type Must Be Valid",
 		AppliesTo: []string{"DaemonSet"},
 	}}
@@ -56,7 +56,7 @@ type daemonSetMinReadySecondsInvalidCheck struct{ runtime.Meta }
 
 func newDaemonSetMinReadySecondsInvalidCheck() daemonSetMinReadySecondsInvalidCheck {
 	return daemonSetMinReadySecondsInvalidCheck{runtime.Meta{
-		RuleID:    "apps/daemonset-min-ready-seconds-invalid",
+		RuleID:    "kubernetes/apps/daemonset-min-ready-seconds-invalid",
 		RuleTitle: "MinReadySeconds Must Be >= 0",
 		AppliesTo: []string{"DaemonSet"},
 	}}

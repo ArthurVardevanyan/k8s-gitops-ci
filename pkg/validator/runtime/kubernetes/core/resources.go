@@ -17,7 +17,7 @@ type resourceRequestsGreaterThanLimitsCheck struct{ runtime.Meta }
 
 func newResourceRequestsGreaterThanLimitsCheck() resourceRequestsGreaterThanLimitsCheck {
 	return resourceRequestsGreaterThanLimitsCheck{runtime.Meta{
-		RuleID:    "resources/resource-requests-greater-than-limits",
+		RuleID:    "kubernetes/resources/resource-requests-greater-than-limits",
 		RuleTitle: "Resource Requests Must Not Exceed Limits",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -83,7 +83,7 @@ type resourceQuantityNegativeCheck struct{ runtime.Meta }
 
 func newResourceQuantityNegativeCheck() resourceQuantityNegativeCheck {
 	return resourceQuantityNegativeCheck{runtime.Meta{
-		RuleID:    "resources/resource-quantity-negative",
+		RuleID:    "kubernetes/resources/resource-quantity-negative",
 		RuleTitle: "Resource Quantity Must Not Be Negative",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}

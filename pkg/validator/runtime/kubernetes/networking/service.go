@@ -19,7 +19,7 @@ type typeInvalidCheck struct{ runtime.Meta }
 
 func newTypeInvalidCheck() typeInvalidCheck {
 	return typeInvalidCheck{runtime.Meta{
-		RuleID:    "service/type-invalid",
+		RuleID:    "kubernetes/service/type-invalid",
 		RuleTitle: "Service Type Must Be Valid",
 		AppliesTo: serviceKinds,
 	}}
@@ -63,7 +63,7 @@ type sessionAffinityInvalidCheck struct{ runtime.Meta }
 
 func newSessionAffinityInvalidCheck() sessionAffinityInvalidCheck {
 	return sessionAffinityInvalidCheck{runtime.Meta{
-		RuleID:    "service/session-affinity-invalid",
+		RuleID:    "kubernetes/service/session-affinity-invalid",
 		RuleTitle: "Service SessionAffinity Must Be Valid",
 		AppliesTo: serviceKinds,
 	}}

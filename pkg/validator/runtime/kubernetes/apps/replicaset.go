@@ -16,7 +16,7 @@ type replicaSetSelectorInvalidCheck struct{ runtime.Meta }
 
 func newReplicaSetSelectorInvalidCheck() replicaSetSelectorInvalidCheck {
 	return replicaSetSelectorInvalidCheck{runtime.Meta{
-		RuleID:    "apps/replicaset-selector-invalid",
+		RuleID:    "kubernetes/apps/replicaset-selector-invalid",
 		RuleTitle: "Selector Must Be A Valid Label Selector",
 		AppliesTo: []string{"ReplicaSet"},
 	}}
@@ -34,7 +34,7 @@ type replicaSetReplicasInvalidCheck struct{ runtime.Meta }
 
 func newReplicaSetReplicasInvalidCheck() replicaSetReplicasInvalidCheck {
 	return replicaSetReplicasInvalidCheck{runtime.Meta{
-		RuleID:    "apps/replicaset-replicas-invalid",
+		RuleID:    "kubernetes/apps/replicaset-replicas-invalid",
 		RuleTitle: "Replicas Must Be >= 0",
 		AppliesTo: []string{"ReplicaSet"},
 	}}

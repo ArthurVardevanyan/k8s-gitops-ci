@@ -27,14 +27,14 @@ const selectorNote = "Ports the unversionedvalidation.ValidateLabelSelector(spec
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
 	// --- Deployment --------------------------------------------------------
-	"apps/deployment-selector-invalid": {
+	"kubernetes/apps/deployment-selector-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentSpec"},
 		Digest:      "sha256:70932c3277e5d6a84aa10f1fff44202f55e229d8ee603320cd39782cfd3109b8",
 		ValidatedAt: validatedAt,
 		Note:        selectorNote,
 	},
-	"apps/deployment-strategy-type-invalid": {
+	"kubernetes/apps/deployment-strategy-type-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentStrategy"},
 		Digest:      "sha256:0d3d7684994250c53b8da905d9b76c7cacc2508e21b3811df37c99d5c68e8f64",
@@ -44,14 +44,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"defaulting sets RollingUpdate before validation and unrendered manifests legitimately " +
 			"omit it. The rollingUpdate sub-branches are not ported.",
 	},
-	"apps/deployment-replicas-invalid": {
+	"kubernetes/apps/deployment-replicas-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentSpec"},
 		Digest:      "sha256:70932c3277e5d6a84aa10f1fff44202f55e229d8ee603320cd39782cfd3109b8",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.Replicas, ...) call in ValidateDeploymentSpec.",
 	},
-	"apps/deployment-min-ready-seconds-invalid": {
+	"kubernetes/apps/deployment-min-ready-seconds-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentSpec"},
 		Digest:      "sha256:70932c3277e5d6a84aa10f1fff44202f55e229d8ee603320cd39782cfd3109b8",
@@ -60,14 +60,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- StatefulSet -------------------------------------------------------
-	"apps/statefulset-replicas-invalid": {
+	"kubernetes/apps/statefulset-replicas-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
 		Digest:      "sha256:38d87077ae011f16a6f6227cd2372a8fcb37c519a7deea1ece414fa59ef52566",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.Replicas, ...) call in ValidateStatefulSetSpec.",
 	},
-	"apps/statefulset-pod-management-policy-invalid": {
+	"kubernetes/apps/statefulset-pod-management-policy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
 		Digest:      "sha256:38d87077ae011f16a6f6227cd2372a8fcb37c519a7deea1ece414fa59ef52566",
@@ -85,7 +85,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 				"defaulted to OrderedReady and must not be reported.",
 		}},
 	},
-	"apps/statefulset-update-strategy-invalid": {
+	"kubernetes/apps/statefulset-update-strategy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
 		Digest:      "sha256:38d87077ae011f16a6f6227cd2372a8fcb37c519a7deea1ece414fa59ef52566",
@@ -101,14 +101,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- DaemonSet ---------------------------------------------------------
-	"apps/daemonset-selector-invalid": {
+	"kubernetes/apps/daemonset-selector-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDaemonSetSpec"},
 		Digest:      "sha256:acc13d2b128b269650f1c2d39b36bb87cd6c5e601087c4928e691962c3e2ca65",
 		ValidatedAt: validatedAt,
 		Note:        selectorNote,
 	},
-	"apps/daemonset-update-strategy-invalid": {
+	"kubernetes/apps/daemonset-update-strategy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDaemonSetUpdateStrategy"},
 		Digest:      "sha256:97aaae89ad60a0885be03a03c81fb038f2fc3c0913196ab30e3de26f3bb2db11",
@@ -118,7 +118,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"branch, is skipped because defaulting sets RollingUpdate before validation. " +
 			"The rollingUpdate sub-branch is not ported.",
 	},
-	"apps/daemonset-min-ready-seconds-invalid": {
+	"kubernetes/apps/daemonset-min-ready-seconds-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDaemonSetSpec"},
 		Digest:      "sha256:acc13d2b128b269650f1c2d39b36bb87cd6c5e601087c4928e691962c3e2ca65",
@@ -127,14 +127,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- ReplicaSet --------------------------------------------------------
-	"apps/replicaset-selector-invalid": {
+	"kubernetes/apps/replicaset-selector-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateReplicaSetSpec"},
 		Digest:      "sha256:fd638e965d961324c568d3d5e4e0948ad1bf977583ee72f905b37d5185d8cec5",
 		ValidatedAt: validatedAt,
 		Note:        selectorNote,
 	},
-	"apps/replicaset-replicas-invalid": {
+	"kubernetes/apps/replicaset-replicas-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateReplicaSetSpec"},
 		Digest:      "sha256:fd638e965d961324c568d3d5e4e0948ad1bf977583ee72f905b37d5185d8cec5",

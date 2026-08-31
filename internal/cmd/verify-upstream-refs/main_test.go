@@ -15,12 +15,12 @@ import (
 // its own digest.
 const refFile = "" +
 	"var refs = map[string]runtime.UpstreamRef{\n" +
-	"\t\"admissionregistration/service-invalid\": {\n" +
+	"\t\"kubernetes/admissionregistration/service-invalid\": {\n" +
 	"\t\tPath:        p,\n" +
 	"\t\tDigest:      mutatingWebhookDigest,\n" +
 	"\t\tValidatedAt: validatedAt,\n" +
 	"\t},\n" +
-	"\t\"admissionregistration/failure-policy-invalid\": {\n" +
+	"\t\"kubernetes/admissionregistration/failure-policy-invalid\": {\n" +
 	"\t\tPath:        p,\n" +
 	"\t\tDigest:      mutatingWebhookDigest,\n" +
 	"\t\tValidatedAt: validatedAt,\n" +
@@ -29,12 +29,12 @@ const refFile = "" +
 	"\t\t\tDigest:      validatingWebhookDigest,\n" +
 	"\t\t}},\n" +
 	"\t},\n" +
-	"\t\"admissionregistration/validating-service-invalid\": {\n" +
+	"\t\"kubernetes/admissionregistration/validating-service-invalid\": {\n" +
 	"\t\tPath:        p,\n" +
 	"\t\tDigest:      validatingWebhookDigest,\n" +
 	"\t\tValidatedAt: validatedAt,\n" +
 	"\t},\n" +
-	"\t\"admissionregistration/validating-timeout-invalid\": {\n" +
+	"\t\"kubernetes/admissionregistration/validating-timeout-invalid\": {\n" +
 	"\t\tPath:        p,\n" +
 	"\t\tDigest:      validatingWebhookDigest,\n" +
 	"\t\tValidatedAt: validatedAt,\n" +
@@ -57,8 +57,8 @@ func TestEntriesReferencing(t *testing.T) {
 			field: "Digest",
 			ident: "validatingWebhookDigest",
 			want: []string{
-				"admissionregistration/validating-service-invalid",
-				"admissionregistration/validating-timeout-invalid",
+				"kubernetes/admissionregistration/validating-service-invalid",
+				"kubernetes/admissionregistration/validating-timeout-invalid",
 			},
 		},
 		{
@@ -66,8 +66,8 @@ func TestEntriesReferencing(t *testing.T) {
 			field: "Digest",
 			ident: "mutatingWebhookDigest",
 			want: []string{
-				"admissionregistration/service-invalid",
-				"admissionregistration/failure-policy-invalid",
+				"kubernetes/admissionregistration/service-invalid",
+				"kubernetes/admissionregistration/failure-policy-invalid",
 			},
 		},
 		{
@@ -101,7 +101,7 @@ func TestEntriesReferencing(t *testing.T) {
 // make --update compare the primary digest against a supporting citation's.
 func TestEntriesReferencingIgnoresNestedRefs(t *testing.T) {
 	got := entriesReferencing(refFile, "Digest", "validatingWebhookDigest")
-	if slices.Contains(got, "admissionregistration/failure-policy-invalid") {
+	if slices.Contains(got, "kubernetes/admissionregistration/failure-policy-invalid") {
 		t.Errorf("nested Additional digest attributed to the entry: %v", got)
 	}
 }

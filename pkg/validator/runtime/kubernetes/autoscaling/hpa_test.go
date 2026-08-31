@@ -15,7 +15,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "autoscaling/max-replicas-invalid" {
+	if findings[0].RuleID != "kubernetes/autoscaling/max-replicas-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 	if findings[0].Kind != "HorizontalPodAutoscaler" {
@@ -63,7 +63,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "autoscaling/scale-down-invalid" {
+	if findings[0].RuleID != "kubernetes/autoscaling/scale-down-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
@@ -98,7 +98,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "autoscaling/scale-up-invalid" {
+	if findings[0].RuleID != "kubernetes/autoscaling/scale-up-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }

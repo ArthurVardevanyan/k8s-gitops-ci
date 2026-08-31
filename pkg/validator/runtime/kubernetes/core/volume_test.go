@@ -20,7 +20,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for duplicate volume names, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "volume/duplicate-volume-names" {
+	if findings[0].RuleID != "kubernetes/volume/duplicate-volume-names" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
@@ -58,7 +58,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for empty secretName, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "volume/secret-name-required" {
+	if findings[0].RuleID != "kubernetes/volume/secret-name-required" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
@@ -95,7 +95,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for empty configMap name, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "volume/configmap-name-required" {
+	if findings[0].RuleID != "kubernetes/volume/configmap-name-required" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
