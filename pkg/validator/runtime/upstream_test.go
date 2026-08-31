@@ -101,10 +101,32 @@ func TestUpstreamRefRewriteKindNonDefaultRepo(t *testing.T) {
 		}
 	})
 
-	t.Run("kubernetes-style tag rejected as validatedAt for a non-default repo lacking one", func(t *testing.T) {
+	t.Run("ordinary semver tag accepted as validatedAt for a non-default repo", func(t *testing.T) {
+		// moduleVersionForRepo returns a tagged dependency's version
+		// verbatim, and unlike kubernetes/kubernetes a non-default repo is
+		// not confined to major version 1 - v0.x.y and v2.x.y are both
+		// legitimate release tags a real dependency might be pinned to.
+		for _, tag := range []string{"v0.5.2", "v2.1.0", "v1.3.0"} {
+			ref := UpstreamRef{
+				Repo:        "containernetworking/cni",
+				Kind:        RefKindRewrite,
+				Path:        "libcni/conf.go",
+				Functions:   []string{"ConfFromBytes"},
+				Digest:      validDigest,
+				ValidatedAt: tag,
+				Note:        "n/a",
+			}
+			if err := ref.Validate(); err != nil {
+				t.Errorf("tag %q: unexpected error: %v", tag, err)
+			}
+		}
+	})
+
+	t.Run("invalid version string rejected as validatedAt for a non-default repo", func(t *testing.T) {
 		// Not every non-default repo would reject a v1.x.y tag (some may
 		// tag releases that way), so this only proves the acceptance list
-		// covers commit SHAs and pseudo-versions, not that tags are banned.
+		// covers commit SHAs, pseudo-versions and ordinary semver tags -
+		// not that some stricter subset of those is required.
 		ref := UpstreamRef{
 			Repo:        "ovn-kubernetes/ovn-kubernetes",
 			Kind:        RefKindRewrite,

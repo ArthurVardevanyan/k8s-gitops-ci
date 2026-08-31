@@ -127,6 +127,11 @@ var (
 	digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	// k8sTagPattern matches a Kubernetes release tag.
 	k8sTagPattern = regexp.MustCompile(`^v1\.\d+\.\d+$`)
+	// semverTagPattern matches an ordinary "v<major>.<minor>.<patch>" release
+	// tag for a non-default repo, which - unlike kubernetes/kubernetes - is
+	// not constrained to major version 1 (moduleVersionForRepo returns
+	// whatever tag the dependency's go.mod requirement pins, verbatim).
+	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 	// pseudoVersionPattern matches a Go module pseudo-version, e.g.
 	// v0.0.0-20260827164301-e63fce3cf15d - the form `go.mod` pins an
 	// untagged commit of a dependency to, such as ovn-kubernetes.
@@ -232,9 +237,12 @@ func (r UpstreamRef) Validate() error {
 
 // validateValidatedAt checks a RefKindRewrite ref's ValidatedAt against the
 // version forms valid for repo: a Kubernetes release tag for
-// kubernetes/kubernetes, or a commit SHA / Go pseudo-version for any other
-// repository (which is not tagged the same way and is instead pinned in
-// go.mod to an exact commit).
+// kubernetes/kubernetes, or an ordinary semver tag, a commit SHA, or a Go
+// pseudo-version for any other repository - moduleVersionForRepo resolves a
+// non-default repo's version straight from its go.mod requirement, which may
+// be any of the three depending on whether the dependency is tagged at all,
+// and tagged dependencies are not confined to kubernetes/kubernetes's major
+// version 1 convention.
 func validateValidatedAt(repo, validatedAt string) error {
 	if repo == defaultRepo {
 		if !k8sTagPattern.MatchString(validatedAt) {
@@ -242,12 +250,12 @@ func validateValidatedAt(repo, validatedAt string) error {
 		}
 		return nil
 	}
-	if k8sTagPattern.MatchString(validatedAt) ||
+	if semverTagPattern.MatchString(validatedAt) ||
 		pseudoVersionPattern.MatchString(validatedAt) ||
 		commitSHAPattern.MatchString(validatedAt) {
 		return nil
 	}
-	return fmt.Errorf("validatedAt %q must be a release tag, a Go pseudo-version, or a commit SHA for repo %q", validatedAt, repo)
+	return fmt.Errorf("validatedAt %q must be a semver release tag, a Go pseudo-version, or a commit SHA for repo %q", validatedAt, repo)
 }
 
 // refs holds the UpstreamRef for every registered runtime check, keyed by
