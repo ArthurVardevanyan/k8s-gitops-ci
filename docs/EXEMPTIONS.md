@@ -218,15 +218,16 @@ the ID as exemptable (or rely on `check.Register` which does this
 automatically for `check.Check` implementations). Single-word IDs and
 acronyms are left unhyphenated.
 
-`pkg/validator/nad`'s structural gate and advisories (see
+`pkg/validator/nad`'s advisories (see
 [CI.md](CI.md#networkattachmentdefinition-nad-validation)) are **not**
 part of the `check.Register` framework at all, so they have no check ID
-to exempt by either mode — a structural-gate hard error always blocks
-regardless of `EXEMPTIONS=(...)` or annotations, and the advisory
-warnings never block in the first place. OVN-Kubernetes's semantic rules
-(`k8scni/net-attach-def/ovn-netconf-invalid`) are different: they _are_ registered, as
-part of the Runtime Validation family, and are covered by "Runtime-
-validation IDs are never exemptable" below instead.
+to exempt by either mode — and they never block in the first place, so
+there is nothing to exempt them from. That layer reports no hard failures.
+Everything blocking about a NAD is a registered runtime check —
+`k8scni/net-attach-def/config-invalid` for whether `spec.config` parses at
+all, `k8scni/net-attach-def/ovn-netconf-invalid` for OVN's own semantic
+rules — and both are covered by "Runtime-validation IDs are never
+exemptable" below instead.
 
 ### Runtime-validation IDs are never exemptable
 

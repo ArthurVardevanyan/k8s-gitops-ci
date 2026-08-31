@@ -1,9 +1,13 @@
-// Package nad provides the CNI-neutral, always-on tier of
-// NetworkAttachmentDefinition (NAD) validation: spec.config must be a
-// non-empty JSON string, must parse as valid JSON (a single CNI config
-// object or a conflist), and must declare a non-empty plugin "type". This
-// applies uniformly to every NAD regardless of which CNI plugin owns it
-// (macvlan, bridge, ipvlan, host-device, SR-IOV, ovn-k8s-cni-overlay, ...).
+// Package nad provides the CNI-neutral, always-on advisory tier of
+// NetworkAttachmentDefinition (NAD) validation: non-gating warnings for
+// likely authoring mistakes, applied uniformly to every NAD regardless of
+// which CNI plugin owns it (macvlan, bridge, ipvlan, host-device, SR-IOV,
+// ovn-k8s-cni-overlay, ...).
+//
+// It reports no hard failures. Whether spec.config is a non-empty JSON
+// string that parses as a CNI configuration with a plugin "type" is decided
+// by pkg/validator/runtime/k8scni's config-invalid check, which is where
+// that shape requirement is both enforced and cited.
 //
 // Two further tiers exist but no longer live in this package:
 //

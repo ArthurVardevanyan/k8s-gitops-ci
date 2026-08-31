@@ -73,13 +73,13 @@ exemptable; neither an annotation nor a `check=` selector can match one.
 **Fix the manifest.** Never write an `EXEMPTIONS` entry for a finding in
 the Runtime Validation section.
 
-**NAD validation's structural gate and advisories** (`pkg/validator/nad`)
-are not part of the `check.Register` framework at all — hard-error
-findings are never exemptable, and advisory warnings never block in the
-first place. OVN-Kubernetes's semantic rules
-(`k8scni/net-attach-def/ovn-netconf-invalid`, `pkg/validator/runtime/k8scni`) _are_
-registered, as part of the Runtime Validation family above — same
-never-exemptable rule, same reason.
+**NAD validation's advisories** (`pkg/validator/nad`) are not part of the
+`check.Register` framework at all, and never block, so there is nothing to
+exempt. Everything blocking about a NAD is a registered runtime check
+(`k8scni/net-attach-def/config-invalid` for whether `spec.config` parses,
+`k8scni/net-attach-def/ovn-netconf-invalid` for OVN's semantic rules, both
+in `pkg/validator/runtime/k8scni`), part of the Runtime Validation family
+above — same never-exemptable rule, same reason.
 `cluster-identity` is a deliberately non-exemptable structural bucket;
 never attempt to exempt it.
 
@@ -267,7 +267,9 @@ shared directory, use a partial suffix (e.g. `cura/High_Speed.curaprofile`).
   section; IDs shaped `<family>/<category>/<rule>`) — deliberately non-exemptable
   via `check.NonExemptable`. The API server would reject the manifest, so
   an exemption only defers the failure to sync time. Fix the manifest.
-- **NAD hard errors** — outside the `check.Register` framework; never exemptable.
+- **NAD findings** — the advisories in `pkg/validator/nad` never block, so
+  there is nothing to exempt; the blocking `k8scni/*` checks are runtime
+  checks and never exemptable.
 - **`--disable-checks <id>`** — disables an entire check across the whole
   run. This is a different mechanism from exemptions. Use it when an
   environment genuinely can't provision a given tool (a missing lint tool

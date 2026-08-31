@@ -11,15 +11,17 @@ import (
 
 // runNADValidation writes every successfully-rendered overlay's YAML to a
 // temp directory and runs NetworkAttachmentDefinition validation against the
-// batch. Validation dispatches on each NAD's declared CNI type (OVN NADs get
-// OVN's semantic rules; non-OVN NADs get structural gates plus advisory
-// warnings) - see pkg/validator/nad's package doc comment. This mirrors
+// batch. That validation is advisory-only - the rules that block, including
+// whether spec.config parses at all, are runtime checks in
+// pkg/validator/runtime/k8scni - see pkg/validator/nad's package doc
+// comment. This mirrors
 // runKyvernoValidation's temp-file + remap pattern (kyverno_wiring.go) so a
 // finding's File points at the overlay a reviewer can act on instead of an
 // ephemeral temp path.
 //
-// Hard errors gate the run (logged via ErrorInSection); advisory warnings are
-// surfaced in the section (⚠️) but never gate.
+// Nothing here gates the run: the advisories are surfaced in the section (⚠️)
+// only. The errs return is kept because reading a file can still fail, which
+// is a failure of this wiring rather than a judgement about a NAD.
 //
 // The returned bool reports whether any NAD resource was actually present in
 // the rendered-overlay chain. When it's false the caller omits the section
@@ -69,9 +71,12 @@ func runNADValidation(outputs []renderedOverlay, log *logger.Logger) (ReportSect
 	remap(errs)
 	remap(warns)
 
-	// Only hard errors gate the run; advisory warnings are surfaced in the
-	// section (⚠️) but must not fail the pipeline (Result.Failed keys off
-	// logged errors, not section status - see validator.Result.Failed).
+	// errs no longer carries judgements about a NAD's contents - those are the
+	// runtime checks' - so in practice it holds only read/decode failures,
+	// which still have to gate rather than pass silently. Advisory warnings
+	// are surfaced in the section (⚠️) but must not fail the pipeline
+	// (Result.Failed keys off logged errors, not section status - see
+	// validator.Result.Failed).
 	if len(errs) > 0 {
 		log.ErrorInSection("NAD", "%d NetworkAttachmentDefinition validation error(s)", len(errs))
 	}

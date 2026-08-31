@@ -127,16 +127,17 @@ of the flow above:
   see [CI.md](CI.md#runtime-validation-checks-admission-rules) and
   [EXEMPTIONS.md](EXEMPTIONS.md#runtime-validation-ids-are-never-exemptable).
 - **NetworkAttachmentDefinition validation:** splits by whether a rule is
-  citable to a specific upstream function. `pkg/validator/nad` — the
-  structural gate (CNI-neutral) plus non-blocking advisories for likely
-  authoring mistakes, neither of which corresponds to a specific upstream
+  citable to a specific upstream function. `pkg/validator/nad` — non-blocking
+  advisories for likely authoring mistakes, which correspond to no upstream
   function — is a separate, always-on validator over rendered overlay
   output, not part of the `check.Register` framework above; its report
-  section is rendered only when a NAD is present in the chain.
-  `pkg/validator/runtime/k8scni` — OVN-Kubernetes's semantic rules, a
-  genuinely citable upstream rule the OVN-Kubernetes network controller
-  enforces — is part of the Runtime Validation family instead (see
-  [CI.md](CI.md#networkattachmentdefinition-nad-validation)).
+  section is rendered only when a NAD is present in the chain. It reports
+  no hard failures: whether a `spec.config` parses at all is decided by
+  `pkg/validator/runtime/k8scni`'s `config-invalid` check, and OVN's own
+  semantic rules by `ovn-netconf-invalid` — both citable, so both belong to
+  the Runtime Validation family (see
+  [CI.md](CI.md#networkattachmentdefinition-nad-validation)). The blocking
+  logic for NADs lives there, not here.
 - **Reporting:** `pkg/validator/unified_report.go`,
   `compose_sections.go`, `pkg/logger`.
 - **Org-injection seams:** `pkg/provider` (see Design Conventions below).
