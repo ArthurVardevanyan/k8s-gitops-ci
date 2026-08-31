@@ -108,6 +108,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# A repo slug can never contain whitespace, so squeezing it out lets the list
+# be written either way ("a/one,b/two" or "a/one, b/two"). The REPOS elements
+# are already trimmed individually where they are consumed; without the same
+# normalization here, a list written the second way would match only its first
+# element and silently drop --assume-openshift for every repo after it - the
+# exact class of silently-omitted flag this file exists to prevent.
+OPENSHIFT_REPOS="${OPENSHIFT_REPOS//[[:space:]]/}"
+
 # --- Validate binary exists ---
 if [[ ! -x "${BINARY}" ]]; then
   echo "Binary not found at ${BINARY}. Building via 'task build'..."
