@@ -56,6 +56,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      mutatingWebhookDigest,
 		ValidatedAt: validatedAt,
 		Note:        failurePolicyNote,
+		Additional: []runtime.UpstreamRef{{
+			Path:        admissionregistrationValidationPath,
+			Functions:   []string{"supportedFailurePolicies"},
+			Digest:      "sha256:d052558bfaeeeb961b66785c3151d6bbab94b71358e2ff6b137985fc0c86e29e",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 	"admissionregistration/timeout-invalid": {
 		Path:        admissionregistrationValidationPath,
@@ -79,6 +86,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      validatingWebhookDigest,
 		ValidatedAt: validatedAt,
 		Note:        failurePolicyNote,
+		Additional: []runtime.UpstreamRef{{
+			Path:        admissionregistrationValidationPath,
+			Functions:   []string{"supportedFailurePolicies"},
+			Digest:      "sha256:d052558bfaeeeb961b66785c3151d6bbab94b71358e2ff6b137985fc0c86e29e",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 	"admissionregistration/validating-timeout-invalid": {
 		Path:        admissionregistrationValidationPath,

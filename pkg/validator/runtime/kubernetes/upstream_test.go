@@ -326,3 +326,76 @@ func sharesFunction(a, b runtime.UpstreamRef) bool {
 	}
 	return false
 }
+
+// enumBackedChecks maps each check whose accepted values come from a
+// package-level upstream set to the name of that set.
+//
+// The distinction this table encodes is not cosmetic. Upstream expresses an
+// enum in one of two shapes, and only one of them is covered by the primary
+// digest:
+//
+//	switch policy {                        // members live IN the function
+//	case core.PullAlways, core.PullNever:  // -> the function digest covers them
+//
+//	if !supportedServiceType.Has(t) {      // members live in a package-level set
+//	                                       // -> the function digest does NOT cover them
+//
+// For the second shape the function body can be byte-identical across releases
+// while the accepted values change underneath it. A check that copies those
+// members would keep rejecting a value the API server now accepts, and
+// `task verify:upstream-refs` would stay green the whole time, because the
+// function it digests never moved. Citing the set closes that gap: the set is
+// verified exactly like the function, so an upstream addition fails CI here
+// instead of surfacing as a false rejection in a consumer's pipeline.
+//
+// Checks absent from this table are absent on purpose: their upstream rule
+// decides acceptance inside the function (a switch, or a set built locally,
+// as validateMountPropagation does), so the primary digest already covers it.
+// Citing the set that only formats the error message - `supportedPullPolicies`
+// is the example - would imply a guarantee the citation does not provide.
+//
+// This is a maintained table, not a derivation. It cannot notice a *new* check
+// that copies a set without adding a row, because whether a check hard-codes an
+// enum is a property of its own source, not of the registry. It does prevent
+// the failure that matters in practice: an existing set citation being dropped
+// or pointed at the wrong file.
+var enumBackedChecks = map[string]string{
+	"service/type-invalid":                                    "supportedServiceType",
+	"service/session-affinity-invalid":                        "supportedSessionAffinityType",
+	"ingress/path-type-invalid":                               "supportedPathTypes",
+	"persistent-volume/access-modes-invalid":                  "supportedAccessModes",
+	"persistent-volume-claim/access-modes-invalid":            "supportedAccessModes",
+	"persistent-volume/volume-mode-invalid":                   "supportedVolumeModes",
+	"persistent-volume-claim/volume-mode-invalid":             "supportedVolumeModes",
+	"storage-class/reclaim-policy-invalid":                    "supportedReclaimPolicy",
+	"storage-class/volume-binding-mode-invalid":               "supportedVolumeBindingModes",
+	"admissionregistration/failure-policy-invalid":            "supportedFailurePolicies",
+	"admissionregistration/validating-failure-policy-invalid": "supportedFailurePolicies",
+	"container/port-protocol-invalid":                         "supportedPortProtocols",
+}
+
+func TestEnumBackedChecksCiteTheirUpstreamSet(t *testing.T) {
+	refs := runtime.AllRefs()
+	for id, setName := range enumBackedChecks {
+		ref, ok := refs[id]
+		if !ok {
+			t.Errorf("enumBackedChecks names %q, which is not a registered check; "+
+				"remove the row or fix the ID", id)
+			continue
+		}
+		var found bool
+		for _, a := range ref.Additional {
+			for _, fn := range a.Functions {
+				if fn == setName {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Errorf("check %q takes its accepted values from the upstream set %q, but does not "+
+				"cite it in Additional: an upstream change to the set alone would leave this "+
+				"check's digests unchanged while it rejects a value the API server accepts",
+				id, setName)
+		}
+	}
+}

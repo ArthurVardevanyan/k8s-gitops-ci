@@ -41,6 +41,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"There is no Required branch in the cited function. Note this guard is specific to " +
 			"this field - validateVolumeBindingMode in the same file has none, so " +
 			"storage-class/volume-binding-mode-invalid correctly reports an empty value.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        storageValidationPath,
+			Functions:   []string{"supportedReclaimPolicy"},
+			Digest:      "sha256:30bdbfc17205c7038d1db6a7660f105b3657490db3db82dce5098af67fb93881",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 	"storage-class/volume-binding-mode-invalid": {
 		Path:        storageValidationPath,
@@ -48,6 +55,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      "sha256:bec218feef5c924cdde9be09c75d44df565ca1a769a1700c291cc7e9c4889ab7",
 		ValidatedAt: validatedAt,
 		Note:        "Upstream additionally reports an absent volumeBindingMode as Required; this check skips absent values because defaulting supplies Immediate before validation.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        storageValidationPath,
+			Functions:   []string{"supportedVolumeBindingModes"},
+			Digest:      "sha256:4ddbdf41e687b86ce14be034868d9c5e661e75fd74cc0d5906ae2733653269d1",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 	"storage-class/allowed-topology-range-invalid": {
 		Path:        coreValidationPath,
@@ -69,6 +83,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      "sha256:1fff24fb51a902e080f973a47107553cda679fdb80ca56d1414ee7a46864cc05",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !supportedAccessModes.Has(mode) -> field.NotSupported branch on spec.accessModes. The Required (empty list) and ReadWriteOncePod-with-other-modes branches are not ported.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        coreValidationPath,
+			Functions:   []string{"supportedAccessModes"},
+			Digest:      "sha256:7cfa2280610fbfb3b20f52cef8426bf64386fea5117334cd2f1c7db62d029d3a",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 	"persistent-volume/volume-mode-invalid": {
 		Path:        coreValidationPath,
@@ -81,6 +102,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"it rejects a non-Filesystem mode on a PV embedded inline in a pod spec, and a standalone " +
 			"PersistentVolume document is validated with that flag false. A nil volumeMode is not " +
 			"reported, because defaulting is guarded on nil and supplies Filesystem.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        coreValidationPath,
+			Functions:   []string{"supportedVolumeModes"},
+			Digest:      "sha256:bf946d503a1ee64253d0d0320abe6f330400cbe19ebc06dea30e422465dccc90",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 	"persistent-volume/capacity-invalid": {
 		Path:        coreValidationPath,
@@ -97,6 +125,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      "sha256:a22a9b4b8eef2bc3fad9b07e34d35db8b0f1070ce5f3c7d7f583a8be3938a981",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !supportedAccessModes.Has(mode) -> field.NotSupported branch on spec.accessModes. The Required (empty list) and ReadWriteOncePod-with-other-modes branches are not ported.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        coreValidationPath,
+			Functions:   []string{"supportedAccessModes"},
+			Digest:      "sha256:7cfa2280610fbfb3b20f52cef8426bf64386fea5117334cd2f1c7db62d029d3a",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 	"persistent-volume-claim/volume-mode-invalid": {
 		Path:        coreValidationPath,
@@ -104,5 +139,12 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      "sha256:a22a9b4b8eef2bc3fad9b07e34d35db8b0f1070ce5f3c7d7f583a8be3938a981",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !supportedVolumeModes.Has(*spec.VolumeMode) -> field.NotSupported branch (Filesystem or Block).",
+		Additional: []runtime.UpstreamRef{{
+			Path:        coreValidationPath,
+			Functions:   []string{"supportedVolumeModes"},
+			Digest:      "sha256:bf946d503a1ee64253d0d0320abe6f330400cbe19ebc06dea30e422465dccc90",
+			ValidatedAt: validatedAt,
+			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
+		}},
 	},
 }

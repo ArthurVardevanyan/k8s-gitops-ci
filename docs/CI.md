@@ -32,6 +32,7 @@ package map; this is the detailed, step-by-step reference.
       - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
         - [Every check must cite a verifiable upstream function](#every-check-must-cite-a-verifiable-upstream-function)
         - [Version skew and feature gates (known limitation)](#version-skew-and-feature-gates-known-limitation)
+        - [Cite the set when the set decides acceptance](#cite-the-set-when-the-set-decides-acceptance)
         - [What the citation does not prove: `Note`](#what-the-citation-does-not-prove-note)
         - [Dispatch owns kind filtering](#dispatch-owns-kind-filtering)
         - [Object name validation](#object-name-validation)
@@ -860,6 +861,40 @@ Two layers verify this:
   so a warm run does no network I/O - the same pattern `schemas:pull`
   already uses.
 
+###### Cite the set when the set decides acceptance
+
+Upstream writes an enum in one of two shapes, and they are not equally covered
+by a digest:
+
+```go
+switch policy {                          // members live IN the function
+case core.PullAlways, core.PullNever:    // -> the function digest covers them
+
+if !supportedServiceType.Has(t) {        // members live in a package-level set
+                                         // -> the function digest does NOT
+```
+
+In the second shape the function body can be byte-identical across releases
+while the values it accepts change underneath it. A check that copies those
+members would keep rejecting a value the API server now accepts, and
+`verify:upstream-refs` would stay green throughout, because the function it
+digests never moved — a silent false rejection on a rule that is
+always-blocking and non-exemptable.
+
+So a check whose accepted values come from a package-level set cites that set
+in `Additional`, where it is verified exactly like the function. Eleven checks
+do (`supportedServiceType`, `supportedSessionAffinityType`,
+`supportedPathTypes`, `supportedAccessModes`, `supportedVolumeModes`,
+`supportedReclaimPolicy`, `supportedVolumeBindingModes`,
+`supportedFailurePolicies`, `supportedPortProtocols`), and
+`TestEnumBackedChecksCiteTheirUpstreamSet` pins them.
+
+Do not cite a set that only formats the error message. `validatePullPolicy`
+decides acceptance in its `switch` and passes `supportedPullPolicies` to
+`field.NotSupported` purely for the message; citing it would imply a guarantee
+the citation does not give. The same applies to sets built locally inside the
+function, as `validateMountPropagation` does — the digest already covers those.
+
 ###### What the citation does not prove: `Note`
 
 A ref also carries a required `Note` recording which branches of the cited
@@ -932,7 +967,7 @@ golden file listing every registered rule ID, title and applies-to list.
 Regenerate it in the same commit:
 
 ```sh
-go test ./pkg/validator/runtime/kubernetes/ -update-checks
+task update:checks
 ```
 
 The diff is the review surface for the change: a new check is one added
