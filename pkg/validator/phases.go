@@ -953,10 +953,6 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	tc.Record("Post-Build Validation", time.Since(postBuildStart), true)
 }
 
-// toIDSet converts a slice of IDs (from DisabledChecks or EnabledChecks)
-// into a lookup set. Reading a missing key from a nil map is a safe
-// zero-value (false) in Go, so callers can use the result directly without
-// a nil check.
 // knownStepIDs is every standalone step ID, i.e. the IDs that participate in
 // the enable/disable mechanism without being registered checks.
 var knownStepIDs = map[string]bool{
@@ -1012,6 +1008,10 @@ func warnUnknownCheckIDs(opts Options, log *logger.Logger) {
 	}
 }
 
+// toIDSet converts a slice of IDs (from DisabledChecks or EnabledChecks)
+// into a lookup set. Reading a missing key from a nil map is a safe
+// zero-value (false) in Go, so callers can use the result directly without
+// a nil check.
 func toIDSet(ids []string) map[string]bool {
 	if len(ids) == 0 {
 		return nil

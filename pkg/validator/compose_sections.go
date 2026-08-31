@@ -361,14 +361,14 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 	return ReportSection{Name: "Runtime Validation", Body: b.String(), Status: StatusError}
 }
 
-// runtimeFamilyTitle renders a family key as a report heading, including what
-// its findings actually guarantee - the qualifier that distinguishes the
-// families and the only reason the family level is rendered at all.
 // runtimeFamilyKubernetes is the one family whose rules the API server itself
 // enforces, which is what both the section intro and the family heading below
 // key their enforcement wording on.
 const runtimeFamilyKubernetes = "kubernetes"
 
+// runtimeFamilyTitle renders a family key as a report heading, including what
+// its findings actually guarantee - the qualifier that distinguishes the
+// families and the only reason the family level is rendered at all.
 func runtimeFamilyTitle(family string) string {
 	switch family {
 	case "":
