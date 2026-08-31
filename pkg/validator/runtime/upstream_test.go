@@ -101,12 +101,36 @@ func TestUpstreamRefRewriteKindNonDefaultRepo(t *testing.T) {
 		}
 	})
 
+	t.Run("Go pseudo-version built on a tagged release accepted as validatedAt", func(t *testing.T) {
+		// "v1.1.2-0.20180830191138-d8f796af33cc" (a real entry in this
+		// repo's own go.mod, github.com/davecgh/go-spew) is a different
+		// pseudo-version shape than the bare form above: it has a "0."
+		// segment marking it as built on tagged release v1.1.2 rather than
+		// an untagged repo. pseudoVersionPattern previously only matched
+		// the bare form.
+		ref := UpstreamRef{
+			Repo:        "davecgh/go-spew",
+			Kind:        RefKindRewrite,
+			Path:        "spew/dump.go",
+			Functions:   []string{"Dump"},
+			Digest:      validDigest,
+			ValidatedAt: "v1.1.2-0.20180830191138-d8f796af33cc",
+			Note:        "n/a",
+		}
+		if err := ref.Validate(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
 	t.Run("ordinary semver tag accepted as validatedAt for a non-default repo", func(t *testing.T) {
 		// moduleVersionForRepo returns a tagged dependency's version
 		// verbatim, and unlike kubernetes/kubernetes a non-default repo is
 		// not confined to major version 1 - v0.x.y and v2.x.y are both
-		// legitimate release tags a real dependency might be pinned to.
-		for _, tag := range []string{"v0.5.2", "v2.1.0", "v1.3.0"} {
+		// legitimate release tags a real dependency might be pinned to, as
+		// are a semver prerelease suffix and Go's "+incompatible" build-
+		// metadata marker (appended to a pre-modules v2+ tag whose import
+		// path isn't version-qualified).
+		for _, tag := range []string{"v0.5.2", "v2.1.0", "v1.3.0", "v1.2.3-rc.1", "v2.0.0+incompatible", "v1.2.3-rc.1+build.5"} {
 			ref := UpstreamRef{
 				Repo:        "containernetworking/cni",
 				Kind:        RefKindRewrite,

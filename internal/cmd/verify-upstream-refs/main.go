@@ -381,11 +381,32 @@ func tagFromGoMod() (string, error) {
 // "v0.0.0-20260827164301-e63fce3cf15d" - the form go.mod pins an untagged
 // commit of a dependency to. That hash is the git ref raw.githubusercontent.com
 // actually understands; the pseudo-version string itself is not a valid ref.
-var pseudoVersionCommit = regexp.MustCompile(`^v\d+\.\d+\.\d+-\d{14}-([0-9a-f]{12})$`)
+//
+// All three documented pseudo-version forms are matched (see
+// pkg/validator/runtime/upstream.go's pseudoVersionPattern, which this
+// mirrors): the bare "vX.0.0-<ts>-<hash>" form (no earlier version), and the
+// two forms with an additional "<pre>." segment between the version core and
+// the timestamp ("vX.Y.Z-0.<ts>-<hash>" built on a tagged release, or
+// "vX.Y.Z-pre.0.<ts>-<hash>" built on a prerelease) - e.g.
+// "v1.1.2-0.20180830191138-d8f796af33cc" (github.com/davecgh/go-spew in this
+// repo's own go.mod) is the second form, which the original bare-only regex
+// here did not match.
+var pseudoVersionCommit = regexp.MustCompile(`^v\d+\.\d+\.\d+-(?:[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*\.)?\d{14}-([0-9a-f]{12})$`)
 
 // versionFor resolves the upstream ref (tag or commit) to fetch repo's
 // source at. If explicitTag is set it wins outright (mirroring --tag's
-// existing kubernetes/kubernetes override). Otherwise:
+// existing kubernetes/kubernetes override) - except that an explicit
+// override targeting kubernetes/kubernetes specifically must still be a real
+// Kubernetes release tag (v1.<minor>.<patch>): that repo's RefKindRewrite
+// refs can only ever record a tag shaped like that as ValidatedAt, so
+// --update would otherwise write in whatever was passed here and RegisterAll
+// would panic the next time it runs (runtime.UpstreamRef.Validate rejects
+// it) - a confusing failure far from the flag that caused it. Any other
+// repo's ValidatedAt format is looser (commit SHA, pseudo-version, or an
+// ordinary semver tag - see runtime.ValidateValidatedAt), and -compute
+// legitimately wants to fetch an arbitrary ref (a branch name, "HEAD", ...)
+// before a ValidatedAt is ever recorded for a brand-new ref, so this is not
+// guarded for non-default repos. Otherwise:
 //   - repo == runtime.DefaultRepo uses the existing k8s.io/api-derived
 //     staging-module convention (tagFromGoMod).
 //   - any other repo is resolved from its own go.mod requirement, exactly
@@ -396,6 +417,11 @@ var pseudoVersionCommit = regexp.MustCompile(`^v\d+\.\d+\.\d+-\d{14}-([0-9a-f]{1
 //     require line instead of the staging-module version convention.
 func versionFor(repo, explicitTag string) (string, error) {
 	if explicitTag != "" {
+		if repo == runtime.DefaultRepo {
+			if err := runtime.ValidateValidatedAt(repo, explicitTag); err != nil {
+				return "", fmt.Errorf("-tag %q is not usable as %s's version: %w", explicitTag, repo, err)
+			}
+		}
 		return explicitTag, nil
 	}
 	if repo == runtime.DefaultRepo {

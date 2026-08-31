@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
 // refFile is a ref map shaped like a real upstream_refs.go: two shared digest
@@ -137,6 +139,7 @@ const sampleGoMod = "" +
 	"require (\n" +
 	"\tgithub.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260827164301-e63fce3cf15d\n" +
 	"\tgithub.com/some-org/some-tagged-dep v1.4.2\n" +
+	"\tgithub.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc\n" +
 	"\tk8s.io/api v0.37.0\n" +
 	")\n"
 
@@ -166,6 +169,22 @@ func TestModuleVersionForRepo(t *testing.T) {
 			}
 		})
 
+		t.Run("pseudo-version built on a tagged release resolves to its trailing commit hash", func(t *testing.T) {
+			// "v1.1.2-0.20180830191138-d8f796af33cc" (a real entry in this
+			// repo's own go.mod) is a different pseudo-version shape than the
+			// bare "vX.0.0-<ts>-<hash>" form above: it has a "0." segment
+			// between the version core and the timestamp, marking it as
+			// built on tagged release v1.1.2 rather than an untagged repo.
+			// pseudoVersionCommit previously only matched the bare form.
+			got, err := moduleVersionForRepo("davecgh/go-spew")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if want := "d8f796af33cc"; got != want {
+				t.Errorf("moduleVersionForRepo() = %q, want %q", got, want)
+			}
+		})
+
 		t.Run("repo with no go.mod requirement errors", func(t *testing.T) {
 			if _, err := moduleVersionForRepo("nobody/nothing"); err == nil {
 				t.Fatal("expected an error for a repo with no go.mod requirement")
@@ -175,7 +194,12 @@ func TestModuleVersionForRepo(t *testing.T) {
 }
 
 func TestVersionFor(t *testing.T) {
-	t.Run("explicit tag always wins", func(t *testing.T) {
+	t.Run("explicit tag always wins for a non-default repo", func(t *testing.T) {
+		// A non-default repo's ValidatedAt format is loose (commit SHA,
+		// pseudo-version, or semver tag) and -compute legitimately wants to
+		// fetch an arbitrary ref (a branch name, "HEAD", ...) before any
+		// ValidatedAt is ever recorded for a brand-new ref, so this is
+		// intentionally unvalidated.
 		got, err := versionFor("anything/anything", "explicit-override")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -195,5 +219,26 @@ func TestVersionFor(t *testing.T) {
 				t.Errorf("versionFor() = %q, want %q", got, want)
 			}
 		})
+	})
+
+	t.Run("explicit tag wins for the default repo when it's a real Kubernetes release tag", func(t *testing.T) {
+		got, err := versionFor(runtime.DefaultRepo, "v1.36.3")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "v1.36.3" {
+			t.Errorf("versionFor() = %q, want %q", got, "v1.36.3")
+		}
+	})
+
+	t.Run("explicit tag rejected for the default repo when it isn't a release tag", func(t *testing.T) {
+		// kubernetes/kubernetes's RefKindRewrite refs can only ever record a
+		// v1.<minor>.<patch> tag as ValidatedAt (runtime.ValidateValidatedAt),
+		// so an arbitrary -tag override here must be rejected before it can
+		// round-trip into a --update'd upstream_refs.go entry that
+		// RegisterAll would then panic on at the next binary start.
+		if _, err := versionFor(runtime.DefaultRepo, "not-a-release-tag"); err == nil {
+			t.Fatal("expected an error for a non-release-tag -tag override against the default repo")
+		}
 	})
 }
