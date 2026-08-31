@@ -807,6 +807,22 @@ table above:
   `EXEMPTIONS=(...)` selector can match one. `TestRuntimeChecksAreNonExemptable`
   enforces this for every registered runtime check. See
   [EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids).
+
+  This holds only while every family's rejection is **unconditional**,
+  which is not the same as every family's rejection happening at the same
+  moment:
+
+  | Family       | Rejected by                   | When                 | Conditional on |
+  | ------------ | ----------------------------- | -------------------- | -------------- |
+  | `kubernetes` | the API server                | during admission     | nothing        |
+  | `k8scni`     | the OVN-Kubernetes controller | just after admission | nothing        |
+
+  Both are unconditional, so both can honestly be non-exemptable. A family
+  whose rejection depends on something being installed — an operator's
+  admission webhook, which rejects nothing on a cluster not running that
+  operator — could not, and adding one means making `NonExemptable`
+  per-check rather than widening what the constant already claims.
+
 - **Kind-scoped by declaration.** Each check declares the kinds it
   applies to in its embedded `runtime.Meta`; the adapter inverts that
   applies-to list into the existing `check.DocSkipper` contract

@@ -33,13 +33,14 @@ func (m Meta) ID() string      { return m.RuleID }
 func (m Meta) Title() string   { return m.RuleTitle }
 func (m Meta) Kinds() []string { return m.AppliesTo }
 
-// Blocking is true for every runtime check. These findings describe
-// manifests the API server itself rejects, so a non-blocking one would
-// report a failure that is going to happen anyway and let it merge.
+// Blocking is true for every runtime check. These findings describe manifests
+// the cluster rejects, so a non-blocking one would report a failure that is
+// going to happen anyway and then let it merge.
 func (m Meta) Blocking() bool { return true }
 
-// RenderSensitive is true for every runtime check. The API server sees the
-// rendered object, so that is what these rules must be evaluated against.
+// RenderSensitive is true for every runtime check. What rejects the manifest -
+// the API server, or a controller reading it afterwards - sees the rendered
+// object, so that is what these rules must be evaluated against.
 func (m Meta) RenderSensitive() bool { return true }
 
 // A rule ID is "<family>/<category>/<rule>": the upstream project whose

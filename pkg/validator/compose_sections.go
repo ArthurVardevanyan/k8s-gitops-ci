@@ -341,12 +341,17 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 // runtimeFamilyTitle renders a family key as a report heading, including what
 // its findings actually guarantee - the qualifier that distinguishes the
 // families and the only reason the family level is rendered at all.
+//
+// A family with no case here still renders, under its bare name, so an
+// unmapped family is a missing sentence rather than a missing section.
 func runtimeFamilyTitle(family string) string {
 	switch family {
 	case "":
 		return "Runtime"
 	case "kubernetes":
 		return "Kubernetes — rejected by the API server"
+	case "k8scni":
+		return "CNI — rejected after admission, when the network is attached"
 	default:
 		return displayName(family)
 	}
