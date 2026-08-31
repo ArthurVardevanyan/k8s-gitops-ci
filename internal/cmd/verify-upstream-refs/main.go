@@ -303,6 +303,28 @@ func main() {
 	fmt.Println("all upstream references verified")
 }
 
+// cachePathFor joins cacheDir/repo/version/path and verifies the result
+// still lives under cacheDir, rejecting a repo, version, or path (an
+// UpstreamRef field, or a -compute/-repo flag) that is absolute or that
+// escapes via "..". filepath.Join alone cleans "." and ".." segments
+// syntactically but happily produces a path outside cacheDir if enough ".."
+// segments are present (or if a component is itself absolute, which Join
+// does not special-case) - this walks the cleaned result back up to
+// cacheDir to confirm containment before any file I/O is attempted.
+func cachePathFor(cacheDir, repo, version, path string) (string, error) {
+	base, err := filepath.Abs(cacheDir)
+	if err != nil {
+		return "", fmt.Errorf("resolving cache dir %q: %w", cacheDir, err)
+	}
+	joined := filepath.Join(base, filepath.FromSlash(repo), version, filepath.FromSlash(path))
+	rel, err := filepath.Rel(base, joined)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("refusing to use cache path %q: escapes cache dir %q (repo=%q version=%q path=%q)",
+			joined, base, repo, version, path)
+	}
+	return joined, nil
+}
+
 // fetcher retrieves upstream files at a pinned repo+version, caching them on
 // disk so a re-run is offline and so one file backing many refs is fetched
 // once. Keyed by (repo, version, path) so refs into different upstream
@@ -322,7 +344,10 @@ func (f *fetcher) get(repo, version, path string) ([]byte, error) {
 		return b, nil
 	}
 
-	cache := filepath.Join(f.cacheDir, filepath.FromSlash(repo), version, filepath.FromSlash(path))
+	cache, err := cachePathFor(f.cacheDir, repo, version, path)
+	if err != nil {
+		return nil, err
+	}
 	if b, err := os.ReadFile(cache); err == nil {
 		f.memo[key] = b
 		return b, nil

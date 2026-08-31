@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -239,6 +240,68 @@ func TestVersionFor(t *testing.T) {
 		// RegisterAll would then panic on at the next binary start.
 		if _, err := versionFor(runtime.DefaultRepo, "not-a-release-tag"); err == nil {
 			t.Fatal("expected an error for a non-release-tag -tag override against the default repo")
+		}
+	})
+}
+
+func TestCachePathForRejectsEscapes(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("well-formed inputs stay under cacheDir", func(t *testing.T) {
+		got, err := cachePathFor(dir, "kubernetes/kubernetes", "v1.36.3", "pkg/apis/core/validation/validation.go")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			t.Fatalf("filepath.Abs: %v", err)
+		}
+		if !strings.HasPrefix(got, absDir+string(filepath.Separator)) {
+			t.Errorf("cachePathFor() = %q, want a path under %q", got, absDir)
+		}
+	})
+
+	t.Run("dot-dot in path is rejected", func(t *testing.T) {
+		if _, err := cachePathFor(dir, "kubernetes/kubernetes", "v1.36.3", "../../../../etc/passwd"); err == nil {
+			t.Fatal("expected an error for a path escaping cacheDir via ..")
+		}
+	})
+
+	t.Run("dot-dot in repo is rejected", func(t *testing.T) {
+		if _, err := cachePathFor(dir, "../../etc", "v1.36.3", "passwd"); err == nil {
+			t.Fatal("expected an error for a repo escaping cacheDir via ..")
+		}
+	})
+
+	t.Run("dot-dot in version is rejected", func(t *testing.T) {
+		// A 2-segment repo ("kubernetes/kubernetes") plus exactly 2 ".."
+		// levels in version cancels out and lands back under cacheDir -
+		// filepath.Join already handles that shallow case safely on its
+		// own, which is not what this guard exists to catch. What it must
+		// catch is enough ".." to walk past cacheDir entirely, which a
+		// crafted version string can still supply.
+		if _, err := cachePathFor(dir, "kubernetes/kubernetes", "../../../etc", "passwd"); err == nil {
+			t.Fatal("expected an error for a version escaping cacheDir via ..")
+		}
+	})
+
+	t.Run("absolute path component does not escape (filepath.Join already neutralizes it)", func(t *testing.T) {
+		// Documented for clarity, not asserted as a vulnerability: Join
+		// only preserves a leading "/" from its *first* argument. An
+		// absolute-looking later argument (path here) is treated as an
+		// ordinary path segment and lands under cacheDir like any other -
+		// it is the multi-level ".." case above that actually needs
+		// cachePathFor's explicit containment check.
+		got, err := cachePathFor(dir, "kubernetes/kubernetes", "v1.36.3", "/etc/passwd")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		absDir, err := filepath.Abs(dir)
+		if err != nil {
+			t.Fatalf("filepath.Abs: %v", err)
+		}
+		if !strings.HasPrefix(got, absDir+string(filepath.Separator)) {
+			t.Errorf("cachePathFor() = %q, want a path under %q", got, absDir)
 		}
 	})
 }
