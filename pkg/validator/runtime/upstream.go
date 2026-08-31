@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/mod/module"
+
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
 
@@ -136,21 +138,6 @@ var (
 	// (v2.0.0+incompatible, the marker cmd/go itself appends to a
 	// pre-modules v2+ import-path-unqualified tag).
 	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
-	// pseudoVersionPattern matches (but, unlike verify-upstream-refs'
-	// pseudoVersionCommit, does not capture) a Go module pseudo-version -
-	// this is only ever used as a boolean MatchString here (Validate has no
-	// need for the trailing 12-hex-char abbreviated commit hash itself,
-	// only the shape); moduleVersionForRepo (verify-upstream-refs/main.go)
-	// is what actually extracts that hash to use as the real git ref, since
-	// the pseudo-version string itself is not one.
-	// All three documented forms are matched, distinguished only by what
-	// (if anything) sits between the version core and the timestamp:
-	//   - vX.0.0-yyyymmddhhmmss-abcdefabcdef       (no earlier version)
-	//   - vX.Y.Z-0.yyyymmddhhmmss-abcdefabcdef     (built on tagged vX.Y.Z)
-	//   - vX.Y.Z-pre.0.yyyymmddhhmmss-abcdefabcdef (built on prerelease vX.Y.Z-pre)
-	// e.g. "v1.1.2-0.20180830191138-d8f796af33cc" (github.com/davecgh/go-spew
-	// in this repo's own go.mod) is the second form.
-	pseudoVersionPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+-(?:[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*\.)?\d{14}-[0-9a-f]{12}$`)
 	// commitSHAPattern matches a bare (short or full) git commit hash.
 	commitSHAPattern = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 	// repoPattern matches a GitHub "owner/name" repository slug.
@@ -271,8 +258,15 @@ func ValidateValidatedAt(repo, validatedAt string) error {
 		}
 		return nil
 	}
+	// module.IsPseudoVersion is Go's own definition of the format. A local
+	// regex for it was wrong twice (bare form only, then rejecting hyphens
+	// in prerelease identifiers). Both times semverTagPattern happened to
+	// accept the string anyway - a pseudo-version is syntactically valid
+	// SemVer - so validation never visibly broke and the bug survived here
+	// while the same mistake caused real failures in verify-upstream-refs,
+	// which has to extract the commit rather than just accept the string.
 	if semverTagPattern.MatchString(validatedAt) ||
-		pseudoVersionPattern.MatchString(validatedAt) ||
+		module.IsPseudoVersion(validatedAt) ||
 		commitSHAPattern.MatchString(validatedAt) {
 		return nil
 	}

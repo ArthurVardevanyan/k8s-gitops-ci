@@ -3,6 +3,8 @@ package runtime
 import (
 	"strings"
 	"testing"
+
+	"golang.org/x/mod/module"
 )
 
 // validDigest is a well-formed (structurally, not cryptographically
@@ -106,8 +108,8 @@ func TestUpstreamRefRewriteKindNonDefaultRepo(t *testing.T) {
 		// repo's own go.mod, github.com/davecgh/go-spew) is a different
 		// pseudo-version shape than the bare form above: it has a "0."
 		// segment marking it as built on tagged release v1.1.2 rather than
-		// an untagged repo. pseudoVersionPattern previously only matched
-		// the bare form.
+		// an untagged repo. The former hand-rolled pattern matched only
+		// the bare form; this is now delegated to x/mod.
 		ref := UpstreamRef{
 			Repo:        "davecgh/go-spew",
 			Kind:        RefKindRewrite,
@@ -223,5 +225,41 @@ func TestUpstreamRefAdditionalOwnRepoAndKind(t *testing.T) {
 	}
 	if err := ref.Validate(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestPseudoVersionAgreesWithGoModule pins ValidateValidatedAt's
+// pseudo-version handling to golang.org/x/mod's, which is the definition Go
+// itself uses. Hand-written approximations of this format have now been
+// wrong twice - first by matching only the bare form, then by rejecting
+// prerelease identifiers containing a hyphen, which SemVer explicitly
+// allows and real tags such as "v1.2.3-beta-1" use.
+func TestPseudoVersionAgreesWithGoModule(t *testing.T) {
+	pseudoVersions := []string{
+		"v0.0.0-20260827164301-e63fce3cf15d",
+		"v1.1.2-0.20180830191138-d8f796af33cc",
+		"v1.2.3-alpha.1.0.20260101000000-abcdefabcdef",
+		"v1.2.3-beta-1.0.20260101000000-abcdefabcdef",
+		"v1.2.3-rc-2.0.20260101000000-abcdefabcdef",
+		"v2.0.0-pre-release-x.0.20260101000000-abcdefabcdef",
+	}
+	for _, v := range pseudoVersions {
+		t.Run(v, func(t *testing.T) {
+			if !module.IsPseudoVersion(v) {
+				t.Fatalf("test bug: %q is not a pseudo-version per x/mod", v)
+			}
+			ref := UpstreamRef{
+				Repo:        "some-org/some-dep",
+				Kind:        RefKindRewrite,
+				Path:        "pkg/thing.go",
+				Functions:   []string{"Thing"},
+				Digest:      validDigest,
+				ValidatedAt: v,
+				Note:        "n/a",
+			}
+			if err := ref.Validate(); err != nil {
+				t.Errorf("Validate() rejected a valid Go pseudo-version %q: %v", v, err)
+			}
+		})
 	}
 }

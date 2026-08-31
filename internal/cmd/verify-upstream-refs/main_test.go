@@ -499,3 +499,47 @@ func TestExpectedCitations(t *testing.T) {
 		})
 	}
 }
+
+// hyphenPrereleaseGoMod pins a dependency at a pseudo-version whose base
+// prerelease identifier contains a hyphen ("beta-1"). SemVer allows it and
+// Go builds pseudo-versions on such tags, so go.mod can legitimately
+// contain one.
+const hyphenPrereleaseGoMod = "" +
+	"module example.com/sample\n\n" +
+	"go 1.24\n\n" +
+	"require (\n" +
+	"\tgithub.com/some-org/hyphen-dep v1.2.3-beta-1.0.20260101000000-abcdefabcdef\n" +
+	"\tgithub.com/some-org/dashy-dep/v2 v2.0.0-pre-release-x.0.20260101000000-abcdefabcdef\n" +
+	")\n"
+
+// A pseudo-version must resolve to its commit, whatever its prerelease
+// identifiers look like. Failing to extract it does not degrade gracefully:
+// the full pseudo-version string is then used as a git ref to fetch by, and
+// no such ref exists upstream.
+func TestModuleVersionForRepoHyphenatedPrerelease(t *testing.T) {
+	withTempGoMod(t, hyphenPrereleaseGoMod, func() {
+		cases := []struct{ name, repo, want string }{
+			{"hyphen in the prerelease identifier", "some-org/hyphen-dep", "abcdefabcdef"},
+			{"several hyphens", "some-org/dashy-dep", "abcdefabcdef"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				got, err := moduleVersionForRepo(tc.repo)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got != tc.want {
+					t.Errorf("moduleVersionForRepo(%q) = %q, want the commit %q", tc.repo, got, tc.want)
+				}
+			})
+		}
+	})
+}
+
+// sameVersion must likewise normalize these, or a correctly recorded ref is
+// reported stale forever.
+func TestSameVersionHandlesHyphenatedPrerelease(t *testing.T) {
+	if !sameVersion("v1.2.3-beta-1.0.20260101000000-abcdefabcdef", "abcdefabcdef") {
+		t.Error("sameVersion() did not match a hyphenated-prerelease pseudo-version against its own commit")
+	}
+}

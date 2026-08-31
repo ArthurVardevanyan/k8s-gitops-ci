@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/internal/upstreamref"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
@@ -43,7 +44,7 @@ func main() {
 		tag      = flag.String("tag", "", "version to verify/compute against. A tag is repo-local, so when verifying this applies only to kubernetes/kubernetes; every other repo always resolves from its own go.mod requirement. With -compute it applies to whichever repository -repo names. Default (empty): kubernetes/kubernetes resolves its own version from k8s.io/api in go.mod")
 		cacheDir = flag.String("cache", defaultCache(), "directory to cache fetched upstream sources in")
 		dump     = flag.Bool("dump", false, "print the registered refs as JSON and exit")
-		update   = flag.Bool("update", false, "record the current digest and version (a release tag, or a commit SHA for a repo other than kubernetes/kubernetes) for refs that changed (do this only after re-reading the upstream function)")
+		update   = flag.Bool("update", false, "record the current digest and version for refs that changed. The version recorded is whatever the repo resolves to: a release tag for kubernetes/kubernetes, and for any other repo whatever its go.mod requirement pins - a semver tag as-is, or the commit a pseudo-version names (do this only after re-reading the upstream function)")
 		compute  = flag.String("compute", "", "compute the digest for a single ref instead of verifying: -compute <path> -functions <A,B>")
 		fnList   = flag.String("functions", "", "comma-separated function names, used with -compute")
 		repoFlag = flag.String("repo", runtime.DefaultRepo, "owner/name of the upstream repository, used with -compute")
@@ -429,22 +430,26 @@ func tagFromGoMod() (string, error) {
 	return "", fmt.Errorf("k8s.io/api not found in go.mod")
 }
 
-// pseudoVersionCommit matches a Go module pseudo-version and captures its
-// trailing abbreviated commit hash, e.g. "e63fce3cf15d" out of
-// "v0.0.0-20260827164301-e63fce3cf15d" - the form go.mod pins an untagged
-// commit of a dependency to. That hash is the git ref raw.githubusercontent.com
-// actually understands; the pseudo-version string itself is not a valid ref.
+// pseudoVersionCommit returns the commit a Go module pseudo-version names,
+// and whether it was one at all.
 //
-// All three documented pseudo-version forms are matched (see
-// pkg/validator/runtime/upstream.go's pseudoVersionPattern, which this
-// mirrors): the bare "vX.0.0-<ts>-<hash>" form (no earlier version), and the
-// two forms with an additional "<pre>." segment between the version core and
-// the timestamp ("vX.Y.Z-0.<ts>-<hash>" built on a tagged release, or
-// "vX.Y.Z-pre.0.<ts>-<hash>" built on a prerelease) - e.g.
-// "v1.1.2-0.20180830191138-d8f796af33cc" (github.com/davecgh/go-spew in this
-// repo's own go.mod) is the second form, which the original bare-only regex
-// here did not match.
-var pseudoVersionCommit = regexp.MustCompile(`^v\d+\.\d+\.\d+-(?:[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*\.)?\d{14}-([0-9a-f]{12})$`)
+// This delegates to golang.org/x/mod, the definition Go itself uses, rather
+// than matching the format by hand. A local approximation of it has been
+// wrong twice: first by recognising only the bare vX.0.0-<ts>-<hash> form,
+// then by rejecting prerelease identifiers containing a hyphen, which SemVer
+// allows and tags like "v1.2.3-beta-1" use. Neither failure was graceful -
+// an unrecognised pseudo-version is returned whole and then used as a git
+// ref to fetch by, and no such ref exists upstream.
+func pseudoVersionCommit(v string) (string, bool) {
+	if !module.IsPseudoVersion(v) {
+		return "", false
+	}
+	rev, err := module.PseudoVersionRev(v)
+	if err != nil {
+		return "", false
+	}
+	return rev, true
+}
 
 // versionFor resolves the upstream ref (tag or commit) to fetch repo's
 // source at. If explicitTag is set it wins outright (mirroring --tag's
@@ -548,8 +553,8 @@ func moduleVersionForRepo(repo string) (string, error) {
 			continue
 		}
 		v := req.Mod.Version
-		if m := pseudoVersionCommit.FindStringSubmatch(v); m != nil {
-			return m[1], nil
+		if rev, ok := pseudoVersionCommit(v); ok {
+			return rev, nil
 		}
 		return v, nil
 	}
@@ -586,8 +591,8 @@ func sameVersion(recorded, resolved string) bool {
 	if recorded == resolved {
 		return true
 	}
-	if m := pseudoVersionCommit.FindStringSubmatch(recorded); m != nil {
-		return m[1] == resolved
+	if rev, ok := pseudoVersionCommit(recorded); ok {
+		return rev == resolved
 	}
 	return false
 }
