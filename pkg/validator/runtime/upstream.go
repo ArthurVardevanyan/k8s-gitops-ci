@@ -10,48 +10,97 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
 
-// UpstreamRef identifies the exact upstream Kubernetes code a runtime check
-// ports.
+// RefKind distinguishes how a runtime check relates to the upstream code it
+// cites.
+type RefKind string
+
+const (
+	// RefKindRewrite is a check that reimplements upstream's validation
+	// logic in this repository (the common case: upstream's own
+	// pkg/apis/*/validation packages are not importable as a library). A
+	// rewrite can drift silently from what it ports, so it must carry a
+	// Digest over the cited functions' normalized source, verified by
+	// `task verify:upstream-refs` against ValidatedAt. This is the default
+	// when Kind is left empty, matching every ref that predates this field.
+	RefKindRewrite RefKind = "rewrite"
+	// RefKindImport is a check that calls the cited code directly (an
+	// importable dependency such as ovn-kubernetes's netconf parser).
+	// There is nothing to drift silently here: go.mod pins the version and
+	// the compiler verifies the call, so a Digest would only assert a
+	// verification that isn't actually happening. Functions/Path/Note are
+	// still required - the citation still has to name the exact upstream
+	// code a reviewer should read - but Digest and ValidatedAt are not.
+	RefKindImport RefKind = "import"
+)
+
+// DefaultRepo is the upstream repository assumed when Repo is left empty,
+// preserving every ref that predates this field. Exported so
+// verify-upstream-refs can special-case it (its version is derived from
+// k8s.io/api in go.mod, an existing staging-module convention that does not
+// generalize to other repositories).
+const DefaultRepo = defaultRepo
+
+// defaultRepo is the unexported form used internally; see DefaultRepo.
+const defaultRepo = "kubernetes/kubernetes"
+
+// UpstreamRef identifies the exact upstream code a runtime check ports or
+// imports.
 //
 // Every runtime check must supply one. The family is always-blocking and
-// non-exemptable, which is only defensible if the API server really would
-// reject the manifest - so a check has to be able to point at the specific
-// upstream function it reproduces. A citation naming only a file is not
-// enough: "k8s.io/kubernetes/pkg/apis/core/validation/validation.go" is
-// equally true of a faithful port and of an invented rule, and that is
-// exactly how a large number of fabricated checks once passed review here.
+// non-exemptable, which is only defensible if the API server (or, for a
+// non-Kubernetes-core dependency like ovn-kubernetes, the controller that
+// owns the resource) really would reject the manifest - so a check has to be
+// able to point at the specific upstream code it reproduces or calls. A
+// citation naming only a file is not enough:
+// "k8s.io/kubernetes/pkg/apis/core/validation/validation.go" is equally true
+// of a faithful port and of an invented rule, and that is exactly how a
+// large number of fabricated checks once passed review here.
 //
 // Line numbers are deliberately absent. They drift on every upstream release,
 // and every incorrect citation in this repository's history was a stale line
 // range. Function names are stable and mechanically verifiable.
 //
 // See docs/CI.md for the standard and `task verify:upstream-refs` for the
-// tooling that proves the cited functions exist and are unchanged.
+// tooling that proves the cited functions exist and (for Kind ==
+// RefKindRewrite) are unchanged.
 type UpstreamRef struct {
-	// Path is the file, relative to the root of kubernetes/kubernetes, that
-	// contains the ported rule. Using repo-relative paths lets refs into
-	// staging modules (apimachinery, apiextensions-apiserver) use the same
-	// form as refs into pkg/apis/*.
+	// Repo is "owner/name" of the upstream GitHub repository the citation
+	// points into. Empty means kubernetes/kubernetes, preserving every ref
+	// that predates this field.
+	Repo string `json:"repo,omitempty"`
+	// Kind distinguishes a reimplementation (RefKindRewrite, the default)
+	// from a direct import (RefKindImport). See the constants' doc comments.
+	Kind RefKind `json:"kind,omitempty"`
+	// Path is the file, relative to the root of Repo, that contains the
+	// cited code. Using repo-relative paths lets refs into staging modules
+	// (apimachinery, apiextensions-apiserver) use the same form as refs
+	// into pkg/apis/*.
 	Path string `json:"path"`
-	// Functions are the upstream function(s) this check ports.
+	// Functions are the upstream function(s) this check ports or calls.
 	Functions []string `json:"functions"`
 	// Digest is "sha256:<hex>" over the normalized source of Functions
-	// (comments and formatting stripped), taken at ValidatedAt.
-	Digest string `json:"digest"`
-	// ValidatedAt is the kubernetes/kubernetes tag the digest was taken at,
-	// e.g. "v1.36.3". It records the version a human last validated this
-	// port against. It is NOT a claim that the check is correct for every
-	// cluster version - see the version-skew section in docs/CI.md.
-	ValidatedAt string `json:"validatedAt"`
-	// Note records which upstream branch this check ports and every
-	// deliberate divergence from it, with the reason.
+	// (comments and formatting stripped), taken at ValidatedAt. Required
+	// for RefKindRewrite; must be empty for RefKindImport, where the
+	// compiler and go.mod already pin the exact code and a digest would
+	// only assert a verification that isn't happening.
+	Digest string `json:"digest,omitempty"`
+	// ValidatedAt is the upstream tag or commit the digest was taken at,
+	// e.g. "v1.36.3" for kubernetes/kubernetes, or a commit SHA / Go
+	// pseudo-version for any other Repo. It records the version a human
+	// last validated a RefKindRewrite port against; it is NOT a claim that
+	// the check is correct for every cluster version - see the
+	// version-skew section in docs/CI.md. Not required for RefKindImport.
+	ValidatedAt string `json:"validatedAt,omitempty"`
+	// Note records which upstream branch this check ports/imports and
+	// every deliberate divergence from it, with the reason.
 	//
-	// It is required. A citation proves the cited function exists and has
-	// not changed; it says nothing about how much of that function the
-	// check actually implements. Most of these ports are partial by design
-	// - skipping a Required branch that defaulting makes unreachable, or a
-	// feature-gated branch this tool cannot evaluate - and without the note
-	// a reviewer cannot tell a deliberate subset from an incomplete port.
+	// It is required. A citation proves the cited function exists (and,
+	// for a rewrite, has not changed); it says nothing about how much of
+	// that function the check actually implements. Most rewrite ports are
+	// partial by design - skipping a Required branch that defaulting makes
+	// unreachable, or a feature-gated branch this tool cannot evaluate -
+	// and without the note a reviewer cannot tell a deliberate subset from
+	// an incomplete port.
 	Note string `json:"note"`
 	// Additional cites supporting functions in other files that the ported
 	// rule depends on, each verified exactly like the primary ref.
@@ -76,17 +125,66 @@ type UpstreamRef struct {
 var (
 	// digestPattern matches a "sha256:<64 hex chars>" digest.
 	digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	// tagPattern matches a Kubernetes release tag.
-	tagPattern = regexp.MustCompile(`^v1\.\d+\.\d+$`)
+	// k8sTagPattern matches a Kubernetes release tag.
+	k8sTagPattern = regexp.MustCompile(`^v1\.\d+\.\d+$`)
+	// pseudoVersionPattern matches a Go module pseudo-version, e.g.
+	// v0.0.0-20260827164301-e63fce3cf15d - the form `go.mod` pins an
+	// untagged commit of a dependency to, such as ovn-kubernetes.
+	pseudoVersionPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+-\d{14}-[0-9a-f]{12}$`)
+	// commitSHAPattern matches a bare (short or full) git commit hash.
+	commitSHAPattern = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
+	// repoPattern matches a GitHub "owner/name" repository slug.
+	repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	// identPattern matches a Go identifier.
 	identPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	// pathPattern rejects a ":line" suffix, pinning the no-line-numbers rule.
 	pathLineSuffix = regexp.MustCompile(`:\d+(-\d+)?$`)
 )
 
+// repo returns the effective upstream repository: Repo, or defaultRepo if
+// unset.
+func (r UpstreamRef) repo() string {
+	return r.EffectiveRepo()
+}
+
+// EffectiveRepo returns the upstream repository this ref cites: Repo, or
+// defaultRepo ("kubernetes/kubernetes") if unset. Exported so
+// verify-upstream-refs can resolve which repository (and therefore which
+// go.mod requirement) to fetch a ref's source from.
+func (r UpstreamRef) EffectiveRepo() string {
+	if r.Repo == "" {
+		return defaultRepo
+	}
+	return r.Repo
+}
+
+// kind returns the effective ref kind: Kind, or RefKindRewrite if unset -
+// preserving every ref that predates this field.
+func (r UpstreamRef) kind() RefKind {
+	return r.EffectiveKind()
+}
+
+// EffectiveKind returns this ref's kind: Kind, or RefKindRewrite if unset -
+// preserving every ref that predates this field. Exported so
+// verify-upstream-refs can decide whether a ref's digest should be compared
+// (RefKindRewrite) or only its existence confirmed (RefKindImport).
+func (r UpstreamRef) EffectiveKind() RefKind {
+	if r.Kind == "" {
+		return RefKindRewrite
+	}
+	return r.Kind
+}
+
 // Validate reports whether the ref is structurally usable. It does not touch
 // the network; `task verify:upstream-refs` performs the upstream check.
 func (r UpstreamRef) Validate() error {
+	if r.Repo != "" && !repoPattern.MatchString(r.Repo) {
+		return fmt.Errorf("repo %q must be an \"owner/name\" GitHub slug", r.Repo)
+	}
+	kind := r.kind()
+	if kind != RefKindRewrite && kind != RefKindImport {
+		return fmt.Errorf("kind %q must be %q or %q", r.Kind, RefKindRewrite, RefKindImport)
+	}
 	if r.Path == "" {
 		return fmt.Errorf("path is required")
 	}
@@ -101,15 +199,26 @@ func (r UpstreamRef) Validate() error {
 			return fmt.Errorf("function %q is not a Go identifier", fn)
 		}
 	}
-	if !digestPattern.MatchString(r.Digest) {
-		return fmt.Errorf("digest %q must be sha256:<64 hex chars>; run 'task verify:upstream-refs -- --update'", r.Digest)
+	switch kind {
+	case RefKindImport:
+		// The compiler and go.mod already pin exactly which code runs, so a
+		// digest here would only assert a verification that never happens.
+		if r.Digest != "" {
+			return fmt.Errorf("digest must be empty for kind %q: the compiler and go.mod already pin the imported code, a digest would assert an unverified claim", RefKindImport)
+		}
+	case RefKindRewrite:
+		if !digestPattern.MatchString(r.Digest) {
+			return fmt.Errorf("digest %q must be sha256:<64 hex chars>; run 'task verify:upstream-refs -- --update'", r.Digest)
+		}
+		if err := validateValidatedAt(r.repo(), r.ValidatedAt); err != nil {
+			return err
+		}
 	}
-	if !tagPattern.MatchString(r.ValidatedAt) {
-		return fmt.Errorf("validatedAt %q must be a Kubernetes release tag such as v1.36.3", r.ValidatedAt)
-	}
+
 	if strings.TrimSpace(r.Note) == "" {
-		return fmt.Errorf("note is required: record which upstream branch is ported and any deliberate divergence, so a partial port is distinguishable from an incomplete one")
+		return fmt.Errorf("note is required: record which upstream branch is ported/imported and any deliberate divergence, so a partial port is distinguishable from an incomplete one")
 	}
+
 	for i, a := range r.Additional {
 		if len(a.Additional) > 0 {
 			return fmt.Errorf("additional[%d]: nesting is one level deep; cite the supporting function directly", i)
@@ -119,6 +228,26 @@ func (r UpstreamRef) Validate() error {
 		}
 	}
 	return nil
+}
+
+// validateValidatedAt checks a RefKindRewrite ref's ValidatedAt against the
+// version forms valid for repo: a Kubernetes release tag for
+// kubernetes/kubernetes, or a commit SHA / Go pseudo-version for any other
+// repository (which is not tagged the same way and is instead pinned in
+// go.mod to an exact commit).
+func validateValidatedAt(repo, validatedAt string) error {
+	if repo == defaultRepo {
+		if !k8sTagPattern.MatchString(validatedAt) {
+			return fmt.Errorf("validatedAt %q must be a Kubernetes release tag such as v1.36.3", validatedAt)
+		}
+		return nil
+	}
+	if k8sTagPattern.MatchString(validatedAt) ||
+		pseudoVersionPattern.MatchString(validatedAt) ||
+		commitSHAPattern.MatchString(validatedAt) {
+		return nil
+	}
+	return fmt.Errorf("validatedAt %q must be a release tag, a Go pseudo-version, or a commit SHA for repo %q", validatedAt, repo)
 }
 
 // refs holds the UpstreamRef for every registered runtime check, keyed by
