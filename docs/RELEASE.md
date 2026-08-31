@@ -160,10 +160,8 @@ Everything runs inside the single Tekton build step described in
    - **CI-only** — otherwise (no `VERSION` bump and nothing shippable since
      the last GA). **This is what makes ordinary merges CI-only.**
 3. **PR event:** a snapshot build only — no tag, no GitHub Release.
-   `TAG="$(date -u +%Y%m%d%H%M%S)-pr-${PARAM_PR_NUMBER}-${SHORT_SHA}"`,
-   then `GORELEASER_CURRENT_TAG="${TAG}" goreleaser release --snapshot
---skip=ko --clean`. This validates that a real release build succeeds
-   without publishing anything.
+   `goreleaser build --snapshot --clean`. This validates
+   that a real release build succeeds without publishing anything.
 
 ## Cutting a release
 
