@@ -75,7 +75,7 @@ exemptable; neither an annotation nor a `check=` selector can match one.
 **Fix the manifest.** Never write an `EXEMPTIONS` entry for a finding in
 the Runtime Validation section.
 
-**NAD validation's advisories** (`pkg/validator/nad`) are not part of the
+**NAD validation's advisories** (`pkg/validator/static/nad`) are not part of the
 `check.Register` framework at all, and never block, so there is nothing to
 exempt. Everything blocking about a NAD is a registered runtime check
 (`k8scni/net-attach-def/config-invalid` for whether `spec.config` parses,
@@ -269,7 +269,7 @@ shared directory, use a partial suffix (e.g. `cura/High_Speed.curaprofile`).
   section; IDs shaped `<family>/<category>/<rule>`) — deliberately non-exemptable
   via `check.NonExemptable`. The API server would reject the manifest, so
   an exemption only defers the failure to sync time. Fix the manifest.
-- **NAD findings** — the advisories in `pkg/validator/nad` never block, so
+- **NAD findings** — the advisories in `pkg/validator/static/nad` never block, so
   there is nothing to exempt; the blocking `k8scni/*` checks are runtime
   checks and never exemptable.
 - **`--disable-checks <id>`** — disables an entire check across the whole

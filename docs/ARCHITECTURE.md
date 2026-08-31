@@ -127,7 +127,7 @@ of the flow above:
   see [CI.md](CI.md#runtime-validation-checks-admission-rules) and
   [EXEMPTIONS.md](EXEMPTIONS.md#runtime-validation-ids-are-never-exemptable).
 - **NetworkAttachmentDefinition validation:** splits by whether a rule is
-  citable to a specific upstream function. `pkg/validator/nad` — non-blocking
+  citable to a specific upstream function. `pkg/validator/static/nad` — non-blocking
   advisories for likely authoring mistakes, which correspond to no upstream
   function — is a separate, always-on validator over rendered overlay
   output, not part of the `check.Register` framework above; its report

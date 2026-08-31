@@ -64,18 +64,20 @@ cmd/
   version/          build-time version metadata (ldflags-injected)
 pkg/
   validator/        orchestration (RunAll, phases, report composition) +
-                       `static/` sub-package containing all 9
-                       check.Register-driven validator engines
-                       (namespace, psa, rbac, crb, syncopts, image,
-                       namedport, podspec, placeholder), their 12 check
-                       adapters, and the `RegisterAll` registration layer;
+                       `static/` sub-package containing the static-
+                       analysis validator family: 9 check.Register-driven
+                       engines (namespace, psa, rbac, crb, syncopts,
+                       image, namedport, podspec, placeholder) with their
+                       12 check adapters and the `RegisterAll`
+                       registration layer, plus `nad/` - the
+                       NetworkAttachmentDefinition structural gate and
+                       advisories, a separate always-on validator over
+                       rendered overlay output, not check.Register-driven
+                       (see docs/CI.md#networkattachmentdefinition-nad-validation);
                        `check/` (the registry engine) and `exempt/`
                        (unified exemption framework) sit at top level;
-                       `clusterid/` and `nad/` remain top-level —
-                       clusterid is the engine the adapter wraps, nad is a
-                       separate always-on validator over rendered overlay
-                       output (not check.Register-driven; see
-                       docs/CI.md#networkattachmentdefinition-nad-validation)
+                       `clusterid/` remains top-level - it's the engine
+                       the `static/` cluster-identity adapter wraps.
                        Shared types across wiring and phase logic are
                        centralized in `types.go`; phases are orchestrated
                        in `phases.go` (~1100 lines); wiring logic lives
@@ -88,10 +90,11 @@ pkg/
   validator/runtime/ shared types (Finding, Check interface) and the
                      dual-pass wiring (ScopeDoc + IsRenderSensitive)
                      used by the runtime validation checks; the checks
-                     themselves live under runtime/kubernetes/* (one
-                     package per API group, each with a validation/
-                     subpackage containing admission-enforced
-                     structural rules)
+                     themselves live in per-upstream-family sibling
+                     packages: `kubernetes/*` (one subpackage per
+                     Kubernetes API group, admission-enforced structural
+                     rules) and `k8scni/` (the k8s.cni.cncf.io CRD and,
+                     for its OVN semantic tier, ovn-kubernetes)
   lint/              CLI-tool wrappers, one package per tool (golangci,
                      kubeconform, kyverno, markdownlint, prettier,
                      shellcheck, yamlsyntax)

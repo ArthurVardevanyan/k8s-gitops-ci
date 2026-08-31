@@ -6,14 +6,14 @@ import (
 	"path/filepath"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/nad"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/nad"
 )
 
 // runNADValidation writes every successfully-rendered overlay's YAML to a
 // temp directory and runs NetworkAttachmentDefinition validation against the
 // batch. That validation is advisory-only - the rules that block, including
 // whether spec.config parses at all, are runtime checks in
-// pkg/validator/runtime/k8scni - see pkg/validator/nad's package doc
+// pkg/validator/runtime/k8scni - see pkg/validator/static/nad's package doc
 // comment. This mirrors
 // runKyvernoValidation's temp-file + remap pattern (kyverno_wiring.go) so a
 // finding's File points at the overlay a reviewer can act on instead of an
