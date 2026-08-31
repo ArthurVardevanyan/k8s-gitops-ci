@@ -25,7 +25,7 @@ type selectorInvalidCheck struct{ runtime.Meta }
 
 func newSelectorInvalidCheck() selectorInvalidCheck {
 	return selectorInvalidCheck{runtime.Meta{
-		RuleID:    "policy/selector-invalid",
+		RuleID:    "kubernetes/policy/selector-invalid",
 		RuleTitle: "PDB Selector Must Be A Valid Label Selector",
 		AppliesTo: []string{"PodDisruptionBudget"},
 	}}
@@ -124,7 +124,7 @@ type minAvailableInvalidCheck struct{ runtime.Meta }
 
 func newMinAvailableInvalidCheck() minAvailableInvalidCheck {
 	return minAvailableInvalidCheck{runtime.Meta{
-		RuleID:    "policy/min-available-invalid",
+		RuleID:    "kubernetes/policy/min-available-invalid",
 		RuleTitle: "PDB minAvailable Must Be >= 0",
 		AppliesTo: []string{"PodDisruptionBudget"},
 	}}
@@ -142,7 +142,7 @@ type maxUnavailableInvalidCheck struct{ runtime.Meta }
 
 func newMaxUnavailableInvalidCheck() maxUnavailableInvalidCheck {
 	return maxUnavailableInvalidCheck{runtime.Meta{
-		RuleID:    "policy/max-unavailable-invalid",
+		RuleID:    "kubernetes/policy/max-unavailable-invalid",
 		RuleTitle: "PDB maxUnavailable Must Be >= 0",
 		AppliesTo: []string{"PodDisruptionBudget"},
 	}}
@@ -161,7 +161,7 @@ type minAndMaxSpecifiedCheck struct{ runtime.Meta }
 
 func newMinAndMaxSpecifiedCheck() minAndMaxSpecifiedCheck {
 	return minAndMaxSpecifiedCheck{runtime.Meta{
-		RuleID:    "policy/min-and-max-specified",
+		RuleID:    "kubernetes/policy/min-and-max-specified",
 		RuleTitle: "PDB Must Specify Only One Disruption Target",
 		AppliesTo: []string{"PodDisruptionBudget"},
 	}}

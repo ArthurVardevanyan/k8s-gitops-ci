@@ -91,7 +91,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding for invalid podManagementPolicy, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "apps/statefulset-pod-management-policy-invalid" {
+	if findings[0].RuleID != "kubernetes/apps/statefulset-pod-management-policy-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 	if findings[0].Value != "Random" {
@@ -105,9 +105,9 @@ func TestStatefulSet_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{newStatefulSetReplicasInvalidCheck(), "apps/statefulset-replicas-invalid", "apps"},
-		{newStatefulSetPodManagementPolicyInvalidCheck(), "apps/statefulset-pod-management-policy-invalid", "apps"},
-		{newStatefulSetUpdateStrategyInvalidCheck(), "apps/statefulset-update-strategy-invalid", "apps"},
+		{newStatefulSetReplicasInvalidCheck(), "kubernetes/apps/statefulset-replicas-invalid", "apps"},
+		{newStatefulSetPodManagementPolicyInvalidCheck(), "kubernetes/apps/statefulset-pod-management-policy-invalid", "apps"},
+		{newStatefulSetUpdateStrategyInvalidCheck(), "kubernetes/apps/statefulset-update-strategy-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -158,13 +158,13 @@ spec:
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
 	}
-	if !ruleIDs["apps/statefulset-replicas-invalid"] {
+	if !ruleIDs["kubernetes/apps/statefulset-replicas-invalid"] {
 		t.Error("expected statefulset-replicas-invalid finding")
 	}
-	if !ruleIDs["apps/statefulset-pod-management-policy-invalid"] {
+	if !ruleIDs["kubernetes/apps/statefulset-pod-management-policy-invalid"] {
 		t.Error("expected statefulset-pod-management-policy-invalid finding")
 	}
-	if !ruleIDs["apps/statefulset-update-strategy-invalid"] {
+	if !ruleIDs["kubernetes/apps/statefulset-update-strategy-invalid"] {
 		t.Error("expected statefulset-update-strategy-invalid finding")
 	}
 }

@@ -27,7 +27,7 @@ type containerNameInvalidCheck struct{ runtime.Meta }
 
 func newContainerNameInvalidCheck() containerNameInvalidCheck {
 	return containerNameInvalidCheck{runtime.Meta{
-		RuleID:    "container/name-invalid",
+		RuleID:    "kubernetes/container/name-invalid",
 		RuleTitle: "Container Name Must Be A DNS-1123 Label",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -82,7 +82,7 @@ type containerPortNameInvalidCheck struct{ runtime.Meta }
 
 func newContainerPortNameInvalidCheck() containerPortNameInvalidCheck {
 	return containerPortNameInvalidCheck{runtime.Meta{
-		RuleID:    "container/port-name-invalid",
+		RuleID:    "kubernetes/container/port-name-invalid",
 		RuleTitle: "Container Port Name Must Be A Valid IANA Service Name",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}

@@ -25,7 +25,7 @@ const scalingRulesNote = "Ports the StabilizationWindowSeconds < 0 branch of val
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
-	"autoscaling/max-replicas-invalid": {
+	"kubernetes/autoscaling/max-replicas-invalid": {
 		Path:        autoscalingValidationPath,
 		Functions:   []string{"validateHorizontalPodAutoscalerSpec"},
 		Digest:      "sha256:ae5631d91218c869ef4ee583509993d206f00b903257e39f16ec95d84d86c267",
@@ -39,14 +39,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"only the absent field, which the schema already rejects. " +
 			"The minReplicas lower-bound and maxReplicas >= minReplicas branches are not ported.",
 	},
-	"autoscaling/scale-up-invalid": {
+	"kubernetes/autoscaling/scale-up-invalid": {
 		Path:        autoscalingValidationPath,
 		Functions:   []string{"validateScalingRules"},
 		Digest:      "sha256:9093f4e8d819240ea64681e9536eab81e26c36f3d1b8e23bd51e81d384cb7996",
 		ValidatedAt: validatedAt,
 		Note:        scalingRulesNote,
 	},
-	"autoscaling/scale-down-invalid": {
+	"kubernetes/autoscaling/scale-down-invalid": {
 		Path:        autoscalingValidationPath,
 		Functions:   []string{"validateScalingRules"},
 		Digest:      "sha256:9093f4e8d819240ea64681e9536eab81e26c36f3d1b8e23bd51e81d384cb7996",

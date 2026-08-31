@@ -61,7 +61,7 @@ type maxReplicasInvalidCheck struct{ runtime.Meta }
 
 func newMaxReplicasInvalidCheck() maxReplicasInvalidCheck {
 	return maxReplicasInvalidCheck{runtime.Meta{
-		RuleID:    "autoscaling/max-replicas-invalid",
+		RuleID:    "kubernetes/autoscaling/max-replicas-invalid",
 		RuleTitle: "HPA maxReplicas Must Be Greater Than Zero",
 		AppliesTo: hpaKinds,
 	}}
@@ -110,7 +110,7 @@ type scaleDownInvalidCheck struct{ runtime.Meta }
 
 func newScaleDownInvalidCheck() scaleDownInvalidCheck {
 	return scaleDownInvalidCheck{runtime.Meta{
-		RuleID:    "autoscaling/scale-down-invalid",
+		RuleID:    "kubernetes/autoscaling/scale-down-invalid",
 		RuleTitle: "HPA scaleDown stabilizationWindowSeconds Must Be >= 0",
 		AppliesTo: hpaKinds,
 	}}
@@ -126,7 +126,7 @@ type scaleUpInvalidCheck struct{ runtime.Meta }
 
 func newScaleUpInvalidCheck() scaleUpInvalidCheck {
 	return scaleUpInvalidCheck{runtime.Meta{
-		RuleID:    "autoscaling/scale-up-invalid",
+		RuleID:    "kubernetes/autoscaling/scale-up-invalid",
 		RuleTitle: "HPA scaleUp stabilizationWindowSeconds Must Be >= 0",
 		AppliesTo: hpaKinds,
 	}}

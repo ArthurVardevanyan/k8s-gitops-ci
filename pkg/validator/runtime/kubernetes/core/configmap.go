@@ -26,7 +26,7 @@ type configMapDataSizeExceededCheck struct{ runtime.Meta }
 
 func newConfigMapDataSizeExceededCheck() configMapDataSizeExceededCheck {
 	return configMapDataSizeExceededCheck{runtime.Meta{
-		RuleID:    "core/configmap-data-size-exceeded",
+		RuleID:    "kubernetes/core/configmap-data-size-exceeded",
 		RuleTitle: "ConfigMap Data Size Must Not Exceed 1 MiB",
 		AppliesTo: configMapKinds,
 	}}

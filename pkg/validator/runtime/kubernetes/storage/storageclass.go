@@ -21,7 +21,7 @@ type scProvisionerInvalidCheck struct{ runtime.Meta }
 
 func newScProvisionerInvalidCheck() scProvisionerInvalidCheck {
 	return scProvisionerInvalidCheck{runtime.Meta{
-		RuleID:    "storage-class/provisioner-invalid",
+		RuleID:    "kubernetes/storage-class/provisioner-invalid",
 		RuleTitle: "StorageClass Provisioner Must Be Specified",
 		AppliesTo: scKinds,
 	}}
@@ -100,7 +100,7 @@ type scReclaimPolicyInvalidCheck struct{ runtime.Meta }
 
 func newScReclaimPolicyInvalidCheck() scReclaimPolicyInvalidCheck {
 	return scReclaimPolicyInvalidCheck{runtime.Meta{
-		RuleID:    "storage-class/reclaim-policy-invalid",
+		RuleID:    "kubernetes/storage-class/reclaim-policy-invalid",
 		RuleTitle: "StorageClass Reclaim Policy Must Be Valid",
 		AppliesTo: scKinds,
 	}}
@@ -134,7 +134,7 @@ type scVolumeBindingModeInvalidCheck struct{ runtime.Meta }
 
 func newScVolumeBindingModeInvalidCheck() scVolumeBindingModeInvalidCheck {
 	return scVolumeBindingModeInvalidCheck{runtime.Meta{
-		RuleID:    "storage-class/volume-binding-mode-invalid",
+		RuleID:    "kubernetes/storage-class/volume-binding-mode-invalid",
 		RuleTitle: "StorageClass Volume Binding Mode Must Be Valid",
 		AppliesTo: scKinds,
 	}}
@@ -159,7 +159,7 @@ type scAllowedTopologyRangeInvalidCheck struct{ runtime.Meta }
 
 func newScAllowedTopologyRangeInvalidCheck() scAllowedTopologyRangeInvalidCheck {
 	return scAllowedTopologyRangeInvalidCheck{runtime.Meta{
-		RuleID:    "storage-class/allowed-topology-range-invalid",
+		RuleID:    "kubernetes/storage-class/allowed-topology-range-invalid",
 		RuleTitle: "StorageClass Allowed Topologies Must Have Valid Label Selectors",
 		AppliesTo: scKinds,
 	}}

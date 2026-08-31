@@ -17,7 +17,7 @@ type duplicateVolumeNamesCheck struct{ runtime.Meta }
 
 func newDuplicateVolumeNamesCheck() duplicateVolumeNamesCheck {
 	return duplicateVolumeNamesCheck{runtime.Meta{
-		RuleID:    "volume/duplicate-volume-names",
+		RuleID:    "kubernetes/volume/duplicate-volume-names",
 		RuleTitle: "Duplicate Volume Names Not Allowed",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -71,7 +71,7 @@ type secretVolumeCheck struct{ runtime.Meta }
 
 func newSecretVolumeCheck() secretVolumeCheck {
 	return secretVolumeCheck{runtime.Meta{
-		RuleID:    "volume/secret-name-required",
+		RuleID:    "kubernetes/volume/secret-name-required",
 		RuleTitle: "Secret Volume Must Set secretName",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -139,7 +139,7 @@ type configmapVolumeCheck struct{ runtime.Meta }
 
 func newConfigmapVolumeCheck() configmapVolumeCheck {
 	return configmapVolumeCheck{runtime.Meta{
-		RuleID:    "volume/configmap-name-required",
+		RuleID:    "kubernetes/volume/configmap-name-required",
 		RuleTitle: "ConfigMap Volume Must Set name",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}

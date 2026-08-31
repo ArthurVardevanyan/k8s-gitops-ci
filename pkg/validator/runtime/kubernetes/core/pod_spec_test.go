@@ -158,21 +158,21 @@ func TestPodSpecEnumFieldValues(t *testing.T) {
 		value   string
 		wantNum int
 	}{
-		{"restartPolicy Always", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "Always", 0},
-		{"restartPolicy OnFailure", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "OnFailure", 0},
-		{"restartPolicy Never", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "Never", 0},
-		{"restartPolicy absent", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "", 0},
-		{"restartPolicy invalid", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Pod", "restartPolicy", "InvalidPolicy", 1},
-		{"restartPolicy invalid in Deployment", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "Deployment", "restartPolicy", "InvalidPolicy", 1},
-		{"restartPolicy invalid in CronJob", newPodSpecRestartPolicyValueCheck(), "pod-spec/restart-policy-value", "CronJob", "restartPolicy", "InvalidPolicy", 1},
+		{"restartPolicy Always", newPodSpecRestartPolicyValueCheck(), "kubernetes/pod-spec/restart-policy-value", "Pod", "restartPolicy", "Always", 0},
+		{"restartPolicy OnFailure", newPodSpecRestartPolicyValueCheck(), "kubernetes/pod-spec/restart-policy-value", "Pod", "restartPolicy", "OnFailure", 0},
+		{"restartPolicy Never", newPodSpecRestartPolicyValueCheck(), "kubernetes/pod-spec/restart-policy-value", "Pod", "restartPolicy", "Never", 0},
+		{"restartPolicy absent", newPodSpecRestartPolicyValueCheck(), "kubernetes/pod-spec/restart-policy-value", "Pod", "restartPolicy", "", 0},
+		{"restartPolicy invalid", newPodSpecRestartPolicyValueCheck(), "kubernetes/pod-spec/restart-policy-value", "Pod", "restartPolicy", "InvalidPolicy", 1},
+		{"restartPolicy invalid in Deployment", newPodSpecRestartPolicyValueCheck(), "kubernetes/pod-spec/restart-policy-value", "Deployment", "restartPolicy", "InvalidPolicy", 1},
+		{"restartPolicy invalid in CronJob", newPodSpecRestartPolicyValueCheck(), "kubernetes/pod-spec/restart-policy-value", "CronJob", "restartPolicy", "InvalidPolicy", 1},
 
-		{"dnsPolicy ClusterFirst", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "ClusterFirst", 0},
-		{"dnsPolicy None", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "None", 0},
-		{"dnsPolicy Default", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "Default", 0},
-		{"dnsPolicy ClusterFirstWithHostNet", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "ClusterFirstWithHostNet", 0},
-		{"dnsPolicy absent", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "", 0},
-		{"dnsPolicy invalid", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Pod", "dnsPolicy", "InvalidPolicy", 1},
-		{"dnsPolicy invalid in Deployment", newPodSpecDNSPolicyValueCheck(), "pod-spec/dns-policy-value", "Deployment", "dnsPolicy", "InvalidPolicy", 1},
+		{"dnsPolicy ClusterFirst", newPodSpecDNSPolicyValueCheck(), "kubernetes/pod-spec/dns-policy-value", "Pod", "dnsPolicy", "ClusterFirst", 0},
+		{"dnsPolicy None", newPodSpecDNSPolicyValueCheck(), "kubernetes/pod-spec/dns-policy-value", "Pod", "dnsPolicy", "None", 0},
+		{"dnsPolicy Default", newPodSpecDNSPolicyValueCheck(), "kubernetes/pod-spec/dns-policy-value", "Pod", "dnsPolicy", "Default", 0},
+		{"dnsPolicy ClusterFirstWithHostNet", newPodSpecDNSPolicyValueCheck(), "kubernetes/pod-spec/dns-policy-value", "Pod", "dnsPolicy", "ClusterFirstWithHostNet", 0},
+		{"dnsPolicy absent", newPodSpecDNSPolicyValueCheck(), "kubernetes/pod-spec/dns-policy-value", "Pod", "dnsPolicy", "", 0},
+		{"dnsPolicy invalid", newPodSpecDNSPolicyValueCheck(), "kubernetes/pod-spec/dns-policy-value", "Pod", "dnsPolicy", "InvalidPolicy", 1},
+		{"dnsPolicy invalid in Deployment", newPodSpecDNSPolicyValueCheck(), "kubernetes/pod-spec/dns-policy-value", "Deployment", "dnsPolicy", "InvalidPolicy", 1},
 	}
 
 	for _, tt := range tests {

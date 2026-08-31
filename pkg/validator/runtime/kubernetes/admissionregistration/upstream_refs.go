@@ -43,14 +43,14 @@ const (
 // ValidatingWebhookConfiguration variants carry the "validating-" prefix.
 var upstreamRefs = map[string]runtime.UpstreamRef{
 	// --- MutatingWebhookConfiguration --------------------------------------
-	"admissionregistration/service-invalid": {
+	"kubernetes/admissionregistration/service-invalid": {
 		Path:        admissionregistrationValidationPath,
 		Functions:   []string{"validateMutatingWebhook"},
 		Digest:      mutatingWebhookDigest,
 		ValidatedAt: validatedAt,
 		Note:        serviceNote,
 	},
-	"admissionregistration/failure-policy-invalid": {
+	"kubernetes/admissionregistration/failure-policy-invalid": {
 		Path:        admissionregistrationValidationPath,
 		Functions:   []string{"validateMutatingWebhook"},
 		Digest:      mutatingWebhookDigest,
@@ -64,7 +64,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"admissionregistration/timeout-invalid": {
+	"kubernetes/admissionregistration/timeout-invalid": {
 		Path:        admissionregistrationValidationPath,
 		Functions:   []string{"validateMutatingWebhook"},
 		Digest:      mutatingWebhookDigest,
@@ -73,14 +73,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- ValidatingWebhookConfiguration ------------------------------------
-	"admissionregistration/validating-service-invalid": {
+	"kubernetes/admissionregistration/validating-service-invalid": {
 		Path:        admissionregistrationValidationPath,
 		Functions:   []string{"validateValidatingWebhook"},
 		Digest:      validatingWebhookDigest,
 		ValidatedAt: validatedAt,
 		Note:        serviceNote,
 	},
-	"admissionregistration/validating-failure-policy-invalid": {
+	"kubernetes/admissionregistration/validating-failure-policy-invalid": {
 		Path:        admissionregistrationValidationPath,
 		Functions:   []string{"validateValidatingWebhook"},
 		Digest:      validatingWebhookDigest,
@@ -94,7 +94,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"admissionregistration/validating-timeout-invalid": {
+	"kubernetes/admissionregistration/validating-timeout-invalid": {
 		Path:        admissionregistrationValidationPath,
 		Functions:   []string{"validateValidatingWebhook"},
 		Digest:      validatingWebhookDigest,

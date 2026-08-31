@@ -24,16 +24,16 @@ func TestEveryValidationPackageRegisters(t *testing.T) {
 		pkg string
 		id  string
 	}{
-		{pkg: "admissionregistration", id: "admissionregistration/failure-policy-invalid"},
-		{pkg: "apiextensions", id: "apiextensions/crd-storage-version-invalid"},
-		{pkg: "apps", id: "apps/daemonset-min-ready-seconds-invalid"},
-		{pkg: "autoscaling", id: "autoscaling/max-replicas-invalid"},
-		{pkg: "batch", id: "batch/backoff-limit-invalid"},
-		{pkg: "core", id: "container/duplicate-container-names"},
-		{pkg: "networking", id: "ingress/path-type-invalid"},
-		{pkg: "policy", id: "policy/max-unavailable-invalid"},
-		{pkg: "rbac", id: "rbac/clusterrole-ref-invalid"},
-		{pkg: "storage", id: "persistent-volume-claim/access-modes-invalid"},
+		{pkg: "admissionregistration", id: "kubernetes/admissionregistration/failure-policy-invalid"},
+		{pkg: "apiextensions", id: "kubernetes/apiextensions/crd-storage-version-invalid"},
+		{pkg: "apps", id: "kubernetes/apps/daemonset-min-ready-seconds-invalid"},
+		{pkg: "autoscaling", id: "kubernetes/autoscaling/max-replicas-invalid"},
+		{pkg: "batch", id: "kubernetes/batch/backoff-limit-invalid"},
+		{pkg: "core", id: "kubernetes/container/duplicate-container-names"},
+		{pkg: "networking", id: "kubernetes/ingress/path-type-invalid"},
+		{pkg: "policy", id: "kubernetes/policy/max-unavailable-invalid"},
+		{pkg: "rbac", id: "kubernetes/rbac/clusterrole-ref-invalid"},
+		{pkg: "storage", id: "kubernetes/persistent-volume-claim/access-modes-invalid"},
 	}
 
 	for _, tt := range tests {
@@ -81,8 +81,8 @@ func TestRuntimeChecksAreNonExemptable(t *testing.T) {
 // Enumerating kinds for those is not merely tedious but impossible, since the
 // set includes CRDs this tool has never seen.
 var kindIndependentChecks = map[string]string{
-	"core/object-meta-labels-invalid":      "ValidateLabels runs on every object",
-	"core/object-meta-annotations-invalid": "ValidateAnnotations runs on every object",
+	"kubernetes/core/object-meta-labels-invalid":      "ValidateLabels runs on every object",
+	"kubernetes/core/object-meta-annotations-invalid": "ValidateAnnotations runs on every object",
 }
 
 // TestRuntimeChecksDeclareKinds ensures every runtime check filters by kind.

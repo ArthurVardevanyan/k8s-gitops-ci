@@ -22,7 +22,7 @@ type Finding struct {
 //
 // CheckID must be the registered rule ID. The dispatcher resolves a
 // finding's section by looking CheckID up in the check registry, and checks
-// register under their rule ID ("batch/schedule-invalid"), never under a
+// register under their rule ID ("kubernetes/batch/schedule-invalid"), never under a
 // category ("batch"). A finding whose CheckID does not resolve is not
 // classified as runtime-validation, so it never reaches the Runtime
 // Validation section and is dropped by the resource-compliance copy loop,
@@ -41,6 +41,9 @@ func (f Finding) ToCheckFinding() check.Finding {
 	}
 	cf.Extra["ruleId"] = f.RuleID
 	cf.Extra["ruleTitle"] = f.RuleTitle
+	if fam := FamilyOf(f.RuleID); fam != "" {
+		cf.Extra["family"] = fam
+	}
 	if cat := CategoryOf(f.RuleID); cat != "" {
 		cf.Extra["category"] = cat
 	}

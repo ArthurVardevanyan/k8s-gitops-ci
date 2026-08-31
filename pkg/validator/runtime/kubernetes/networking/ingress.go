@@ -19,7 +19,7 @@ type pathTypeInvalidCheck struct{ runtime.Meta }
 
 func newPathTypeInvalidCheck() pathTypeInvalidCheck {
 	return pathTypeInvalidCheck{runtime.Meta{
-		RuleID:    "ingress/path-type-invalid",
+		RuleID:    "kubernetes/ingress/path-type-invalid",
 		RuleTitle: "Ingress PathType Must Be Valid",
 		AppliesTo: ingressKinds,
 	}}

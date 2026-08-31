@@ -16,7 +16,7 @@ type deploymentSelectorInvalidCheck struct{ runtime.Meta }
 
 func newDeploymentSelectorInvalidCheck() deploymentSelectorInvalidCheck {
 	return deploymentSelectorInvalidCheck{runtime.Meta{
-		RuleID:    "apps/deployment-selector-invalid",
+		RuleID:    "kubernetes/apps/deployment-selector-invalid",
 		RuleTitle: "Selector Must Be A Valid Label Selector",
 		AppliesTo: []string{"Deployment"},
 	}}
@@ -34,7 +34,7 @@ type deploymentStrategyTypeInvalidCheck struct{ runtime.Meta }
 
 func newDeploymentStrategyTypeInvalidCheck() deploymentStrategyTypeInvalidCheck {
 	return deploymentStrategyTypeInvalidCheck{runtime.Meta{
-		RuleID:    "apps/deployment-strategy-type-invalid",
+		RuleID:    "kubernetes/apps/deployment-strategy-type-invalid",
 		RuleTitle: "Strategy Type Must Be Valid",
 		AppliesTo: []string{"Deployment"},
 	}}
@@ -56,7 +56,7 @@ type deploymentReplicasInvalidCheck struct{ runtime.Meta }
 
 func newDeploymentReplicasInvalidCheck() deploymentReplicasInvalidCheck {
 	return deploymentReplicasInvalidCheck{runtime.Meta{
-		RuleID:    "apps/deployment-replicas-invalid",
+		RuleID:    "kubernetes/apps/deployment-replicas-invalid",
 		RuleTitle: "Replicas Must Be >= 0",
 		AppliesTo: []string{"Deployment"},
 	}}
@@ -96,7 +96,7 @@ type deploymentMinReadySecondsInvalidCheck struct{ runtime.Meta }
 
 func newDeploymentMinReadySecondsInvalidCheck() deploymentMinReadySecondsInvalidCheck {
 	return deploymentMinReadySecondsInvalidCheck{runtime.Meta{
-		RuleID:    "apps/deployment-min-ready-seconds-invalid",
+		RuleID:    "kubernetes/apps/deployment-min-ready-seconds-invalid",
 		RuleTitle: "MinReadySeconds Must Be >= 0",
 		AppliesTo: []string{"Deployment"},
 	}}

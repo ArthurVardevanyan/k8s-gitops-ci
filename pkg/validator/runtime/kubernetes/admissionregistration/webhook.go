@@ -44,7 +44,7 @@ func (b webhookCheckBase) Kinds() []string       { return b.kinds }
 
 // id builds the fully-qualified check ID for the given suffix.
 func (b webhookCheckBase) id(suffix string) string {
-	return "admissionregistration/" + b.idPrefix + suffix
+	return "kubernetes/admissionregistration/" + b.idPrefix + suffix
 }
 
 // finding builds a finding for this configuration kind.

@@ -111,7 +111,7 @@ type UpstreamRef struct {
 	// prepares its input before calling the function that reports the
 	// error, the preparation is part of the rule: porting only the callee
 	// reproduces its logic against different data. That is not
-	// hypothetical - container/volume-mount-name-undefined rejected almost
+	// hypothetical - kubernetes/container/volume-mount-name-undefined rejected almost
 	// every real StatefulSet because it ported ValidateVolumeMounts while
 	// upstream's caller first synthesizes a volume for each
 	// volumeClaimTemplate. The digest over the cited function was correct

@@ -116,7 +116,7 @@ func TestPDBSelectorCheck(t *testing.T) {
 			if len(findings) == 0 {
 				t.Fatalf("expected at least 1 finding, got none")
 			}
-			if findings[0].RuleID != "policy/selector-invalid" {
+			if findings[0].RuleID != "kubernetes/policy/selector-invalid" {
 				t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 			}
 			if findings[0].Kind != "PodDisruptionBudget" {

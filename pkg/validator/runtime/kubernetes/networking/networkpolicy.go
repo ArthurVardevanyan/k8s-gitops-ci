@@ -21,7 +21,7 @@ type policyTypeInvalidCheck struct{ runtime.Meta }
 
 func newPolicyTypeInvalidCheck() policyTypeInvalidCheck {
 	return policyTypeInvalidCheck{runtime.Meta{
-		RuleID:    "network-policy/policy-type-invalid",
+		RuleID:    "kubernetes/network-policy/policy-type-invalid",
 		RuleTitle: "NetworkPolicy policyTypes Must Be Valid",
 		AppliesTo: networkPolicyKinds,
 	}}
@@ -65,7 +65,7 @@ type portRangeInvalidCheck struct{ runtime.Meta }
 
 func newPortRangeInvalidCheck() portRangeInvalidCheck {
 	return portRangeInvalidCheck{runtime.Meta{
-		RuleID:    "network-policy/port-range-invalid",
+		RuleID:    "kubernetes/network-policy/port-range-invalid",
 		RuleTitle: "NetworkPolicy Port Range Must Be Valid",
 		AppliesTo: networkPolicyKinds,
 	}}
@@ -132,7 +132,7 @@ type protocolInvalidCheck struct{ runtime.Meta }
 
 func newProtocolInvalidCheck() protocolInvalidCheck {
 	return protocolInvalidCheck{runtime.Meta{
-		RuleID:    "network-policy/protocol-invalid",
+		RuleID:    "kubernetes/network-policy/protocol-invalid",
 		RuleTitle: "NetworkPolicy Protocol Must Be Valid",
 		AppliesTo: networkPolicyKinds,
 	}}

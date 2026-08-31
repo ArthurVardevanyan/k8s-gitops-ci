@@ -184,7 +184,7 @@ type objectMetaNameInvalidCheck struct{ runtime.Meta }
 
 func newObjectMetaNameInvalidCheck() objectMetaNameInvalidCheck {
 	return objectMetaNameInvalidCheck{runtime.Meta{
-		RuleID:    "core/object-meta-name-invalid",
+		RuleID:    "kubernetes/core/object-meta-name-invalid",
 		RuleTitle: "Object Name Must Be Valid For Its Kind",
 		AppliesTo: objectMetaKinds(),
 	}}
@@ -262,7 +262,7 @@ type objectMetaNamespaceInvalidCheck struct{ runtime.Meta }
 
 func newObjectMetaNamespaceInvalidCheck() objectMetaNamespaceInvalidCheck {
 	return objectMetaNamespaceInvalidCheck{runtime.Meta{
-		RuleID:    "core/object-meta-namespace-invalid",
+		RuleID:    "kubernetes/core/object-meta-namespace-invalid",
 		RuleTitle: "Object Namespace Must Be A Valid DNS Label",
 		AppliesTo: objectMetaKinds(),
 	}}

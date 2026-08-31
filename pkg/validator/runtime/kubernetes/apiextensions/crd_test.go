@@ -27,7 +27,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "apiextensions/crd-storage-version-invalid" {
+	if findings[0].RuleID != "kubernetes/apiextensions/crd-storage-version-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 }
@@ -55,7 +55,7 @@ spec:
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %v", len(findings), findings)
 	}
-	if findings[0].RuleID != "apiextensions/crd-storage-version-invalid" {
+	if findings[0].RuleID != "kubernetes/apiextensions/crd-storage-version-invalid" {
 		t.Errorf("unexpected rule ID: %s", findings[0].RuleID)
 	}
 	// The message must name both sides of the conflict. Asserting only the

@@ -15,7 +15,7 @@ const validatedAt = "v1.37.0"
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
-	"apiextensions/crd-storage-version-invalid": {
+	"kubernetes/apiextensions/crd-storage-version-invalid": {
 		Path:        apiextensionsValidationPath,
 		Functions:   []string{"validateCustomResourceDefinitionSpec"},
 		Digest:      "sha256:e8754bbba288215d52d4c15a9c0dde392aa03768abeead7eb0bdd302be21d828",

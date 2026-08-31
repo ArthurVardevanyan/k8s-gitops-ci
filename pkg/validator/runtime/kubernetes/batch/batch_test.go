@@ -292,8 +292,8 @@ func TestJobFindingsHaveCorrectFields(t *testing.T) {
 	}
 
 	f := findings[0]
-	if f.RuleID != "batch/parallelism-invalid" {
-		t.Errorf("RuleID: expected 'batch/parallelism-invalid', got %q", f.RuleID)
+	if f.RuleID != "kubernetes/batch/parallelism-invalid" {
+		t.Errorf("RuleID: expected 'kubernetes/batch/parallelism-invalid', got %q", f.RuleID)
 	}
 	if f.Kind != "Job" {
 		t.Errorf("Kind: expected 'Job', got %q", f.Kind)
@@ -323,8 +323,8 @@ func TestCronJobFindingsHaveCorrectFields(t *testing.T) {
 	}
 
 	f := findings[0]
-	if f.RuleID != "batch/schedule-invalid" {
-		t.Errorf("RuleID: expected 'batch/schedule-invalid', got %q", f.RuleID)
+	if f.RuleID != "kubernetes/batch/schedule-invalid" {
+		t.Errorf("RuleID: expected 'kubernetes/batch/schedule-invalid', got %q", f.RuleID)
 	}
 	if f.Kind != "CronJob" {
 		t.Errorf("Kind: expected 'CronJob', got %q", f.Kind)

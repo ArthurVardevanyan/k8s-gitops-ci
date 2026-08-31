@@ -16,7 +16,7 @@ const validatedAt = "v1.37.0"
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
-	"rbac/role-ref-invalid": {
+	"kubernetes/rbac/role-ref-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateRoleBinding"},
 		Digest:      "sha256:191879d6004f1eca9c8d862d162a98bab11ebcb2ece40c8682f151421311d40b",
@@ -35,7 +35,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 				"binding written with an explicitly-empty roleRef.apiGroup, which the API server accepts.",
 		}},
 	},
-	"rbac/clusterrole-ref-invalid": {
+	"kubernetes/rbac/clusterrole-ref-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateClusterRoleBinding"},
 		Digest:      "sha256:5f3744c1af9fad177a77630c270b6a010d1efc3e9de2449f0b415870d34da6d0",
@@ -55,7 +55,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 				"binding written with an explicitly-empty roleRef.apiGroup, which the API server accepts.",
 		}},
 	},
-	"rbac/clusterrolebinding-subject-invalid": {
+	"kubernetes/rbac/clusterrolebinding-subject-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateClusterRoleBinding", "ValidateRoleBindingSubject"},
 		Digest:      "sha256:b5b3e38b103d7aacd762ef12cc3a4aa88d429b18750101df5d8d004a88d59fe3",

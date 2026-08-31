@@ -14,7 +14,7 @@ type duplicateContainerNamesCheck struct{ runtime.Meta }
 
 func newDuplicateContainerNamesCheck() duplicateContainerNamesCheck {
 	return duplicateContainerNamesCheck{runtime.Meta{
-		RuleID:    "container/duplicate-container-names",
+		RuleID:    "kubernetes/container/duplicate-container-names",
 		RuleTitle: "Duplicate Container Names Not Allowed",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -60,7 +60,7 @@ type duplicatePortNamesCheck struct{ runtime.Meta }
 
 func newDuplicatePortNamesCheck() duplicatePortNamesCheck {
 	return duplicatePortNamesCheck{runtime.Meta{
-		RuleID:    "container/duplicate-port-names",
+		RuleID:    "kubernetes/container/duplicate-port-names",
 		RuleTitle: "Duplicate Port Names Not Allowed",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -109,7 +109,7 @@ type portNumberRangeCheck struct{ runtime.Meta }
 
 func newPortNumberRangeCheck() portNumberRangeCheck {
 	return portNumberRangeCheck{runtime.Meta{
-		RuleID:    "container/port-number-range",
+		RuleID:    "kubernetes/container/port-number-range",
 		RuleTitle: "Port Number Must Be In Range 1-65535",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -157,7 +157,7 @@ type hostPortRangeCheck struct{ runtime.Meta }
 
 func newHostPortRangeCheck() hostPortRangeCheck {
 	return hostPortRangeCheck{runtime.Meta{
-		RuleID:    "container/host-port-range",
+		RuleID:    "kubernetes/container/host-port-range",
 		RuleTitle: "Host Port Must Be In Range 1-65535",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -211,7 +211,7 @@ type portProtocolInvalidCheck struct{ runtime.Meta }
 
 func newPortProtocolInvalidCheck() portProtocolInvalidCheck {
 	return portProtocolInvalidCheck{runtime.Meta{
-		RuleID:    "container/port-protocol-invalid",
+		RuleID:    "kubernetes/container/port-protocol-invalid",
 		RuleTitle: "Container Port Protocol Must Be TCP, UDP or SCTP",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -261,7 +261,7 @@ type imagePullPolicyCheck struct{ runtime.Meta }
 
 func newImagePullPolicyCheck() imagePullPolicyCheck {
 	return imagePullPolicyCheck{runtime.Meta{
-		RuleID:    "container/image-pull-policy",
+		RuleID:    "kubernetes/container/image-pull-policy",
 		RuleTitle: "ImagePullPolicy Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -310,7 +310,7 @@ type mountPropagationValueCheck struct{ runtime.Meta }
 
 func newMountPropagationValueCheck() mountPropagationValueCheck {
 	return mountPropagationValueCheck{runtime.Meta{
-		RuleID:    "container/mount-propagation-value",
+		RuleID:    "kubernetes/container/mount-propagation-value",
 		RuleTitle: "MountPropagation Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -360,7 +360,7 @@ type terminationMessagePolicyValueCheck struct{ runtime.Meta }
 
 func newTerminationMessagePolicyValueCheck() terminationMessagePolicyValueCheck {
 	return terminationMessagePolicyValueCheck{runtime.Meta{
-		RuleID:    "container/termination-message-policy-value",
+		RuleID:    "kubernetes/container/termination-message-policy-value",
 		RuleTitle: "TerminationMessagePolicy Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -408,7 +408,7 @@ type volumeMountNameUndefinedCheck struct{ runtime.Meta }
 
 func newVolumeMountNameUndefinedCheck() volumeMountNameUndefinedCheck {
 	return volumeMountNameUndefinedCheck{runtime.Meta{
-		RuleID:    "container/volume-mount-name-undefined",
+		RuleID:    "kubernetes/container/volume-mount-name-undefined",
 		RuleTitle: "VolumeMount Name Must Match a Volume Definition",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}

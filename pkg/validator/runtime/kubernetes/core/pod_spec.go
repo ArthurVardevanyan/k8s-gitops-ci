@@ -21,7 +21,7 @@ type podSpecRestartPolicyValueCheck struct{ runtime.Meta }
 
 func newPodSpecRestartPolicyValueCheck() podSpecRestartPolicyValueCheck {
 	return podSpecRestartPolicyValueCheck{runtime.Meta{
-		RuleID:    "pod-spec/restart-policy-value",
+		RuleID:    "kubernetes/pod-spec/restart-policy-value",
 		RuleTitle: "RestartPolicy Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -65,7 +65,7 @@ type podSpecDNSPolicyValueCheck struct{ runtime.Meta }
 
 func newPodSpecDNSPolicyValueCheck() podSpecDNSPolicyValueCheck {
 	return podSpecDNSPolicyValueCheck{runtime.Meta{
-		RuleID:    "pod-spec/dns-policy-value",
+		RuleID:    "kubernetes/pod-spec/dns-policy-value",
 		RuleTitle: "DNSPolicy Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -110,7 +110,7 @@ type podSpecTolerationOperatorValueCheck struct{ runtime.Meta }
 
 func newPodSpecTolerationOperatorValueCheck() podSpecTolerationOperatorValueCheck {
 	return podSpecTolerationOperatorValueCheck{runtime.Meta{
-		RuleID:    "pod-spec/toleration-operator-value",
+		RuleID:    "kubernetes/pod-spec/toleration-operator-value",
 		RuleTitle: "Toleration Operator Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -164,7 +164,7 @@ type podSpecNodeSelectorInvalidCheck struct{ runtime.Meta }
 
 func newPodSpecNodeSelectorInvalidCheck() podSpecNodeSelectorInvalidCheck {
 	return podSpecNodeSelectorInvalidCheck{runtime.Meta{
-		RuleID:    "pod-spec/affinity-node-selector-invalid",
+		RuleID:    "kubernetes/pod-spec/affinity-node-selector-invalid",
 		RuleTitle: "NodeSelector Values Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -207,7 +207,7 @@ type podSpecAffinityInvalidCheck struct{ runtime.Meta }
 
 func newPodSpecAffinityInvalidCheck() podSpecAffinityInvalidCheck {
 	return podSpecAffinityInvalidCheck{runtime.Meta{
-		RuleID:    "pod-spec/pod-affinity-invalid",
+		RuleID:    "kubernetes/pod-spec/pod-affinity-invalid",
 		RuleTitle: "Pod Affinity Labels Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -295,7 +295,7 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 	for j, expr := range selector.MatchExpressions {
 		if errs := validation.IsQualifiedName(expr.Key); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{
-				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
+				RuleID: "kubernetes/pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
 				Finding: check.Finding{
 					Path:    psPath.Child("matchExpressions").Index(j).Child("key").String(),
 					Message: fmt.Sprintf("%s[%d]: invalid key: %s", msgPrefix, i, strings.Join(errs, ", ")),
@@ -307,7 +307,7 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 	for j, sel := range selector.MatchLabels {
 		if errs := validation.IsQualifiedName(j); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{
-				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
+				RuleID: "kubernetes/pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
 				Finding: check.Finding{
 					Path:    psPath.Child("matchLabels").Key(j).String(),
 					Message: fmt.Sprintf("%s[%d]: invalid label key: %s", msgPrefix, i, strings.Join(errs, ", ")),
@@ -317,7 +317,7 @@ func checkPodAffinityLabelSelector(selector *metav1.LabelSelector, i int, msgPre
 		}
 		if errs := validation.IsValidLabelValue(sel); len(errs) > 0 {
 			*findings = append(*findings, runtime.Finding{
-				RuleID: "pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
+				RuleID: "kubernetes/pod-spec/pod-affinity-invalid", RuleTitle: "Pod Affinity Labels Must Be Valid",
 				Finding: check.Finding{
 					Path:    psPath.Child("matchLabels").Key(j).String(),
 					Message: fmt.Sprintf("%s[%d]: invalid label value for %q: %s", msgPrefix, i, j, strings.Join(errs, ", ")),
@@ -333,7 +333,7 @@ type podSpecTopologySpreadInvalidCheck struct{ runtime.Meta }
 
 func newPodSpecTopologySpreadInvalidCheck() podSpecTopologySpreadInvalidCheck {
 	return podSpecTopologySpreadInvalidCheck{runtime.Meta{
-		RuleID:    "pod-spec/topology-spread-invalid",
+		RuleID:    "kubernetes/pod-spec/topology-spread-invalid",
 		RuleTitle: "TopologySpreadConstraints Labels Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -393,7 +393,7 @@ type podSpecServiceAccountNameInvalidCheck struct{ runtime.Meta }
 
 func newPodSpecServiceAccountNameInvalidCheck() podSpecServiceAccountNameInvalidCheck {
 	return podSpecServiceAccountNameInvalidCheck{runtime.Meta{
-		RuleID:    "pod-spec/service-account-name-invalid",
+		RuleID:    "kubernetes/pod-spec/service-account-name-invalid",
 		RuleTitle: "ServiceAccountName Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -426,7 +426,7 @@ type podSpecActiveDeadlineSecondsNegativeCheck struct{ runtime.Meta }
 
 func newPodSpecActiveDeadlineSecondsNegativeCheck() podSpecActiveDeadlineSecondsNegativeCheck {
 	return podSpecActiveDeadlineSecondsNegativeCheck{runtime.Meta{
-		RuleID:    "pod-spec/active-deadline-seconds-negative",
+		RuleID:    "kubernetes/pod-spec/active-deadline-seconds-negative",
 		RuleTitle: "ActiveDeadlineSeconds Must Be >= 1",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}
@@ -459,7 +459,7 @@ type podSpecReadinessGateInvalidCheck struct{ runtime.Meta }
 
 func newPodSpecReadinessGateInvalidCheck() podSpecReadinessGateInvalidCheck {
 	return podSpecReadinessGateInvalidCheck{runtime.Meta{
-		RuleID:    "pod-spec/readiness-gate-invalid",
+		RuleID:    "kubernetes/pod-spec/readiness-gate-invalid",
 		RuleTitle: "ReadinessGate ConditionType Must Be Valid",
 		AppliesTo: runtime.HasPodSpecKinds(),
 	}}

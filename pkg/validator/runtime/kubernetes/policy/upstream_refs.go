@@ -23,7 +23,7 @@ const pdbDigest = "sha256:476f48eb2bacb31d49a5d1970c71ce4eb7179991497c9a92b01989
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
-	"policy/selector-invalid": {
+	"kubernetes/policy/selector-invalid": {
 		Path:        policyValidationPath,
 		Functions:   pdbFunctions,
 		Digest:      pdbDigest,
@@ -36,7 +36,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"the stored object already carries such a value, which this tool cannot observe, so " +
 			"the permissive branch is taken to avoid an unsuppressible false positive.",
 	},
-	"policy/min-available-invalid": {
+	"kubernetes/policy/min-available-invalid": {
 		Path:        policyValidationPath,
 		Functions:   pdbFunctions,
 		Digest:      pdbDigest,
@@ -45,7 +45,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"ValidatePodDisruptionBudgetSpec, restricted to its non-negative-integer branch. The " +
 			"percentage-format and IsNotMoreThan100Percent branches are not ported.",
 	},
-	"policy/max-unavailable-invalid": {
+	"kubernetes/policy/max-unavailable-invalid": {
 		Path:        policyValidationPath,
 		Functions:   pdbFunctions,
 		Digest:      pdbDigest,
@@ -54,7 +54,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"ValidatePodDisruptionBudgetSpec, restricted to its non-negative-integer branch. The " +
 			"percentage-format and IsNotMoreThan100Percent branches are not ported.",
 	},
-	"policy/min-and-max-specified": {
+	"kubernetes/policy/min-and-max-specified": {
 		Path:        policyValidationPath,
 		Functions:   pdbFunctions,
 		Digest:      pdbDigest,

@@ -16,7 +16,7 @@ type statefulSetReplicasInvalidCheck struct{ runtime.Meta }
 
 func newStatefulSetReplicasInvalidCheck() statefulSetReplicasInvalidCheck {
 	return statefulSetReplicasInvalidCheck{runtime.Meta{
-		RuleID:    "apps/statefulset-replicas-invalid",
+		RuleID:    "kubernetes/apps/statefulset-replicas-invalid",
 		RuleTitle: "Replicas Must Be >= 0",
 		AppliesTo: []string{"StatefulSet"},
 	}}
@@ -56,7 +56,7 @@ type statefulSetPodManagementPolicyInvalidCheck struct{ runtime.Meta }
 
 func newStatefulSetPodManagementPolicyInvalidCheck() statefulSetPodManagementPolicyInvalidCheck {
 	return statefulSetPodManagementPolicyInvalidCheck{runtime.Meta{
-		RuleID:    "apps/statefulset-pod-management-policy-invalid",
+		RuleID:    "kubernetes/apps/statefulset-pod-management-policy-invalid",
 		RuleTitle: "PodManagementPolicy Must Be Valid",
 		AppliesTo: []string{"StatefulSet"},
 	}}
@@ -78,7 +78,7 @@ type statefulSetUpdateStrategyInvalidCheck struct{ runtime.Meta }
 
 func newStatefulSetUpdateStrategyInvalidCheck() statefulSetUpdateStrategyInvalidCheck {
 	return statefulSetUpdateStrategyInvalidCheck{runtime.Meta{
-		RuleID:    "apps/statefulset-update-strategy-invalid",
+		RuleID:    "kubernetes/apps/statefulset-update-strategy-invalid",
 		RuleTitle: "UpdateStrategy Type Must Be Valid",
 		AppliesTo: []string{"StatefulSet"},
 	}}

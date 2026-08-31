@@ -17,7 +17,7 @@ type limitRangeMaxMinInvalidCheck struct{ runtime.Meta }
 
 func newLimitRangeMaxMinInvalidCheck() limitRangeMaxMinInvalidCheck {
 	return limitRangeMaxMinInvalidCheck{runtime.Meta{
-		RuleID:    "core/limitrange-max-min-invalid",
+		RuleID:    "kubernetes/core/limitrange-max-min-invalid",
 		RuleTitle: "LimitRange Max Must Be >= Min",
 		AppliesTo: limitRangeKinds,
 	}}

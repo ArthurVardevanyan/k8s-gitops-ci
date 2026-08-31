@@ -18,7 +18,7 @@ const validatedAt = "v1.37.0"
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
 	// --- Job ---------------------------------------------------------------
-	"batch/parallelism-invalid": {
+	"kubernetes/batch/parallelism-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateJobSpec"},
 		Digest:      "sha256:dc60e69652be993f64b7d29efa59a5c0f1aa3e0cd030d0b3ef7920a59d9e71a4",
@@ -27,7 +27,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"upper-bound branches on the same field are not ported: they are cross-field rules against " +
 			"spec.completionMode and spec.completions.",
 	},
-	"batch/backoff-limit-invalid": {
+	"kubernetes/batch/backoff-limit-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateJobSpec"},
 		Digest:      "sha256:dc60e69652be993f64b7d29efa59a5c0f1aa3e0cd030d0b3ef7920a59d9e71a4",
@@ -36,7 +36,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- CronJob -----------------------------------------------------------
-	"batch/schedule-invalid": {
+	"kubernetes/batch/schedule-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateCronJobSpec", "validateScheduleFormat"},
 		Digest:      "sha256:f1f4e25f57c10250109b0ecc824684660a861626d0e484be6201776a6ffce61e",
@@ -52,28 +52,28 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"TZ-vs-timeZone conflict branches are not ported, since they depend on the " +
 			"CronJobTimeZone feature gate.",
 	},
-	"batch/concurrency-policy-invalid": {
+	"kubernetes/batch/concurrency-policy-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateConcurrencyPolicy"},
 		Digest:      "sha256:f2c4f05dd911b613d8067e95521871efb0eb340a977088979d9e477623d9e289",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the default -> field.NotSupported branch. Deliberate divergence: the empty case, which upstream reports Required, is skipped because defaulting supplies Allow.",
 	},
-	"batch/failed-jobs-history-limit-invalid": {
+	"kubernetes/batch/failed-jobs-history-limit-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateCronJobSpec"},
 		Digest:      "sha256:bf42456473fdf2fabd2433a1aa3452db648b54386cb8228ad3cce6c8d18606aa",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(*spec.FailedJobsHistoryLimit, ...) branch; zero is valid, matching upstream.",
 	},
-	"batch/successful-jobs-history-limit-invalid": {
+	"kubernetes/batch/successful-jobs-history-limit-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateCronJobSpec"},
 		Digest:      "sha256:bf42456473fdf2fabd2433a1aa3452db648b54386cb8228ad3cce6c8d18606aa",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(*spec.SuccessfulJobsHistoryLimit, ...) branch; zero is valid, matching upstream.",
 	},
-	"batch/starting-deadline-seconds-invalid": {
+	"kubernetes/batch/starting-deadline-seconds-invalid": {
 		Path:        batchValidationPath,
 		Functions:   []string{"validateCronJobSpec"},
 		Digest:      "sha256:bf42456473fdf2fabd2433a1aa3452db648b54386cb8228ad3cce6c8d18606aa",

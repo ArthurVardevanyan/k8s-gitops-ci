@@ -76,7 +76,7 @@ type objectMetaLabelsInvalidCheck struct{ runtime.Meta }
 
 func newObjectMetaLabelsInvalidCheck() objectMetaLabelsInvalidCheck {
 	return objectMetaLabelsInvalidCheck{runtime.Meta{
-		RuleID:    "core/object-meta-labels-invalid",
+		RuleID:    "kubernetes/core/object-meta-labels-invalid",
 		RuleTitle: "Object Labels Must Be Valid",
 	}}
 }
@@ -131,7 +131,7 @@ type objectMetaAnnotationsInvalidCheck struct{ runtime.Meta }
 
 func newObjectMetaAnnotationsInvalidCheck() objectMetaAnnotationsInvalidCheck {
 	return objectMetaAnnotationsInvalidCheck{runtime.Meta{
-		RuleID:    "core/object-meta-annotations-invalid",
+		RuleID:    "kubernetes/core/object-meta-annotations-invalid",
 		RuleTitle: "Object Annotations Must Be Valid",
 	}}
 }
