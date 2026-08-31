@@ -34,9 +34,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      "sha256:791ebb715d65b5a33bfbfb742a971db7513c53b2a343d5e3610a8c874fe50064",
 		ValidatedAt: validatedAt,
 		Note: "Ports the !supportedReclaimPolicy.Has(*reclaimPolicy) -> field.NotSupported branch " +
-			"(Delete or Retain). An absent reclaimPolicy is not reported, matching upstream: " +
-			"validateReclaimPolicy returns early on nil and skips the empty string behind its own " +
-			"len(...) > 0 guard, so there is no Required branch in the cited function to diverge from.",
+			"(Delete or Retain). Neither an absent nor an explicitly-empty reclaimPolicy is " +
+			"reported, matching upstream rather than diverging from it: validateReclaimPolicy " +
+			"returns early on nil and wraps the NotSupported branch in its own " +
+			"len(string(*reclaimPolicy)) > 0 guard, so the API server accepts reclaimPolicy: \"\". " +
+			"There is no Required branch in the cited function. Note this guard is specific to " +
+			"this field - validateVolumeBindingMode in the same file has none, so " +
+			"storage-class/volume-binding-mode-invalid correctly reports an empty value.",
 	},
 	"storage-class/volume-binding-mode-invalid": {
 		Path:        storageValidationPath,

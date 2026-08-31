@@ -111,6 +111,15 @@ func (c scReclaimPolicyInvalidCheck) Run(data []byte, source string) []runtime.F
 		if sc.ReclaimPolicy == nil {
 			return "", false
 		}
+		// Upstream skips an explicitly-empty reclaimPolicy behind its own
+		// `len(string(*reclaimPolicy)) > 0` guard, so the API server
+		// accepts `reclaimPolicy: ""`. This is the one enum in this file
+		// that upstream guards this way - volumeBindingMode, immediately
+		// below, has no such guard and does reject empty - so the skip
+		// belongs here rather than in the shared helper.
+		if *sc.ReclaimPolicy == "" {
+			return "", false
+		}
 		return string(*sc.ReclaimPolicy), true
 	}, map[string]bool{
 		string(corev1.PersistentVolumeReclaimDelete): true,

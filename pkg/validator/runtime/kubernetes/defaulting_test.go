@@ -29,12 +29,26 @@ import (
 // A value-typed field cannot distinguish "absent" from "explicitly empty", so
 // both are defaulted and a rule that rejects "" is a false positive. A
 // pointer-typed field can: an explicit "" unmarshals to a non-nil pointer to
-// the empty string, defaulting is skipped, and the API server really does
-// reject it — so a rule that rejects "" is correct and must be kept.
+// the empty string and defaulting is skipped, so the value does reach
+// validation.
 //
-// Both directions are asserted here. Relaxing a pointer-typed rule to accept
-// "" would be just as wrong as leaving a value-typed one strict; it would
-// silently stop reporting a manifest the cluster rejects.
+// Reaching validation is not the same as being rejected by it, and treating
+// the two as equivalent is how a false positive got in here. Once "" arrives,
+// the ported function decides:
+//
+//	if !supportedVolumeBindingModes.Has(*mode) {   // "" IS rejected
+//	if len(string(*reclaimPolicy)) > 0 { ... }     // "" is NOT rejected
+//
+// Both fields are pointer-typed on the same kind and defaulted by the same
+// function, and they still differ, because validateReclaimPolicy wraps its
+// NotSupported branch in a length guard and validateVolumeBindingMode does
+// not. So a fixture entry has to answer two questions, not one: does the
+// empty value survive defaulting, and does the cited function then reject it?
+//
+// Both directions are asserted here. Relaxing a rule whose upstream function
+// really does reject "" would silently stop reporting a manifest the cluster
+// rejects; keeping one whose function accepts "" blocks a manifest the
+// cluster allows.
 //
 // Each fixture sets every defaulted field of its kind to the empty value at
 // once, so a new check that reads one of those fields is covered without
@@ -89,8 +103,14 @@ func TestExplicitlyEmptyDefaultedFields(t *testing.T) {
 		{
 			file: "sc.yaml",
 			kind: "StorageClass",
-			want: []string{"storage-class/reclaim-policy-invalid", "storage-class/volume-binding-mode-invalid"},
-			why:  "SetDefaults_StorageClass guards both on == nil",
+			want: []string{"storage-class/volume-binding-mode-invalid"},
+			// reclaimPolicy is deliberately absent. Surviving defaulting is
+			// only half the question: upstream validateReclaimPolicy then
+			// wraps its NotSupported branch in a len(...) > 0 guard, so the
+			// API server accepts an empty value and reporting it would be a
+			// false positive. validateVolumeBindingMode has no such guard,
+			// which is why its sibling stays.
+			why: "SetDefaults_StorageClass guards both on == nil, but only volumeBindingMode is then rejected empty",
 		},
 		{
 			file: "vwc.yaml",

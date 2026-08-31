@@ -98,11 +98,19 @@ func TestScReclaimPolicyInvalid(t *testing.T) {
 	runDocCases(t, newScReclaimPolicyInvalidCheck().Run, []docCase{
 		{name: "SCReclaimPolicyInvalidCheck", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nreclaimPolicy: InvalidReclaim", want: 1},
 		{name: "SCReclaimPolicyInvalidValid", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nreclaimPolicy: Delete", want: 0},
+		// Upstream validateReclaimPolicy wraps its NotSupported branch in a
+		// len(...) > 0 guard, so the API server accepts an empty value even
+		// though the pointer survives defaulting. Reporting it blocked a
+		// manifest the cluster allows.
+		{name: "SCReclaimPolicyExplicitEmptyIsAcceptedUpstream", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nreclaimPolicy: \"\"", want: 0},
 	})
 }
 
 func TestScVolumeBindingModeInvalid(t *testing.T) {
 	runDocCases(t, newScVolumeBindingModeInvalidCheck().Run, []docCase{
+		// The sibling enum in the same file has no such guard, so an empty
+		// volumeBindingMode is still a real rejection.
+		{name: "SCVolumeBindingModeExplicitEmptyIsRejectedUpstream", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nvolumeBindingMode: \"\"", want: 1},
 		{name: "SCVolumeBindingModeInvalidCheck", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nvolumeBindingMode: InvalidMode", want: 1},
 		{name: "SCVolumeBindingModeInvalidValid", doc: "kind: StorageClass\nmetadata:\n  name: test\nprovisioner: valid.provisioner\nvolumeBindingMode: WaitForFirstConsumer", want: 0},
 	})
