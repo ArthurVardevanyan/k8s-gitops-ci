@@ -51,6 +51,19 @@ PARALLEL=5
 # AVP (secret rendering) needs org-specific secret-backend access, which a
 # generic replay of a public repo does not have — off by default here.
 ENABLE_AVP=false
+# A replay is only evidence if it runs the pipeline the way the replayed
+# repo's own CI runs it. --assume-openshift exempts API groups that ship with
+# OpenShift but also run standalone (OLM, Prometheus Operator, ...) from the
+# sync-options check, so replaying an OpenShift repo without it reports
+# findings that repo's CI never reported — a PR touching OLM manifests failed
+# this gate while its real CI had passed it clean.
+#
+# It is per-repo, not global: it is a fact about the repo being replayed, not
+# about the replay. A corpus mixing an OpenShift repo with a vanilla-Kubernetes
+# one needs the flag for the former and would be wrong for the latter, so
+# repos that need it are listed here rather than the flag being applied to
+# whatever REPOS happens to contain.
+OPENSHIFT_REPOS="ArthurVardevanyan/HomeLab"
 
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
@@ -79,8 +92,12 @@ while [[ $# -gt 0 ]]; do
     ENABLE_AVP=true
     shift
     ;;
+  --openshift-repos)
+    OPENSHIFT_REPOS="$2"
+    shift 2
+    ;;
   --help | -h)
-    echo "Usage: $0 [--count N] [--repos R1,R2] [--output FILE] [--binary PATH] [--parallel N] [--enable-avp]"
+    echo "Usage: $0 [--count N] [--repos R1,R2] [--output FILE] [--binary PATH] [--parallel N] [--enable-avp] [--openshift-repos R1,R2]"
     exit 0
     ;;
   *)
@@ -135,6 +152,11 @@ run_test() {
   local EXTRA_FLAGS=()
   if [[ "${ENABLE_AVP}" == "false" ]]; then
     EXTRA_FLAGS+=(--disable-checks avp)
+  fi
+  # Whole-element match: the commas around both sides mean "org/homelab-docs"
+  # cannot match a list entry of "org/homelab".
+  if [[ ",${OPENSHIFT_REPOS}," == *",${REPO},"* ]]; then
+    EXTRA_FLAGS+=(--assume-openshift)
   fi
 
   # Unset GH_TOKEN for the binary so it can never post/update PR comments.
