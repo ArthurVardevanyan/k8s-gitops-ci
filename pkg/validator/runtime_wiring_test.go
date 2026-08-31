@@ -343,6 +343,17 @@ func TestRuntimeSectionGroupsByFamily(t *testing.T) {
 		}
 	}
 
+	// The counterpart to pinning the single-family intro: the same sentence in
+	// a multi-family report would credit the API server with enforcing rules it
+	// has never seen. The enforcement claim belongs to the per-family headings
+	// there, which is why the qualifier is asserted above.
+	if strings.Contains(multi.Body, intro) {
+		t.Errorf("multi-family report claims every family is enforced by the API server:\n%s", multi.Body)
+	}
+	if !strings.Contains(multi.Body, "Each family below names what enforces it") {
+		t.Errorf("multi-family intro does not point at the per-family headings:\n%s", multi.Body)
+	}
+
 	// Both families' findings must survive the extra nesting level.
 	for _, want := range []string{"CronJob/x", "NetworkAttachmentDefinition/x"} {
 		if !strings.Contains(multi.Body, want) {

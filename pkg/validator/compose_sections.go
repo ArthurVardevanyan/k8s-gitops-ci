@@ -301,15 +301,27 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 		return ReportSection{Name: "Runtime Validation", Status: StatusPassed, Body: "No runtime validation findings."}
 	}
 
-	var b strings.Builder
-	b.WriteString("These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject.\n\n")
-
 	families := make([]string, 0, len(byFamily))
 	for fam := range byFamily {
 		families = append(families, fam)
 	}
 	sort.Strings(families)
 	nested := len(families) > 1
+
+	// The intro can only name an enforcer when there is exactly one family to
+	// name it for. With a single family the wording stays verbatim, both
+	// because it is accurate - every check shipping today is a port of
+	// Kubernetes' own validation - and because it keeps a report identical to
+	// one from before check IDs grew a family segment. With several families
+	// the same sentence would claim the API server enforces rules it has
+	// never seen, so the enforcement claim moves to the per-family headings,
+	// which state it one family at a time.
+	var b strings.Builder
+	if nested {
+		b.WriteString("These are structural/runtime validation rules enforced by the cluster. Each family below names what enforces it. Findings here indicate manifests that would be rejected.\n\n")
+	} else {
+		b.WriteString("These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject.\n\n")
+	}
 
 	for _, fam := range families {
 		byCheck := byFamily[fam]
