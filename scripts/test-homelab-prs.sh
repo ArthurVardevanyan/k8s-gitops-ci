@@ -16,12 +16,12 @@
 #      Eyeball the diff; don't treat a single red as a regression on its own.
 #
 # Usage:
-#   ./scripts/test-homelab-prs.sh [--count N] [--repos R1,R2] [--output FILE]
-#                                 [--binary PATH] [--parallel N] [--enable-avp]
+#   ./scripts/test-homelab-prs.sh [flags]   # --help lists every flag
 #
 # Examples:
 #   ./scripts/test-homelab-prs.sh --count 10
 #   ./scripts/test-homelab-prs.sh --repos ArthurVardevanyan/HomeLab --output report.md
+#   ./scripts/test-homelab-prs.sh --repos a/one,b/two --openshift-repos b/two
 
 set -o errexit
 set -o nounset
@@ -67,6 +67,15 @@ ENABLE_AVP=false
 OPENSHIFT_REPOS="ArthurVardevanyan/HomeLab"
 
 # --- Parse args ---
+
+# usage is the single source of the flag list. The file header used to carry a
+# second copy and the two drifted the moment a flag was added, so the header
+# now points here instead of restating it.
+usage() {
+  echo "Usage: $0 [--count N] [--repos R1,R2] [--output FILE] [--binary PATH]"
+  echo "          [--parallel N] [--enable-avp] [--openshift-repos R1,R2]"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --count | -n)
@@ -98,11 +107,12 @@ while [[ $# -gt 0 ]]; do
     shift 2
     ;;
   --help | -h)
-    echo "Usage: $0 [--count N] [--repos R1,R2] [--output FILE] [--binary PATH] [--parallel N] [--enable-avp] [--openshift-repos R1,R2]"
+    usage
     exit 0
     ;;
   *)
-    echo "Unknown option: $1"
+    echo "Unknown option: $1" >&2
+    usage >&2
     exit 1
     ;;
   esac
