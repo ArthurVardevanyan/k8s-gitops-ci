@@ -766,7 +766,7 @@ formats such as DNS-1123 labels, qualified names, or cron syntax). See
 cannot come out of the schema pipeline instead.
 
 They live under `pkg/validator/runtime/` (shared adapter and finding
-types) and `pkg/validator/runtime/kubernetes/<apigroup>/validation/` (the
+types) and `pkg/validator/runtime/kubernetes/<apigroup>/` (the
 checks themselves), and they render as their **own report section,
 "Runtime Validation"** (`Section()` returns `"runtime-validation"`),
 separate from Resource Compliance.
@@ -1122,18 +1122,18 @@ filtering on them, if that becomes necessary.
 
 The remaining checks group by API group:
 
-| Package                                               | Rules ported                                                                                                                                                            |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runtime/kubernetes/core/validation`                  | Object metadata (name/generateName/namespace, all kinds), core objects (ConfigMap, ResourceQuota, LimitRange), container, pod-spec, resource-quantity, and volume rules |
-| `runtime/kubernetes/apps/validation`                  | Deployment, StatefulSet, ReplicaSet, DaemonSet                                                                                                                          |
-| `runtime/kubernetes/batch/validation`                 | Job, CronJob                                                                                                                                                            |
-| `runtime/kubernetes/storage/validation`               | PersistentVolume, PersistentVolumeClaim, StorageClass                                                                                                                   |
-| `runtime/kubernetes/networking/validation`            | Service, Ingress, NetworkPolicy                                                                                                                                         |
-| `runtime/kubernetes/rbac/validation`                  | RoleBinding/ClusterRoleBinding `roleRef` and subject shape                                                                                                              |
-| `runtime/kubernetes/admissionregistration/validation` | ValidatingWebhookConfiguration, MutatingWebhookConfiguration                                                                                                            |
-| `runtime/kubernetes/apiextensions/validation`         | CustomResourceDefinition                                                                                                                                                |
-| `runtime/kubernetes/autoscaling/validation`           | HorizontalPodAutoscaler (v1/v2)                                                                                                                                         |
-| `runtime/kubernetes/policy/validation`                | PodDisruptionBudget                                                                                                                                                     |
+| Package                                    | Rules ported                                                                                                                                                            |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime/kubernetes/core`                  | Object metadata (name/generateName/namespace, all kinds), core objects (ConfigMap, ResourceQuota, LimitRange), container, pod-spec, resource-quantity, and volume rules |
+| `runtime/kubernetes/apps`                  | Deployment, StatefulSet, ReplicaSet, DaemonSet                                                                                                                          |
+| `runtime/kubernetes/batch`                 | Job, CronJob                                                                                                                                                            |
+| `runtime/kubernetes/storage`               | PersistentVolume, PersistentVolumeClaim, StorageClass                                                                                                                   |
+| `runtime/kubernetes/networking`            | Service, Ingress, NetworkPolicy                                                                                                                                         |
+| `runtime/kubernetes/rbac`                  | RoleBinding/ClusterRoleBinding `roleRef` and subject shape                                                                                                              |
+| `runtime/kubernetes/admissionregistration` | ValidatingWebhookConfiguration, MutatingWebhookConfiguration                                                                                                            |
+| `runtime/kubernetes/apiextensions`         | CustomResourceDefinition                                                                                                                                                |
+| `runtime/kubernetes/autoscaling`           | HorizontalPodAutoscaler (v1/v2)                                                                                                                                         |
+| `runtime/kubernetes/policy`                | PodDisruptionBudget                                                                                                                                                     |
 
 `pkg/validator/runtime/kubernetes/` is the authoritative list — the check
 IDs (`<category>/<rule>`, e.g. `apps/daemonset-min-ready-seconds-invalid`)

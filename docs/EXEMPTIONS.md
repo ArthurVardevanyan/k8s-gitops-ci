@@ -229,7 +229,7 @@ never block in the first place).
 
 Every check ID under the **runtime-validation** family — the
 `<category>/<rule>` IDs registered from
-`pkg/validator/runtime/kubernetes/*/validation`, e.g.
+`pkg/validator/runtime/kubernetes/*`, e.g.
 `apps/daemonset-min-ready-seconds-invalid`,
 `batch/backoff-limit-invalid`, `container/duplicate-container-names` — is
 **not exemptable by either mode**. No `gitops-ci.k8s.io/exempt-<id>`

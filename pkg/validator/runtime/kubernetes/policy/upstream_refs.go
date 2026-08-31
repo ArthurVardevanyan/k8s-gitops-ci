@@ -1,0 +1,64 @@
+package policy
+
+import (
+	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
+)
+
+// policyValidationPath is pkg/apis/policy/validation/validation.go in
+// kubernetes/kubernetes, which holds the PodDisruptionBudget rules ported here.
+const policyValidationPath = "pkg/apis/policy/validation/validation.go"
+
+// validatedAt is the kubernetes/kubernetes tag every digest below was taken at.
+const validatedAt = "v1.37.0"
+
+// pdbFunctions is the upstream call chain every check in this package ports:
+// ValidatePodDisruptionBudget delegates the whole spec to
+// ValidatePodDisruptionBudgetSpec, which carries each individual rule.
+var pdbFunctions = []string{"ValidatePodDisruptionBudget", "ValidatePodDisruptionBudgetSpec"}
+
+// pdbDigest is the digest over pdbFunctions at validatedAt.
+const pdbDigest = "sha256:476f48eb2bacb31d49a5d1970c71ce4eb7179991497c9a92b01989da2d6f3a43"
+
+// upstreamRefs cites the exact upstream Kubernetes function each check in this
+// package ports. See pkg/validator/runtime/upstream.go for why a file-only
+// citation is not accepted, and docs/CI.md for the standard.
+var upstreamRefs = map[string]runtime.UpstreamRef{
+	"policy/selector-invalid": {
+		Path:        policyValidationPath,
+		Functions:   pdbFunctions,
+		Digest:      pdbDigest,
+		ValidatedAt: validatedAt,
+		Note: "Ports the unversionedvalidation.ValidateLabelSelector(spec.Selector, ...) call in " +
+			"ValidatePodDisruptionBudgetSpec by calling that same apimachinery helper, so the " +
+			"matchLabels, matchExpressions operator and values rules are all covered. An absent " +
+			"selector is skipped rather than reported, because upstream tolerates a nil selector " +
+			"here. AllowInvalidLabelValueInSelector is set true: upstream derives it from whether " +
+			"the stored object already carries such a value, which this tool cannot observe, so " +
+			"the permissive branch is taken to avoid an unsuppressible false positive.",
+	},
+	"policy/min-available-invalid": {
+		Path:        policyValidationPath,
+		Functions:   pdbFunctions,
+		Digest:      pdbDigest,
+		ValidatedAt: validatedAt,
+		Note: "Ports the appsvalidation.ValidatePositiveIntOrPercent(*spec.MinAvailable, ...) call in " +
+			"ValidatePodDisruptionBudgetSpec, restricted to its non-negative-integer branch. The " +
+			"percentage-format and IsNotMoreThan100Percent branches are not ported.",
+	},
+	"policy/max-unavailable-invalid": {
+		Path:        policyValidationPath,
+		Functions:   pdbFunctions,
+		Digest:      pdbDigest,
+		ValidatedAt: validatedAt,
+		Note: "Ports the appsvalidation.ValidatePositiveIntOrPercent(*spec.MaxUnavailable, ...) call in " +
+			"ValidatePodDisruptionBudgetSpec, restricted to its non-negative-integer branch. The " +
+			"percentage-format and IsNotMoreThan100Percent branches are not ported.",
+	},
+	"policy/min-and-max-specified": {
+		Path:        policyValidationPath,
+		Functions:   pdbFunctions,
+		Digest:      pdbDigest,
+		ValidatedAt: validatedAt,
+		Note:        "Ports the spec.MinAvailable != nil && spec.MaxUnavailable != nil -> \"minAvailable and maxUnavailable cannot be both set\" branch of ValidatePodDisruptionBudgetSpec.",
+	},
+}

@@ -61,7 +61,7 @@ Annotation-mode support is separate: a check only honors
 `<category>/<rule>` (e.g. `apps/daemonset-min-ready-seconds-invalid`,
 `batch/backoff-limit-invalid`, `container/duplicate-container-names`,
 `storage-class/...`, `pod-spec/...`) comes from
-`pkg/validator/runtime/kubernetes/*/validation` and appears in the
+`pkg/validator/runtime/kubernetes/*` and appears in the
 **"Runtime Validation"** report section, not "Resource Compliance". These
 are 1:1 ports of the Kubernetes API server's own validation, so they only
 fire on manifests the cluster itself would reject — an exemption would
