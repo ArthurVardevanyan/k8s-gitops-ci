@@ -1,4 +1,4 @@
-package validation
+package apps
 
 import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"

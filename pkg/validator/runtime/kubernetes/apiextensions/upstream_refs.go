@@ -1,4 +1,4 @@
-package validation
+package apiextensions
 
 import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"

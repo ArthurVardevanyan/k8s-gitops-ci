@@ -1,4 +1,4 @@
-package validation
+package rbac
 
 import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
