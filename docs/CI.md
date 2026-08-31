@@ -766,7 +766,7 @@ formats such as DNS-1123 labels, qualified names, or cron syntax). See
 cannot come out of the schema pipeline instead.
 
 They live under `pkg/validator/runtime/` (shared adapter and finding
-types) and `pkg/validator/runtime/kubernetes/<apigroup>/validation/` (the
+types) and `pkg/validator/runtime/kubernetes/<apigroup>/` (the
 checks themselves), and they render as their **own report section,
 "Runtime Validation"** (`Section()` returns `"runtime-validation"`),
 separate from Resource Compliance.

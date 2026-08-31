@@ -115,7 +115,7 @@ of the flow above:
 - **Runtime Validation (admission rules):**
   `pkg/validator/runtime` (shared `Check`/`Finding` types and the adapter
   onto `check.Check`) and
-  `pkg/validator/runtime/kubernetes/<apigroup>/validation` (one
+  `pkg/validator/runtime/kubernetes/<apigroup>` (one
   subpackage per Kubernetes API group: `admissionregistration`,
   `apiextensions`, `apps`, `autoscaling`, `batch`, `core`, `networking`,
   `policy`, `rbac`, `storage`). These are 1:1 ports of the
