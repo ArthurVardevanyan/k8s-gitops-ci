@@ -33,9 +33,14 @@ func (m Meta) ID() string      { return m.RuleID }
 func (m Meta) Title() string   { return m.RuleTitle }
 func (m Meta) Kinds() []string { return m.AppliesTo }
 
-// Blocking is true for every runtime check. These findings describe manifests
-// the cluster rejects, so a non-blocking one would report a failure that is
-// going to happen anyway and then let it merge.
+// Blocking is true for every runtime check, because these findings describe
+// manifests the cluster rejects: reporting one as advisory would be reporting
+// a failure that is going to happen anyway.
+//
+// This states the family's contract rather than the mechanism enforcing it.
+// Nothing in the pipeline reads this method - runtime findings gate the run by
+// their section, which marks the result blocking whenever it is non-empty. A
+// check returning false here would still block.
 func (m Meta) Blocking() bool { return true }
 
 // RenderSensitive is true for every runtime check. What rejects the manifest -

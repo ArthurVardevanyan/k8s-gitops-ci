@@ -364,19 +364,27 @@ const (
 // - the CNI rules below describe manifests the cluster accepts and then fails
 // to attach.
 func runtimeIntro(families []string) string {
-	const general = "These are structural/runtime validation rules enforced by the cluster. " +
-		"Findings here indicate manifests that would be rejected."
+	// "Rejected" is only true of some families. Kubernetes rules are enforced
+	// at admission, CNI rules bite afterwards, when the network is attached -
+	// so a sentence covering more than one family has to allow for both, or it
+	// states something false about half its own contents.
+	const outcome = "Findings here indicate manifests the cluster either rejects or admits and then cannot act on."
+	const general = "These are structural/runtime validation rules enforced by the cluster. " + outcome
 	if len(families) != 1 {
 		return "These are structural/runtime validation rules enforced by the cluster. " +
-			"Each family below names what enforces it. " +
-			"Findings here indicate manifests that would be rejected."
+			"Each family below names what enforces it. " + outcome
 	}
 	switch families[0] {
 	case runtimeFamilyKubernetes:
 		return "These are structural/runtime Kubernetes validation rules enforced by the cluster API server. " +
 			"Findings here indicate manifests that the cluster would reject."
 	case runtimeFamilyK8sCNI:
-		return "These are CNI configuration rules enforced by the cluster's network controller. " +
+		// Deliberately names no component. This family spans both
+		// plugin-independent config parsing and one plugin's own semantic
+		// rules, and the two are not enforced by the same thing - naming a
+		// single controller would be wrong for one of them either way. What
+		// they do share is when they bite, which is the useful part.
+		return "These are CNI configuration rules enforced when the network is attached rather than at admission. " +
 			"Findings here indicate NetworkAttachmentDefinitions the cluster admits but cannot attach."
 	default:
 		return general

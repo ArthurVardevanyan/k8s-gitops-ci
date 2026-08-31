@@ -537,7 +537,7 @@ func TestRuntimeSectionIntroMatchesFamilies(t *testing.T) {
 		name     string
 		findings []check.Finding
 		want     string
-		absent   string
+		absent   []string
 	}{
 		{
 			// The common case, and the one that must not regress: a
@@ -547,10 +547,15 @@ func TestRuntimeSectionIntroMatchesFamilies(t *testing.T) {
 			want:     "Kubernetes validation rules enforced by the cluster API server",
 		},
 		{
-			name:     "k8scni only names the network controller",
+			// Says when the rules bite rather than naming a component: this
+			// family covers both plugin-independent config parsing and one
+			// plugin's semantic rules, which are not enforced by the same
+			// thing, so any single component named here is wrong for one of
+			// them.
+			name:     "k8scni only states attachment-time enforcement",
 			findings: []check.Finding{cni},
-			want:     "enforced by the cluster's network controller",
-			absent:   "cluster API server",
+			want:     "enforced when the network is attached rather than at admission",
+			absent:   []string{"cluster API server"},
 		},
 		{
 			// No single sentence is true of both, so it must not claim the
@@ -558,7 +563,10 @@ func TestRuntimeSectionIntroMatchesFamilies(t *testing.T) {
 			name:     "both families fall back to general wording",
 			findings: []check.Finding{k8s, cni},
 			want:     "validation rules enforced by the cluster.",
-			absent:   "cluster API server",
+			// "Rejected" is true of the kubernetes half and false of the CNI
+			// half, whose findings are admitted and only fail later, so a
+			// sentence covering both must not claim plain rejection.
+			absent: []string{"cluster API server", "manifests that would be rejected"},
 		},
 	}
 
@@ -568,8 +576,10 @@ func TestRuntimeSectionIntroMatchesFamilies(t *testing.T) {
 			if !strings.Contains(body, tt.want) {
 				t.Errorf("intro omits %q:\n%s", tt.want, body)
 			}
-			if tt.absent != "" && strings.Contains(body, tt.absent) {
-				t.Errorf("intro should not claim %q:\n%s", tt.absent, body)
+			for _, absent := range tt.absent {
+				if strings.Contains(body, absent) {
+					t.Errorf("intro should not claim %q:\n%s", absent, body)
+				}
 			}
 		})
 	}
