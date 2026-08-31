@@ -8,9 +8,9 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/cluster"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/clusterid"
 )
 
 // withClusterIndex temporarily overrides ClusterIndexProvider (and

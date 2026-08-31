@@ -65,20 +65,18 @@ cmd/
 pkg/
   validator/        orchestration (RunAll, phases, report composition) +
                        `static/` sub-package containing the static-
-                       analysis validator family: 9 check.Register-driven
+                       analysis validator family: 10 check.Register-driven
                        engines (namespace, psa, rbac, crb, syncopts,
-                       image, namedport, podspec, placeholder) with their
-                       12 check adapters and the `RegisterAll`
-                       registration layer, plus `nad/` - the
-                       NetworkAttachmentDefinition advisories, a separate
-                       always-on validator over rendered overlay output
-                       that reports no hard failures, not
+                       image, namedport, podspec, placeholder,
+                       cluster-identity) with their 12 check adapters and
+                       the `RegisterAll` registration layer, plus `nad/` -
+                       the NetworkAttachmentDefinition advisories, a
+                       separate always-on validator over rendered overlay
+                       output that reports no hard failures, not
                        check.Register-driven
                        (see docs/CI.md#networkattachmentdefinition-nad-validation);
                        `check/` (the registry engine) and `exempt/`
-                       (unified exemption framework) sit at top level;
-                       `clusterid/` remains top-level - it's the engine
-                       the `static/` cluster-identity adapter wraps.
+                       (unified exemption framework) sit at top level.
                        Shared types across wiring and phase logic are
                        centralized in `types.go`; phases are orchestrated
                        in `phases.go` (~1100 lines); wiring logic lives

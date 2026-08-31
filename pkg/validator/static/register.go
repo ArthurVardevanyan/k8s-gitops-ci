@@ -15,12 +15,13 @@
 // This file also provides the shared check-adapter registry and the
 // cluster-identity wiring seam so that other packages (e.g. the engine
 // package) can access cluster metadata without importing the top-level
-// validator package directly. clusterid itself is still a top-level
-// sibling package (pkg/validator/clusterid) rather than nested under
-// static/ - a pending move (tracked separately), not a deliberate
-// exception: it is check.Register-driven (via ClusterIdentityAdapter,
-// registered below) exactly like the 9 engines that already live here,
-// so the same reasoning that put nad in this package applies to it too.
+// validator package directly. clusterid lives here for the same reason as
+// the other engines: it is check.Register-driven (via ClusterIdentityAdapter,
+// registered below), exactly like the 9 engines already in this package -
+// it previously sat top-level as pkg/validator/clusterid despite that,
+// which was the second (and equally unjustified) exception to "static/ is
+// the registered-engine package" alongside nad's real one, before this
+// package's scope was redefined to the description above.
 //
 // The adapter types themselves live in register_checks.go; this file
 // only exports the registration function, the ClusterIndexProvider
@@ -29,7 +30,7 @@ package static
 
 import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/clusterid"
 )
 
 // RegisterAll registers all static check adapters with the check registry.

@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/crb"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/image"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/namedport"
