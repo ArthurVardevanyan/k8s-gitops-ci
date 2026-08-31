@@ -291,3 +291,20 @@ func TestValidateRepo(t *testing.T) {
 		}
 	}
 }
+
+// repoPattern must allow dots (real repos are named ".github" or
+// "go-spew.v1") but a bare "." or ".." segment is not a repository name, and
+// is treated as one by path handling downstream.
+func TestValidateRepoRejectsDotSegments(t *testing.T) {
+	for _, r := range []string{"owner/..", "../repo", "owner/.", "./repo"} {
+		if err := ValidateRepo(r); err == nil {
+			t.Errorf("ValidateRepo(%q) = nil, want an error", r)
+		}
+	}
+	// Dots that are part of a name stay legal.
+	for _, r := range []string{"owner/.github", "owner/go-spew.v1", "some.org/repo"} {
+		if err := ValidateRepo(r); err != nil {
+			t.Errorf("ValidateRepo(%q) = %v, want nil", r, err)
+		}
+	}
+}

@@ -248,6 +248,16 @@ func ValidateRepo(repo string) error {
 	if !repoPattern.MatchString(repo) {
 		return fmt.Errorf("repo %q must be an \"owner/name\" GitHub slug", repo)
 	}
+	// repoPattern allows dots, because real repository names contain them
+	// (".github", "go-spew.v1"). That leaves "." and ".." matching as a whole
+	// segment, so "../repo" and "owner/.." look like valid slugs. They are
+	// not, and because the repo is used to build a cache path they would name
+	// a directory some other repo also names.
+	for _, seg := range strings.Split(repo, "/") {
+		if seg == "." || seg == ".." {
+			return fmt.Errorf("repo %q must be an \"owner/name\" GitHub slug: %q is not a valid path segment", repo, seg)
+		}
+	}
 	return nil
 }
 

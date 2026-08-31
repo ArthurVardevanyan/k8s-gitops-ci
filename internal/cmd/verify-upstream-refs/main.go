@@ -331,6 +331,34 @@ func main() {
 	fmt.Println("all upstream references verified")
 }
 
+// checkCacheComponent rejects a cache-key component that filepath.Join would
+// rewrite. Join cleans its result, so any component that is empty or carries
+// a "", "." or ".." segment names a file that some *other* component triple
+// also names: ("owner/repo", "v1", "pkg/a.go"), ("owner/repo/sub/..", ...)
+// and (..., "pkg/sub/../a.go") all resolve to one path.
+//
+// The escape check below cannot catch these, because they never leave the
+// cache dir. That makes them worse than a traversal, not better: a traversal
+// fails loudly, whereas this silently serves content fetched for a different
+// repo or version and then reports it as a digest mismatch on the wrong ref.
+//
+// So the rule is stricter than "must stay inside the cache dir" - a component
+// must be the only spelling of itself.
+func checkCacheComponent(name, value string) error {
+	if value == "" {
+		return fmt.Errorf("refusing to use cache path: %s must not be empty", name)
+	}
+	for _, seg := range strings.Split(filepath.ToSlash(value), "/") {
+		switch seg {
+		case "":
+			return fmt.Errorf("refusing to use cache path: %s %q must not contain an empty path segment", name, value)
+		case ".", "..":
+			return fmt.Errorf("refusing to use cache path: %s %q must not contain a %q path segment", name, value, seg)
+		}
+	}
+	return nil
+}
+
 // cachePathFor joins cacheDir/repo/version/path and verifies the result
 // still lives under cacheDir, rejecting a repo, version, or path (an
 // UpstreamRef field, or a -compute/-repo flag) that is absolute or that
@@ -356,14 +384,11 @@ func cachePathFor(cacheDir, repo, version, path string) (string, error) {
 		{"version", version},
 		{"path", path},
 	} {
-		// An empty component is rejected rather than tolerated because
-		// filepath.Join silently drops it, collapsing distinct refs onto one
-		// cache file - a wrong cache hit, not a failed lookup.
-		if part.value == "" {
-			return "", fmt.Errorf("refusing to use cache path: %s must not be empty", part.name)
-		}
 		if filepath.IsAbs(filepath.FromSlash(part.value)) {
 			return "", fmt.Errorf("refusing to use cache path: %s %q must not be absolute", part.name, part.value)
+		}
+		if err := checkCacheComponent(part.name, part.value); err != nil {
+			return "", err
 		}
 	}
 	joined := filepath.Join(base, filepath.FromSlash(repo), version, filepath.FromSlash(path))

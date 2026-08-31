@@ -569,30 +569,55 @@ func TestCachePathForReportsComponentsInAFixedOrder(t *testing.T) {
 	}
 }
 
-// An empty component silently collapses in filepath.Join, so distinct refs
-// can map onto the same cache file.
-func TestCachePathForRejectsEmptyComponents(t *testing.T) {
+// filepath.Join cleans its result, so a component that is empty or carries a
+// "", "." or ".." segment names a file some other component triple also
+// names. These never escape the cache dir, so the escape check cannot see
+// them; the result is a wrong cache hit rather than a failed lookup.
+func TestCachePathForRejectsCollapsingComponents(t *testing.T) {
 	dir := t.TempDir()
 	cases := []struct{ name, repo, version, path string }{
 		{"empty repo", "", "v1.0.0", "pkg/a.go"},
 		{"empty version", "some-org/dep", "", "pkg/a.go"},
 		{"empty path", "some-org/dep", "v1.0.0", ""},
+		{"dotdot in repo", "some-org/dep/sub/..", "v1.0.0", "pkg/a.go"},
+		{"dotdot in path", "some-org/dep", "v1.0.0", "pkg/sub/../a.go"},
+		{"dot in repo", "some-org/./dep", "v1.0.0", "pkg/a.go"},
+		{"dot in path", "some-org/dep", "v1.0.0", "./pkg/a.go"},
+		{"dotdot in version", "some-org/dep", "v1.0.0/..", "pkg/a.go"},
+		{"double slash in repo", "some-org//dep", "v1.0.0", "pkg/a.go"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := cachePathFor(dir, tc.repo, tc.version, tc.path); err == nil {
-				t.Error("expected an error for an empty component")
+				t.Error("expected an error for a component filepath.Join would rewrite")
 			}
 		})
 	}
+}
 
-	// Demonstrates why: without the check these two distinct refs collapse
-	// onto one file.
-	t.Run("collision the check prevents", func(t *testing.T) {
-		a := filepath.Join(dir, "some-org/dep", "", "v1.0.0/pkg/a.go")
-		b := filepath.Join(dir, "some-org/dep", "v1.0.0", "pkg/a.go")
-		if a != b {
-			t.Skip("join semantics differ on this platform")
+// The property behind the case list above: no accepted triple may resolve to
+// the path of a *different* accepted triple.
+func TestCachePathForIsInjective(t *testing.T) {
+	dir := t.TempDir()
+	canonical, err := cachePathFor(dir, "some-org/dep", "v1.0.0", "pkg/a.go")
+	if err != nil {
+		t.Fatalf("canonical triple rejected: %v", err)
+	}
+	aliases := []struct{ repo, version, path string }{
+		{"some-org/dep/sub/..", "v1.0.0", "pkg/a.go"},
+		{"some-org/dep", "v1.0.0", "pkg/sub/../a.go"},
+		{"some-org/./dep", "v1.0.0", "pkg/a.go"},
+		{"some-org/dep", "v1.0.0", "./pkg/a.go"},
+		{"some-org/dep", "", "v1.0.0/pkg/a.go"},
+	}
+	for _, a := range aliases {
+		got, err := cachePathFor(dir, a.repo, a.version, a.path)
+		if err != nil {
+			continue // rejected, which is the intended outcome
 		}
-	})
+		if got == canonical {
+			t.Errorf("(%q, %q, %q) was accepted and resolves to the canonical path %q",
+				a.repo, a.version, a.path, canonical)
+		}
+	}
 }
