@@ -87,6 +87,24 @@ func TestStatefulSetVolumeClaimTemplatesBecomeVolumes(t *testing.T) {
 			want:    []string{"data", "config"},
 		},
 		{
+			// Upstream's volumesToAddForTemplates is a map keyed by name, so
+			// two templates sharing one contribute a single volume, and
+			// validateVolumeClaimTemplates does not reject the duplicate
+			// name. Appending both synthesized a collision upstream never
+			// sees, which volume/duplicate-volume-names then reported - a
+			// finding no manifest change could satisfy and no exemption
+			// could suppress.
+			name:   "duplicate claim template names collapse to one volume",
+			claims: []string{"data", "data"},
+			want:   []string{"data"},
+		},
+		{
+			name:    "a duplicate template name still merges with other volumes",
+			volumes: []string{"config"},
+			claims:  []string{"data", "data"},
+			want:    []string{"data", "config"},
+		},
+		{
 			name:    "no claim templates leaves the volumes untouched",
 			volumes: []string{"config"},
 			want:    []string{"config"},

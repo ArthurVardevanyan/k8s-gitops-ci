@@ -189,6 +189,21 @@ func addVolumeClaimTemplateVolumes(obj *unstructured.Unstructured, info *PodSpec
 		if err != nil || !found || name == "" {
 			continue
 		}
+		// Collapse duplicate template names, as upstream does. Its
+		// volumesToAddForTemplates builds a map[string]api.Volume keyed by
+		// name, so two templates sharing a name contribute one synthetic
+		// volume; validateVolumeClaimTemplates does not reject the duplicate
+		// name either. Appending both here synthesized a name collision that
+		// upstream never sees, and volume/duplicate-volume-names then
+		// reported it - a finding no manifest change could satisfy and no
+		// exemption could suppress.
+		//
+		// Which duplicate survives is immaterial: both synthetic volumes are
+		// built from the same name, so they are identical. Keeping the first
+		// is deterministic, where upstream's map iteration is not.
+		if claimed[name] {
+			continue
+		}
 		claimed[name] = true
 		merged = append(merged, corev1.Volume{
 			Name: name,
