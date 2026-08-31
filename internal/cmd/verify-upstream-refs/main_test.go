@@ -285,23 +285,27 @@ func TestCachePathForRejectsEscapes(t *testing.T) {
 		}
 	})
 
-	t.Run("absolute path component does not escape (filepath.Join already neutralizes it)", func(t *testing.T) {
-		// Documented for clarity, not asserted as a vulnerability: Join
-		// only preserves a leading "/" from its *first* argument. An
-		// absolute-looking later argument (path here) is treated as an
-		// ordinary path segment and lands under cacheDir like any other -
-		// it is the multi-level ".." case above that actually needs
-		// cachePathFor's explicit containment check.
-		got, err := cachePathFor(dir, "kubernetes/kubernetes", "v1.36.3", "/etc/passwd")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+	t.Run("absolute path component is rejected explicitly", func(t *testing.T) {
+		// Not asserted via the containment check (filepath.Join happens to
+		// neutralize an absolute-looking later argument on its own, since
+		// it only preserves a leading "/" specially for its *first*
+		// argument) - cachePathFor rejects an absolute component outright
+		// instead, so this doesn't depend on that Join behavior continuing
+		// to hold.
+		if _, err := cachePathFor(dir, "kubernetes/kubernetes", "v1.36.3", "/etc/passwd"); err == nil {
+			t.Fatal("expected an error for an absolute path component")
 		}
-		absDir, err := filepath.Abs(dir)
-		if err != nil {
-			t.Fatalf("filepath.Abs: %v", err)
+	})
+
+	t.Run("absolute repo component is rejected explicitly", func(t *testing.T) {
+		if _, err := cachePathFor(dir, "/etc", "v1.36.3", "passwd"); err == nil {
+			t.Fatal("expected an error for an absolute repo component")
 		}
-		if !strings.HasPrefix(got, absDir+string(filepath.Separator)) {
-			t.Errorf("cachePathFor() = %q, want a path under %q", got, absDir)
+	})
+
+	t.Run("absolute version component is rejected explicitly", func(t *testing.T) {
+		if _, err := cachePathFor(dir, "kubernetes/kubernetes", "/etc", "passwd"); err == nil {
+			t.Fatal("expected an error for an absolute version component")
 		}
 	})
 }

@@ -308,13 +308,22 @@ func main() {
 // UpstreamRef field, or a -compute/-repo flag) that is absolute or that
 // escapes via "..". filepath.Join alone cleans "." and ".." segments
 // syntactically but happily produces a path outside cacheDir if enough ".."
-// segments are present (or if a component is itself absolute, which Join
-// does not special-case) - this walks the cleaned result back up to
-// cacheDir to confirm containment before any file I/O is attempted.
+// segments are present, so the cleaned result is walked back up to cacheDir
+// to confirm containment before any file I/O is attempted. An absolute
+// component is rejected explicitly rather than relied on to be neutralized
+// by Join (which only preserves a leading "/" specially for its *first*
+// argument - true today for repo/version/path here, since none of them is
+// ever first, but that's an accident of argument order, not a guarantee
+// this function should depend on).
 func cachePathFor(cacheDir, repo, version, path string) (string, error) {
 	base, err := filepath.Abs(cacheDir)
 	if err != nil {
 		return "", fmt.Errorf("resolving cache dir %q: %w", cacheDir, err)
+	}
+	for name, part := range map[string]string{"repo": repo, "version": version, "path": path} {
+		if filepath.IsAbs(filepath.FromSlash(part)) {
+			return "", fmt.Errorf("refusing to use cache path: %s %q must not be absolute", name, part)
+		}
 	}
 	joined := filepath.Join(base, filepath.FromSlash(repo), version, filepath.FromSlash(path))
 	rel, err := filepath.Rel(base, joined)
