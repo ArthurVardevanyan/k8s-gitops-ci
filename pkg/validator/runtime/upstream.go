@@ -130,12 +130,24 @@ var (
 	// semverTagPattern matches an ordinary "v<major>.<minor>.<patch>" release
 	// tag for a non-default repo, which - unlike kubernetes/kubernetes - is
 	// not constrained to major version 1 (moduleVersionForRepo returns
-	// whatever tag the dependency's go.mod requirement pins, verbatim).
-	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
-	// pseudoVersionPattern matches a Go module pseudo-version, e.g.
-	// v0.0.0-20260827164301-e63fce3cf15d - the form `go.mod` pins an
-	// untagged commit of a dependency to, such as ovn-kubernetes.
-	pseudoVersionPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+-\d{14}-[0-9a-f]{12}$`)
+	// whatever tag the dependency's go.mod requirement pins, verbatim), and
+	// is not constrained to a bare release either: a real Go module tag may
+	// carry a semver prerelease (v1.2.3-rc.1) and/or build metadata
+	// (v2.0.0+incompatible, the marker cmd/go itself appends to a
+	// pre-modules v2+ import-path-unqualified tag).
+	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
+	// pseudoVersionPattern matches a Go module pseudo-version and captures
+	// its trailing 12-hex-char abbreviated commit hash - the same value
+	// moduleVersionForRepo (verify-upstream-refs/main.go) extracts to use as
+	// the actual git ref, since the pseudo-version string itself is not one.
+	// All three documented forms are matched, distinguished only by what
+	// (if anything) sits between the version core and the timestamp:
+	//   - vX.0.0-yyyymmddhhmmss-abcdefabcdef       (no earlier version)
+	//   - vX.Y.Z-0.yyyymmddhhmmss-abcdefabcdef     (built on tagged vX.Y.Z)
+	//   - vX.Y.Z-pre.0.yyyymmddhhmmss-abcdefabcdef (built on prerelease vX.Y.Z-pre)
+	// e.g. "v1.1.2-0.20180830191138-d8f796af33cc" (github.com/davecgh/go-spew
+	// in this repo's own go.mod) is the second form.
+	pseudoVersionPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+-(?:[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*\.)?\d{14}-[0-9a-f]{12}$`)
 	// commitSHAPattern matches a bare (short or full) git commit hash.
 	commitSHAPattern = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 	// repoPattern matches a GitHub "owner/name" repository slug.
@@ -215,7 +227,7 @@ func (r UpstreamRef) Validate() error {
 		if !digestPattern.MatchString(r.Digest) {
 			return fmt.Errorf("digest %q must be sha256:<64 hex chars>; run 'task verify:upstream-refs -- --update'", r.Digest)
 		}
-		if err := validateValidatedAt(r.repo(), r.ValidatedAt); err != nil {
+		if err := ValidateValidatedAt(r.repo(), r.ValidatedAt); err != nil {
 			return err
 		}
 	}
@@ -235,7 +247,7 @@ func (r UpstreamRef) Validate() error {
 	return nil
 }
 
-// validateValidatedAt checks a RefKindRewrite ref's ValidatedAt against the
+// ValidateValidatedAt checks a RefKindRewrite ref's ValidatedAt against the
 // version forms valid for repo: a Kubernetes release tag for
 // kubernetes/kubernetes, or an ordinary semver tag, a commit SHA, or a Go
 // pseudo-version for any other repository - moduleVersionForRepo resolves a
@@ -243,7 +255,13 @@ func (r UpstreamRef) Validate() error {
 // be any of the three depending on whether the dependency is tagged at all,
 // and tagged dependencies are not confined to kubernetes/kubernetes's major
 // version 1 convention.
-func validateValidatedAt(repo, validatedAt string) error {
+//
+// Exported so verify-upstream-refs can reject an explicit -tag override
+// against the default repo before writing it into a --update'd
+// upstream_refs.go entry - an override that isn't a real Kubernetes release
+// tag would otherwise round-trip into a ValidatedAt that immediately fails
+// this same check the next time RegisterAll runs.
+func ValidateValidatedAt(repo, validatedAt string) error {
 	if repo == defaultRepo {
 		if !k8sTagPattern.MatchString(validatedAt) {
 			return fmt.Errorf("validatedAt %q must be a Kubernetes release tag such as v1.36.3", validatedAt)
