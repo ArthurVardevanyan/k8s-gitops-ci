@@ -93,11 +93,14 @@ func main() {
 	}
 
 	// userTag is exactly what the user passed via -tag ("" if they didn't).
-	// It is kept separate from the per-repo versions resolved below so that
-	// an explicit -tag overrides every ref's version regardless of Repo -
-	// consistent with how -compute already treats it (tagFor := *tag,
-	// applied to whatever -repo was given) - while an unset -tag still lets
-	// each repo resolve its own default independently.
+	// It is kept separate from the per-repo versions resolved below because
+	// it is not applied uniformly: tagForRepo scopes it to
+	// kubernetes/kubernetes, since a tag names a release in one repository
+	// and nothing in any other. Every other repo resolves from its own
+	// go.mod requirement whether or not -tag was given.
+	//
+	// -compute is the exception and applies the tag to whatever -repo names,
+	// because it fetches an arbitrary ref before any ValidatedAt exists.
 	userTag := *tag
 	defaultRepoVersion, err := versionFor(runtime.DefaultRepo, userTag)
 	if err != nil {

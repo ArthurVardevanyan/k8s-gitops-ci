@@ -319,6 +319,7 @@ const singleLineGoMod = "" +
 	"go 1.24\n\n" +
 	"require github.com/some-org/lonely-dep v1.3.4\n\n" +
 	"require (\n" +
+	"\tgithub.com/some-org/block-dep v1.5.0\n" +
 	"\tk8s.io/api v0.37.0\n" +
 	")\n\n" +
 	"require github.com/some-org/pseudo-dep v0.0.0-20260827164301-abcdef123456 // indirect\n"
@@ -330,22 +331,16 @@ func TestModuleVersionForRepoSingleLineRequire(t *testing.T) {
 		}{
 			{"standalone require line", "some-org/lonely-dep", "v1.3.4"},
 			{"standalone require with trailing // indirect", "some-org/pseudo-dep", "abcdef123456"},
-			{"block require still resolves", "kubernetes/kubernetes", "v0.37.0"},
+			{"block require alongside standalone ones", "some-org/block-dep", "v1.5.0"},
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				repo := tc.repo
-				if repo == "kubernetes/kubernetes" {
-					// k8s.io/api is not a github.com/... path, so query it
-					// the way the block-form test does.
-					return
-				}
-				got, err := moduleVersionForRepo(repo)
+				got, err := moduleVersionForRepo(tc.repo)
 				if err != nil {
-					t.Fatalf("moduleVersionForRepo(%q): unexpected error: %v", repo, err)
+					t.Fatalf("moduleVersionForRepo(%q): unexpected error: %v", tc.repo, err)
 				}
 				if got != tc.want {
-					t.Errorf("moduleVersionForRepo(%q) = %q, want %q", repo, got, tc.want)
+					t.Errorf("moduleVersionForRepo(%q) = %q, want %q", tc.repo, got, tc.want)
 				}
 			})
 		}
