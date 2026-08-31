@@ -459,3 +459,43 @@ func TestModuleVersionForRepoIsCaseInsensitive(t *testing.T) {
 		})
 	})
 }
+
+// expectedCitations underpins the run's accounting guard, which is what
+// turns a skipped citation into a loud failure instead of a clean report.
+func TestExpectedCitations(t *testing.T) {
+	cases := []struct {
+		name string
+		refs map[string]runtime.UpstreamRef
+		want int
+	}{
+		{"no refs", map[string]runtime.UpstreamRef{}, 0},
+		{
+			"a ref with no Additional counts once",
+			map[string]runtime.UpstreamRef{"a": {}},
+			1,
+		},
+		{
+			"each Additional counts separately",
+			map[string]runtime.UpstreamRef{
+				"a": {Additional: []runtime.UpstreamRef{{}, {}}},
+			},
+			3,
+		},
+		{
+			"counted across refs, including import parents",
+			map[string]runtime.UpstreamRef{
+				"a": {Additional: []runtime.UpstreamRef{{}}},
+				"b": {Kind: runtime.RefKindImport, Additional: []runtime.UpstreamRef{{}, {}}},
+				"c": {},
+			},
+			6,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := expectedCitations(tc.refs); got != tc.want {
+				t.Errorf("expectedCitations() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

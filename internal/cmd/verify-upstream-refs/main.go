@@ -208,16 +208,36 @@ func main() {
 		// recorded digest to compare against. Confirming the fetch above
 		// succeeded and every cited function actually exists there is the
 		// whole check for this kind.
+		//
+		// Deliberately an else rather than a continue: Additional citations
+		// below are resolved against their own Repo and Kind, so an import
+		// ref can carry rewrite citations that do need digest verification.
+		// Skipping ahead here dropped them silently - they were not checked
+		// and not counted, so the run still reported a clean total.
 		if ref.EffectiveKind() == runtime.RefKindImport {
 			ok++
-			continue
-		}
-
-		switch got {
-		case ref.Digest:
-			ok++
-			if !sameVersion(ref.ValidatedAt, version) {
-				stale++
+		} else {
+			switch got {
+			case ref.Digest:
+				ok++
+				if !sameVersion(ref.ValidatedAt, version) {
+					stale++
+					if *update {
+						found, err := updateEntry(id, got, version)
+						if err != nil {
+							fatalf("update %s: %v", id, err)
+						}
+						if !found {
+							fatalf("update %s: no entry found in %s/**/upstream_refs.go", id, refsRoot)
+						}
+					}
+				}
+			default:
+				changed++
+				fmt.Printf("CHANGED  %s\n", id)
+				fmt.Printf("         %s %s\n", ref.Path, strings.Join(ref.Functions, ", "))
+				fmt.Printf("         validated at %s, digest %s\n", ref.ValidatedAt, short(ref.Digest))
+				fmt.Printf("         at %s, digest %s\n", version, short(got))
 				if *update {
 					found, err := updateEntry(id, got, version)
 					if err != nil {
@@ -226,28 +246,13 @@ func main() {
 					if !found {
 						fatalf("update %s: no entry found in %s/**/upstream_refs.go", id, refsRoot)
 					}
+					fmt.Printf("         recorded new digest at %s\n", version)
+					changed--
+					updatedCount++
+				} else {
+					fmt.Printf("         re-read the upstream function and confirm the port is still faithful,\n")
+					fmt.Printf("         then re-run with --update to record the new digest\n")
 				}
-			}
-		default:
-			changed++
-			fmt.Printf("CHANGED  %s\n", id)
-			fmt.Printf("         %s %s\n", ref.Path, strings.Join(ref.Functions, ", "))
-			fmt.Printf("         validated at %s, digest %s\n", ref.ValidatedAt, short(ref.Digest))
-			fmt.Printf("         at %s, digest %s\n", version, short(got))
-			if *update {
-				found, err := updateEntry(id, got, version)
-				if err != nil {
-					fatalf("update %s: %v", id, err)
-				}
-				if !found {
-					fatalf("update %s: no entry found in %s/**/upstream_refs.go", id, refsRoot)
-				}
-				fmt.Printf("         recorded new digest at %s\n", version)
-				changed--
-				updatedCount++
-			} else {
-				fmt.Printf("         re-read the upstream function and confirm the port is still faithful,\n")
-				fmt.Printf("         then re-run with --update to record the new digest\n")
 			}
 		}
 
@@ -290,6 +295,15 @@ func main() {
 			fmt.Printf("         at %s, digest %s\n", addVersion, short(agot))
 			fmt.Printf("         supporting citation: re-read it and update the entry by hand\n")
 		}
+	}
+
+	// Every citation must land in exactly one bucket. This is a guard
+	// against a silent skip: a control-flow path that returns early past a
+	// citation does not merely miscount, it reports a clean run for
+	// something it never checked. That is indistinguishable from success in
+	// the output, which makes it the most dangerous failure this tool has.
+	if accounted := ok + changed + missing + updatedCount; accounted != expectedCitations(refs) {
+		fatalf("internal: accounted for %d citation(s) but %d were registered; a verification path skipped a citation without reporting it", accounted, expectedCitations(refs))
 	}
 
 	fmt.Printf("\n%d ok, %d changed, %d missing", ok, changed, missing)
@@ -497,6 +511,20 @@ func modulePathMatchesRepo(modPath, prefix string) bool {
 	return len(modPath) > len(prefix) &&
 		modPath[len(prefix)] == '/' &&
 		strings.EqualFold(modPath[:len(prefix)], prefix)
+}
+
+// expectedCitations counts every citation a verification run must account
+// for: each ref plus each of its Additional entries, which are verified
+// individually against their own Repo and Kind.
+//
+// Nesting is one level deep by construction (UpstreamRef.Validate rejects an
+// Additional carrying its own Additional), so this does not recurse.
+func expectedCitations(refs map[string]runtime.UpstreamRef) int {
+	n := 0
+	for _, ref := range refs {
+		n += 1 + len(ref.Additional)
+	}
+	return n
 }
 
 func moduleVersionForRepo(repo string) (string, error) {
