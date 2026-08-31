@@ -786,10 +786,11 @@ table above:
   applies to in its embedded `runtime.Meta`; the adapter inverts that
   applies-to list into the existing `check.DocSkipper` contract
   (`SkipDoc(kind) bool`), so a check is never handed a document kind it
-  doesn't care about. An empty list means "every kind". Checks also guard
-  on kind themselves rather than relying solely on the adapter, so a
-  check invoked directly cannot attribute a finding to a kind the
-  document is not.
+  doesn't care about. An empty list means "every kind". The adapter is the
+  only kind filter: most checks do not repeat the guard inside `Run`, and
+  rely on never being handed the wrong kind. See
+  [Dispatch owns kind filtering](#dispatch-owns-kind-filtering) for why
+  that matters when calling a check directly.
 - **Registration is asserted, not assumed.** Each `validation`
   sub-package registers its checks from an `init()`, pulled in by blank
   imports in `pkg/validator/runtime/kubernetes/register.go`.
@@ -980,12 +981,24 @@ there the rule is correct and relaxing it would hide a genuine failure.
 Every `SetDefaults_*` function in the ported API groups was audited against
 the fields the checks read. It found three false positives — StatefulSet
 `podManagementPolicy` and the `roleRef.apiGroup` rules on both binding kinds —
-and confirmed five look-alikes (`volumeMode`, `reclaimPolicy`,
-`volumeBindingMode`, NetworkPolicy `protocol`, webhook `failurePolicy`) as
-correct, because those fields are pointer-typed. `TestExplicitlyEmptyDefaultedFields`
-pins both directions with one fixture per kind that sets every defaulted field
-empty at once, so a new check reading one of those fields is covered without a
-new case.
+and confirmed four look-alikes (`volumeMode`, `volumeBindingMode`,
+NetworkPolicy `protocol`, webhook `failurePolicy`) as correct, because those
+fields are pointer-typed and their ported functions reject an empty value.
+
+`reclaimPolicy` is the exception, and it shows the audit's original question
+was too narrow. Being pointer-typed only settles whether `""` _reaches_ the
+ported function; it does not settle whether that function _rejects_ it.
+`validateReclaimPolicy` wraps its `NotSupported` branch in a
+`len(string(*reclaimPolicy)) > 0` guard, so the API server accepts
+`reclaimPolicy: ""` — while `validateVolumeBindingMode`, on the same kind and
+defaulted by the same function, has no such guard and does reject it. Reporting
+the empty reclaim policy was a false positive on an always-blocking rule.
+
+So an entry has to answer two questions, not one: does the empty value survive
+defaulting, and does the cited function then reject it?
+`TestExplicitlyEmptyDefaultedFields` pins both directions with one fixture per
+kind that sets every defaulted field empty at once, so a new check reading one
+of those fields is covered without a new case.
 
 Cite supporting code in `Additional`, a list of refs in other files verified
 exactly like the primary one:
