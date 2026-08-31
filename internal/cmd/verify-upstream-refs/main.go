@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -391,7 +392,17 @@ func cachePathFor(cacheDir, repo, version, path string) (string, error) {
 			return "", err
 		}
 	}
-	joined := filepath.Join(base, filepath.FromSlash(repo), version, filepath.FromSlash(path))
+	// Rejecting rewrites is not enough on its own: the components must also
+	// have unambiguous boundaries. "/" is legal in a git ref, and
+	// (version "v1/a", path "b") and (version "v1", path "a/b") join to one
+	// path. So version is encoded as exactly one segment, and repo is
+	// required to be a valid slug, which fixes it at exactly two. With the
+	// first three segment counts fixed, the split is determined and no two
+	// distinct triples can join to the same path.
+	if err := runtime.ValidateRepo(repo); err != nil {
+		return "", fmt.Errorf("refusing to use cache path: %w", err)
+	}
+	joined := filepath.Join(base, filepath.FromSlash(repo), url.PathEscape(version), filepath.FromSlash(path))
 	rel, err := filepath.Rel(base, joined)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("refusing to use cache path %q: escapes cache dir %q (repo=%q version=%q path=%q)",
@@ -414,7 +425,9 @@ func (f *fetcher) get(repo, version, path string) ([]byte, error) {
 	if f.memo == nil {
 		f.memo = map[string][]byte{}
 	}
-	key := repo + "@" + version + ":" + path
+	// Same boundary argument as cachePathFor: encode version as one segment
+	// so a ref containing "/" cannot make two distinct triples share a key.
+	key := repo + "@" + url.PathEscape(version) + ":" + path
 	if b, ok := f.memo[key]; ok {
 		return b, nil
 	}

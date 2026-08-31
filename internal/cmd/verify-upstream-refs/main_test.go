@@ -595,29 +595,36 @@ func TestCachePathForRejectsCollapsingComponents(t *testing.T) {
 	}
 }
 
-// The property behind the case list above: no accepted triple may resolve to
-// the path of a *different* accepted triple.
+// The property behind the case list above, checked over a cross product
+// rather than hand-picked aliases: no two distinct accepted triples may
+// resolve to the same path. Enumerating aliases is what previously let the
+// "/" case through - a version like "release/v1" rewrites nothing, so it
+// passed every spelling check, yet still crossed the component boundary.
 func TestCachePathForIsInjective(t *testing.T) {
 	dir := t.TempDir()
-	canonical, err := cachePathFor(dir, "some-org/dep", "v1.0.0", "pkg/a.go")
-	if err != nil {
-		t.Fatalf("canonical triple rejected: %v", err)
-	}
-	aliases := []struct{ repo, version, path string }{
-		{"some-org/dep/sub/..", "v1.0.0", "pkg/a.go"},
-		{"some-org/dep", "v1.0.0", "pkg/sub/../a.go"},
-		{"some-org/./dep", "v1.0.0", "pkg/a.go"},
-		{"some-org/dep", "v1.0.0", "./pkg/a.go"},
-		{"some-org/dep", "", "v1.0.0/pkg/a.go"},
-	}
-	for _, a := range aliases {
-		got, err := cachePathFor(dir, a.repo, a.version, a.path)
-		if err != nil {
-			continue // rejected, which is the intended outcome
+	repos := []string{"some-org/dep", "some-org/dep2", "other-org/dep"}
+	versions := []string{"v1.0.0", "v1.0.0/a", "release/v1", "v1", "v1.0.0-rc.1"}
+	paths := []string{"pkg/a.go", "a/b", "b", "pkg/sub/a.go", "v1.0.0/pkg/a.go"}
+
+	type triple struct{ repo, version, path string }
+	seen := map[string]triple{}
+	for _, r := range repos {
+		for _, v := range versions {
+			for _, pth := range paths {
+				got, err := cachePathFor(dir, r, v, pth)
+				if err != nil {
+					continue // rejected, which is an acceptable outcome
+				}
+				cur := triple{r, v, pth}
+				if prev, dup := seen[got]; dup {
+					t.Errorf("collision: %+v and %+v both resolve to %q", prev, cur, got)
+					continue
+				}
+				seen[got] = cur
+			}
 		}
-		if got == canonical {
-			t.Errorf("(%q, %q, %q) was accepted and resolves to the canonical path %q",
-				a.repo, a.version, a.path, canonical)
-		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("no triple was accepted; the test is proving nothing")
 	}
 }
