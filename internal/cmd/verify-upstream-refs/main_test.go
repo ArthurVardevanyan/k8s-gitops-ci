@@ -688,3 +688,27 @@ func TestFetchURLEscapesVersion(t *testing.T) {
 		t.Errorf("requested %q, want %q", got, want)
 	}
 }
+
+// A pseudo-version is not a git ref: raw.githubusercontent.com 404s on it
+// and serves the commit it encodes. moduleVersionForRepo already normalises
+// go.mod requirements this way, so -tag must too - the value a user is most
+// likely to paste for a non-default repo is the one from go.mod.
+func TestVersionForNormalizesPseudoVersionTag(t *testing.T) {
+	const pseudo = "v0.0.0-20260827164301-e63fce3cf15d"
+	got, err := versionFor("some-org/dep", pseudo)
+	if err != nil {
+		t.Fatalf("versionFor: %v", err)
+	}
+	if got != "e63fce3cf15d" {
+		t.Errorf("versionFor(%q) = %q, want the encoded commit %q", pseudo, got, "e63fce3cf15d")
+	}
+
+	// An ordinary tag is still passed through untouched.
+	got, err = versionFor("some-org/dep", "v1.2.3")
+	if err != nil {
+		t.Fatalf("versionFor: %v", err)
+	}
+	if got != "v1.2.3" {
+		t.Errorf("versionFor(%q) = %q, want it unchanged", "v1.2.3", got)
+	}
+}

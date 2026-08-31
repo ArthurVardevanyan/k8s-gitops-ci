@@ -541,6 +541,16 @@ func versionFor(repo, explicitTag string) (string, error) {
 				return "", fmt.Errorf("-tag %q is not usable as %s's version: %w", explicitTag, repo, err)
 			}
 		}
+		// Normalised the same way moduleVersionForRepo normalises a go.mod
+		// requirement. The obvious thing to pass here for a non-default repo
+		// is the version string straight out of go.mod, which for an untagged
+		// dependency is a pseudo-version - and a pseudo-version is not a git
+		// ref, so raw.githubusercontent.com 404s on it while the commit it
+		// encodes fetches fine. Returning it verbatim made -tag reject a
+		// value the tool itself records.
+		if rev, ok := pseudoVersionCommit(explicitTag); ok {
+			return rev, nil
+		}
 		return explicitTag, nil
 	}
 	if repo == runtime.DefaultRepo {
