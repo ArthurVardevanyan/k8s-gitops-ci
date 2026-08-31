@@ -27,9 +27,12 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      "sha256:1f1d5b2706899fa638f06ca9d47e43fdb88a5ba0954d6da02c49f01dfe5126bd",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default: field.NotSupported branch of the pathType switch. Upstream additionally " +
-			"reports a nil pathType as Required; this check skips absent/empty values because defaulting " +
-			"supplies ImplementationSpecific and unrendered manifests legitimately omit it. The path-shape " +
-			"branches (absolute path, invalid sequences/suffixes) are not ported.",
+			"reports a nil pathType as Required. Deliberate divergence: an omitted pathType is not " +
+			"reported, because an unrendered manifest legitimately omits it. An explicitly-empty " +
+			"pathType IS reported: networking.k8s.io/v1 has no pathType defaulter - only the legacy " +
+			"v1beta1 one does, and it guards on nil - so \"\" reaches the switch as a non-nil pointer " +
+			"and upstream returns NotSupported. The path-shape branches (absolute path, invalid " +
+			"sequences/suffixes) are not ported.",
 		Additional: []runtime.UpstreamRef{{
 			Path:        networkingValidationPath,
 			Functions:   []string{"supportedPathTypes"},

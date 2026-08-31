@@ -119,6 +119,9 @@ func TestServiceSessionAffinityInvalid(t *testing.T) {
 }
 
 func TestIngressPathTypeInvalid(t *testing.T) {
+	// pathType == "" omits the field entirely; pass `""` (a quoted empty
+	// string) to emit an explicitly-empty value. The two are different cases
+	// upstream and must not be conflated here.
 	ing := func(pathType string) string {
 		s := "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: i\n" +
 			"spec:\n  rules:\n    - host: example.com\n      http:\n        paths:\n" +
@@ -133,7 +136,13 @@ func TestIngressPathTypeInvalid(t *testing.T) {
 		{name: "Exact", doc: ing("Exact"), want: 0},
 		{name: "Prefix", doc: ing("Prefix"), want: 0},
 		{name: "ImplementationSpecific", doc: ing("ImplementationSpecific"), want: 0},
-		{name: "omitted", doc: ing(""), want: 0},
+		// Upstream reports a nil pathType as Required; that branch is
+		// deliberately not ported, since an unrendered manifest omits it.
+		{name: "omitted is not reported", doc: ing(""), want: 0},
+		// But networking.k8s.io/v1 has no pathType defaulter, so an
+		// explicit "" arrives as a non-nil pointer and upstream returns
+		// NotSupported. Skipping it missed a real admission rejection.
+		{name: "explicitly empty is reported", doc: ing(`""`), want: 1},
 		{name: "unknown", doc: ing("Regex"), want: 1, contains: "Regex"},
 		{name: "lowercase is not the enum value", doc: ing("prefix"), want: 1},
 		{

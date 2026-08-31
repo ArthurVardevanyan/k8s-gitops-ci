@@ -43,7 +43,14 @@ func (c pathTypeInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 		for j, path := range rule.HTTP.Paths {
 			pathPath := rulePath.Child("http").Child("paths").Index(j)
 
-			if path.PathType == nil || string(*path.PathType) == "" {
+			// Skip only nil. An omitted pathType is upstream's Required
+			// branch, which is not ported (see the citation note), but an
+			// explicitly-empty one is a different case: networking.k8s.io/v1
+			// has no pathType defaulter - only the legacy v1beta1 one does,
+			// and it guards on nil anyway - so `pathType: ""` reaches the
+			// switch below as a non-nil pointer and upstream reports it
+			// NotSupported. Treating "" as absent missed a real rejection.
+			if path.PathType == nil {
 				continue
 			}
 
