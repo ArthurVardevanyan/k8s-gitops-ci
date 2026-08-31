@@ -833,9 +833,9 @@ That standard is enforced, not merely stated. Each check supplies an
 
 `runtime.RegisterAll` **panics** if a registered check has no valid ref, so
 a check added without a citation fails on the first `go test` or binary
-start. `Path` is relative to the root of `kubernetes/kubernetes`, which
-lets refs into staging modules (apimachinery, apiextensions-apiserver) use
-the same form as refs into `pkg/apis/*`.
+start. `Path` is relative to the root of `kubernetes/kubernetes` (`Repo`'s
+default - see below), which lets refs into staging modules (apimachinery,
+apiextensions-apiserver) use the same form as refs into `pkg/apis/*`.
 
 Citing a **function**, not a file, is the point. A file path such as
 `pkg/apis/core/validation/validation.go` is equally true of a faithful
@@ -869,6 +869,41 @@ Two layers verify this:
   own step in `task ci`. Fetched sources are cached under `XDG_CACHE_HOME`,
   so a warm run does no network I/O - the same pattern `schemas:pull`
   already uses.
+
+###### Citing code outside kubernetes/kubernetes: `Repo` and `Kind`
+
+Not every runtime check ports Kubernetes' own admission logic. A
+NetworkAttachmentDefinition's OVN-Kubernetes semantic rules, for example,
+are owned by a different upstream project entirely. Two fields on
+`UpstreamRef` generalize the citation for that case without weakening it
+for the 105 existing kubernetes/kubernetes refs, which are unaffected by
+either field's default:
+
+- **`Repo`** ("owner/name", default `kubernetes/kubernetes`) is the GitHub
+  repository `Path` is relative to. `verify:upstream-refs` resolves each
+  non-default repo's version from its own `go.mod` requirement line - the
+  trailing commit hash of a Go pseudo-version, or the tag itself for an
+  ordinary semver dependency - the same "bump the dependency, verification
+  is forced" property `k8s.io/api` already gives the default repo, just
+  read from a plain `require` line instead of the staging-module version
+  convention.
+- **`Kind`** distinguishes how the check relates to the cited code:
+  - `RefKindRewrite` (the default - every pre-existing ref is one) is a
+    reimplementation. It needs everything described above: `Digest` and
+    `ValidatedAt`, because the copy can silently drift from what it ports.
+  - `RefKindImport` is a check that calls the cited code directly (an
+    importable dependency, unlike `k8s.io/kubernetes/pkg/apis/*/validation`
+    which is not a usable library). There is nothing here that can drift
+    silently: `go.mod` pins the exact commit and the compiler verifies the
+    call, so `Digest` is rejected outright for this kind - recording one
+    would assert a verification that never actually happens. `Path` and
+    `Functions` are still required: the citation still has to name the
+    exact upstream code a reviewer should read to judge the check, `Kind`
+    only changes whether that citation is machine-reverified.
+
+An `Additional` entry may cite a different `Repo`/`Kind` than its parent -
+a rewrite of a Kubernetes rule may depend on a supporting function that is
+directly imported, or vice versa.
 
 ###### Cite the set when the set decides acceptance
 
