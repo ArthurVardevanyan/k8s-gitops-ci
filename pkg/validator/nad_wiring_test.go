@@ -71,10 +71,15 @@ func TestRunNADValidation_ErrorFindingRemapsToOverlay(t *testing.T) {
 	}
 }
 
-// OVN semantic rules are applied to ovn-k8s-cni-overlay NADs regardless of any
-// platform flag (the type field is self-describing). Here a layer3 topology
-// with persistent IPs is an OVN violation and must gate.
-func TestRunNADValidation_OVNSemanticsAlwaysApplied(t *testing.T) {
+// An OVN semantic violation (a structurally valid config that nonetheless
+// violates OVN-Kubernetes' own rules, e.g. persistent IPs on a layer3
+// topology) is no longer this package's concern: it now lives in
+// pkg/validator/runtime/k8scni's "k8scni/net-attach-def/ovn-netconf-invalid" check, part of
+// the Runtime Validation family. runNADValidation's structural gate has
+// nothing to say about it, so the NAD section must pass and the run must not
+// be gated through this path (the runtime check gates it separately, via the
+// normal doc-check dispatch - see runtime_wiring_test.go).
+func TestRunNADValidation_OVNSemanticsNoLongerCheckedHere(t *testing.T) {
 	t.Parallel()
 	log := logger.NewLogger(false, "")
 	cfg := `apiVersion: k8s.cni.cncf.io/v1
@@ -87,11 +92,11 @@ spec:
 `
 	outputs := []renderedOverlay{{overlay: "myapp/overlays/prod", data: []byte(cfg)}}
 	s, present := runNADValidation(outputs, log)
-	if !present || s.Status != StatusError {
-		t.Errorf("expected OVN semantics to catch the persistent-IPs-on-layer3 violation, got present=%v s=%+v", present, s)
+	if !present || s.Status != StatusPassed {
+		t.Errorf("expected the structural gate to pass an OVN semantic violation (that's k8scni/net-attach-def/ovn-netconf-invalid's concern now), got present=%v s=%+v", present, s)
 	}
-	if !log.HasFailures() {
-		t.Error("an OVN semantic violation must gate the run")
+	if log.HasFailures() {
+		t.Error("the structural gate must not itself gate on an OVN semantic violation")
 	}
 }
 
@@ -160,5 +165,60 @@ func TestRunAll_NADSectionPresentWhenNADInChain(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected a NetworkAttachmentDefinition Validation section when a NAD is in the chain")
+	}
+}
+
+// TestRunAll_OVNSemanticViolationGatesViaRuntimeValidation is the end-to-end
+// proof that moving OVN's semantic rules into pkg/validator/runtime/k8scni
+// didn't just relocate the code but actually wires it into the real
+// pipeline: a NAD with an OVN semantic violation renders its
+// NetworkAttachmentDefinition Validation section as passing (the structural
+// gate has nothing to say about it - see
+// TestRunNADValidation_OVNSemanticsNoLongerCheckedHere) while still gating
+// the run, via a Runtime Validation section finding under
+// k8scni/net-attach-def/ovn-netconf-invalid.
+func TestRunAll_OVNSemanticViolationGatesViaRuntimeValidation(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"default/bad-net","allowPersistentIPs":true,"role":"secondary"}`
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "nad.yaml"),
+		"apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: bad-net\n  namespace: default\nspec:\n  config: '"+cfg+"'\n")
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), "resources:\n  - nad.yaml\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+
+	if !res.Blocking {
+		t.Error("expected the OVN semantic violation to block the run")
+	}
+
+	var nadSectionPassed, runtimeSectionFound bool
+	for _, s := range res.Sections {
+		switch {
+		case s.Name == "NetworkAttachmentDefinition Validation":
+			nadSectionPassed = s.Status != StatusError
+		case strings.Contains(s.Name, "Runtime"):
+			runtimeSectionFound = true
+		}
+	}
+	if !nadSectionPassed {
+		t.Error("expected the NAD section's structural gate to pass despite the OVN semantic violation")
+	}
+	if !runtimeSectionFound {
+		t.Error("expected a Runtime Validation section for the OVN semantic violation")
+	}
+
+	var found bool
+	for _, f := range res.Check.Findings {
+		if f.CheckID == "k8scni/net-attach-def/ovn-netconf-invalid" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected a k8scni/net-attach-def/ovn-netconf-invalid finding in Check.Findings, got %d finding(s): %+v",
+			len(res.Check.Findings), res.Check.Findings)
 	}
 }

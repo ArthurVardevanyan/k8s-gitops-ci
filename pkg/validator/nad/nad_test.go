@@ -421,45 +421,14 @@ spec:
 	}
 }
 
-// --- OVN-aware validation (type ovn-k8s-cni-overlay) ---
+// --- OVN dispatch (structural gate only; OVN semantic rules now live in
+// pkg/validator/runtime/k8scni's "k8scni/net-attach-def/ovn-netconf-invalid" check) ---
 
 func TestValidateFiles_OVN_Valid(t *testing.T) {
 	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer2","netAttachDefName":"myns/my-network","subnets":"10.100.200.0/24","role":"secondary"}`
 	path := writeNAD(t, cfg)
 	if errs, _ := ValidateFiles([]string{path}); len(errs) != 0 {
 		t.Errorf("expected valid OVN NAD, got %v", errs)
-	}
-}
-
-func TestValidateFiles_OVN_PersistentIPsLayer3(t *testing.T) {
-	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"myns/my-network","allowPersistentIPs":true,"role":"secondary"}`
-	path := writeNAD(t, cfg)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
-	}
-	// The message is scoped to the NAD (namespace/name) so it stays unambiguous
-	// in a multi-NAD file.
-	if !strings.Contains(errs[0].Message, "layer3 topology does not allow persistent IPs") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
-	}
-	if !strings.Contains(errs[0].Message, "myns/my-network") {
-		t.Errorf("OVN error must be scoped to the NAD namespace/name, got: %s", errs[0].Message)
-	}
-}
-
-func TestValidateFiles_OVN_InfrastructureSubnetsNonLayer2(t *testing.T) {
-	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"myns/my-network","infrastructureSubnets":"10.1.130.0/30","role":"secondary"}`
-	path := writeNAD(t, cfg)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "infrastructureSubnets is only supported for layer2 topology") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
-	}
-	if !strings.Contains(errs[0].Message, "myns/my-network") {
-		t.Errorf("OVN error must be scoped to the NAD namespace/name, got: %s", errs[0].Message)
 	}
 }
 
@@ -471,49 +440,15 @@ func TestValidateFiles_OVN_MalformedJSON(t *testing.T) {
 	}
 }
 
-func TestValidateFiles_OVN_NameInconsistent(t *testing.T) {
-	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer2","netAttachDefName":"wrong/name","subnets":"10.100.200.0/24","role":"secondary"}`
+// A NAD with valid structure but an OVN-semantic violation (e.g. an
+// inconsistent netAttachDefName, or persistent IPs on layer3) must pass this
+// package's structural gate - that violation is
+// k8scni/net-attach-def/ovn-netconf-invalid's concern now, not this package's.
+func TestValidateFiles_OVN_SemanticViolationPassesStructuralGate(t *testing.T) {
+	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"myns/my-network","allowPersistentIPs":true,"role":"secondary"}`
 	path := writeNAD(t, cfg)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for inconsistent name, got %d: %v", len(errs), errs)
-	}
-}
-
-// When a single rendered file carries multiple NAD documents (the common case
-// for overlay output), an OVN semantic error must identify the specific failing
-// NAD by namespace/name so it is not ambiguous.
-func TestValidateFiles_OVN_ErrorScopedInMultiNADFile(t *testing.T) {
-	tmp := t.TempDir()
-	path := filepath.Join(tmp, "nads.yaml")
-	content := `apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: good-net
-  namespace: ns-a
-spec:
-  config: '{"cniVersion":"0.3.1","name":"good","type":"ovn-k8s-cni-overlay","topology":"layer2","netAttachDefName":"ns-a/good-net","subnets":"10.0.0.0/24","role":"secondary"}'
----
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: bad-net
-  namespace: ns-b
-spec:
-  config: '{"cniVersion":"0.3.1","name":"bad","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"ns-b/bad-net","allowPersistentIPs":true,"role":"secondary"}'
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected exactly 1 error (only bad-net), got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "ns-b/bad-net") {
-		t.Errorf("error must name the failing NAD (ns-b/bad-net), got: %s", errs[0].Message)
-	}
-	if strings.Contains(errs[0].Message, "ns-a/good-net") {
-		t.Errorf("error must not reference the passing NAD, got: %s", errs[0].Message)
+	if errs, _ := ValidateFiles([]string{path}); len(errs) != 0 {
+		t.Errorf("expected an OVN semantic violation to pass the structural gate, got %v", errs)
 	}
 }
 

@@ -3,6 +3,7 @@ package validator
 import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/k8scni"     // registers NetworkAttachmentDefinition runtime checks
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes" // registers runtime validation checks
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static"
 )

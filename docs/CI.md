@@ -1625,57 +1625,54 @@ hard CI dependency.
 
 ### NetworkAttachmentDefinition (NAD) validation
 
-`pkg/validator/nad` validates every successfully-rendered overlay's
-`NetworkAttachmentDefinition` resources (`runNADValidation` in
-`pkg/validator/nad_wiring.go`, over the same batch of rendered overlay
-output the `kyverno` step consumes — see
-[Build Strategies](#build-strategies)). Unlike the checks in the table
-above, it is **not** part of the `check.Register` framework: it's always
-on (not gateable via `DisabledChecks`/`EnabledChecks`) and its findings
-are **not** exemptable via `EXEMPTIONS=(...)` or the
-`gitops-ci.k8s.io/exempt-<check-id>` annotation (see
-[EXEMPTIONS.md](EXEMPTIONS.md)). It renders as its own
-"NetworkAttachmentDefinition Validation" report section, blocking on any
-hard error (advisory warnings render ⚠️ and never block). The section is
-**omit-when-absent** (like the opt-in Kyverno
-section): it's rendered only when at least one
-`NetworkAttachmentDefinition` is actually present in the rendered-overlay
-chain, showing the result whether it passed or failed — a changeset that
-touches no NAD gets no section rather than an empty "0 NADs, all good"
-stub. The validator itself still always runs; only the (empty) section is
-suppressed.
+NAD validation splits across two homes, by whether a rule has a citable
+upstream function:
 
-Validation dispatches on the CNI plugin `type` declared in each NAD's
-`spec.config` (a stringified CNI netconf), rather than on a global
-platform flag — the `type` field is self-describing:
+- **Structural gate + advisories** (`pkg/validator/nad`): `spec.config`
+  must be a non-empty JSON **string** and parse as **valid JSON** (a
+  single config object or a `plugins` conflist) with a non-empty plugin
+  `type` (blocking, org/CNI-neutral - applies to every NAD regardless of
+  which CNI plugin owns it), plus **non-blocking advisories** (⚠️) for
+  likely authoring mistakes on non-OVN NADs (unrecognized CNI/IPAM
+  `type`, missing `cniVersion`). Neither of these corresponds to a
+  specific upstream function - the structural rules are the CNI
+  Specification's config-shape requirements, and the advisories are this
+  tool's own heuristics - so this is **not** part of the `check.Register`
+  framework: it is always on (not gateable via
+  `DisabledChecks`/`EnabledChecks`), not exemptable via
+  `EXEMPTIONS=(...)` or the `gitops-ci.k8s.io/exempt-<check-id>`
+  annotation (see [EXEMPTIONS.md](EXEMPTIONS.md)), and renders as its own
+  "NetworkAttachmentDefinition Validation" report section
+  (`runNADValidation` in `pkg/validator/nad_wiring.go`, over the same
+  rendered-overlay batch the `kyverno` step consumes - see
+  [Build Strategies](#build-strategies)). The section is
+  **omit-when-absent** (like the opt-in Kyverno section): rendered only
+  when at least one NAD is present in the rendered-overlay chain, whether
+  it passed or failed.
+- **OVN-Kubernetes semantic rules** (`type: ovn-k8s-cni-overlay`):
+  topology/role/subnet/transport constraints, ported from
+  `ovn-kubernetes/go-controller/pkg/util.ValidateNetConf` (see the
+  `k8scni/net-attach-def/ovn-netconf-invalid` check's `UpstreamRef` for the exact
+  citation and what's intentionally omitted: runtime-only checks that
+  depend on live cluster state). This genuinely is a citable upstream
+  rule the OVN-Kubernetes network controller enforces, so it lives in
+  `pkg/validator/runtime/k8scni` alongside `k8scni/net-attach-def/config-invalid` (a
+  second, CNI-plugin-neutral check that calls containernetworking/cni's
+  own reference parser directly rather than reimplementing the CNI
+  Specification's config-shape rules by hand) - both are part of the
+  **Runtime Validation** family: always-blocking, non-exemptable, and
+  require a verified `UpstreamRef` exactly like every other runtime
+  check (see "Runtime validation checks" above). A non-OVN NAD is never
+  judged by `k8scni/net-attach-def/ovn-netconf-invalid` at all - ovn-kubernetes's own
+  `ParseNetConf` treats it as a no-op skip
+  (`config.ErrorAttachDefNotOvnManaged`), never a failure, exactly
+  matching how the OVN-Kubernetes network controller itself behaves.
+  This is what keeps OVN validation from false-failing valid non-OVN
+  secondary networks (e.g. ODF's macvlan NADs).
 
-- **Structural gates** (always, org/CNI-neutral, blocking): `spec.config`
-  must be a non-empty JSON **string**, must parse as **valid JSON** (a
-  single config object or a `plugins` conflist), and must declare a
-  non-empty plugin `type`.
-- **OVN-Kubernetes NADs** (`type: ovn-k8s-cni-overlay`, blocking): OVN's
-  semantic rules (topology/role/subnet/transport constraints, ported from
-  `ovn-kubernetes/util.ValidateNetConf` — see `pkg/validator/nad`'s
-  package doc comment for what's intentionally omitted: runtime-only
-  checks that depend on live cluster state) are additionally applied.
-  These run wherever such a NAD is authored.
-- **Non-OVN NADs** (`macvlan`, `bridge`, `ipvlan`, `host-device`,
-  SR-IOV, …): their config is owned by the respective CNI plugin, so no
-  hard semantic checks are applied — only **non-blocking advisories**
-  (⚠️) for likely authoring mistakes (unrecognized CNI/IPAM `type`,
-  missing `cniVersion`). CNI types are open-ended, so an unrecognized
-  type is a warning, never a hard failure.
-
-Dispatching on the type field is what keeps OVN validation from
-false-failing valid non-OVN secondary networks (upstream ovn-kubernetes
-itself skips a non-OVN NAD rather than failing it). NAD validation does
-**not** depend on `--assume-openshift` (that flag still governs the
-`sync-options` exemption above).
-
-`validate-nad` also exposes this directly as a CLI subcommand, bypassing
-the full pipeline, for validating a directory or explicit file list
-(`k8s-gitops-ci validate-nad --dir <path>` or
-`... <file.yaml> ...`).
+NAD validation does **not** depend on `--assume-openshift` (that flag
+still governs the `sync-options` exemption above) - dispatch is entirely
+driven by the CNI `type` field declared in each NAD's `spec.config`.
 
 ## Direct vs. external findings
 

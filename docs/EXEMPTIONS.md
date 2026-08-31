@@ -218,12 +218,15 @@ the ID as exemptable (or rely on `check.Register` which does this
 automatically for `check.Check` implementations). Single-word IDs and
 acronyms are left unhyphenated.
 
-`pkg/validator/nad`'s NetworkAttachmentDefinition validation (see
-[CI.md](CI.md#networkattachmentdefinition-nad-validation)) is **not**
-part of the `check.Register` framework at all, so it has no check ID to
-exempt by either mode — a NAD hard-error finding always blocks regardless
-of `EXEMPTIONS=(...)` or annotations (its non-blocking advisory warnings
-never block in the first place).
+`pkg/validator/nad`'s structural gate and advisories (see
+[CI.md](CI.md#networkattachmentdefinition-nad-validation)) are **not**
+part of the `check.Register` framework at all, so they have no check ID
+to exempt by either mode — a structural-gate hard error always blocks
+regardless of `EXEMPTIONS=(...)` or annotations, and the advisory
+warnings never block in the first place. OVN-Kubernetes's semantic rules
+(`k8scni/net-attach-def/ovn-netconf-invalid`) are different: they _are_ registered, as
+part of the Runtime Validation family, and are covered by "Runtime-
+validation IDs are never exemptable" below instead.
 
 ### Runtime-validation IDs are never exemptable
 
@@ -231,8 +234,9 @@ Every check ID under the **runtime-validation** family — the
 `<family>/<category>/<rule>` IDs registered from
 `pkg/validator/runtime/<family>/`, e.g.
 `kubernetes/apps/daemonset-min-ready-seconds-invalid`,
-`kubernetes/batch/backoff-limit-invalid` and
-`kubernetes/container/duplicate-container-names` — is
+`kubernetes/batch/backoff-limit-invalid`,
+`kubernetes/container/duplicate-container-names` and
+`k8scni/net-attach-def/ovn-netconf-invalid` — is
 **not exemptable by either mode**. No `gitops-ci.k8s.io/exempt-<id>`
 annotation and no `check=<id>` selector will match one; a runtime finding
 always blocks. See
