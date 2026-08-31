@@ -159,9 +159,21 @@ func ValidateDir(dir string) (errs, warns []ValidationError) {
 }
 
 // nadKindRE matches a YAML `kind: NetworkAttachmentDefinition` mapping entry,
-// tolerating arbitrary whitespace after the colon and optional quoting of the
-// value (e.g. `kind:NetworkAttachmentDefinition`, `kind: "NetworkAttachmentDefinition"`).
-var nadKindRE = regexp.MustCompile(`(?m)^\s*kind:\s*["']?NetworkAttachmentDefinition["']?\s*$`)
+// tolerating arbitrary whitespace after the colon, optional quoting of the
+// value (e.g. `kind:NetworkAttachmentDefinition`,
+// `kind: "NetworkAttachmentDefinition"`), and a trailing line comment.
+//
+// The comment case is load-bearing rather than cosmetic: this predicate gates
+// ValidateFiles, so a NAD whose kind line ends in a comment was not merely
+// absent from the report - it was never validated at all. A false negative
+// here is silent by construction, since the file it skips is the only thing
+// that would have reported anything.
+//
+// The space before "#" is required, because YAML only starts a comment after
+// whitespace: `kind: NetworkAttachmentDefinition#x` is the scalar
+// "NetworkAttachmentDefinition#x", which is a different kind and must not
+// match.
+var nadKindRE = regexp.MustCompile(`(?m)^\s*kind:\s*["']?NetworkAttachmentDefinition["']?(?:\s+#.*)?\s*$`)
 
 // IsNADFile reports whether path is a YAML file whose content declares
 // `kind: NetworkAttachmentDefinition`. Unlike a bare extension check, this
