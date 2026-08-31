@@ -32,6 +32,13 @@ const (
 	invalidSelectorKey = "  selector:\n    matchLabels:\n      \"invalid key with spaces\": myapp\n"
 	invalidMatchExpr   = "  selector:\n    matchExpressions:\n    - key: \"another invalid key\"\n" +
 		"      operator: In\n      values:\n      - val\n"
+	// The invalid expression is the second element, so a path that omits
+	// the index cannot say which one to fix - and spec.selector.
+	// matchExpressions.key names nothing in the manifest at all.
+	secondMatchExprInvalid = "  selector:\n    matchExpressions:\n    - key: valid\n" +
+		"      operator: In\n      values:\n      - val\n" +
+		"    - key: \"another invalid key\"\n" +
+		"      operator: In\n      values:\n      - val\n"
 )
 
 func TestWorkloadSelectorInvalid(t *testing.T) {
@@ -41,14 +48,22 @@ func TestWorkloadSelectorInvalid(t *testing.T) {
 		"ReplicaSet": newReplicaSetSelectorInvalidCheck(),
 	}
 	cases := []struct {
-		name string
-		spec string
-		want int
+		name     string
+		spec     string
+		want     int
+		wantPath string
 	}{
-		{"valid keys", validSelector, 0},
-		{"no selector", "", 0},
-		{"invalid matchLabels key", invalidSelectorKey, 1},
-		{"invalid matchExpressions key", invalidMatchExpr, 1},
+		{name: "valid keys", spec: validSelector},
+		{name: "no selector"},
+		{name: "invalid matchLabels key", spec: invalidSelectorKey, want: 1},
+		{
+			name: "invalid matchExpressions key", spec: invalidMatchExpr, want: 1,
+			wantPath: "spec.selector.matchExpressions[0].key",
+		},
+		{
+			name: "invalid matchExpressions key at a later index", spec: secondMatchExprInvalid, want: 1,
+			wantPath: "spec.selector.matchExpressions[1].key",
+		},
 	}
 
 	for kind, c := range checks {
@@ -60,6 +75,9 @@ func TestWorkloadSelectorInvalid(t *testing.T) {
 				}
 				if tt.want > 0 && !strings.HasSuffix(got[0].RuleID, "selector-invalid") {
 					t.Errorf("unexpected rule ID: %s", got[0].RuleID)
+				}
+				if tt.wantPath != "" && got[0].Path != tt.wantPath {
+					t.Errorf("path = %q, want %q", got[0].Path, tt.wantPath)
 				}
 			})
 		}

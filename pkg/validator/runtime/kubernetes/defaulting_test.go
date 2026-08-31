@@ -104,12 +104,16 @@ func TestExplicitlyEmptyDefaultedFields(t *testing.T) {
 			file: "sc.yaml",
 			kind: "StorageClass",
 			want: []string{"storage-class/volume-binding-mode-invalid"},
-			// reclaimPolicy is deliberately absent. Surviving defaulting is
-			// only half the question: upstream validateReclaimPolicy then
-			// wraps its NotSupported branch in a len(...) > 0 guard, so the
-			// API server accepts an empty value and reporting it would be a
-			// false positive. validateVolumeBindingMode has no such guard,
-			// which is why its sibling stays.
+			// The fixture sets reclaimPolicy: "" - explicitly empty, not
+			// omitted - and it is deliberately absent from want above.
+			// Surviving defaulting is only half the question: both fields
+			// are pointer-typed, so both explicit "" values reach
+			// validation. What separates them is what happens next.
+			// validateReclaimPolicy wraps its NotSupported branch in a
+			// len(...) > 0 guard, so the API server accepts the empty
+			// reclaim policy and reporting it would be a false positive.
+			// validateVolumeBindingMode has no such guard, so its empty
+			// value is a real rejection and stays.
 			why: "SetDefaults_StorageClass guards both on == nil, but only volumeBindingMode is then rejected empty",
 		},
 		{

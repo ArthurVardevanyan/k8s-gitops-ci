@@ -96,7 +96,11 @@ func (c containerPortNameInvalidCheck) Run(data []byte, source string) []runtime
 
 	var findings []runtime.Finding
 	for _, ctr := range runtime.AllContainers(info) {
-		for _, port := range ctr.Container.Ports {
+		// Index by position, as upstream validateContainerPorts does. A
+		// name-keyed path (ports[http].name) does not exist in the manifest
+		// and cannot be navigated to, which is worst when several ports are
+		// wrong at once and the reader needs to tell them apart.
+		for i, port := range ctr.Container.Ports {
 			// Upstream only validates a port name when one is set; an
 			// unnamed port is legal on a single-port container.
 			if port.Name == "" {
@@ -108,7 +112,7 @@ func (c containerPortNameInvalidCheck) Run(data []byte, source string) []runtime
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
 					Finding: check.Finding{
-						Path:      ctr.Path.Child("ports").Key(port.Name).Child("name").String(),
+						Path:      ctr.Path.Child("ports").Index(i).Child("name").String(),
 						Message:   fmt.Sprintf("invalid port name %q: %s", port.Name, msg),
 						Kind:      info.Kind,
 						Name:      info.Name,

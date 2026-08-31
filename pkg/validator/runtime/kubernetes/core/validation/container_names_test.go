@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -113,6 +114,12 @@ func TestContainerPortNameInvalidCheck(t *testing.T) {
 		name     string
 		manifest string
 		want     int
+		// wantPaths, where set, asserts the exact field path of every
+		// finding in order. A path is the only part of a finding that tells
+		// a reader which port to edit, and a count-only assertion cannot
+		// tell a correct path from one that names no element of the
+		// manifest at all.
+		wantPaths []string
 	}{
 		{
 			name: "valid port name",
@@ -186,6 +193,33 @@ spec:
           containerPort: 8080
 `,
 			want: 2,
+			wantPaths: []string{
+				"spec.template.spec.containers[app].ports[0].name",
+				"spec.template.spec.containers[app].ports[0].name",
+			},
+		},
+		{
+			// The second port is the invalid one. Keying the path by name
+			// produced ports[HTTP].name, which does not exist in the
+			// manifest; the index locates it.
+			name: "an invalid port is indexed at its own position",
+			manifest: `kind: Deployment
+metadata:
+  name: test
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: nginx
+        ports:
+        - name: http
+          containerPort: 8080
+        - name: a-very-long-port-name
+          containerPort: 8081
+`,
+			want:      1,
+			wantPaths: []string{"spec.template.spec.containers[app].ports[1].name"},
 		},
 	}
 
@@ -195,6 +229,15 @@ spec:
 			findings := check.Run([]byte(tt.manifest), "test.yaml")
 			if len(findings) != tt.want {
 				t.Fatalf("expected %d findings, got %d: %v", tt.want, len(findings), findings)
+			}
+			if tt.wantPaths != nil {
+				got := make([]string, len(findings))
+				for i, f := range findings {
+					got[i] = f.Path
+				}
+				if !slices.Equal(got, tt.wantPaths) {
+					t.Errorf("paths = %v, want %v", got, tt.wantPaths)
+				}
 			}
 		})
 	}

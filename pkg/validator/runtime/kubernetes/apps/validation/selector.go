@@ -69,7 +69,7 @@ func selectorInvalidFindings(c runtime.Check, obj map[string]interface{}, kind, 
 		return nil
 	}
 
-	for _, rawExpr := range matchExpressionsList {
+	for i, rawExpr := range matchExpressionsList {
 		exprMap, ok := rawExpr.(map[string]interface{})
 		if !ok {
 			continue
@@ -80,7 +80,9 @@ func selectorInvalidFindings(c runtime.Check, obj map[string]interface{}, kind, 
 		}
 		if errs := validation.IsQualifiedName(key); len(errs) > 0 {
 			return finding(
-				field.NewPath("spec").Child("selector").Child("matchExpressions").Child("key").String(),
+				// Indexed: spec.selector.matchExpressions.key is not a path
+				// any manifest has, so it cannot be located or fixed.
+				field.NewPath("spec").Child("selector").Child("matchExpressions").Index(i).Child("key").String(),
 				key, errs,
 			)
 		}
