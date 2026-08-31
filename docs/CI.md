@@ -1633,12 +1633,12 @@ upstream function:
   single config object or a `plugins` conflist) with a non-empty plugin
   `type` (blocking, org/CNI-neutral - applies to every NAD regardless of
   which CNI plugin owns it), plus **non-blocking advisories** (⚠️) for
-  likely authoring mistakes on non-OVN NADs (unrecognized CNI/IPAM
-  `type`, missing `cniVersion`). Neither of these corresponds to a
-  specific upstream function - the structural rules are the CNI
-  Specification's config-shape requirements, and the advisories are this
-  tool's own heuristics - so this is **not** part of the `check.Register`
-  framework: it is always on (not gateable via
+  likely authoring mistakes (unrecognized CNI/IPAM `type`, missing
+  `cniVersion`) - applied uniformly to every NAD, OVN included. Neither
+  tier corresponds to a specific upstream function - the structural
+  rules are the CNI Specification's config-shape requirements, and the
+  advisories are this tool's own heuristics - so this is **not** part of
+  the `check.Register` framework: it is always on (not gateable via
   `DisabledChecks`/`EnabledChecks`), not exemptable via
   `EXEMPTIONS=(...)` or the `gitops-ci.k8s.io/exempt-<check-id>`
   annotation (see [EXEMPTIONS.md](EXEMPTIONS.md)), and renders as its own
