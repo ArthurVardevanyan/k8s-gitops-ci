@@ -302,7 +302,7 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 	}
 
 	var b strings.Builder
-	b.WriteString("These are structural/runtime validation rules enforced by the cluster. Findings here indicate manifests that the cluster would reject.\n\n")
+	b.WriteString("These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject.\n\n")
 
 	families := make([]string, 0, len(byFamily))
 	for fam := range byFamily {
