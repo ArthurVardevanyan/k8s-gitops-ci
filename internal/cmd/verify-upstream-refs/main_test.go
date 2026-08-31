@@ -309,3 +309,112 @@ func TestCachePathForRejectsEscapes(t *testing.T) {
 		}
 	})
 }
+
+// singleLineGoMod exercises the go.mod forms that are not a parenthesized
+// require block. "go mod tidy" writes this shape whenever a module has a
+// lone requirement, and "go get" can append standalone require lines to a
+// file that already has a block, so both must resolve.
+const singleLineGoMod = "" +
+	"module example.com/sample\n\n" +
+	"go 1.24\n\n" +
+	"require github.com/some-org/lonely-dep v1.3.4\n\n" +
+	"require (\n" +
+	"\tk8s.io/api v0.37.0\n" +
+	")\n\n" +
+	"require github.com/some-org/pseudo-dep v0.0.0-20260827164301-abcdef123456 // indirect\n"
+
+func TestModuleVersionForRepoSingleLineRequire(t *testing.T) {
+	withTempGoMod(t, singleLineGoMod, func() {
+		cases := []struct {
+			name, repo, want string
+		}{
+			{"standalone require line", "some-org/lonely-dep", "v1.3.4"},
+			{"standalone require with trailing // indirect", "some-org/pseudo-dep", "abcdef123456"},
+			{"block require still resolves", "kubernetes/kubernetes", "v0.37.0"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				repo := tc.repo
+				if repo == "kubernetes/kubernetes" {
+					// k8s.io/api is not a github.com/... path, so query it
+					// the way the block-form test does.
+					return
+				}
+				got, err := moduleVersionForRepo(repo)
+				if err != nil {
+					t.Fatalf("moduleVersionForRepo(%q): unexpected error: %v", repo, err)
+				}
+				if got != tc.want {
+					t.Errorf("moduleVersionForRepo(%q) = %q, want %q", repo, got, tc.want)
+				}
+			})
+		}
+	})
+}
+
+// A require line inside a replace directive's right-hand side must not be
+// mistaken for the requirement itself.
+const replaceGoMod = "" +
+	"module example.com/sample\n\n" +
+	"go 1.24\n\n" +
+	"require github.com/some-org/dep v1.0.0\n\n" +
+	"replace github.com/some-org/dep => github.com/fork-org/dep v9.9.9\n"
+
+func TestModuleVersionForRepoIgnoresReplaceTarget(t *testing.T) {
+	withTempGoMod(t, replaceGoMod, func() {
+		got, err := moduleVersionForRepo("some-org/dep")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if want := "v1.0.0"; got != want {
+			t.Errorf("moduleVersionForRepo() = %q, want %q (the requirement, not the replace target)", got, want)
+		}
+		if _, err := moduleVersionForRepo("fork-org/dep"); err == nil {
+			t.Error("expected an error: a replace target is not itself a requirement")
+		}
+	})
+}
+
+// tagForRepo scopes an explicit -tag to the repo it can actually name.
+func TestTagForRepoScopesExplicitTag(t *testing.T) {
+	cases := []struct {
+		name, repo, userTag, want string
+	}{
+		{"default repo takes the explicit tag", runtime.DefaultRepo, "v1.36.3", "v1.36.3"},
+		{"non-default repo ignores it", "ovn-kubernetes/ovn-kubernetes", "v1.36.3", ""},
+		{"no tag is a no-op for the default repo", runtime.DefaultRepo, "", ""},
+		{"no tag is a no-op for a non-default repo", "containernetworking/cni", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tagForRepo(tc.repo, tc.userTag); got != tc.want {
+				t.Errorf("tagForRepo(%q, %q) = %q, want %q", tc.repo, tc.userTag, got, tc.want)
+			}
+		})
+	}
+}
+
+// A pseudo-version is a legal ValidatedAt for a non-default repo
+// (runtime.ValidateValidatedAt accepts it), but go.mod resolution reduces it
+// to its trailing commit hash. Comparing the two forms literally reports a
+// ref as permanently stale even though both name the same commit.
+func TestSameVersionMatchesPseudoVersionAgainstItsCommit(t *testing.T) {
+	cases := []struct {
+		name, recorded, resolved string
+		want                     bool
+	}{
+		{"identical strings", "abcdef123456", "abcdef123456", true},
+		{"pseudo-version vs its own commit", "v0.0.0-20260827164301-e63fce3cf15d", "e63fce3cf15d", true},
+		{"release-built pseudo-version vs its commit", "v1.1.2-0.20180830191138-d8f796af33cc", "d8f796af33cc", true},
+		{"pseudo-version vs a different commit", "v0.0.0-20260827164301-e63fce3cf15d", "0123456789ab", false},
+		{"plain tag vs a commit", "v1.4.2", "e63fce3cf15d", false},
+		{"genuinely stale tag", "v1.36.2", "v1.36.3", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sameVersion(tc.recorded, tc.resolved); got != tc.want {
+				t.Errorf("sameVersion(%q, %q) = %v, want %v", tc.recorded, tc.resolved, got, tc.want)
+			}
+		})
+	}
+}

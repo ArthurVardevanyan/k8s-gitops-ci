@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/mod/modfile"
+
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/internal/upstreamref"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes" // registers runtime checks and their refs
@@ -38,7 +40,7 @@ const rawBase = "https://raw.githubusercontent.com"
 
 func main() {
 	var (
-		tag      = flag.String("tag", "", "version to verify/compute against, applied to every ref regardless of Repo when set. Default (empty): kubernetes/kubernetes resolves its own version from k8s.io/api in go.mod, and any other repo resolves from its own go.mod requirement instead (see -repo)")
+		tag      = flag.String("tag", "", "version to verify/compute against. A tag is repo-local, so when verifying this applies only to kubernetes/kubernetes; every other repo always resolves from its own go.mod requirement. With -compute it applies to whichever repository -repo names. Default (empty): kubernetes/kubernetes resolves its own version from k8s.io/api in go.mod")
 		cacheDir = flag.String("cache", defaultCache(), "directory to cache fetched upstream sources in")
 		dump     = flag.Bool("dump", false, "print the registered refs as JSON and exit")
 		update   = flag.Bool("update", false, "record the current digest and version (a release tag, or a commit SHA for a repo other than kubernetes/kubernetes) for refs that changed (do this only after re-reading the upstream function)")
@@ -102,7 +104,7 @@ func main() {
 		fatalf("%v", err)
 	}
 
-	fmt.Printf("Verifying %d upstream reference(s) (kubernetes/kubernetes %s; other repos resolved individually from go.mod unless -tag overrides them)\n\n", len(refs), defaultRepoVersion)
+	fmt.Printf("Verifying %d upstream reference(s) (kubernetes/kubernetes %s; other repos resolved individually from go.mod)\n\n", len(refs), defaultRepoVersion)
 
 	f := &fetcher{cacheDir: *cacheDir, client: &http.Client{Timeout: 60 * time.Second}}
 
@@ -113,7 +115,7 @@ func main() {
 		if v, ok := versionCache[repo]; ok {
 			return v, nil
 		}
-		v, err := versionFor(repo, userTag)
+		v, err := versionFor(repo, tagForRepo(repo, userTag))
 		if err != nil {
 			return "", err
 		}
@@ -211,7 +213,7 @@ func main() {
 		switch got {
 		case ref.Digest:
 			ok++
-			if ref.ValidatedAt != version {
+			if !sameVersion(ref.ValidatedAt, version) {
 				stale++
 				if *update {
 					found, err := updateEntry(id, got, version)
@@ -476,23 +478,65 @@ func moduleVersionForRepo(repo string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read go.mod (run from the repository root): %w", err)
 	}
+	// Parsed with modfile rather than scanned line-by-line: go.mod has
+	// several requirement spellings (a parenthesized block, a standalone
+	// "require <mod> <ver>" line, a trailing "// indirect" comment) and a
+	// replace directive whose right-hand side looks exactly like a
+	// requirement. Hand-scanning got the block form right and every other
+	// form wrong.
+	f, err := modfile.Parse("go.mod", b, nil)
+	if err != nil {
+		return "", fmt.Errorf("parse go.mod: %w", err)
+	}
 	prefix := "github.com/" + repo
-	for _, line := range strings.Split(string(b), "\n") {
-		fields := strings.Fields(strings.TrimSpace(line))
-		if len(fields) < 2 {
-			continue
-		}
-		modPath := fields[0]
+	for _, req := range f.Require {
+		modPath := req.Mod.Path
 		if modPath != prefix && !strings.HasPrefix(modPath, prefix+"/") {
 			continue
 		}
-		v := fields[1]
+		v := req.Mod.Version
 		if m := pseudoVersionCommit.FindStringSubmatch(v); m != nil {
 			return m[1], nil
 		}
 		return v, nil
 	}
 	return "", fmt.Errorf("no go.mod requirement found for repo %q (expected module path %q or a subdirectory of it)", repo, prefix)
+}
+
+// tagForRepo scopes an explicit -tag to the only repository it can name.
+//
+// A tag is repo-local: "v1.36.3" identifies a kubernetes/kubernetes release
+// and means nothing in ovn-kubernetes. Applying one -tag to every repo would
+// send a Kubernetes tag to repos that have never had it, turning a routine
+// "verify against release X" run into a fetch failure as soon as a single
+// non-default ref is registered. Other repos keep resolving from go.mod,
+// which is the only per-repo version this tool actually knows.
+//
+// This deliberately does not change versionFor itself: -compute uses it to
+// fetch an arbitrary ref (a branch, a SHA) from an explicitly named -repo
+// before any ValidatedAt exists, and that call must keep honouring the tag.
+func tagForRepo(repo, userTag string) string {
+	if repo == runtime.DefaultRepo {
+		return userTag
+	}
+	return ""
+}
+
+// sameVersion reports whether a recorded ValidatedAt and a freshly resolved
+// version name the same upstream commit.
+//
+// They are not always spelled alike. ValidateValidatedAt lets a non-default
+// repo record a Go pseudo-version, while go.mod resolution reduces that same
+// pseudo-version to its trailing commit hash, so a correct ref compares
+// unequal to itself and is reported stale on every run, forever.
+func sameVersion(recorded, resolved string) bool {
+	if recorded == resolved {
+		return true
+	}
+	if m := pseudoVersionCommit.FindStringSubmatch(recorded); m != nil {
+		return m[1] == resolved
+	}
+	return false
 }
 
 func defaultCache() string {
