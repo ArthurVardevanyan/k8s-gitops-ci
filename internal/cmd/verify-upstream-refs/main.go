@@ -38,10 +38,10 @@ const rawBase = "https://raw.githubusercontent.com"
 
 func main() {
 	var (
-		tag      = flag.String("tag", "", "kubernetes/kubernetes tag to verify against (default: derived from k8s.io/api in go.mod); ignored for refs whose Repo is not kubernetes/kubernetes, whose version is instead resolved from their own go.mod requirement")
+		tag      = flag.String("tag", "", "version to verify/compute against, applied to every ref regardless of Repo when set. Default (empty): kubernetes/kubernetes resolves its own version from k8s.io/api in go.mod, and any other repo resolves from its own go.mod requirement instead (see -repo)")
 		cacheDir = flag.String("cache", defaultCache(), "directory to cache fetched upstream sources in")
 		dump     = flag.Bool("dump", false, "print the registered refs as JSON and exit")
-		update   = flag.Bool("update", false, "record the current digest and tag for refs that changed (do this only after re-reading the upstream function)")
+		update   = flag.Bool("update", false, "record the current digest and version (a release tag, or a commit SHA for a repo other than kubernetes/kubernetes) for refs that changed (do this only after re-reading the upstream function)")
 		compute  = flag.String("compute", "", "compute the digest for a single ref instead of verifying: -compute <path> -functions <A,B>")
 		fnList   = flag.String("functions", "", "comma-separated function names, used with -compute")
 		repoFlag = flag.String("repo", runtime.DefaultRepo, "owner/name of the upstream repository, used with -compute")
@@ -52,13 +52,9 @@ func main() {
 	// without a valid digest (RegisterAll rejects it), so the digest has to
 	// be obtainable before the table entry exists.
 	if *compute != "" {
-		tagFor := *tag
-		if tagFor == "" {
-			t, err := versionFor(*repoFlag, "")
-			if err != nil {
-				fatalf("%v", err)
-			}
-			tagFor = t
+		tagFor, err := versionFor(*repoFlag, *tag)
+		if err != nil {
+			fatalf("%v", err)
 		}
 		fns := strings.Split(*fnList, ",")
 		for i := range fns {
@@ -94,29 +90,30 @@ func main() {
 		fatalf("no runtime checks are registered - nothing to verify")
 	}
 
-	if *tag == "" {
-		t, err := tagFromGoMod()
-		if err != nil {
-			fatalf("%v", err)
-		}
-		*tag = t
+	// userTag is exactly what the user passed via -tag ("" if they didn't).
+	// It is kept separate from the per-repo versions resolved below so that
+	// an explicit -tag overrides every ref's version regardless of Repo -
+	// consistent with how -compute already treats it (tagFor := *tag,
+	// applied to whatever -repo was given) - while an unset -tag still lets
+	// each repo resolve its own default independently.
+	userTag := *tag
+	defaultRepoVersion, err := versionFor(runtime.DefaultRepo, userTag)
+	if err != nil {
+		fatalf("%v", err)
 	}
 
-	fmt.Printf("Verifying %d upstream reference(s) (kubernetes/kubernetes %s; other repos resolved individually from go.mod)\n\n", len(refs), *tag)
+	fmt.Printf("Verifying %d upstream reference(s) (kubernetes/kubernetes %s; other repos resolved individually from go.mod unless -tag overrides them)\n\n", len(refs), defaultRepoVersion)
 
 	f := &fetcher{cacheDir: *cacheDir, client: &http.Client{Timeout: 60 * time.Second}}
 
 	// versionCache memoizes each repo's resolved version (a go.mod parse
 	// per distinct repo, not per ref).
-	versionCache := map[string]string{}
+	versionCache := map[string]string{runtime.DefaultRepo: defaultRepoVersion}
 	versionForCached := func(repo string) (string, error) {
-		if repo == runtime.DefaultRepo {
-			return *tag, nil
-		}
 		if v, ok := versionCache[repo]; ok {
 			return v, nil
 		}
-		v, err := versionFor(repo, "")
+		v, err := versionFor(repo, userTag)
 		if err != nil {
 			return "", err
 		}
