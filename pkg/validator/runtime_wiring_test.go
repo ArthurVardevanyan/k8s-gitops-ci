@@ -516,3 +516,61 @@ func TestEveryRuntimeCheckHasExactlyOneRef(t *testing.T) {
 		}
 	}
 }
+
+// TestRuntimeSectionIntroMatchesFamilies pins the section's opening line.
+//
+// The line is the only place the guarantee is stated when a single family is
+// present, because that is exactly when the family heading carrying it is
+// omitted. Getting it wrong therefore either overstates what a finding proves
+// or, in the multi-family case, states something untrue of half the section.
+func TestRuntimeSectionIntroMatchesFamilies(t *testing.T) {
+	mk := func(ruleID, kind string) check.Finding {
+		return runtimepkg.Finding{
+			RuleID: ruleID, RuleTitle: "Some Rule",
+			Finding: check.Finding{File: "a.yaml", Kind: kind, Name: "x", Path: "spec", Message: "boom"},
+		}.ToCheckFinding()
+	}
+	k8s := mk("kubernetes/batch/schedule-invalid", "CronJob")
+	cni := mk("k8scni/net-attach-def/config-invalid", "NetworkAttachmentDefinition")
+
+	tests := []struct {
+		name     string
+		findings []check.Finding
+		want     string
+		absent   string
+	}{
+		{
+			// The common case, and the one that must not regress: a
+			// kubernetes-only run reads exactly as it did before families.
+			name:     "kubernetes only keeps the API-server wording",
+			findings: []check.Finding{k8s},
+			want:     "Kubernetes validation rules enforced by the cluster API server",
+		},
+		{
+			name:     "k8scni only names the network controller",
+			findings: []check.Finding{cni},
+			want:     "enforced by the cluster's network controller",
+			absent:   "cluster API server",
+		},
+		{
+			// No single sentence is true of both, so it must not claim the
+			// API server rejects a rule the API server never sees.
+			name:     "both families fall back to general wording",
+			findings: []check.Finding{k8s, cni},
+			want:     "validation rules enforced by the cluster.",
+			absent:   "cluster API server",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := ComposeRuntimeValidationSection(tt.findings).Body
+			if !strings.Contains(body, tt.want) {
+				t.Errorf("intro omits %q:\n%s", tt.want, body)
+			}
+			if tt.absent != "" && strings.Contains(body, tt.absent) {
+				t.Errorf("intro should not claim %q:\n%s", tt.absent, body)
+			}
+		})
+	}
+}
