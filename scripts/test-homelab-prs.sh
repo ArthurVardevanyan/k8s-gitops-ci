@@ -34,13 +34,14 @@ shopt -s inherit_errexit
 # aborts via errexit; normalize that to exit code 2 ("harness error") so CI
 # can tell a setup failure apart from the exit-1 "some PRs failed" signal.
 # Deliberate `exit 0`/`exit 1` at the end do NOT trigger ERR, so they win.
-# shellcheck disable=SC2329  # invoked indirectly via `trap ... ERR`
-on_err() {
-  local rc=$?
-  echo "test-homelab-prs: harness error (exit ${rc})" >&2
-  exit 2
-}
-trap on_err ERR
+#
+# Inline rather than a named function, matching the other scripts here: a
+# handler only ever reached through `trap` looks unreachable to static
+# analysis, and the two codes reported for that (SC2317, SC2329) differ by
+# linter version - so a named handler needs a disable whose correctness
+# depends on which version a given machine ships. `$?` is expanded while the
+# echo command is built, so it is still the failing command's status.
+trap 'echo "test-homelab-prs: harness error (exit $?)" >&2; exit 2' ERR
 
 # --- Defaults ---
 COUNT=15
@@ -124,9 +125,7 @@ SCRIPT_START=$(date +%s)
 # derive its exit code even when the report is generated inside a redirect.
 FAIL_TALLY_FILE="${RESULTS_DIR}/.fail_tally"
 TOTAL_TESTS=0
-# shellcheck disable=SC2329  # invoked indirectly via `trap ... EXIT`
-cleanup() { rm -rf "${RESULTS_DIR}"; }
-trap cleanup EXIT
+trap 'rm -rf "${RESULTS_DIR}"' EXIT
 
 # Get current progress count (counts completed result files)
 get_progress() {
