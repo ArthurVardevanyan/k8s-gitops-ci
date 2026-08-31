@@ -738,20 +738,20 @@ Every check below is registered via `check.Register` in
 automatically exemptable via its own check ID (see
 [EXEMPTIONS.md](EXEMPTIONS.md)) unless noted otherwise.
 
-| ID                 | Package                          | Scope   | What it checks                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------ | -------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `namespace`        | `pkg/validator/namespace`        | Doc     | Namespace-scoped resources declare `metadata.namespace`; cluster-scoped resources don't (except build-time-only Kustomize control objects)                                                                                                                                                                                                                                                                                                            |
-| `psa-labels`       | `pkg/validator/psa`              | Doc     | Pod Security Admission namespace labels                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `rbac-readonly`    | `pkg/validator/rbac`             | Doc     | A `ClusterRole` carrying an aggregate-to-view/cluster-reader label only grants read-only verbs (with a narrow, exact-match allowlist for a handful of known exceptions)                                                                                                                                                                                                                                                                               |
-| `rbac-wildcards`   | `pkg/validator/rbac`             | Doc     | No `"*"` in `verbs`/`resources`/`apiGroups` on `Role`/`ClusterRole`                                                                                                                                                                                                                                                                                                                                                                                   |
-| `crb`              | `pkg/validator/crb`              | Doc     | `ClusterRoleBinding` subject namespace sanity                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `sync-options`     | `pkg/validator/syncopts`         | Doc     | Non-builtin API-group resources carry the ArgoCD `SkipDryRunOnMissingResource=true` sync-options annotation (builtin/core groups and OpenShift/OKD-exclusive API groups — e.g. `route.openshift.io`, `config.openshift.io` — are always exempt; OpenShift-_default_-but-portable groups that also ship on non-OpenShift clusters — e.g. Prometheus Operator, OLM, Gateway API, Multus/OVN-Kubernetes CNI — are only exempt with `--assume-openshift`) |
-| `image-checksum`   | `pkg/validator/image`            | Doc     | Every OCI image reference is pinned to a `sha256:` digest, not just a tag                                                                                                                                                                                                                                                                                                                                                                             |
-| `image-fqdn`       | `pkg/validator/image`            | Doc     | Every OCI image reference uses an explicit, fully-qualified registry host (no bare shortnames such as `nginx:latest`)                                                                                                                                                                                                                                                                                                                                 |
-| `named-ports`      | `pkg/validator/namedport`        | Doc     | Container/Service ports are named, not numeric, everywhere they're referenced                                                                                                                                                                                                                                                                                                                                                                         |
-| `podspec-defaults` | `pkg/validator/podspec`          | Doc     | Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...) and container `securityContext`/`resources.requests`/`resources.limits` are all set                                                                                                                                                                                                                                                                                            |
-| `placeholder`      | `pkg/validator/placeholder`      | Doc     | No unresolved `<PLACEHOLDER>`-style tokens or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML (AVP-scheme secret-reference tokens like `<path:...>` are deliberately not flagged — see below)                                                                                                                                                                                                                                 |
-| `cluster-identity` | `pkg/validator/static/clusterid` | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID)                                                                                                                                                                    |
+| ID                 | Package                            | Scope   | What it checks                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------ | ---------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `namespace`        | `pkg/validator/static/namespace`   | Doc     | Namespace-scoped resources declare `metadata.namespace`; cluster-scoped resources don't (except build-time-only Kustomize control objects)                                                                                                                                                                                                                                                                                                            |
+| `psa-labels`       | `pkg/validator/static/psa`         | Doc     | Pod Security Admission namespace labels                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `rbac-readonly`    | `pkg/validator/static/rbac`        | Doc     | A `ClusterRole` carrying an aggregate-to-view/cluster-reader label only grants read-only verbs (with a narrow, exact-match allowlist for a handful of known exceptions)                                                                                                                                                                                                                                                                               |
+| `rbac-wildcards`   | `pkg/validator/static/rbac`        | Doc     | No `"*"` in `verbs`/`resources`/`apiGroups` on `Role`/`ClusterRole`                                                                                                                                                                                                                                                                                                                                                                                   |
+| `crb`              | `pkg/validator/static/crb`         | Doc     | `ClusterRoleBinding` subject namespace sanity                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `sync-options`     | `pkg/validator/static/syncopts`    | Doc     | Non-builtin API-group resources carry the ArgoCD `SkipDryRunOnMissingResource=true` sync-options annotation (builtin/core groups and OpenShift/OKD-exclusive API groups — e.g. `route.openshift.io`, `config.openshift.io` — are always exempt; OpenShift-_default_-but-portable groups that also ship on non-OpenShift clusters — e.g. Prometheus Operator, OLM, Gateway API, Multus/OVN-Kubernetes CNI — are only exempt with `--assume-openshift`) |
+| `image-checksum`   | `pkg/validator/static/image`       | Doc     | Every OCI image reference is pinned to a `sha256:` digest, not just a tag                                                                                                                                                                                                                                                                                                                                                                             |
+| `image-fqdn`       | `pkg/validator/static/image`       | Doc     | Every OCI image reference uses an explicit, fully-qualified registry host (no bare shortnames such as `nginx:latest`)                                                                                                                                                                                                                                                                                                                                 |
+| `named-ports`      | `pkg/validator/static/namedport`   | Doc     | Container/Service ports are named, not numeric, everywhere they're referenced                                                                                                                                                                                                                                                                                                                                                                         |
+| `podspec-defaults` | `pkg/validator/static/podspec`     | Doc     | Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...) and container `securityContext`/`resources.requests`/`resources.limits` are all set                                                                                                                                                                                                                                                                                            |
+| `placeholder`      | `pkg/validator/static/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML (AVP-scheme secret-reference tokens like `<path:...>` are deliberately not flagged — see below)                                                                                                                                                                                                                                 |
+| `cluster-identity` | `pkg/validator/static/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID)                                                                                                                                                                    |
 
 #### Runtime validation checks (admission rules)
 
@@ -1443,14 +1443,14 @@ whether it **blocks** is decided per-resource — see
 Namespace-scoped resources declare `metadata.namespace`; cluster-scoped
 resources don't (except build-time-only Kustomize control objects).
 
-- **Package:** `pkg/validator/namespace`
+- **Package:** `pkg/validator/static/namespace`
 - **Scope:** Doc
 
 #### `psa-labels`
 
 Pod Security Admission namespace labels.
 
-- **Package:** `pkg/validator/psa`
+- **Package:** `pkg/validator/static/psa`
 - **Scope:** Doc
 
 `psa-labels` findings are suppressed when every one of that finding's
@@ -1466,21 +1466,21 @@ A `ClusterRole` carrying an aggregate-to-view/cluster-reader label only
 grants read-only verbs (with a narrow, exact-match allowlist for a
 handful of known exceptions).
 
-- **Package:** `pkg/validator/rbac`
+- **Package:** `pkg/validator/static/rbac`
 - **Scope:** Doc
 
 #### `rbac-wildcards`
 
 No `"*"` in `verbs`/`resources`/`apiGroups` on `Role`/`ClusterRole`.
 
-- **Package:** `pkg/validator/rbac`
+- **Package:** `pkg/validator/static/rbac`
 - **Scope:** Doc
 
 #### `crb`
 
 `ClusterRoleBinding` subject namespace sanity.
 
-- **Package:** `pkg/validator/crb`
+- **Package:** `pkg/validator/static/crb`
 - **Scope:** Doc
 
 #### `sync-options`
@@ -1488,7 +1488,7 @@ No `"*"` in `verbs`/`resources`/`apiGroups` on `Role`/`ClusterRole`.
 Non-builtin API-group resources carry the ArgoCD
 `SkipDryRunOnMissingResource=true` sync-options annotation.
 
-- **Package:** `pkg/validator/syncopts`
+- **Package:** `pkg/validator/static/syncopts`
 - **Scope:** Doc
 - **Exemptions:** builtin/core groups and OpenShift/OKD-exclusive API
   groups (e.g. `route.openshift.io`, `config.openshift.io`) are always
@@ -1516,7 +1516,7 @@ every tag/digest of that repo - so the exemption survives a Renovate
 tag bump instead of needing to be updated every time. See
 [EXEMPTIONS.md](EXEMPTIONS.md#1-annotation-exemption).
 
-- **Package:** `pkg/validator/image`
+- **Package:** `pkg/validator/static/image`
 - **Scope:** Doc
 
 #### `image-fqdn`
@@ -1535,7 +1535,7 @@ exception (e.g. an OpenShift ImageStream-triggered bare reference) should
 get a targeted skip in the check itself rather than a manual escape
 hatch.
 
-- **Package:** `pkg/validator/image`
+- **Package:** `pkg/validator/static/image`
 - **Scope:** Doc
 
 #### `named-ports`
@@ -1543,7 +1543,7 @@ hatch.
 Container/Service ports are named, not numeric, everywhere they're
 referenced.
 
-- **Package:** `pkg/validator/namedport`
+- **Package:** `pkg/validator/static/namedport`
 - **Scope:** Doc
 
 #### `podspec-defaults`
@@ -1552,7 +1552,7 @@ Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...)
 and container `securityContext`/`resources.requests`/`resources.limits`
 are all set.
 
-- **Package:** `pkg/validator/podspec`
+- **Package:** `pkg/validator/static/podspec`
 - **Scope:** Doc
 
 #### `placeholder`
@@ -1560,7 +1560,7 @@ are all set.
 No unresolved `<PLACEHOLDER>`-style tokens or sentinel words
 (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML.
 
-- **Package:** `pkg/validator/placeholder`
+- **Package:** `pkg/validator/static/placeholder`
 - **Scope:** Doc
 
 `placeholder` skips `CustomResourceDefinition` documents

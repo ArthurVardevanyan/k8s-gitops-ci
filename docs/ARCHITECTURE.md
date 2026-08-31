@@ -160,7 +160,7 @@ canonical reference for:
 - **Exported override vars** — compile-time org data injection (e.g.
   `pkg/lint/kyverno`'s `ExcludedRules`, `pkg/validator`'s `TektonPACDir`).
 - The **"core data + org-injectable override"** map pattern (e.g.
-  `pkg/validator/namespace`'s resource-scope maps).
+  `pkg/validator/static/namespace`'s resource-scope maps).
 - The **generic check-enablement mechanism**
   (`Options.DisabledChecks`/`EnabledChecks` + `stepEnabled`/
   `defaultOffSteps` in `pkg/validator/phases.go`).

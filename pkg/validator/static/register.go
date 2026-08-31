@@ -17,7 +17,7 @@
 // package) can access cluster metadata without importing the top-level
 // validator package directly. clusterid lives here for the same reason as
 // the other engines: it is check.Register-driven (via ClusterIdentityAdapter,
-// registered below), exactly like the 9 engines already in this package -
+// registered below), exactly like the other 9 engines in this package -
 // it previously sat top-level as pkg/validator/clusterid despite that,
 // which was the second (and equally unjustified) exception to "static/ is
 // the registered-engine package" alongside nad's real one, before this
