@@ -354,6 +354,25 @@ func TestRuntimeSectionGroupsByFamily(t *testing.T) {
 		t.Errorf("multi-family intro does not point at the per-family headings:\n%s", multi.Body)
 	}
 
+	// The case neither previous commit covered: one family, but not the one the
+	// API server enforces. Keying the intro on the family count alone sends
+	// this down the same branch as a kubernetes-only run and credits the API
+	// server with a rule it has never seen. It renders no family headings
+	// either, so it must not borrow the multi-family sentence and point at
+	// headings that do not exist.
+	lone := ComposeRuntimeValidationSection([]check.Finding{
+		mk("example/net-attach-def/config-invalid", "NetworkAttachmentDefinition"),
+	})
+	if strings.Contains(lone.Body, intro) {
+		t.Errorf("a lone non-kubernetes family is described as enforced by the API server:\n%s", lone.Body)
+	}
+	if strings.Contains(lone.Body, "Each family below") {
+		t.Errorf("a lone non-kubernetes family points at per-family headings it never renders:\n%s", lone.Body)
+	}
+	if !strings.Contains(lone.Body, "NetworkAttachmentDefinition/x") {
+		t.Errorf("a lone non-kubernetes family dropped its findings:\n%s", lone.Body)
+	}
+
 	// Both families' findings must survive the extra nesting level.
 	for _, want := range []string{"CronJob/x", "NetworkAttachmentDefinition/x"} {
 		if !strings.Contains(multi.Body, want) {

@@ -308,19 +308,26 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 	sort.Strings(families)
 	nested := len(families) > 1
 
-	// The intro can only name an enforcer when there is exactly one family to
-	// name it for. With a single family the wording stays verbatim, both
-	// because it is accurate - every check shipping today is a port of
-	// Kubernetes' own validation - and because it keeps a report identical to
-	// one from before check IDs grew a family segment. With several families
-	// the same sentence would claim the API server enforces rules it has
-	// never seen, so the enforcement claim moves to the per-family headings,
-	// which state it one family at a time.
+	// Only the kubernetes family is enforced by the API server, so only a run
+	// consisting solely of that family may say so. Keying this on the family
+	// count instead of the family itself would hand the Kubernetes sentence to
+	// a lone non-kubernetes family and misattribute enforcement outright.
+	//
+	// The three cases differ in what they can honestly promise. A
+	// kubernetes-only run keeps the sentence verbatim: it is accurate, and it
+	// keeps a report identical to one from before check IDs grew a family
+	// segment. A multi-family run defers the enforcement claim to the
+	// per-family headings, which state it one family at a time. A lone
+	// non-kubernetes family renders no headings at all, so it can neither name
+	// the API server nor point at headings that will not exist.
 	var b strings.Builder
-	if nested {
+	switch {
+	case nested:
 		b.WriteString("These are structural/runtime validation rules enforced by the cluster. Each family below names what enforces it. Findings here indicate manifests that would be rejected.\n\n")
-	} else {
+	case families[0] == runtimeFamilyKubernetes:
 		b.WriteString("These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject.\n\n")
+	default:
+		b.WriteString("These are structural/runtime validation rules enforced by the cluster. Findings here indicate manifests that would be rejected.\n\n")
 	}
 
 	for _, fam := range families {
@@ -353,11 +360,16 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 // runtimeFamilyTitle renders a family key as a report heading, including what
 // its findings actually guarantee - the qualifier that distinguishes the
 // families and the only reason the family level is rendered at all.
+// runtimeFamilyKubernetes is the one family whose rules the API server itself
+// enforces, which is what both the section intro and the family heading below
+// key their enforcement wording on.
+const runtimeFamilyKubernetes = "kubernetes"
+
 func runtimeFamilyTitle(family string) string {
 	switch family {
 	case "":
 		return "Runtime"
-	case "kubernetes":
+	case runtimeFamilyKubernetes:
 		return "Kubernetes — rejected by the API server"
 	default:
 		return displayName(family)
