@@ -44,6 +44,8 @@ import (
 	"strings"
 
 	kyaml "k8s.io/apimachinery/pkg/util/yaml"
+
+	k8scni "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/k8scni"
 )
 
 // knownCNITypes are the CNI plugin types shipped/supported on OpenShift for
@@ -103,42 +105,6 @@ type nadDoc struct {
 	Spec struct {
 		Config json.RawMessage `json:"config"`
 	} `json:"spec"`
-}
-
-// ipamProbe extracts an IPAM plugin's type without asserting the rest of its
-// (plugin-specific) shape.
-type ipamProbe struct {
-	Type string `json:"type"`
-}
-
-// pluginProbe is one entry of a CNI conflist's plugins array. IPAM is kept raw
-// so a plugin-specific IPAM block never breaks decoding.
-type pluginProbe struct {
-	Type string          `json:"type"`
-	IPAM json.RawMessage `json:"ipam"`
-}
-
-// cniProbe is the subset of a (stringified) CNI netconf needed to dispatch
-// validation by plugin type. It accepts both a single plugin config (top-level
-// type/ipam) and a conflist (plugins[]).
-type cniProbe struct {
-	CNIVersion string          `json:"cniVersion"`
-	Type       string          `json:"type"`
-	IPAM       json.RawMessage `json:"ipam"`
-	Plugins    []pluginProbe   `json:"plugins"`
-}
-
-// ipamTypeOf best-effort extracts an ipam.type from a raw IPAM block. A
-// non-object or absent block yields "".
-func ipamTypeOf(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var i ipamProbe
-	if err := json.Unmarshal(raw, &i); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(i.Type)
 }
 
 // configString asserts that the NAD's spec.config is a JSON string and returns
@@ -269,30 +235,26 @@ func validateNAD(path string, doc nadDoc) (warns []ValidationError) {
 	}
 
 	cfg, err := configString(doc)
-	if err != nil || strings.TrimSpace(cfg) == "" {
-		return warns
-	}
-	if !json.Valid([]byte(cfg)) {
-		return warns
-	}
-	var probe cniProbe
-	if err := json.Unmarshal([]byte(cfg), &probe); err != nil {
+	if err != nil {
 		return warns
 	}
 
-	// Resolve the effective plugin type and ipam from either shape (a conflist
-	// dispatches on its first plugin, like ovn-kubernetes' own parser).
-	cniType := strings.TrimSpace(probe.Type)
-	ipam := ipamTypeOf(probe.IPAM)
-	if len(probe.Plugins) > 0 {
-		cniType = strings.TrimSpace(probe.Plugins[0].Type)
-		ipam = ipamTypeOf(probe.Plugins[0].IPAM)
-		for _, p := range probe.Plugins {
-			if strings.TrimSpace(p.Type) == "" {
-				return warns
-			}
-		}
+	// The same parser the config-invalid runtime check uses, rather than a
+	// second implementation of it. Re-parsing here meant the two tiers could
+	// judge a different value for one NAD: a config this package read well
+	// enough to call the plugin type unrecognized, while the runtime check
+	// could not read it at all, produced an advisory about a config that had
+	// already been reported as unparseable.
+	//
+	// Deferring to it also means an unreadable config yields nothing here.
+	// That is deliberate - describing the contents of a config that does not
+	// parse is guesswork, and the runtime check has already said so.
+	probe, err := k8scni.ProbeConfig(cfg)
+	if err != nil {
+		return warns
 	}
+	cniType := strings.TrimSpace(probe.CNIType)
+	ipam := strings.TrimSpace(probe.IPAMType)
 	if cniType == "" {
 		return warns
 	}

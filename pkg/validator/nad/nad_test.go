@@ -438,3 +438,31 @@ spec:
 		t.Errorf("expected no errors when a non-NAD object spec.config is present, got %v", errs)
 	}
 }
+
+// The advisories share the runtime check's parser rather than re-implementing
+// it. With two parsers, one NAD could be read well enough here to call its
+// plugin type unrecognized while the runtime check could not read it at all -
+// so a config already reported as unparseable also collected an advisory
+// describing contents nothing had successfully parsed.
+//
+// Both configs below are rejected by k8scni/net-attach-def/config-invalid, so
+// this layer must stay silent about them.
+func TestValidateFiles_NoAdvisoryWhenTheConfigDoesNotParse(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		config string
+	}{
+		{"empty plugins list", `{"cniVersion":"0.3.1","type":"weird-plugin","plugins":[]}`},
+		{"conflist without a name", `{"cniVersion":"0.3.1","plugins":[{"type":"weird-plugin"}]}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			errs, warns := ValidateFiles([]string{writeNAD(t, tt.config)})
+			if len(errs) != 0 {
+				t.Errorf("expected no hard errors, got %v", errs)
+			}
+			if len(warns) != 0 {
+				t.Errorf("advised on a config the runtime check cannot parse, so one NAD is described by two tiers that disagree: %v", warns)
+			}
+		})
+	}
+}

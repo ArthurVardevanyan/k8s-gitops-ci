@@ -812,10 +812,10 @@ table above:
   which is not the same as every family's rejection happening at the same
   moment:
 
-  | Family       | Rejected by                   | When                 | Conditional on |
-  | ------------ | ----------------------------- | -------------------- | -------------- |
-  | `kubernetes` | the API server                | during admission     | nothing        |
-  | `k8scni`     | the OVN-Kubernetes controller | just after admission | nothing        |
+  | Family       | Rejected by     | When                         | Conditional on |
+  | ------------ | --------------- | ---------------------------- | -------------- |
+  | `kubernetes` | the API server  | during admission             | nothing        |
+  | `k8scni`     | the CNI runtime | when the network is attached | nothing        |
 
   Both are unconditional, so both can honestly be non-exemptable. A family
   whose rejection depends on something being installed — an operator's
