@@ -125,8 +125,18 @@ func (a adapter) SkipDoc(kind string) bool {
 	return !slices.Contains(kinds, kind)
 }
 
-// NonExemptable implements check.NonExemptable. Runtime findings describe
-// manifests the API server itself rejects, so they are never suppressible.
+// NonExemptable implements check.NonExemptable. A runtime finding describes a
+// manifest the cluster rejects, so suppressing one only defers the failure to
+// sync time - the PR goes green and the apply fails instead.
+//
+// "The cluster rejects it" is what every family here must establish, but not
+// every family establishes it the same way: the kubernetes family is rejected
+// by the API server during admission, while k8scni's OVN rules are rejected by
+// a controller just after it. Both are unconditional, which is what this
+// returning a constant asserts. A family whose rejection is *conditional* -
+// an operator's webhook, which only rejects where that operator is installed -
+// could not honestly answer true here, and adding one means making this
+// per-check rather than quietly widening what the constant claims.
 func (a adapter) NonExemptable() bool {
 	return true
 }

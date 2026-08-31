@@ -465,3 +465,54 @@ func TestUnknownCheckIDsAreReported(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryRuntimeCheckHasExactlyOneRef is the cross-family half of the
+// citation requirement.
+//
+// Each family's own test can only assert the shape its upstream uses, and it
+// walks a registry containing whichever families that test binary happens to
+// link - so none of them can prove the invariant holds across all of them at
+// once. This package blank-imports every family (register_checks.go), so it is
+// the only place that walk is complete.
+//
+// Two things are deliberately *not* asserted, because they cannot reach a
+// test: a duplicate check ID panics in check.Register, and a check with no
+// UpstreamRef panics in runtime.RegisterAll. Both fail at init, so asserting
+// them again would only imply coverage this test cannot provide.
+//
+// The count comparison catches the one gap those panics leave: a check that
+// reaches the runtime-validation section without going through
+// runtime.RegisterAll at all - registered straight through check.Register, so
+// no panic fires and no citation is ever demanded of it.
+//
+// Known gap, not covered here or anywhere: an *orphan ref*, an entry left in
+// a package's upstream_refs.go whose check was renamed or deleted.
+// RegisterAll copies refs by walking checks, so an unclaimed entry is never
+// added to the global map - it is invisible to both this assertion and `task
+// verify:upstream-refs`, which only verifies what got registered. Catching it
+// needs a source-level walk of refsRoot, which the --update path already does.
+func TestEveryRuntimeCheckHasExactlyOneRef(t *testing.T) {
+	checks := runtimeChecks(t)
+
+	families := map[string]int{}
+	for _, c := range checks {
+		id := c.ID()
+		if n := strings.Count(id, "/"); n != 2 {
+			t.Errorf("check %q has %d %q separators, want 2 (<family>/<category>/<rule>)", id, n, "/")
+		}
+		families[runtimepkg.FamilyOf(id)]++
+	}
+
+	if got := len(runtimepkg.AllRefs()); got != len(checks) {
+		t.Errorf("registered %d runtime checks but %d upstream refs; a runtime check that skipped runtime.RegisterAll cites nothing",
+			len(checks), got)
+	}
+
+	// Guards the walk itself: if a family stopped registering, every
+	// assertion above would pass vacuously for it.
+	for _, want := range []string{"kubernetes", "k8scni"} {
+		if families[want] == 0 {
+			t.Errorf("no checks registered for family %q; its blank import in register_checks.go is missing", want)
+		}
+	}
+}

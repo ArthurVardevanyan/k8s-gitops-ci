@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
 // updateChecks regenerates the golden file instead of asserting against it.
@@ -70,6 +71,13 @@ func checkIdentityLines(t *testing.T) []string {
 	var out []string
 	for _, c := range check.All() {
 		if c.Section() != "runtime-validation" {
+			continue
+		}
+		// This golden file is this family's, so the walk is scoped to it
+		// explicitly rather than relying on no sibling family happening to
+		// be linked into this test binary - which would otherwise append
+		// another family's checks to it on the next `task update:checks`.
+		if runtime.FamilyOf(c.ID()) != family {
 			continue
 		}
 		kinds := "*"
