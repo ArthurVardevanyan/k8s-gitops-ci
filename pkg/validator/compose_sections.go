@@ -334,9 +334,13 @@ func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
 		byCheck := byFamily[fam]
 		depth := 1
 		if nested {
+			// Deduped, to match what the categories underneath report. The
+			// same finding arrives once per overlay it was rendered from, so
+			// summing the raw findings would leave the family heading
+			// disagreeing with its own children.
 			total := 0
 			for _, fs := range byCheck {
-				total += len(fs)
+				total += len(dedupFindingsForTable(fs))
 			}
 			fmt.Fprintf(&b, "<details open>\n<summary>%s❌ %s (%d finding(s))</summary>\n\n",
 				summaryIndent(1), runtimeFamilyTitle(fam), total)

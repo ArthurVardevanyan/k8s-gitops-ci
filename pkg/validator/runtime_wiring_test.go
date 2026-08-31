@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -378,5 +379,49 @@ func TestRuntimeSectionGroupsByFamily(t *testing.T) {
 		if !strings.Contains(multi.Body, want) {
 			t.Errorf("multi-family body dropped %q:\n%s", want, multi.Body)
 		}
+	}
+}
+
+// The family heading counts findings so a reader can see the size of a family
+// without opening it, and the categories beneath it count deduped rows,
+// because the same finding is reported once per overlay it was rendered from.
+// Summing the raw findings for the family makes the parent disagree with its
+// own children and overstates how many distinct issues exist - the exact
+// inflation dedup was added to remove.
+func TestFamilyCountMatchesItsCategories(t *testing.T) {
+	// One logical finding reported from two overlays, which dedup collapses
+	// into a single row, plus a second family so the family headings render.
+	dup := func(file string) check.Finding {
+		return runtimepkg.Finding{
+			RuleID:    "kubernetes/batch/schedule-invalid",
+			RuleTitle: "Some Rule",
+			Finding: check.Finding{
+				File: file, Kind: "CronJob", Name: "x",
+				Path: "spec.schedule", Message: "boom",
+			},
+		}.ToCheckFinding()
+	}
+	other := runtimepkg.Finding{
+		RuleID:    "example/net-attach-def/config-invalid",
+		RuleTitle: "Other Rule",
+		Finding: check.Finding{
+			File: "b.yaml", Kind: "NetworkAttachmentDefinition", Name: "y",
+			Path: "spec", Message: "bang",
+		},
+	}.ToCheckFinding()
+
+	body := ComposeRuntimeValidationSection([]check.Finding{
+		dup("overlays/a/x.yaml"), dup("overlays/b/x.yaml"), other,
+	}).Body
+
+	// The Kubernetes family holds that one deduped finding, so its heading and
+	// its single category must agree on the count.
+	re := regexp.MustCompile(`❌ Kubernetes[^(]*\((\d+) finding\(s\)\)`)
+	m := re.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("no Kubernetes family heading found:\n%s", body)
+	}
+	if m[1] != "1" {
+		t.Errorf("family heading counts %s finding(s) but its categories count 1;\nthe family total is summing raw findings instead of deduped rows:\n%s", m[1], body)
 	}
 }
