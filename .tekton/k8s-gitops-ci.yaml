@@ -588,11 +588,14 @@ spec:
                     fi
                   fi
                 else
-                  # PR event - run Goreleaser with snapshot tag using short SHA
-                  SHORT_SHA="${PARAM_REVISION:0:7}"
-                  TAG="v$(date -u +%Y%m%d%H%M%S)-pr-${PARAM_PR_NUMBER}-${SHORT_SHA}"
-                  echo "Creating snapshot release: ${TAG}"
-                  GORELEASER_CURRENT_TAG="${TAG}" goreleaser release --snapshot --skip=ko --clean
+                  # PR event - snapshot build only, no GitHub release or tag.
+                  # goreleaser build never touches GitHub (unlike release
+                  # --snapshot, which can publish untagged releases when the
+                  # tag does not exist locally). Validates that a real release
+                  # build succeeds without publishing anything (see
+                  # docs/RELEASE.md, "Release flow").
+                  echo "Creating snapshot build..."
+                  goreleaser build --snapshot --clean
                 fi
 
       - name: lint
