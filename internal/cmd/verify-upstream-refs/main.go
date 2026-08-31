@@ -35,6 +35,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/internal/upstreamref"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/k8scni"     // registers runtime checks and their refs
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes" // registers runtime checks and their refs
 )
 

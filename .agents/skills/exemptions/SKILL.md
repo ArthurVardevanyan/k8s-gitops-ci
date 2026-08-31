@@ -73,8 +73,13 @@ exemptable; neither an annotation nor a `check=` selector can match one.
 **Fix the manifest.** Never write an `EXEMPTIONS` entry for a finding in
 the Runtime Validation section.
 
-**NAD validation** (`pkg/validator/nad`) is not part of the `check.Register`
-framework at all — hard-error NAD findings are never exemptable.
+**NAD validation's structural gate and advisories** (`pkg/validator/nad`)
+are not part of the `check.Register` framework at all — hard-error
+findings are never exemptable, and advisory warnings never block in the
+first place. OVN-Kubernetes's semantic rules
+(`k8scni/net-attach-def/ovn-netconf-invalid`, `pkg/validator/runtime/k8scni`) _are_
+registered, as part of the Runtime Validation family above — same
+never-exemptable rule, same reason.
 `cluster-identity` is a deliberately non-exemptable structural bucket;
 never attempt to exempt it.
 
