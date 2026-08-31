@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	urlpkg "net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,21 +30,27 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
+
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/internal/upstreamref"
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes" // registers runtime checks and their refs
 )
 
-const rawBase = "https://raw.githubusercontent.com/kubernetes/kubernetes"
+// rawBase is a var, not a const, only so tests can point fetches at a local
+// server; nothing in the tool reassigns it.
+var rawBase = "https://raw.githubusercontent.com"
 
 func main() {
 	var (
-		tag      = flag.String("tag", "", "kubernetes/kubernetes tag to verify against (default: derived from k8s.io/api in go.mod)")
+		tag      = flag.String("tag", "", "version to verify/compute against. A tag is repo-local, so when verifying this applies only to kubernetes/kubernetes; every other repo always resolves from its own go.mod requirement. With -compute it applies to whichever repository -repo names. Default (empty): kubernetes/kubernetes resolves its own version from k8s.io/api in go.mod")
 		cacheDir = flag.String("cache", defaultCache(), "directory to cache fetched upstream sources in")
 		dump     = flag.Bool("dump", false, "print the registered refs as JSON and exit")
-		update   = flag.Bool("update", false, "record the current digest and tag for refs that changed (do this only after re-reading the upstream function)")
+		update   = flag.Bool("update", false, "record the current digest and version for refs that changed. The version recorded is whatever the repo resolves to: a release tag for kubernetes/kubernetes, and for any other repo whatever its go.mod requirement pins - a semver tag as-is, or the commit a pseudo-version names (do this only after re-reading the upstream function)")
 		compute  = flag.String("compute", "", "compute the digest for a single ref instead of verifying: -compute <path> -functions <A,B>")
 		fnList   = flag.String("functions", "", "comma-separated function names, used with -compute")
+		repoFlag = flag.String("repo", runtime.DefaultRepo, "owner/name of the upstream repository, used with -compute")
 	)
 	flag.Parse()
 
@@ -51,13 +58,17 @@ func main() {
 	// without a valid digest (RegisterAll rejects it), so the digest has to
 	// be obtainable before the table entry exists.
 	if *compute != "" {
-		tagFor := *tag
-		if tagFor == "" {
-			t, err := tagFromGoMod()
-			if err != nil {
-				fatalf("%v", err)
-			}
-			tagFor = t
+		// -repo comes straight from the command line and is then used to
+		// build a raw.githubusercontent.com URL and a cache path. Reject a
+		// malformed slug here, against the same rule the ref tables enforce,
+		// so it fails with a clear message instead of surfacing later as a
+		// confusing fetch error or a "no go.mod requirement found".
+		if err := runtime.ValidateRepo(*repoFlag); err != nil {
+			fatalf("-repo: %v", err)
+		}
+		tagFor, err := versionFor(*repoFlag, *tag)
+		if err != nil {
+			fatalf("%v", err)
 		}
 		fns := strings.Split(*fnList, ",")
 		for i := range fns {
@@ -66,8 +77,8 @@ func main() {
 		if len(fns) == 0 || fns[0] == "" {
 			fatalf("-compute requires -functions")
 		}
-		f := &fetcher{tag: tagFor, cacheDir: *cacheDir, client: &http.Client{Timeout: 60 * time.Second}}
-		src, err := f.get(*compute)
+		f := &fetcher{cacheDir: *cacheDir, client: &http.Client{Timeout: 60 * time.Second}}
+		src, err := f.get(*repoFlag, tagFor, *compute)
 		if err != nil {
 			fatalf("fetch %s: %v", *compute, err)
 		}
@@ -93,17 +104,39 @@ func main() {
 		fatalf("no runtime checks are registered - nothing to verify")
 	}
 
-	if *tag == "" {
-		t, err := tagFromGoMod()
-		if err != nil {
-			fatalf("%v", err)
-		}
-		*tag = t
+	// userTag is exactly what the user passed via -tag ("" if they didn't).
+	// It is kept separate from the per-repo versions resolved below because
+	// it is not applied uniformly: tagForRepo scopes it to
+	// kubernetes/kubernetes, since a tag names a release in one repository
+	// and nothing in any other. Every other repo resolves from its own
+	// go.mod requirement whether or not -tag was given.
+	//
+	// -compute is the exception and applies the tag to whatever -repo names,
+	// because it fetches an arbitrary ref before any ValidatedAt exists.
+	userTag := *tag
+	defaultRepoVersion, err := versionFor(runtime.DefaultRepo, userTag)
+	if err != nil {
+		fatalf("%v", err)
 	}
 
-	fmt.Printf("Verifying %d upstream reference(s) against kubernetes/kubernetes %s\n\n", len(refs), *tag)
+	fmt.Printf("Verifying %d upstream reference(s) (kubernetes/kubernetes %s; other repos resolved individually from go.mod)\n\n", len(refs), defaultRepoVersion)
 
-	f := &fetcher{tag: *tag, cacheDir: *cacheDir, client: &http.Client{Timeout: 60 * time.Second}}
+	f := &fetcher{cacheDir: *cacheDir, client: &http.Client{Timeout: 60 * time.Second}}
+
+	// versionCache memoizes each repo's resolved version (a go.mod parse
+	// per distinct repo, not per ref).
+	versionCache := map[string]string{runtime.DefaultRepo: defaultRepoVersion}
+	versionForCached := func(repo string) (string, error) {
+		if v, ok := versionCache[repo]; ok {
+			return v, nil
+		}
+		v, err := versionFor(repo, tagForRepo(repo, userTag))
+		if err != nil {
+			return "", err
+		}
+		versionCache[repo] = v
+		return v, nil
+	}
 
 	var missing, changed, stale, ok, updatedCount int
 	ids := make([]string, 0, len(refs))
@@ -115,11 +148,21 @@ func main() {
 	// Resolve every digest up front when updating, so a shared constant can
 	// be checked against all of its users rather than just the entry that
 	// happens to be written first. Fetches are cached, so this is cheap.
+	// Only RefKindRewrite refs have a digest to recompute; RefKindImport
+	// has nothing here to write back.
 	allDigests := map[string]string{}
 	if *update {
 		for _, id := range ids {
 			ref := refs[id]
-			src, err := f.get(ref.Path)
+			if ref.EffectiveKind() != runtime.RefKindRewrite {
+				continue
+			}
+			repo := ref.EffectiveRepo()
+			version, err := versionForCached(repo)
+			if err != nil {
+				continue
+			}
+			src, err := f.get(repo, version, ref.Path)
 			if err != nil {
 				continue
 			}
@@ -129,8 +172,13 @@ func main() {
 		}
 	}
 	desiredFor = func(field, id string) (string, bool) {
+		ref, ok := refs[id]
+		if !ok {
+			return "", false
+		}
 		if field == "ValidatedAt" {
-			return *tag, true
+			v, err := versionForCached(ref.EffectiveRepo())
+			return v, err == nil
 		}
 		d, ok := allDigests[id]
 		return d, ok
@@ -138,8 +186,15 @@ func main() {
 
 	for _, id := range ids {
 		ref := refs[id]
+		repo := ref.EffectiveRepo()
+		version, verr := versionForCached(repo)
+		if verr != nil {
+			missing++
+			fmt.Printf("MISSING  %s\n         resolving version for repo %q: %v\n", id, repo, verr)
+			continue
+		}
 
-		src, err := f.get(ref.Path)
+		src, err := f.get(repo, version, ref.Path)
 		if err != nil {
 			missing++
 			fmt.Printf("MISSING  %s\n         cannot fetch %s: %v\n", id, ref.Path, err)
@@ -160,51 +215,72 @@ func main() {
 			continue
 		}
 
-		switch got {
-		case ref.Digest:
+		// RefKindImport calls the cited code directly - go.mod and the
+		// compiler already pin and verify exactly what runs, so there is no
+		// recorded digest to compare against. Confirming the fetch above
+		// succeeded and every cited function actually exists there is the
+		// whole check for this kind.
+		//
+		// Deliberately an else rather than a continue: Additional citations
+		// below are resolved against their own Repo and Kind, so an import
+		// ref can carry rewrite citations that do need digest verification.
+		// Skipping ahead here dropped them silently - they were not checked
+		// and not counted, so the run still reported a clean total.
+		if ref.EffectiveKind() == runtime.RefKindImport {
 			ok++
-			if ref.ValidatedAt != *tag {
-				stale++
+		} else {
+			switch got {
+			case ref.Digest:
+				ok++
+				if !sameVersion(ref.ValidatedAt, version) {
+					stale++
+					if *update {
+						found, err := updateEntry(id, got, version)
+						if err != nil {
+							fatalf("update %s: %v", id, err)
+						}
+						if !found {
+							fatalf("update %s: no entry found in %s/**/upstream_refs.go", id, refsRoot)
+						}
+					}
+				}
+			default:
+				changed++
+				fmt.Printf("CHANGED  %s\n", id)
+				fmt.Printf("         %s %s\n", ref.Path, strings.Join(ref.Functions, ", "))
+				fmt.Printf("         validated at %s, digest %s\n", ref.ValidatedAt, short(ref.Digest))
+				fmt.Printf("         at %s, digest %s\n", version, short(got))
 				if *update {
-					found, err := updateEntry(id, got, *tag)
+					found, err := updateEntry(id, got, version)
 					if err != nil {
 						fatalf("update %s: %v", id, err)
 					}
 					if !found {
 						fatalf("update %s: no entry found in %s/**/upstream_refs.go", id, refsRoot)
 					}
+					fmt.Printf("         recorded new digest at %s\n", version)
+					changed--
+					updatedCount++
+				} else {
+					fmt.Printf("         re-read the upstream function and confirm the port is still faithful,\n")
+					fmt.Printf("         then re-run with --update to record the new digest\n")
 				}
-			}
-		default:
-			changed++
-			fmt.Printf("CHANGED  %s\n", id)
-			fmt.Printf("         %s %s\n", ref.Path, strings.Join(ref.Functions, ", "))
-			fmt.Printf("         validated at %s, digest %s\n", ref.ValidatedAt, short(ref.Digest))
-			fmt.Printf("         at %s, digest %s\n", *tag, short(got))
-			if *update {
-				found, err := updateEntry(id, got, *tag)
-				if err != nil {
-					fatalf("update %s: %v", id, err)
-				}
-				if !found {
-					fatalf("update %s: no entry found in %s/**/upstream_refs.go", id, refsRoot)
-				}
-				fmt.Printf("         recorded new digest at %s\n", *tag)
-				changed--
-				updatedCount++
-			} else {
-				fmt.Printf("         re-read the upstream function and confirm the port is still faithful,\n")
-				fmt.Printf("         then re-run with --update to record the new digest\n")
 			}
 		}
 
-		// Supporting citations are verified exactly like the primary one.
-		// A rule whose input the API server prepares before calling the
-		// function that reports the error is only as faithful as that
-		// preparation, so drift in it has to fail the build too.
+		// Supporting citations are verified exactly like the primary one,
+		// each resolved against its own Repo/Kind - an Additional entry may
+		// cite a different upstream repository than its parent.
 		for i, add := range ref.Additional {
 			label := fmt.Sprintf("%s (additional[%d])", id, i)
-			asrc, err := f.get(add.Path)
+			addRepo := add.EffectiveRepo()
+			addVersion, averr := versionForCached(addRepo)
+			if averr != nil {
+				missing++
+				fmt.Printf("MISSING  %s\n         resolving version for repo %q: %v\n", label, addRepo, averr)
+				continue
+			}
+			asrc, err := f.get(addRepo, addVersion, add.Path)
 			if err != nil {
 				missing++
 				fmt.Printf("MISSING  %s\n         cannot fetch %s: %v\n", label, add.Path, err)
@@ -216,6 +292,10 @@ func main() {
 				fmt.Printf("MISSING  %s\n         %v in %s\n", label, err, add.Path)
 				continue
 			}
+			if add.EffectiveKind() == runtime.RefKindImport {
+				ok++
+				continue
+			}
 			if agot == add.Digest {
 				ok++
 				continue
@@ -224,9 +304,18 @@ func main() {
 			fmt.Printf("CHANGED  %s\n", label)
 			fmt.Printf("         %s %s\n", add.Path, strings.Join(add.Functions, ", "))
 			fmt.Printf("         validated at %s, digest %s\n", add.ValidatedAt, short(add.Digest))
-			fmt.Printf("         at %s, digest %s\n", *tag, short(agot))
+			fmt.Printf("         at %s, digest %s\n", addVersion, short(agot))
 			fmt.Printf("         supporting citation: re-read it and update the entry by hand\n")
 		}
+	}
+
+	// Every citation must land in exactly one bucket. This is a guard
+	// against a silent skip: a control-flow path that returns early past a
+	// citation does not merely miscount, it reports a clean run for
+	// something it never checked. That is indistinguishable from success in
+	// the output, which makes it the most dangerous failure this tool has.
+	if accounted := ok + changed + missing + updatedCount; accounted != expectedCitations(refs) {
+		fatalf("internal: accounted for %d citation(s) but %d were registered; a verification path skipped a citation without reporting it", accounted, expectedCitations(refs))
 	}
 
 	fmt.Printf("\n%d ok, %d changed, %d missing", ok, changed, missing)
@@ -235,7 +324,7 @@ func main() {
 	}
 	fmt.Println()
 	if stale > 0 && !*update {
-		fmt.Printf("%d ref(s) verified clean but recorded against an older tag; --update will restamp them to %s\n", stale, *tag)
+		fmt.Printf("%d ref(s) verified clean but recorded against an older version; --update will restamp them\n", stale)
 	}
 
 	if missing > 0 || changed > 0 {
@@ -245,30 +334,116 @@ func main() {
 	fmt.Println("all upstream references verified")
 }
 
-// fetcher retrieves upstream files at a pinned tag, caching them on disk so a
-// re-run is offline and so one file backing many refs is fetched once.
+// checkCacheComponent rejects a cache-key component that filepath.Join would
+// rewrite. Join cleans its result, so any component that is empty or carries
+// a "", "." or ".." segment names a file that some *other* component triple
+// also names: ("owner/repo", "v1", "pkg/a.go"), ("owner/repo/sub/..", ...)
+// and (..., "pkg/sub/../a.go") all resolve to one path.
+//
+// The escape check below cannot catch these, because they never leave the
+// cache dir. That makes them worse than a traversal, not better: a traversal
+// fails loudly, whereas this silently serves content fetched for a different
+// repo or version and then reports it as a digest mismatch on the wrong ref.
+//
+// So the rule is stricter than "must stay inside the cache dir" - a component
+// must be the only spelling of itself.
+func checkCacheComponent(name, value string) error {
+	// One definition of the rule, shared with the ref tables, so a path the
+	// verifier rejects cannot be registered in the first place.
+	if err := runtime.ValidatePath(filepath.ToSlash(value)); err != nil {
+		return fmt.Errorf("refusing to use cache path: %s %w", name, err)
+	}
+	return nil
+}
+
+// cachePathFor joins cacheDir/repo/version/path and verifies the result
+// still lives under cacheDir, rejecting a repo, version, or path (an
+// UpstreamRef field, or a -compute/-repo flag) that is absolute or that
+// escapes via "..". filepath.Join alone cleans "." and ".." segments
+// syntactically but happily produces a path outside cacheDir if enough ".."
+// segments are present, so the cleaned result is walked back up to cacheDir
+// to confirm containment before any file I/O is attempted. An absolute
+// component is rejected explicitly rather than relied on to be neutralized
+// by Join (which only preserves a leading "/" specially for its *first*
+// argument - true today for repo/version/path here, since none of them is
+// ever first, but that's an accident of argument order, not a guarantee
+// this function should depend on).
+func cachePathFor(cacheDir, repo, version, path string) (string, error) {
+	base, err := filepath.Abs(cacheDir)
+	if err != nil {
+		return "", fmt.Errorf("resolving cache dir %q: %w", cacheDir, err)
+	}
+	// Ordered, not a map: with a map the component named in the error is
+	// whichever the iteration happened to yield, so the same bad input
+	// describes itself differently on consecutive runs.
+	for _, part := range []struct{ name, value string }{
+		{"repo", repo},
+		{"version", version},
+		{"path", path},
+	} {
+		if filepath.IsAbs(filepath.FromSlash(part.value)) {
+			return "", fmt.Errorf("refusing to use cache path: %s %q must not be absolute", part.name, part.value)
+		}
+		if err := checkCacheComponent(part.name, part.value); err != nil {
+			return "", err
+		}
+	}
+	// Rejecting rewrites is not enough on its own: the components must also
+	// have unambiguous boundaries. "/" is legal in a git ref, and
+	// (version "v1/a", path "b") and (version "v1", path "a/b") join to one
+	// path. So version is encoded as exactly one segment, and repo is
+	// required to be a valid slug, which fixes it at exactly two. With the
+	// first three segment counts fixed, the split is determined and no two
+	// distinct triples can join to the same path.
+	if err := runtime.ValidateRepo(repo); err != nil {
+		return "", fmt.Errorf("refusing to use cache path: %w", err)
+	}
+	joined := filepath.Join(base, filepath.FromSlash(repo), urlpkg.PathEscape(version), filepath.FromSlash(path))
+	rel, err := filepath.Rel(base, joined)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("refusing to use cache path %q: escapes cache dir %q (repo=%q version=%q path=%q)",
+			joined, base, repo, version, path)
+	}
+	return joined, nil
+}
+
+// fetcher retrieves upstream files at a pinned repo+version, caching them on
+// disk so a re-run is offline and so one file backing many refs is fetched
+// once. Keyed by (repo, version, path) so refs into different upstream
+// repositories never collide.
 type fetcher struct {
-	tag      string
 	cacheDir string
 	client   *http.Client
 	memo     map[string][]byte
 }
 
-func (f *fetcher) get(path string) ([]byte, error) {
+func (f *fetcher) get(repo, version, path string) ([]byte, error) {
 	if f.memo == nil {
 		f.memo = map[string][]byte{}
 	}
-	if b, ok := f.memo[path]; ok {
+	// Same boundary argument as cachePathFor: encode version as one segment
+	// so a ref containing "/" cannot make two distinct triples share a key.
+	key := repo + "@" + urlpkg.PathEscape(version) + ":" + path
+	if b, ok := f.memo[key]; ok {
 		return b, nil
 	}
 
-	cache := filepath.Join(f.cacheDir, f.tag, filepath.FromSlash(path))
+	cache, err := cachePathFor(f.cacheDir, repo, version, path)
+	if err != nil {
+		return nil, err
+	}
 	if b, err := os.ReadFile(cache); err == nil {
-		f.memo[path] = b
+		f.memo[key] = b
 		return b, nil
 	}
 
-	url := fmt.Sprintf("%s/%s/%s", rawBase, f.tag, path)
+	// version is escaped as one segment here too. In -compute mode it is an
+	// arbitrary git ref, and "#" is legal in a ref name: "feat#1" truncates
+	// the request to ".../o/r/feat" and carries the file path off into the
+	// URL fragment, so the fetch asks for something nobody named. Escaping
+	// also covers "/" refs; GitHub resolves both the literal and the
+	// percent-encoded form.
+	url := fmt.Sprintf("%s/%s/%s/%s", rawBase, repo, urlpkg.PathEscape(version), path)
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -289,7 +464,7 @@ func (f *fetcher) get(path string) ([]byte, error) {
 	if err := os.MkdirAll(filepath.Dir(cache), 0o755); err == nil {
 		_ = os.WriteFile(cache, b, 0o644)
 	}
-	f.memo[path] = b
+	f.memo[key] = b
 	return b, nil
 }
 
@@ -316,6 +491,183 @@ func tagFromGoMod() (string, error) {
 	return "", fmt.Errorf("k8s.io/api not found in go.mod")
 }
 
+// pseudoVersionCommit returns the commit a Go module pseudo-version names,
+// and whether it was one at all.
+//
+// This delegates to golang.org/x/mod, the definition Go itself uses, rather
+// than matching the format by hand. A local approximation of it has been
+// wrong twice: first by recognising only the bare vX.0.0-<ts>-<hash> form,
+// then by rejecting prerelease identifiers containing a hyphen, which SemVer
+// allows and tags like "v1.2.3-beta-1" use. Neither failure was graceful -
+// an unrecognised pseudo-version is returned whole and then used as a git
+// ref to fetch by, and no such ref exists upstream.
+func pseudoVersionCommit(v string) (string, bool) {
+	if !module.IsPseudoVersion(v) {
+		return "", false
+	}
+	rev, err := module.PseudoVersionRev(v)
+	if err != nil {
+		return "", false
+	}
+	return rev, true
+}
+
+// versionFor resolves the upstream ref (tag or commit) to fetch repo's
+// source at. If explicitTag is set it wins outright (mirroring --tag's
+// existing kubernetes/kubernetes override) - except that an explicit
+// override targeting kubernetes/kubernetes specifically must still be a real
+// Kubernetes release tag (v1.<minor>.<patch>): that repo's RefKindRewrite
+// refs can only ever record a tag shaped like that as ValidatedAt, so
+// --update would otherwise write in whatever was passed here and RegisterAll
+// would panic the next time it runs (runtime.UpstreamRef.Validate rejects
+// it) - a confusing failure far from the flag that caused it. Any other
+// repo's ValidatedAt format is looser (commit SHA, pseudo-version, or an
+// ordinary semver tag - see runtime.ValidateValidatedAt), and -compute
+// legitimately wants to fetch an arbitrary ref (a branch name, "HEAD", ...)
+// before a ValidatedAt is ever recorded for a brand-new ref, so this is not
+// guarded for non-default repos. Otherwise:
+//   - repo == runtime.DefaultRepo uses the existing k8s.io/api-derived
+//     staging-module convention (tagFromGoMod).
+//   - any other repo is resolved from its own go.mod requirement, exactly
+//     the same "bump the dependency, re-verification is forced" rationale
+//     tagFromGoMod already applies to kubernetes/kubernetes - generalized
+//     here since a citation into a second upstream project (e.g.
+//     ovn-kubernetes) is pinned the same way, just via a plain module
+//     require line instead of the staging-module version convention.
+func versionFor(repo, explicitTag string) (string, error) {
+	if explicitTag != "" {
+		if repo == runtime.DefaultRepo {
+			if err := runtime.ValidateValidatedAt(repo, explicitTag); err != nil {
+				return "", fmt.Errorf("-tag %q is not usable as %s's version: %w", explicitTag, repo, err)
+			}
+		}
+		// Normalised the same way moduleVersionForRepo normalises a go.mod
+		// requirement. The obvious thing to pass here for a non-default repo
+		// is the version string straight out of go.mod, which for an untagged
+		// dependency is a pseudo-version - and a pseudo-version is not a git
+		// ref, so raw.githubusercontent.com 404s on it while the commit it
+		// encodes fetches fine. Returning it verbatim made -tag reject a
+		// value the tool itself records.
+		if rev, ok := pseudoVersionCommit(explicitTag); ok {
+			return rev, nil
+		}
+		return explicitTag, nil
+	}
+	if repo == runtime.DefaultRepo {
+		return tagFromGoMod()
+	}
+	return moduleVersionForRepo(repo)
+}
+
+// moduleVersionForRepo finds the go.mod requirement whose module path is
+// repo (as "github.com/<repo>") or a subdirectory of it - Go modules that
+// publish from a subdirectory of their repository (e.g. ovn-kubernetes's
+// go-controller) still have their module path prefixed by the repository
+// root - and returns the git ref that requirement pins: the tag itself for
+// an ordinary semver requirement, or the trailing commit hash for a Go
+// pseudo-version (an untagged commit).
+// modulePathMatchesRepo reports whether a go.mod module path belongs to the
+// repository named by prefix ("github.com/<owner>/<name>"), either exactly or
+// as a subdirectory module such as ovn-kubernetes's go-controller.
+//
+// The comparison is case-insensitive because GitHub owner and repository
+// names are, and UpstreamRef.Repo is validated against [A-Za-z0-9_.-] without
+// being canonicalized. A ref could therefore name a repo in a different case
+// than go.mod spells it - this repository's own module path is
+// github.com/ArthurVardevanyan/k8s-gitops-ci - and pass validation only to
+// fail resolution with a "no go.mod requirement found" error that gives no
+// hint that case was the problem.
+//
+// Matching the "/" boundary explicitly keeps this from becoming a loose
+// prefix test: "SomeOrg/Some" must not match "SomeOrg/SomeRepo".
+func modulePathMatchesRepo(modPath, prefix string) bool {
+	if strings.EqualFold(modPath, prefix) {
+		return true
+	}
+	return len(modPath) > len(prefix) &&
+		modPath[len(prefix)] == '/' &&
+		strings.EqualFold(modPath[:len(prefix)], prefix)
+}
+
+// expectedCitations counts every citation a verification run must account
+// for: each ref plus each of its Additional entries, which are verified
+// individually against their own Repo and Kind.
+//
+// Nesting is one level deep by construction (UpstreamRef.Validate rejects an
+// Additional carrying its own Additional), so this does not recurse.
+func expectedCitations(refs map[string]runtime.UpstreamRef) int {
+	n := 0
+	for _, ref := range refs {
+		n += 1 + len(ref.Additional)
+	}
+	return n
+}
+
+func moduleVersionForRepo(repo string) (string, error) {
+	b, err := os.ReadFile("go.mod")
+	if err != nil {
+		return "", fmt.Errorf("read go.mod (run from the repository root): %w", err)
+	}
+	// Parsed with modfile rather than scanned line-by-line: go.mod has
+	// several requirement spellings (a parenthesized block, a standalone
+	// "require <mod> <ver>" line, a trailing "// indirect" comment) and a
+	// replace directive whose right-hand side looks exactly like a
+	// requirement. Hand-scanning got the block form right and every other
+	// form wrong.
+	f, err := modfile.Parse("go.mod", b, nil)
+	if err != nil {
+		return "", fmt.Errorf("parse go.mod: %w", err)
+	}
+	prefix := "github.com/" + repo
+	for _, req := range f.Require {
+		if !modulePathMatchesRepo(req.Mod.Path, prefix) {
+			continue
+		}
+		v := req.Mod.Version
+		if rev, ok := pseudoVersionCommit(v); ok {
+			return rev, nil
+		}
+		return v, nil
+	}
+	return "", fmt.Errorf("no go.mod requirement found for repo %q (expected module path %q or a subdirectory of it)", repo, prefix)
+}
+
+// tagForRepo scopes an explicit -tag to the only repository it can name.
+//
+// A tag is repo-local: "v1.36.3" identifies a kubernetes/kubernetes release
+// and means nothing in ovn-kubernetes. Applying one -tag to every repo would
+// send a Kubernetes tag to repos that have never had it, turning a routine
+// "verify against release X" run into a fetch failure as soon as a single
+// non-default ref is registered. Other repos keep resolving from go.mod,
+// which is the only per-repo version this tool actually knows.
+//
+// This deliberately does not change versionFor itself: -compute uses it to
+// fetch an arbitrary ref (a branch, a SHA) from an explicitly named -repo
+// before any ValidatedAt exists, and that call must keep honouring the tag.
+func tagForRepo(repo, userTag string) string {
+	if repo == runtime.DefaultRepo {
+		return userTag
+	}
+	return ""
+}
+
+// sameVersion reports whether a recorded ValidatedAt and a freshly resolved
+// version name the same upstream commit.
+//
+// They are not always spelled alike. ValidateValidatedAt lets a non-default
+// repo record a Go pseudo-version, while go.mod resolution reduces that same
+// pseudo-version to its trailing commit hash, so a correct ref compares
+// unequal to itself and is reported stale on every run, forever.
+func sameVersion(recorded, resolved string) bool {
+	if recorded == resolved {
+		return true
+	}
+	if rev, ok := pseudoVersionCommit(recorded); ok {
+		return rev == resolved
+	}
+	return false
+}
+
 func defaultCache() string {
 	base := os.Getenv("XDG_CACHE_HOME")
 	if base == "" {
@@ -332,8 +684,11 @@ func asMissing(err error, target **upstreamref.MissingError) bool {
 	return errors.As(err, target)
 }
 
-// refsRoot is where the per-package upstream_refs.go tables live.
-const refsRoot = "pkg/validator/runtime/kubernetes"
+// refsRoot is where the per-package upstream_refs.go tables live, one level
+// above the per-upstream-family directories (kubernetes/, and any sibling
+// family such as k8scni/ added later) so a new family's tables are picked up
+// without editing this constant.
+const refsRoot = "pkg/validator/runtime"
 
 // updateEntry rewrites the Digest and ValidatedAt of a single map entry in
 // the per-package upstream_refs.go tables. The entry is located by its check
@@ -452,13 +807,21 @@ func entriesReferencing(file, field, name string) []string {
 // value is reported rather than applied - silently restamping unrelated
 // checks would assert a human re-validated ports they never looked at.
 func setRefField(entry, file, field, value, id, path string) (newEntry, newFile string, err error) {
-	lit := regexp.MustCompile(field + `:(\s*)"[^"]*"`)
+	// Anchored to the entry's own indent (two tabs). An Additional citation
+	// is nested a level deeper and carries its own Digest/ValidatedAt, so an
+	// unanchored match takes whichever comes first in the source. Field order
+	// within a struct literal is arbitrary and gofmt will not normalise it,
+	// so an entry that simply declares Additional before Digest would have
+	// had the parent's digest written into the supporting citation - blanking
+	// a citation nobody re-read while leaving the real one stale.
+	lit := regexp.MustCompile(`(?m)^\t\t` + field + `:(\s*)"[^"]*"`)
 	if loc := lit.FindStringSubmatchIndex(entry); loc != nil {
 		pad := entry[loc[2]:loc[3]]
-		return entry[:loc[0]] + field + ":" + pad + strconv.Quote(value) + entry[loc[1]:], file, nil
+		// loc[0] includes the anchored indent, so re-emit it.
+		return entry[:loc[0]] + "\t\t" + field + ":" + pad + strconv.Quote(value) + entry[loc[1]:], file, nil
 	}
 
-	ident := regexp.MustCompile(field + `:(\s*)([A-Za-z_][A-Za-z0-9_]*)`)
+	ident := regexp.MustCompile(`(?m)^\t\t` + field + `:(\s*)([A-Za-z_][A-Za-z0-9_]*)`)
 	loc := ident.FindStringSubmatchIndex(entry)
 	if loc == nil {
 		return entry, file, fmt.Errorf("%s: entry %s has no %s field to update", path, id, field)
