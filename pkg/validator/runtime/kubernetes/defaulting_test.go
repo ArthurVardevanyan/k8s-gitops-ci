@@ -85,25 +85,25 @@ func TestExplicitlyEmptyDefaultedFields(t *testing.T) {
 		{
 			file: "netpol.yaml",
 			kind: "NetworkPolicy",
-			want: []string{"network-policy/protocol-invalid"},
+			want: []string{"kubernetes/network-policy/protocol-invalid"},
 			why:  "SetDefaults_NetworkPolicyPort guards Protocol on == nil",
 		},
 		{
 			file: "pv.yaml",
 			kind: "PersistentVolume",
-			want: []string{"persistent-volume/volume-mode-invalid"},
+			want: []string{"kubernetes/persistent-volume/volume-mode-invalid"},
 			why:  "SetDefaults_PersistentVolume guards VolumeMode on == nil",
 		},
 		{
 			file: "pvc.yaml",
 			kind: "PersistentVolumeClaim",
-			want: []string{"persistent-volume-claim/volume-mode-invalid"},
+			want: []string{"kubernetes/persistent-volume-claim/volume-mode-invalid"},
 			why:  "SetDefaults_PersistentVolumeClaimSpec guards VolumeMode on == nil",
 		},
 		{
 			file: "sc.yaml",
 			kind: "StorageClass",
-			want: []string{"storage-class/volume-binding-mode-invalid"},
+			want: []string{"kubernetes/storage-class/volume-binding-mode-invalid"},
 			// The fixture sets reclaimPolicy: "" - explicitly empty, not
 			// omitted - and it is deliberately absent from want above.
 			// Surviving defaulting is only half the question: both fields
@@ -119,7 +119,7 @@ func TestExplicitlyEmptyDefaultedFields(t *testing.T) {
 		{
 			file: "vwc.yaml",
 			kind: "ValidatingWebhookConfiguration",
-			want: []string{"admissionregistration/validating-failure-policy-invalid"},
+			want: []string{"kubernetes/admissionregistration/validating-failure-policy-invalid"},
 			why:  "SetDefaults_ValidatingWebhook guards FailurePolicy on == nil",
 		},
 	}

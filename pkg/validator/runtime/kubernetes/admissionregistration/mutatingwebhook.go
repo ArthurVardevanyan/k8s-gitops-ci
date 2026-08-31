@@ -6,9 +6,9 @@ var mutatingWebhookKinds = []string{"MutatingWebhookConfiguration"}
 
 // mutatingWebhookBase parameterizes the shared webhook checks (see webhook.go)
 // for MutatingWebhookConfiguration. Its checks keep the un-prefixed check IDs:
-// admissionregistration/service-invalid,
-// admissionregistration/failure-policy-invalid and
-// admissionregistration/timeout-invalid.
+// kubernetes/admissionregistration/service-invalid,
+// kubernetes/admissionregistration/failure-policy-invalid and
+// kubernetes/admissionregistration/timeout-invalid.
 var mutatingWebhookBase = webhookCheckBase{
 	idPrefix: "",
 	kind:     "MutatingWebhookConfiguration",

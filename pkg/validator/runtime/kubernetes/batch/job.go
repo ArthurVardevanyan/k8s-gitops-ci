@@ -10,7 +10,7 @@ type parallelismInvalidCheck struct{ runtime.Meta }
 
 func newParallelismInvalidCheck() parallelismInvalidCheck {
 	return parallelismInvalidCheck{runtime.Meta{
-		RuleID:    "batch/parallelism-invalid",
+		RuleID:    "kubernetes/batch/parallelism-invalid",
 		RuleTitle: "Parallelism Must Be >= 0",
 		AppliesTo: []string{"Job"},
 	}}
@@ -28,7 +28,7 @@ type backoffLimitInvalidCheck struct{ runtime.Meta }
 
 func newBackoffLimitInvalidCheck() backoffLimitInvalidCheck {
 	return backoffLimitInvalidCheck{runtime.Meta{
-		RuleID:    "batch/backoff-limit-invalid",
+		RuleID:    "kubernetes/batch/backoff-limit-invalid",
 		RuleTitle: "BackoffLimit Must Be >= 0",
 		AppliesTo: []string{"Job"},
 	}}

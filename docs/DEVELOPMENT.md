@@ -269,6 +269,15 @@ per step:
 - `pkg/validator/phases.go`'s `defaultOffSteps` map is the single place
   that lists which IDs default off; `stepEnabled(id, disabled, enabled)`
   is the shared decision function every gateable step calls.
+- An ID in either list that matches no step and no registered check has no
+  effect, and `warnUnknownCheckIDs` logs a warning saying so. Both ways of
+  getting an ID wrong — a typo, and an ID that used to exist — otherwise
+  look exactly like a working config. The second matters on upgrade: a
+  check disabled by an ID whose shape later changes is silently re-enabled,
+  and for an always-blocking family that surfaces as a pipeline failing
+  with nothing pointing at the stale configuration. It warns rather than
+  fails, since one config may be shared across repos on different tool
+  versions, where an ID unknown here is valid elsewhere.
 
 Add a new ID to `defaultOffSteps` only when a feature has no sane generic
 default an arbitrary org could run out of the box — this is not a

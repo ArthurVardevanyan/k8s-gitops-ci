@@ -19,7 +19,7 @@ type roleBindingRoleRefInvalidCheck struct{ runtime.Meta }
 
 func newRoleBindingRoleRefInvalidCheck() roleBindingRoleRefInvalidCheck {
 	return roleBindingRoleRefInvalidCheck{runtime.Meta{
-		RuleID:    "rbac/role-ref-invalid",
+		RuleID:    "kubernetes/rbac/role-ref-invalid",
 		RuleTitle: "RoleBinding roleRef Must Be Valid",
 		AppliesTo: roleBindingKinds,
 	}}

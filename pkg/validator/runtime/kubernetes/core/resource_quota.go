@@ -18,7 +18,7 @@ type resourceQuotaHardInvalidCheck struct{ runtime.Meta }
 
 func newResourceQuotaHardInvalidCheck() resourceQuotaHardInvalidCheck {
 	return resourceQuotaHardInvalidCheck{runtime.Meta{
-		RuleID:    "core/resourcequota-hard-invalid",
+		RuleID:    "kubernetes/core/resourcequota-hard-invalid",
 		RuleTitle: "ResourceQuota Hard Values Must Be Valid Resources",
 		AppliesTo: resourceQuotaKinds,
 	}}
@@ -57,7 +57,7 @@ type resourceQuotaHardNegativeCheck struct{ runtime.Meta }
 
 func newResourceQuotaHardNegativeCheck() resourceQuotaHardNegativeCheck {
 	return resourceQuotaHardNegativeCheck{runtime.Meta{
-		RuleID:    "core/resourcequota-hard-negative",
+		RuleID:    "kubernetes/core/resourcequota-hard-negative",
 		RuleTitle: "ResourceQuota Hard Values Must Not Be Negative",
 		AppliesTo: resourceQuotaKinds,
 	}}

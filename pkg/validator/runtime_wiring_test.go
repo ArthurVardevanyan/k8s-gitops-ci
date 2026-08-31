@@ -1,9 +1,11 @@
 package validator
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtimepkg "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 
@@ -39,7 +41,7 @@ func runtimeChecks(t *testing.T) []check.Check {
 // TestRuntimeFindingCheckIDResolvesInRegistry is the direct regression test
 // for the family being inert. Findings carried the broad Category ("batch")
 // as their CheckID, but checks register under their rule ID
-// ("batch/schedule-invalid"), so check.ByID missed on every finding.
+// ("kubernetes/batch/schedule-invalid"), so check.ByID missed on every finding.
 func TestRuntimeFindingCheckIDResolvesInRegistry(t *testing.T) {
 	for _, c := range runtimeChecks(t) {
 		f := runtimepkg.Finding{
@@ -96,7 +98,7 @@ func TestRuntimeFindingsAreClassifiedAsRuntime(t *testing.T) {
 // test at all, which is why nobody noticed it was never being called.
 func TestRuntimeValidationSectionRenders(t *testing.T) {
 	f := runtimepkg.Finding{
-		RuleID:    "batch/schedule-invalid",
+		RuleID:    "kubernetes/batch/schedule-invalid",
 		RuleTitle: "CronJob Schedule Must Be Valid",
 		Finding: check.Finding{
 			File:    "overlays/prod/cronjob.yaml",
@@ -133,8 +135,8 @@ func TestRuntimeSectionGroupsByCategory(t *testing.T) {
 		}.ToCheckFinding()
 	}
 	sec := ComposeRuntimeValidationSection([]check.Finding{
-		mk("batch/schedule-invalid"),
-		mk("batch/parallelism-invalid"),
+		mk("kubernetes/batch/schedule-invalid"),
+		mk("kubernetes/batch/parallelism-invalid"),
 	})
 
 	if n := strings.Count(sec.Body, "<details>"); n != 1 {
@@ -164,26 +166,34 @@ func TestRuntimeChecksAreNonExemptable(t *testing.T) {
 	}
 }
 
-// TestRuntimeFindingsCarryTheirCategory pins the report's grouping key for
+// TestRuntimeFindingsCarryTheirCategory pins the report's grouping keys for
 // every check at once.
 //
-// The category is derived from the rule ID's prefix rather than stored, so
-// the thing that can actually break is an ID with no prefix to derive from:
-// CategoryOf would hand back the whole ID and the report would grow a
-// one-off group named after a single rule. Asserting the ID is namespaced
-// and that the category survives into Extra covers both halves.
+// Family and category are derived from the rule ID rather than stored, so the
+// thing that can actually break is an ID without enough segments to derive
+// them from: CategoryOf would hand back the family and the report would grow
+// a group named after a whole family rather than one of its categories.
+// Asserting the ID is "<family>/<category>/<rule>" and that both keys survive
+// into Extra covers every half.
 func TestRuntimeFindingsCarryTheirCategory(t *testing.T) {
 	for _, c := range runtimeChecks(t) {
 		id := c.ID()
-		group, _, ok := strings.Cut(id, "/")
-		if !ok || group == "" {
-			t.Errorf("check %q has no %q-separated category prefix, so its findings would group under the rule itself", id, "/")
+		parts := strings.Split(id, "/")
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] == "" {
+			t.Errorf("check %q is not %q, so its findings would group under a family or the rule itself", id, "<family>/<category>/<rule>")
 			continue
+		}
+		family, group := parts[0], parts[1]
+		if got := runtimepkg.FamilyOf(id); got != family {
+			t.Errorf("check %q: FamilyOf = %q, want %q", id, got, family)
 		}
 		if got := runtimepkg.CategoryOf(id); got != group {
 			t.Errorf("check %q: CategoryOf = %q, want %q", id, got, group)
 		}
 		f := runtimepkg.Finding{RuleID: id, RuleTitle: c.Title()}.ToCheckFinding()
+		if got := f.Extra["family"]; got != family {
+			t.Errorf("check %q: finding family = %q, want %q; the report groups on this", id, got, family)
+		}
 		if got := f.Extra["category"]; got != group {
 			t.Errorf("check %q: finding category = %q, want %q; the report groups on this", id, got, group)
 		}
@@ -201,7 +211,7 @@ func TestRuntimeFindingsCarryTheirCategory(t *testing.T) {
 func TestRuntimeSectionRendersRuleAndCitation(t *testing.T) {
 	mk := func(file string) check.Finding {
 		return runtimepkg.Finding{
-			RuleID:    "batch/schedule-invalid",
+			RuleID:    "kubernetes/batch/schedule-invalid",
 			RuleTitle: "CronJob Schedule Must Be Valid",
 			Finding: check.Finding{
 				File:    file,
@@ -216,11 +226,11 @@ func TestRuntimeSectionRendersRuleAndCitation(t *testing.T) {
 	sec := ComposeRuntimeValidationSection([]check.Finding{mk("a.yaml")})
 
 	for _, want := range []string{
-		"batch/schedule-invalid",    // which rule fired
-		"CronJob/nightly",           // which resource
-		"spec.schedule",             // which field
-		"pkg/apis/batch/validation", // the upstream citation
-		"invalid cron expression",   // the message
+		"kubernetes/batch/schedule-invalid", // which rule fired
+		"CronJob/nightly",                   // which resource
+		"spec.schedule",                     // which field
+		"pkg/apis/batch/validation",         // the upstream citation
+		"invalid cron expression",           // the message
 	} {
 		if !strings.Contains(sec.Body, want) {
 			t.Errorf("section body omits %q:\n%s", want, sec.Body)
@@ -279,5 +289,179 @@ func TestRuntimeSectionCellsSurviveHostileValues(t *testing.T) {
 	}
 	if strings.Contains(sec.Body, "invalid | value") {
 		t.Errorf("an embedded pipe was left unescaped:\n%s", sec.Body)
+	}
+}
+
+// TestRuntimeSectionGroupsByFamily pins both halves of the family level:
+// it is omitted for a single family and rendered for more than one.
+//
+// The omission is the half worth guarding. Wrapping a lone family in a
+// <details> whose only child is the section's entire content adds a click and
+// says nothing, and every run today has exactly one family - so a regression
+// here would degrade every report while the multi-family path, which nothing
+// yet exercises, stayed green.
+func TestRuntimeSectionGroupsByFamily(t *testing.T) {
+	mk := func(ruleID, kind string) check.Finding {
+		return runtimepkg.Finding{
+			RuleID:    ruleID,
+			RuleTitle: "Some Rule",
+			Finding: check.Finding{
+				File: "a.yaml", Kind: kind, Name: "x",
+				Path: "spec", Message: "boom",
+			},
+		}.ToCheckFinding()
+	}
+
+	single := ComposeRuntimeValidationSection([]check.Finding{
+		mk("kubernetes/batch/schedule-invalid", "CronJob"),
+	})
+	if strings.Contains(single.Body, "rejected by the API server") {
+		t.Errorf("single family rendered a family wrapper:\n%s", single.Body)
+	}
+
+	// The whole claim of the family change is that a single-family run - which
+	// is every run today, since every registered check is in the kubernetes
+	// family - renders exactly as it did before. A family wrapper is the
+	// obvious way to break that, but so is quietly generalising the intro to
+	// suit families that do not exist yet. Pin the sentence verbatim: it is
+	// accurate precisely because the only family shipping is one the API
+	// server does enforce, and it should not change until that stops being
+	// true.
+	const intro = "These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject."
+	if !strings.Contains(single.Body, intro) {
+		t.Errorf("single-family intro changed; a report from this branch no longer\ndiffers from its base only in check IDs.\nwant: %s\ngot:\n%s", intro, single.Body)
+	}
+
+	multi := ComposeRuntimeValidationSection([]check.Finding{
+		mk("kubernetes/batch/schedule-invalid", "CronJob"),
+		mk("example/net-attach-def/config-invalid", "NetworkAttachmentDefinition"),
+	})
+	for _, want := range []string{
+		"Kubernetes — rejected by the API server", // the qualifier itself
+		"Example", // a family with no bespoke title
+	} {
+		if !strings.Contains(multi.Body, want) {
+			t.Errorf("multi-family body omits %q:\n%s", want, multi.Body)
+		}
+	}
+
+	// The counterpart to pinning the single-family intro: the same sentence in
+	// a multi-family report would credit the API server with enforcing rules it
+	// has never seen. The enforcement claim belongs to the per-family headings
+	// there, which is why the qualifier is asserted above.
+	if strings.Contains(multi.Body, intro) {
+		t.Errorf("multi-family report claims every family is enforced by the API server:\n%s", multi.Body)
+	}
+	if !strings.Contains(multi.Body, "Each family below names what enforces it") {
+		t.Errorf("multi-family intro does not point at the per-family headings:\n%s", multi.Body)
+	}
+
+	// The case neither previous commit covered: one family, but not the one the
+	// API server enforces. Keying the intro on the family count alone sends
+	// this down the same branch as a kubernetes-only run and credits the API
+	// server with a rule it has never seen. It renders no family headings
+	// either, so it must not borrow the multi-family sentence and point at
+	// headings that do not exist.
+	lone := ComposeRuntimeValidationSection([]check.Finding{
+		mk("example/net-attach-def/config-invalid", "NetworkAttachmentDefinition"),
+	})
+	if strings.Contains(lone.Body, intro) {
+		t.Errorf("a lone non-kubernetes family is described as enforced by the API server:\n%s", lone.Body)
+	}
+	if strings.Contains(lone.Body, "Each family below") {
+		t.Errorf("a lone non-kubernetes family points at per-family headings it never renders:\n%s", lone.Body)
+	}
+	if !strings.Contains(lone.Body, "NetworkAttachmentDefinition/x") {
+		t.Errorf("a lone non-kubernetes family dropped its findings:\n%s", lone.Body)
+	}
+
+	// Both families' findings must survive the extra nesting level.
+	for _, want := range []string{"CronJob/x", "NetworkAttachmentDefinition/x"} {
+		if !strings.Contains(multi.Body, want) {
+			t.Errorf("multi-family body dropped %q:\n%s", want, multi.Body)
+		}
+	}
+}
+
+// The family heading counts findings so a reader can see the size of a family
+// without opening it, and the categories beneath it count deduped rows,
+// because the same finding is reported once per overlay it was rendered from.
+// Summing the raw findings for the family makes the parent disagree with its
+// own children and overstates how many distinct issues exist - the exact
+// inflation dedup was added to remove.
+func TestFamilyCountMatchesItsCategories(t *testing.T) {
+	// One logical finding reported from two overlays, which dedup collapses
+	// into a single row, plus a second family so the family headings render.
+	dup := func(file string) check.Finding {
+		return runtimepkg.Finding{
+			RuleID:    "kubernetes/batch/schedule-invalid",
+			RuleTitle: "Some Rule",
+			Finding: check.Finding{
+				File: file, Kind: "CronJob", Name: "x",
+				Path: "spec.schedule", Message: "boom",
+			},
+		}.ToCheckFinding()
+	}
+	other := runtimepkg.Finding{
+		RuleID:    "example/net-attach-def/config-invalid",
+		RuleTitle: "Other Rule",
+		Finding: check.Finding{
+			File: "b.yaml", Kind: "NetworkAttachmentDefinition", Name: "y",
+			Path: "spec", Message: "bang",
+		},
+	}.ToCheckFinding()
+
+	body := ComposeRuntimeValidationSection([]check.Finding{
+		dup("overlays/a/x.yaml"), dup("overlays/b/x.yaml"), other,
+	}).Body
+
+	// The Kubernetes family holds that one deduped finding, so its heading and
+	// its single category must agree on the count.
+	re := regexp.MustCompile(`❌ Kubernetes[^(]*\((\d+) finding\(s\)\)`)
+	m := re.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("no Kubernetes family heading found:\n%s", body)
+	}
+	if m[1] != "1" {
+		t.Errorf("family heading counts %s finding(s) but its categories count 1;\nthe family total is summing raw findings instead of deduped rows:\n%s", m[1], body)
+	}
+}
+
+// An ID that matches nothing is silently ignored, so a config disabling a
+// check by an ID that has since changed shape looks identical to one that
+// works - while the check it named quietly starts running again. Runtime
+// checks are always-blocking, so that lands as a pipeline failing for a
+// reason nothing in the output connects to the stale config.
+func TestUnknownCheckIDsAreReported(t *testing.T) {
+	// A real registered runtime check, and the 2-segment form of the same ID
+	// that a config written before check IDs carried a family would have used.
+	var current string
+	for _, c := range check.All() {
+		if strings.HasPrefix(c.ID(), "kubernetes/batch/") {
+			current = c.ID()
+			break
+		}
+	}
+	if current == "" {
+		t.Fatal("no kubernetes/batch check registered")
+	}
+	stale := strings.TrimPrefix(current, "kubernetes/")
+
+	log := logger.NewLogger(false, "")
+	warnUnknownCheckIDs(Options{
+		DisabledChecks: []string{current, stale, "markdownlint"},
+		EnabledChecks:  []string{"kyverno"},
+	}, log)
+	out := strings.Join(log.Warnings(), "\n")
+
+	if !strings.Contains(out, stale) {
+		t.Errorf("the stale pre-family ID %q was not reported:\n%s", stale, out)
+	}
+	// A valid check ID, a valid step ID and a valid default-off step must not
+	// warn, or the warning is noise that gets ignored.
+	for _, quiet := range []string{current, "markdownlint", "kyverno"} {
+		if strings.Contains(out, quiet) {
+			t.Errorf("valid ID %q was reported as unknown:\n%s", quiet, out)
+		}
 	}
 }

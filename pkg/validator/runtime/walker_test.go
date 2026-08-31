@@ -57,7 +57,7 @@ func volumeNames(t *testing.T, doc []byte) []string {
 // A container mounting a claim template by name is the ordinary way to write
 // a StatefulSet. Reading only spec.template.spec.volumes makes every one of
 // them look like it mounts an undefined volume, which is what
-// container/volume-mount-name-undefined reported against real manifests
+// kubernetes/container/volume-mount-name-undefined reported against real manifests
 // before this merge existed.
 func TestStatefulSetVolumeClaimTemplatesBecomeVolumes(t *testing.T) {
 	tests := []struct {
@@ -80,7 +80,7 @@ func TestStatefulSetVolumeClaimTemplatesBecomeVolumes(t *testing.T) {
 		{
 			// Upstream keeps the claim template and drops the pod-template
 			// volume of the same name. Appending both instead would invent a
-			// duplicate that volume/duplicate-volume-names would report.
+			// duplicate that kubernetes/volume/duplicate-volume-names would report.
 			name:    "a name in both yields one volume, the claim template",
 			volumes: []string{"data", "config"},
 			claims:  []string{"data"},
@@ -91,7 +91,7 @@ func TestStatefulSetVolumeClaimTemplatesBecomeVolumes(t *testing.T) {
 			// two templates sharing one contribute a single volume, and
 			// validateVolumeClaimTemplates does not reject the duplicate
 			// name. Appending both synthesized a collision upstream never
-			// sees, which volume/duplicate-volume-names then reported - a
+			// sees, which kubernetes/volume/duplicate-volume-names then reported - a
 			// finding no manifest change could satisfy and no exemption
 			// could suppress.
 			name:   "duplicate claim template names collapse to one volume",

@@ -21,7 +21,7 @@ const validatedAt = "v1.37.0"
 // citation is not accepted, and docs/CI.md for the standard.
 var upstreamRefs = map[string]runtime.UpstreamRef{
 	// --- Ingress -----------------------------------------------------------
-	"ingress/path-type-invalid": {
+	"kubernetes/ingress/path-type-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"validateHTTPIngressPath"},
 		Digest:      "sha256:b080f2e353f20f1fc91b9e31b93c664238b8f70683cd8a3816441e67c266d43b",
@@ -43,14 +43,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	},
 
 	// --- NetworkPolicy -----------------------------------------------------
-	"network-policy/policy-type-invalid": {
+	"kubernetes/network-policy/policy-type-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicySpec"},
 		Digest:      "sha256:8d49962ef76cfba94b53e58a687cc3d56d9b67512ae1b730ea91afcef6f798e0",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !allowed.Has(string(pType)) -> field.NotSupported branch on spec.policyTypes. The \"may not specify more than two policyTypes\" branch and the podSelector/peer branches are not ported.",
 	},
-	"network-policy/port-range-invalid": {
+	"kubernetes/network-policy/port-range-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicyPort"},
 		Digest:      "sha256:44de03ec43f9534a14917e64cf75a17ed94dd8b5c726781610e0969d3f5b5132",
@@ -62,18 +62,18 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"endPort, and the IsValidPortName branch on a named port. No other check covers those " +
 			"three, so a NetworkPolicy port outside 1-65535 is currently unreported.",
 	},
-	"network-policy/protocol-invalid": {
+	"kubernetes/network-policy/protocol-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicyPort"},
 		Digest:      "sha256:44de03ec43f9534a14917e64cf75a17ed94dd8b5c726781610e0969d3f5b5132",
 		ValidatedAt: validatedAt,
 		Note: "Ports the protocol field.NotSupported branch (TCP, UDP or SCTP) only. " +
-			"network-policy/port-range-invalid covers the endPort-pairing branches of the same " +
+			"kubernetes/network-policy/port-range-invalid covers the endPort-pairing branches of the same " +
 			"function, but not its IsValidPortNum or IsValidPortName branches, which no check covers.",
 	},
 
 	// --- Service -----------------------------------------------------------
-	"service/type-invalid": {
+	"kubernetes/service/type-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateService"},
 		Digest:      "sha256:021ecdc235c0d6920a1f8e94a91d9e4e62f6b572fbf554c5a1158ad4243b3149",
@@ -87,7 +87,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
 	},
-	"service/session-affinity-invalid": {
+	"kubernetes/service/session-affinity-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateService"},
 		Digest:      "sha256:021ecdc235c0d6920a1f8e94a91d9e4e62f6b572fbf554c5a1158ad4243b3149",

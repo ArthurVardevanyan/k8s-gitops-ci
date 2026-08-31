@@ -26,6 +26,9 @@ func RunAll(opts Options) (*Result, error) {
 
 	configureClusterIdentityFromProviders(opts)
 
+	// Once per run, before any phase consumes these sets.
+	warnUnknownCheckIDs(opts, log)
+
 	// Thread pre-validation results/errors (from the pipeline layer) into
 	// the unified report. When a PRValidationResult is supplied, prepend a
 	// PR Checks section built from it; PreErrors are surfaced as a blocking

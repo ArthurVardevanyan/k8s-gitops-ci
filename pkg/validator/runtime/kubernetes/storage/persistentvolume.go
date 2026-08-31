@@ -17,7 +17,7 @@ type pvAccessModesInvalidCheck struct{ runtime.Meta }
 
 func newPvAccessModesInvalidCheck() pvAccessModesInvalidCheck {
 	return pvAccessModesInvalidCheck{runtime.Meta{
-		RuleID:    "persistent-volume/access-modes-invalid",
+		RuleID:    "kubernetes/persistent-volume/access-modes-invalid",
 		RuleTitle: "PersistentVolume Access Modes Must Be Valid",
 		AppliesTo: pvKinds,
 	}}
@@ -38,7 +38,7 @@ type pvCapacityInvalidCheck struct{ runtime.Meta }
 
 func newPvCapacityInvalidCheck() pvCapacityInvalidCheck {
 	return pvCapacityInvalidCheck{runtime.Meta{
-		RuleID:    "persistent-volume/capacity-invalid",
+		RuleID:    "kubernetes/persistent-volume/capacity-invalid",
 		RuleTitle: "PersistentVolume Capacity Must Specify At Least One Resource",
 		AppliesTo: pvKinds,
 	}}
@@ -80,7 +80,7 @@ type pvVolumeModeInvalidCheck struct{ runtime.Meta }
 
 func newPvVolumeModeInvalidCheck() pvVolumeModeInvalidCheck {
 	return pvVolumeModeInvalidCheck{runtime.Meta{
-		RuleID:    "persistent-volume/volume-mode-invalid",
+		RuleID:    "kubernetes/persistent-volume/volume-mode-invalid",
 		RuleTitle: "PersistentVolume Volume Mode Must Be Valid",
 		AppliesTo: pvKinds,
 	}}

@@ -250,7 +250,7 @@ There is no `pattern` and no `maxLength`, and `metadata` carries no
 at all**, a 400-character name, or `name: My_Bad_Name!`. The same is true
 of `generateName` and `metadata.namespace`. All object-name validation
 therefore has to live in the runtime family — see
-`core/object-meta-name-invalid` and `core/object-meta-namespace-invalid`.
+`kubernetes/core/object-meta-name-invalid` and `kubernetes/core/object-meta-namespace-invalid`.
 
 ### When a runtime check _is_ duplicative
 
@@ -260,7 +260,7 @@ kubeconform already reports, and is deleted on that basis — 11 volume
 checks (`hostPath.path`, `persistentVolumeClaim.claimName`,
 `nfs.server`/`nfs.path`, `csi.driver`, and similar) were removed for
 exactly this reason, as was the key-presence branch of
-`autoscaling/max-replicas-invalid` (`maxReplicas` is `required` in every
+`kubernetes/autoscaling/max-replicas-invalid` (`maxReplicas` is `required` in every
 HPA schema variant).
 
 There is a subtlety worth writing down before applying that rule,
@@ -275,12 +275,12 @@ These checks look duplicative and are not — each is a strict superset of
 the schema rule, catching the empty-string case the schema permits. Do
 not delete them:
 
-`batch/schedule-invalid`, `container/port-number-range`,
-`storage-class/provisioner-invalid`, `rbac/role-ref-invalid`,
-`rbac/clusterrole-ref-invalid`, `rbac/clusterrolebinding-subject-invalid`,
-`admissionregistration/service-invalid`,
-`admissionregistration/validating-service-invalid`,
-`pod-spec/readiness-gate-invalid`.
+`kubernetes/batch/schedule-invalid`, `kubernetes/container/port-number-range`,
+`kubernetes/storage-class/provisioner-invalid`, `kubernetes/rbac/role-ref-invalid`,
+`kubernetes/rbac/clusterrole-ref-invalid`, `kubernetes/rbac/clusterrolebinding-subject-invalid`,
+`kubernetes/admissionregistration/service-invalid`,
+`kubernetes/admissionregistration/validating-service-invalid`,
+`kubernetes/pod-spec/readiness-gate-invalid`.
 
 The accepted trade-off is that for those checks a manifest omitting the
 key entirely yields two findings — one from kubeconform in the Linting

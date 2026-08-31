@@ -12,8 +12,8 @@ func TestReplicaSet_Check_IDAndMetadata(t *testing.T) {
 		wantID  string
 		wantCat string
 	}{
-		{newReplicaSetSelectorInvalidCheck(), "apps/replicaset-selector-invalid", "apps"},
-		{newReplicaSetReplicasInvalidCheck(), "apps/replicaset-replicas-invalid", "apps"},
+		{newReplicaSetSelectorInvalidCheck(), "kubernetes/apps/replicaset-selector-invalid", "apps"},
+		{newReplicaSetReplicasInvalidCheck(), "kubernetes/apps/replicaset-replicas-invalid", "apps"},
 	}
 
 	for _, tc := range tests {
@@ -64,7 +64,7 @@ spec:
 	for _, f := range findings {
 		ruleIDs[f.RuleID] = true
 	}
-	if !ruleIDs["apps/replicaset-replicas-invalid"] {
+	if !ruleIDs["kubernetes/apps/replicaset-replicas-invalid"] {
 		t.Error("expected replicaset-replicas-invalid finding")
 	}
 }

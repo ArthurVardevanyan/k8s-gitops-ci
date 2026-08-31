@@ -15,7 +15,7 @@ type pvcAccessModesInvalidCheck struct{ runtime.Meta }
 
 func newPvcAccessModesInvalidCheck() pvcAccessModesInvalidCheck {
 	return pvcAccessModesInvalidCheck{runtime.Meta{
-		RuleID:    "persistent-volume-claim/access-modes-invalid",
+		RuleID:    "kubernetes/persistent-volume-claim/access-modes-invalid",
 		RuleTitle: "PersistentVolumeClaim Access Modes Must Be Valid",
 		AppliesTo: pvcKinds,
 	}}
@@ -36,7 +36,7 @@ type pvcVolumeModeInvalidCheck struct{ runtime.Meta }
 
 func newPvcVolumeModeInvalidCheck() pvcVolumeModeInvalidCheck {
 	return pvcVolumeModeInvalidCheck{runtime.Meta{
-		RuleID:    "persistent-volume-claim/volume-mode-invalid",
+		RuleID:    "kubernetes/persistent-volume-claim/volume-mode-invalid",
 		RuleTitle: "PersistentVolumeClaim Volume Mode Must Be Valid",
 		AppliesTo: pvcKinds,
 	}}

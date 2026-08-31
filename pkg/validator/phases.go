@@ -953,6 +953,61 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	tc.Record("Post-Build Validation", time.Since(postBuildStart), true)
 }
 
+// knownStepIDs is every standalone step ID, i.e. the IDs that participate in
+// the enable/disable mechanism without being registered checks.
+var knownStepIDs = map[string]bool{
+	stepMarkdownlint:   true,
+	stepPrettier:       true,
+	stepShellcheck:     true,
+	stepGolangci:       true,
+	stepKubeconform:    true,
+	stepAVP:            true,
+	stepKyverno:        true,
+	stepScaffoldReadme: true,
+	stepKustomizeFix:   true,
+}
+
+// warnUnknownCheckIDs reports DisabledChecks/EnabledChecks entries that match
+// no step and no registered check.
+//
+// An unmatched ID is silently ignored, which makes the two ways of getting one
+// wrong indistinguishable from a working config: a typo, and an ID that used
+// to exist. The second is the dangerous one. A check disabled by an ID that
+// later changes shape is silently re-enabled on upgrade, and since some
+// families are always-blocking, that surfaces as a pipeline that suddenly
+// fails with nothing pointing at the stale configuration that caused it.
+//
+// Warns rather than fails: an org may share one config across repos whose
+// tool versions differ, and an ID that is unknown here can be valid there.
+func warnUnknownCheckIDs(opts Options, log *logger.Logger) {
+	known := make(map[string]bool, len(knownStepIDs))
+	for id := range knownStepIDs {
+		known[id] = true
+	}
+	for _, c := range check.All() {
+		known[c.ID()] = true
+	}
+
+	// Only the caller's own IDs, not the DefaultEnabledChecks seam, which is
+	// set in code rather than configured.
+	for _, field := range []struct {
+		name string
+		ids  []string
+	}{
+		{"DisabledChecks", opts.DisabledChecks},
+		{"EnabledChecks", opts.EnabledChecks},
+	} {
+		seen := map[string]bool{}
+		for _, id := range field.ids {
+			if known[id] || seen[id] {
+				continue
+			}
+			seen[id] = true
+			log.Warn("%s: %q matches no known step or registered check, so it has no effect", field.name, id)
+		}
+	}
+}
+
 // toIDSet converts a slice of IDs (from DisabledChecks or EnabledChecks)
 // into a lookup set. Reading a missing key from a nil map is a safe
 // zero-value (false) in Go, so callers can use the result directly without

@@ -19,7 +19,7 @@ type clusterRoleBindingRoleRefInvalidCheck struct{ runtime.Meta }
 
 func newClusterRoleBindingRoleRefInvalidCheck() clusterRoleBindingRoleRefInvalidCheck {
 	return clusterRoleBindingRoleRefInvalidCheck{runtime.Meta{
-		RuleID:    "rbac/clusterrole-ref-invalid",
+		RuleID:    "kubernetes/rbac/clusterrole-ref-invalid",
 		RuleTitle: "ClusterRoleBinding roleRef Must Reference a ClusterRole",
 		AppliesTo: clusterRoleBindingKinds,
 	}}
@@ -89,7 +89,7 @@ type clusterRoleBindingSubjectInvalidCheck struct{ runtime.Meta }
 
 func newClusterRoleBindingSubjectInvalidCheck() clusterRoleBindingSubjectInvalidCheck {
 	return clusterRoleBindingSubjectInvalidCheck{runtime.Meta{
-		RuleID:    "rbac/clusterrolebinding-subject-invalid",
+		RuleID:    "kubernetes/rbac/clusterrolebinding-subject-invalid",
 		RuleTitle: "ClusterRoleBinding subjects Must Be Valid",
 		AppliesTo: clusterRoleBindingKinds,
 	}}
