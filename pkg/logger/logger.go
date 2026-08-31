@@ -78,6 +78,14 @@ func (l *Logger) Warn(format string, args ...any) {
 	l.write("WARN", msg)
 }
 
+// Warnings returns the warnings logged so far, so callers (and tests) can
+// inspect them without capturing the writer.
+func (l *Logger) Warnings() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.warnings...)
+}
+
 // Error logs an error.
 //
 //nolint:goprintffuncname // Name matches Logger interface convention used throughout codebase.

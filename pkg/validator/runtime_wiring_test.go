@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	runtimepkg "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 
@@ -423,5 +424,44 @@ func TestFamilyCountMatchesItsCategories(t *testing.T) {
 	}
 	if m[1] != "1" {
 		t.Errorf("family heading counts %s finding(s) but its categories count 1;\nthe family total is summing raw findings instead of deduped rows:\n%s", m[1], body)
+	}
+}
+
+// An ID that matches nothing is silently ignored, so a config disabling a
+// check by an ID that has since changed shape looks identical to one that
+// works - while the check it named quietly starts running again. Runtime
+// checks are always-blocking, so that lands as a pipeline failing for a
+// reason nothing in the output connects to the stale config.
+func TestUnknownCheckIDsAreReported(t *testing.T) {
+	// A real registered runtime check, and the 2-segment form of the same ID
+	// that a config written before check IDs carried a family would have used.
+	var current string
+	for _, c := range check.All() {
+		if strings.HasPrefix(c.ID(), "kubernetes/batch/") {
+			current = c.ID()
+			break
+		}
+	}
+	if current == "" {
+		t.Fatal("no kubernetes/batch check registered")
+	}
+	stale := strings.TrimPrefix(current, "kubernetes/")
+
+	log := logger.NewLogger(false, "")
+	warnUnknownCheckIDs(Options{
+		DisabledChecks: []string{current, stale, "markdownlint"},
+		EnabledChecks:  []string{"kyverno"},
+	}, log)
+	out := strings.Join(log.Warnings(), "\n")
+
+	if !strings.Contains(out, stale) {
+		t.Errorf("the stale pre-family ID %q was not reported:\n%s", stale, out)
+	}
+	// A valid check ID, a valid step ID and a valid default-off step must not
+	// warn, or the warning is noise that gets ignored.
+	for _, quiet := range []string{current, "markdownlint", "kyverno"} {
+		if strings.Contains(out, quiet) {
+			t.Errorf("valid ID %q was reported as unknown:\n%s", quiet, out)
+		}
 	}
 }
