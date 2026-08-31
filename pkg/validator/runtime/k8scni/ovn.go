@@ -48,14 +48,43 @@ func (c ovnNetConfInvalidCheck) Run(data []byte, _ string) []runtime.Finding {
 			// comment - so this check has nothing to say about it.
 			return nil
 		}
-		// Any other parse failure (malformed conflist, chained plugins,
-		// ...) is k8scni/net-attach-def/config-invalid's concern too; reporting it again
-		// here would double-report the same root cause under a second
-		// rule ID.
-		return nil
+		if _, probeErr := ProbeConfig(cfg); probeErr != nil {
+			// The generic structural gate would also reject this config
+			// (containernetworking/cni's own parser failed too, e.g. a
+			// malformed conflist or a missing "type"/"name") - that's
+			// k8scni/net-attach-def/config-invalid's concern; reporting it again here
+			// would double-report the same root cause under a second rule
+			// ID.
+			return nil
+		}
+		// ParseNetConf rejected a config the generic structural gate
+		// accepts - a genuinely OVN-specific parse failure (e.g. "CNI
+		// config cannot have both a plugin list and a single config", or
+		// a field whose type ovn-kubernetes's own typed NetConf requires
+		// but this one doesn't satisfy). That is this check's concern:
+		// surfacing it, rather than silently passing, is the difference
+		// between an OVN-managed NAD that's actually rejected and one
+		// this check simply never looked at.
+		return []runtime.Finding{runtime.NewFinding(c, check.Finding{
+			Kind:      "NetworkAttachmentDefinition",
+			Name:      doc.Metadata.Name,
+			Namespace: doc.Metadata.Namespace,
+			Path:      "spec.config",
+			Message:   fmt.Sprintf("invalid OVN netconf: %s", err.Error()),
+		})}
 	}
 
-	id := doc.Metadata.Namespace + "/" + doc.Metadata.Name
+	// id is only meaningful when the namespace is actually known: with it
+	// empty, "/"+Name would almost never match netconf.NADName (a real
+	// namespace/name pair) even for a perfectly consistent NAD, since the
+	// applied namespace genuinely isn't knowable at this stage (e.g. a NAD
+	// that relies on `kubectl apply -n <ns>` rather than a namespace field
+	// or a kustomize namespace transformer). Passing "" instead skips the
+	// consistency check itself rather than manufacture a false mismatch.
+	id := ""
+	if doc.Metadata.Namespace != "" {
+		id = doc.Metadata.Namespace + "/" + doc.Metadata.Name
+	}
 	if msg, ok := validateOVNNetConf(netconf, id); !ok {
 		return []runtime.Finding{runtime.NewFinding(c, check.Finding{
 			Kind:      "NetworkAttachmentDefinition",
@@ -84,7 +113,11 @@ func validateOVNNetConf(netconf *ovncnitypes.NetConf, id string) (msg string, ok
 		return fmt.Sprintf(format, args...), false
 	}
 
-	if netconf.Name != ovntypes.DefaultNetworkName && netconf.NADName != id {
+	// id == "" means the namespace this NAD will actually be applied under
+	// is unknown at this stage (see the empty-namespace guard at the call
+	// site), so this consistency check is skipped rather than compared
+	// against a guaranteed-wrong "/"+Name.
+	if id != "" && netconf.Name != ovntypes.DefaultNetworkName && netconf.NADName != id {
 		return fail("netAttachDefName in config (%s) does not match the NAD's namespace/name", netconf.NADName)
 	}
 

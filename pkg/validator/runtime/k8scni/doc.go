@@ -17,7 +17,7 @@
 //     ovn-kubernetes's own config.ParseNetConf directly - which itself
 //     treats a non-OVN NAD as a no-op skip (config.ErrorAttachDefNotOvnManaged),
 //     never a failure - so a valid secondary network owned by a different
-//     CNI plugin (e.g. ODF's macvlan NADs) is simply not this check's
+//     CNI plugin (e.g. a macvlan-based NAD) is simply not this check's
 //     concern, exactly matching how the OVN-Kubernetes network controller
 //     itself behaves.
 package k8scni
