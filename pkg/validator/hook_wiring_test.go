@@ -815,3 +815,62 @@ ok_post() { :; }
 		t.Errorf("expected both PRE_BUILD and POST_BUILD to report '✅ ran', got:\n%s", kb.Body)
 	}
 }
+
+// TestRunAll_RuntimeFindingsAppearInStructuredResult pins the contract that
+// Check.Findings is the complete per-finding result, not just the compliance
+// subset.
+//
+// Runtime findings are deliberately routed around the compliance
+// classification - they are never attributed, exempted or demoted - and that
+// separation previously carried them out of Check.Findings entirely. The run
+// still reported Blocking=true and rendered a RuntimeValidation section, so
+// anything reading sections looked correct while a consumer reading findings
+// saw a clean run: the one shape of bug that is invisible from the report.
+//
+// The manifest below is rejected by the API server itself (containerPort
+// 70000 is outside 1-65535), so it exercises the runtime family end to end
+// rather than through the registry.
+func TestRunAll_RuntimeFindingsAppearInStructuredResult(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	mustWrite(t, filepath.Join(app, "base", "deployment.yaml"),
+		"apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\nspec:\n  template:\n    spec:\n      containers:\n      - name: c\n        image: registry.example.com/app@sha256:"+
+			"0000000000000000000000000000000000000000000000000000000000000000\n        ports:\n        - containerPort: 70000\n")
+	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
+	mustWrite(t, filepath.Join(app, "overlays", "prod", "kustomization.yaml"), "resources:\n  - ../../base\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local"})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+
+	if !res.Blocking {
+		t.Error("expected a runtime violation to block")
+	}
+
+	var found bool
+	for _, f := range res.Check.Findings {
+		if f.CheckID == "container/port-number-range" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected the container/port-number-range finding in Check.Findings, got %d finding(s): %+v",
+			len(res.Check.Findings), res.Check.Findings)
+	}
+
+	// The section and the structured result must agree; reporting one without
+	// the other is exactly the inconsistency this test exists to prevent.
+	var sectionFound bool
+	for _, s := range res.Sections {
+		if strings.Contains(s.Name, "Runtime") {
+			sectionFound = true
+			break
+		}
+	}
+	if sectionFound != found {
+		t.Errorf("RuntimeValidation section present = %v but finding in Check.Findings = %v; they must agree",
+			sectionFound, found)
+	}
+}

@@ -893,8 +893,22 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		return indexOfComplianceCheck(indirect[i].CheckID) < indexOfComplianceCheck(indirect[j].CheckID)
 	})
 
+	// Runtime findings lead the structured result. They are excluded from the
+	// compliance classification above - they are never attributed, exempted or
+	// demoted to a warning - but they must still appear in Check.Findings, the
+	// public per-finding result. Omitting them made a run with a runtime
+	// violation report Blocking=true and render an error section while
+	// Check.Findings was empty, so any consumer reading findings rather than
+	// sections saw a clean run. They sort first because they are the
+	// unconditionally-blocking family, and they carry no rank in
+	// complianceCheckOrder to sort by.
+	combinedFindings := make([]check.Finding, 0, len(runtimeFindings)+len(direct)+len(indirect))
+	combinedFindings = append(combinedFindings, runtimeFindings...)
+	combinedFindings = append(combinedFindings, direct...)
+	combinedFindings = append(combinedFindings, indirect...)
+
 	combinedCheck := check.Result{
-		Findings: append(direct, indirect...),
+		Findings: combinedFindings,
 		Exempted: append(docResult.Exempted, overlayResult.Exempted...),
 	}
 	res.Check = combinedCheck
