@@ -404,13 +404,42 @@ func updateEntry(id, digest, tag string) (bool, error) {
 // run is known.
 var desiredFor func(field, id string) (string, bool)
 
+// entryStart matches the opening line of a top-level ref map entry.
+var entryStart = regexp.MustCompile(`(?m)^\t"([^"]+)": \{`)
+
 // entriesReferencing returns the check IDs whose entry sets field to the
 // identifier name.
+//
+// Each top-level entry is isolated before its fields are read. Scanning the
+// whole file with one pattern does not work: a lazy `.*?` between the ID and
+// the field crosses entry boundaries, so the match starts at the first entry
+// in the file and ends at the first use of the constant anywhere after it.
+// The result names a check that does not use the constant and omits the one
+// that does - and because regexp finds non-overlapping matches from the left,
+// the real users after it are swallowed by the same match.
+//
+// That is not hypothetical. With two shared webhook digests in one file,
+// asking who uses validatingWebhookDigest returned the first *mutating*
+// entry, so `--update` compared the new digest against an unrelated check's
+// desired value and rejected a legitimate update as a shared-digest conflict.
+//
+// Only the entry's own fields count, which is why the field must sit at
+// exactly two tabs. A nested Additional ref is indented deeper, and its digest
+// is not the entry's digest; treating it as one would attribute a supporting
+// citation's value to the primary ref.
 func entriesReferencing(file, field, name string) []string {
 	out := make([]string, 0, 4)
-	re := regexp.MustCompile(`"([^"]+)": \{(?s:.*?)` + field + `:\s*` + name + `\b`)
-	for _, m := range re.FindAllStringSubmatch(file, -1) {
-		out = append(out, m[1])
+	fieldRe := regexp.MustCompile(`(?m)^\t\t` + field + `:\s*` + name + `\b`)
+
+	for _, loc := range entryStart.FindAllStringSubmatchIndex(file, -1) {
+		id := file[loc[2]:loc[3]]
+		body := file[loc[1]:]
+		if end := strings.Index(body, "\n\t},"); end >= 0 {
+			body = body[:end]
+		}
+		if fieldRe.MatchString(body) {
+			out = append(out, id)
+		}
 	}
 	return out
 }
