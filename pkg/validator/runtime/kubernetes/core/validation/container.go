@@ -125,9 +125,14 @@ func (c portNumberRangeCheck) Run(data []byte, source string) []runtime.Finding 
 	containers := runtime.AllContainers(info)
 
 	for _, ctr := range containers {
-		for _, port := range ctr.Container.Ports {
+		// Index by position, as upstream validateContainerPorts does
+		// (`for i, port := range ports` / `fldPath.Index(i)`). Re-deriving
+		// the index by searching for a matching port collapses two entries
+		// that share a number and protocol onto the first index, which
+		// makes their findings byte-identical and lets deduplication drop
+		// all but one.
+		for idx, port := range ctr.Container.Ports {
 			if port.ContainerPort < 1 || port.ContainerPort > 65535 {
-				idx := getPortIndex(ctr.Container.Ports, port)
 				findings = append(findings, runtime.Finding{
 					RuleID:    c.ID(),
 					RuleTitle: c.Title(),
@@ -148,13 +153,108 @@ func (c portNumberRangeCheck) Run(data []byte, source string) []runtime.Finding 
 	return findings
 }
 
-func getPortIndex(ports []corev1.ContainerPort, target corev1.ContainerPort) int {
-	for i, p := range ports {
-		if p.ContainerPort == target.ContainerPort && p.Protocol == target.Protocol {
-			return i
+type hostPortRangeCheck struct{ runtime.Meta }
+
+func newHostPortRangeCheck() hostPortRangeCheck {
+	return hostPortRangeCheck{runtime.Meta{
+		RuleID:    "container/host-port-range",
+		RuleTitle: "Host Port Must Be In Range 1-65535",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
+}
+
+func (c hostPortRangeCheck) Run(data []byte, source string) []runtime.Finding {
+	info, err := runtime.ExtractPodSpecInfo(data, source)
+	if err != nil || info == nil {
+		return nil
+	}
+
+	var findings []runtime.Finding
+
+	for _, ctr := range runtime.AllContainers(info) {
+		for idx, port := range ctr.Container.Ports {
+			// Upstream guards this branch on HostPort != 0: a zero
+			// hostPort means "not requested", not "port zero". The guard
+			// is upstream's own, not a defaulting concession.
+			if port.HostPort == 0 {
+				continue
+			}
+			if port.HostPort < 1 || port.HostPort > 65535 {
+				findings = append(findings, runtime.Finding{
+					RuleID:    c.ID(),
+					RuleTitle: c.Title(),
+					Finding: check.Finding{
+						Path:      ctr.Path.Child("ports").Index(idx).Child("hostPort").String(),
+						Message:   fmt.Sprintf("invalid hostPort %d in container %q: port must be 1-65535", port.HostPort, ctr.Container.Name),
+						Kind:      info.Kind,
+						Name:      info.Name,
+						Namespace: info.Namespace,
+						Container: ctr.Container.Name,
+						Value:     fmt.Sprintf("%d", port.HostPort),
+					},
+				})
+			}
 		}
 	}
-	return 0
+
+	return findings
+}
+
+// supportedPortProtocols mirrors upstream's set of the same name.
+var supportedPortProtocols = map[corev1.Protocol]bool{
+	corev1.ProtocolTCP:  true,
+	corev1.ProtocolUDP:  true,
+	corev1.ProtocolSCTP: true,
+}
+
+type portProtocolInvalidCheck struct{ runtime.Meta }
+
+func newPortProtocolInvalidCheck() portProtocolInvalidCheck {
+	return portProtocolInvalidCheck{runtime.Meta{
+		RuleID:    "container/port-protocol-invalid",
+		RuleTitle: "Container Port Protocol Must Be TCP, UDP or SCTP",
+		AppliesTo: runtime.HasPodSpecKinds(),
+	}}
+}
+
+func (c portProtocolInvalidCheck) Run(data []byte, source string) []runtime.Finding {
+	info, err := runtime.ExtractPodSpecInfo(data, source)
+	if err != nil || info == nil {
+		return nil
+	}
+
+	var findings []runtime.Finding
+
+	for _, ctr := range runtime.AllContainers(info) {
+		for idx, port := range ctr.Container.Ports {
+			// Upstream reports an empty protocol as Required. That branch
+			// is unreachable for a manifest the API server accepts:
+			// ContainerPort.Protocol carries a `+default="TCP"` marker, so
+			// an omitted protocol is defaulted before validation runs.
+			// Reporting it here would fail every manifest that omits a
+			// protocol, which is almost all of them.
+			if port.Protocol == "" {
+				continue
+			}
+			if !supportedPortProtocols[port.Protocol] {
+				findings = append(findings, runtime.Finding{
+					RuleID:    c.ID(),
+					RuleTitle: c.Title(),
+					Finding: check.Finding{
+						Path:      ctr.Path.Child("ports").Index(idx).Child("protocol").String(),
+						Message:   fmt.Sprintf("protocol %q in container %q: unsupported value, must be TCP, UDP or SCTP", port.Protocol, ctr.Container.Name),
+						Kind:      info.Kind,
+						Name:      info.Name,
+						Namespace: info.Namespace,
+						Container: ctr.Container.Name,
+						Value:     string(port.Protocol),
+					},
+				})
+			}
+		}
+	}
+
+	return findings
 }
 
 type imagePullPolicyCheck struct{ runtime.Meta }

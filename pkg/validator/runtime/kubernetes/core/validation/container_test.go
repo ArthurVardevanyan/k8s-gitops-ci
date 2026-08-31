@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,11 +12,18 @@ import (
 // produce. The container rules differ in which part of the spec they need
 // - init containers, ports, volumes - so a case supplies the whole spec
 // rather than a fragment slotted into a fixed frame.
+//
+// wantPaths, where set, asserts the exact field path of every finding in
+// order. Counting findings alone cannot catch a rule that reports the
+// right number of problems against the wrong locations, and two findings
+// that agree on every field are indistinguishable to the report's
+// deduplication - so a mis-indexed pair silently becomes one row.
 type containerCase struct {
-	name     string
-	spec     string
-	want     int
-	contains string
+	name      string
+	spec      string
+	want      int
+	contains  string
+	wantPaths []string
 }
 
 func runContainerCases(t *testing.T, run func([]byte, string) []runtime.Finding, cases []containerCase) {
@@ -29,6 +37,15 @@ func runContainerCases(t *testing.T, run func([]byte, string) []runtime.Finding,
 			}
 			if tc.contains != "" && !strings.Contains(findings[0].Message, tc.contains) {
 				t.Errorf("message %q does not contain %q", findings[0].Message, tc.contains)
+			}
+			if tc.wantPaths != nil {
+				got := make([]string, len(findings))
+				for i, f := range findings {
+					got[i] = f.Path
+				}
+				if !slices.Equal(got, tc.wantPaths) {
+					t.Errorf("paths = %v, want %v", got, tc.wantPaths)
+				}
 			}
 		})
 	}
@@ -54,6 +71,58 @@ func TestPortNumberRange(t *testing.T) {
 		{name: "InvalidPort", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - name: http\n      containerPort: 70000\n", want: 1},
 		{name: "ZeroPort", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - name: http\n      containerPort: 0\n", want: 1},
 		{name: "ValidPorts", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - name: http\n      containerPort: 80\n    - name: https\n      containerPort: 65535\n", want: 0},
+		// Two entries sharing a number and protocol. Deriving the index by
+		// searching for a matching port returned 0 for both, making the
+		// findings byte-identical so the report's deduplication kept one.
+		{
+			name:      "TwoInvalidPortsSameNumberGetDistinctIndices",
+			spec:      "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - name: a\n      containerPort: 70000\n    - name: b\n      containerPort: 70000\n",
+			want:      2,
+			wantPaths: []string{"spec.containers[c].ports[0].containerPort", "spec.containers[c].ports[1].containerPort"},
+		},
+		{
+			name:      "InvalidPortAfterValidOneIsIndexedAtItsOwnPosition",
+			spec:      "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - name: ok\n      containerPort: 80\n    - name: bad\n      containerPort: 0\n",
+			want:      1,
+			wantPaths: []string{"spec.containers[c].ports[1].containerPort"},
+		},
+	})
+}
+
+func TestHostPortRange(t *testing.T) {
+	runContainerCases(t, newHostPortRangeCheck().Run, []containerCase{
+		{name: "TooLarge", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      hostPort: 70000\n", want: 1, contains: "invalid hostPort 70000"},
+		{name: "Negative", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      hostPort: -1\n", want: 1},
+		// Upstream guards on HostPort != 0; an unset hostPort is not port zero.
+		{name: "UnsetIsNotReported", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n", want: 0},
+		{name: "ExplicitZeroIsNotReported", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      hostPort: 0\n", want: 0},
+		{name: "Valid", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      hostPort: 8080\n", want: 0},
+		{
+			name:      "IndexedAtItsOwnPosition",
+			spec:      "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      hostPort: 8080\n    - containerPort: 81\n      hostPort: 70000\n",
+			want:      1,
+			wantPaths: []string{"spec.containers[c].ports[1].hostPort"},
+		},
+	})
+}
+
+func TestPortProtocolInvalid(t *testing.T) {
+	runContainerCases(t, newPortProtocolInvalidCheck().Run, []containerCase{
+		{name: "Unsupported", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      protocol: HTTP\n", want: 1, contains: "must be TCP, UDP or SCTP"},
+		{name: "LowercaseIsNotAccepted", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      protocol: tcp\n", want: 1},
+		// ContainerPort.Protocol carries `+default="TCP"`, so an omitted
+		// protocol is defaulted before upstream's Required branch runs.
+		{name: "OmittedIsDefaultedNotReported", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n", want: 0},
+		{name: "ExplicitEmptyIsDefaultedNotReported", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      protocol: \"\"\n", want: 0},
+		{name: "TCP", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      protocol: TCP\n", want: 0},
+		{name: "UDP", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 53\n      protocol: UDP\n", want: 0},
+		{name: "SCTP", spec: "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      protocol: SCTP\n", want: 0},
+		{
+			name:      "IndexedAtItsOwnPosition",
+			spec:      "  containers:\n  - name: c\n    image: nginx\n    ports:\n    - containerPort: 80\n      protocol: TCP\n    - containerPort: 81\n      protocol: HTTP\n",
+			want:      1,
+			wantPaths: []string{"spec.containers[c].ports[1].protocol"},
+		},
 	})
 }
 
