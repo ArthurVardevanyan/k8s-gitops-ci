@@ -136,10 +136,13 @@ var (
 	// (v2.0.0+incompatible, the marker cmd/go itself appends to a
 	// pre-modules v2+ import-path-unqualified tag).
 	semverTagPattern = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
-	// pseudoVersionPattern matches a Go module pseudo-version and captures
-	// its trailing 12-hex-char abbreviated commit hash - the same value
-	// moduleVersionForRepo (verify-upstream-refs/main.go) extracts to use as
-	// the actual git ref, since the pseudo-version string itself is not one.
+	// pseudoVersionPattern matches (but, unlike verify-upstream-refs'
+	// pseudoVersionCommit, does not capture) a Go module pseudo-version -
+	// this is only ever used as a boolean MatchString here (Validate has no
+	// need for the trailing 12-hex-char abbreviated commit hash itself,
+	// only the shape); moduleVersionForRepo (verify-upstream-refs/main.go)
+	// is what actually extracts that hash to use as the real git ref, since
+	// the pseudo-version string itself is not one.
 	// All three documented forms are matched, distinguished only by what
 	// (if anything) sits between the version core and the timestamp:
 	//   - vX.0.0-yyyymmddhhmmss-abcdefabcdef       (no earlier version)
