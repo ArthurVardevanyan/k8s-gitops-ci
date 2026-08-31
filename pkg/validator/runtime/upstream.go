@@ -197,6 +197,12 @@ func (r UpstreamRef) Validate() error {
 	if r.Path == "" {
 		return fmt.Errorf("path is required")
 	}
+	// Enforced at registration rather than left to the verifier: a ref that
+	// cannot be cached unambiguously should fail when it is written, not on
+	// the next verification run.
+	if err := ValidatePath(r.Path); err != nil {
+		return fmt.Errorf("path %w", err)
+	}
 	if pathLineSuffix.MatchString(r.Path) {
 		return fmt.Errorf("path %q must not carry a line number: line numbers drift on every upstream release, cite the function instead", r.Path)
 	}
@@ -234,6 +240,29 @@ func (r UpstreamRef) Validate() error {
 		}
 		if err := a.Validate(); err != nil {
 			return fmt.Errorf("additional[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// ValidatePath reports whether a slash-separated upstream file path is
+// unambiguous: no empty, "." or ".." segments. Such a path is not wrong so
+// much as not unique - path handling collapses it, so two different-looking
+// citations can denote one file.
+//
+// Exported and shared with verify-upstream-refs so a ref cannot be
+// registered here that the verifier will then refuse to cache. Defining the
+// rule twice is what would let the two drift apart.
+func ValidatePath(path string) error {
+	if path == "" {
+		return fmt.Errorf("must not be empty")
+	}
+	for _, seg := range strings.Split(path, "/") {
+		switch seg {
+		case "":
+			return fmt.Errorf("%q must not contain an empty path segment", path)
+		case ".", "..":
+			return fmt.Errorf("%q must not contain a %q path segment", path, seg)
 		}
 	}
 	return nil

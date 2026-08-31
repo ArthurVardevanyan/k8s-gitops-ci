@@ -308,3 +308,46 @@ func TestValidateRepoRejectsDotSegments(t *testing.T) {
 		}
 	}
 }
+
+// A path that collapses under path handling is not unique, so two
+// different-looking citations can denote one file. The verifier refuses to
+// cache these; registration must refuse them too, or a ref can be written
+// that no verification run can ever process.
+func TestValidateRejectsCollapsingPath(t *testing.T) {
+	for _, p := range []string{"pkg/../a.go", "pkg/./a.go", "pkg//a.go", "./a.go", ""} {
+		ref := UpstreamRef{
+			Path:        p,
+			Functions:   []string{"F"},
+			Digest:      validDigest,
+			ValidatedAt: "v1.0.0",
+			Note:        "port of F",
+		}
+		if err := ref.Validate(); err == nil {
+			t.Errorf("Validate() accepted path %q, which the verifier will reject", p)
+		}
+	}
+	// A path with dots inside a filename stays legal.
+	ok := UpstreamRef{
+		Path:        "pkg/apis/core/v1.31/validation.go",
+		Functions:   []string{"F"},
+		Digest:      validDigest,
+		ValidatedAt: "v1.0.0",
+		Note:        "port of F",
+	}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("Validate() rejected a legitimate path: %v", err)
+	}
+}
+
+func TestValidatePath(t *testing.T) {
+	for _, p := range []string{"a.go", "pkg/a.go", "pkg/v1.31/a.go", "pkg/.github/a.go"} {
+		if err := ValidatePath(p); err != nil {
+			t.Errorf("ValidatePath(%q) = %v, want nil", p, err)
+		}
+	}
+	for _, p := range []string{"", "..", ".", "a/../b", "a//b", "a/./b"} {
+		if err := ValidatePath(p); err == nil {
+			t.Errorf("ValidatePath(%q) = nil, want an error", p)
+		}
+	}
+}

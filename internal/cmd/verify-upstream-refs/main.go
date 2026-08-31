@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	urlpkg "net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,7 +38,9 @@ import (
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes" // registers runtime checks and their refs
 )
 
-const rawBase = "https://raw.githubusercontent.com"
+// rawBase is a var, not a const, only so tests can point fetches at a local
+// server; nothing in the tool reassigns it.
+var rawBase = "https://raw.githubusercontent.com"
 
 func main() {
 	var (
@@ -346,16 +348,10 @@ func main() {
 // So the rule is stricter than "must stay inside the cache dir" - a component
 // must be the only spelling of itself.
 func checkCacheComponent(name, value string) error {
-	if value == "" {
-		return fmt.Errorf("refusing to use cache path: %s must not be empty", name)
-	}
-	for _, seg := range strings.Split(filepath.ToSlash(value), "/") {
-		switch seg {
-		case "":
-			return fmt.Errorf("refusing to use cache path: %s %q must not contain an empty path segment", name, value)
-		case ".", "..":
-			return fmt.Errorf("refusing to use cache path: %s %q must not contain a %q path segment", name, value, seg)
-		}
+	// One definition of the rule, shared with the ref tables, so a path the
+	// verifier rejects cannot be registered in the first place.
+	if err := runtime.ValidatePath(filepath.ToSlash(value)); err != nil {
+		return fmt.Errorf("refusing to use cache path: %s %w", name, err)
 	}
 	return nil
 }
@@ -402,7 +398,7 @@ func cachePathFor(cacheDir, repo, version, path string) (string, error) {
 	if err := runtime.ValidateRepo(repo); err != nil {
 		return "", fmt.Errorf("refusing to use cache path: %w", err)
 	}
-	joined := filepath.Join(base, filepath.FromSlash(repo), url.PathEscape(version), filepath.FromSlash(path))
+	joined := filepath.Join(base, filepath.FromSlash(repo), urlpkg.PathEscape(version), filepath.FromSlash(path))
 	rel, err := filepath.Rel(base, joined)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("refusing to use cache path %q: escapes cache dir %q (repo=%q version=%q path=%q)",
@@ -427,7 +423,7 @@ func (f *fetcher) get(repo, version, path string) ([]byte, error) {
 	}
 	// Same boundary argument as cachePathFor: encode version as one segment
 	// so a ref containing "/" cannot make two distinct triples share a key.
-	key := repo + "@" + url.PathEscape(version) + ":" + path
+	key := repo + "@" + urlpkg.PathEscape(version) + ":" + path
 	if b, ok := f.memo[key]; ok {
 		return b, nil
 	}
@@ -441,7 +437,13 @@ func (f *fetcher) get(repo, version, path string) ([]byte, error) {
 		return b, nil
 	}
 
-	url := fmt.Sprintf("%s/%s/%s/%s", rawBase, repo, version, path)
+	// version is escaped as one segment here too. In -compute mode it is an
+	// arbitrary git ref, and "#" is legal in a ref name: "feat#1" truncates
+	// the request to ".../o/r/feat" and carries the file path off into the
+	// URL fragment, so the fetch asks for something nobody named. Escaping
+	// also covers "/" refs; GitHub resolves both the literal and the
+	// percent-encoded form.
+	url := fmt.Sprintf("%s/%s/%s/%s", rawBase, repo, urlpkg.PathEscape(version), path)
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err

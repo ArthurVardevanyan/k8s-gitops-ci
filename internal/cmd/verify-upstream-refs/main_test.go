@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -658,5 +660,31 @@ func TestSetRefFieldIgnoresNestedAdditional(t *testing.T) {
 	}
 	if !strings.Contains(got, "\t\tDigest:      \"sha256:new\"") {
 		t.Errorf("top-level digest not rewritten with its indent intact:\n%s", got)
+	}
+}
+
+// In -compute mode version is an arbitrary git ref. "#" is legal in a ref
+// name and is a URL fragment delimiter, so an unescaped ref truncates the
+// request and carries the file path off into the fragment - the fetch then
+// asks for a URL nobody named.
+func TestFetchURLEscapesVersion(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.EscapedPath()
+		_, _ = w.Write([]byte("content"))
+	}))
+	defer srv.Close()
+
+	old := rawBase
+	rawBase = srv.URL
+	defer func() { rawBase = old }()
+
+	f := &fetcher{cacheDir: t.TempDir(), client: srv.Client()}
+	if _, err := f.get("some-org/dep", "feat#1", "pkg/a.go"); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	want := "/some-org/dep/feat%231/pkg/a.go"
+	if got != want {
+		t.Errorf("requested %q, want %q", got, want)
 	}
 }
