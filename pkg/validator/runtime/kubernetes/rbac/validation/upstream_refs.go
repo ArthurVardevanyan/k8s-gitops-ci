@@ -19,7 +19,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"rbac/role-ref-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateRoleBinding"},
-		Digest:      "sha256:0edb35117d9aefca6833b8535206f9d4a4785c9ab105441ee06154e42c91ca0e",
+		Digest:      "sha256:191879d6004f1eca9c8d862d162a98bab11ebcb2ece40c8682f151421311d40b",
 		ValidatedAt: validatedAt,
 		Note: "Ports the three roleRef branches of ValidateRoleBinding: apiGroup must be rbac.GroupName, " +
 			"kind must be Role or ClusterRole, and name is Required. The ValidateRBACName check on a " +
@@ -38,7 +38,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"rbac/clusterrole-ref-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateClusterRoleBinding"},
-		Digest:      "sha256:759c184539ae73e38a5e224dc77a81d23b19daaf6157ce4cdf1e0ecc499c9963",
+		Digest:      "sha256:5f3744c1af9fad177a77630c270b6a010d1efc3e9de2449f0b415870d34da6d0",
 		ValidatedAt: validatedAt,
 		Note: "Ports the three roleRef branches of ValidateClusterRoleBinding: apiGroup must be " +
 			"rbac.GroupName, kind must be ClusterRole (a ClusterRoleBinding may not reference a " +
@@ -58,7 +58,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"rbac/clusterrolebinding-subject-invalid": {
 		Path:        rbacValidationPath,
 		Functions:   []string{"ValidateClusterRoleBinding", "ValidateRoleBindingSubject"},
-		Digest:      "sha256:d025704ba9ca71753122018db9d68df9ac990e45d7360c51350b2dbd2daa042a",
+		Digest:      "sha256:b5b3e38b103d7aacd762ef12cc3a4aa88d429b18750101df5d8d004a88d59fe3",
 		ValidatedAt: validatedAt,
 		Note: "Ports the subject branches reached from ValidateClusterRoleBinding's " +
 			"ValidateRoleBindingSubject loop: the default: field.NotSupported branch on subject.kind " +

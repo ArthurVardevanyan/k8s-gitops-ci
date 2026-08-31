@@ -18,7 +18,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apiextensions/crd-storage-version-invalid": {
 		Path:        apiextensionsValidationPath,
 		Functions:   []string{"validateCustomResourceDefinitionSpec"},
-		Digest:      "sha256:0ff6b2d0e56289aee06442183752fc55080b7203e1929a410774a9618cb9dbe5",
+		Digest:      "sha256:e8754bbba288215d52d4c15a9c0dde392aa03768abeead7eb0bdd302be21d828",
 		ValidatedAt: validatedAt,
 		Note: "Ports the storageFlagCount != 1 -> \"must have exactly one version marked as storage " +
 			"version\" branch. Upstream reports one error on spec.versions for any count other than 1; " +

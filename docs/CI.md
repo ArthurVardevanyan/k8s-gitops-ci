@@ -856,7 +856,16 @@ Two layers verify this:
   the pinned tag and proves every cited function still exists and is
   unchanged. `Digest` is a hash of the cited functions' normalized source
   (comments and formatting stripped), so upstream documentation churn and
-  gofmt changes are quiet while real logic changes fail. This runs as its
+  gofmt changes are quiet while real logic changes fail. "Stripped" means
+  the syntax tree only: the cited declarations are re-printed against an
+  empty `FileSet`, so no position information from the source survives. That
+  detail matters — printing against the parse `FileSet` leaves the blank line
+  a dropped comment occupied, which made a doc-comment edit move the digest
+  and would have failed every citation on releases that changed no logic.
+  `internal/upstreamref` has unit tests asserting both halves: what must not
+  move the digest (comments, blank lines, gofmt, declaration order, unrelated
+  code) and what must (any change to a cited body or set, and a cited name
+  disappearing). This runs as its
   own step in `task ci`. Fetched sources are cached under `XDG_CACHE_HOME`,
   so a warm run does no network I/O - the same pattern `schemas:pull`
   already uses.

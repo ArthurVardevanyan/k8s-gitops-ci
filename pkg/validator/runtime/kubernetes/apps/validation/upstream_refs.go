@@ -30,14 +30,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/deployment-selector-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentSpec"},
-		Digest:      "sha256:e3dc5b5e520f1b808ce45922c4e21405da0a1fc8fd443038b578be3fcd601444",
+		Digest:      "sha256:70932c3277e5d6a84aa10f1fff44202f55e229d8ee603320cd39782cfd3109b8",
 		ValidatedAt: validatedAt,
 		Note:        selectorNote,
 	},
 	"apps/deployment-strategy-type-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentStrategy"},
-		Digest:      "sha256:ae7bc51ed073a4b3e7da92cda923aa6edb3915044495c6ff0b64e9f38c133e62",
+		Digest:      "sha256:0d3d7684994250c53b8da905d9b76c7cacc2508e21b3811df37c99d5c68e8f64",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default -> field.NotSupported branch on strategy.type. " +
 			"Deliberate divergence: an empty type is skipped rather than reported, because " +
@@ -47,14 +47,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/deployment-replicas-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentSpec"},
-		Digest:      "sha256:e3dc5b5e520f1b808ce45922c4e21405da0a1fc8fd443038b578be3fcd601444",
+		Digest:      "sha256:70932c3277e5d6a84aa10f1fff44202f55e229d8ee603320cd39782cfd3109b8",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.Replicas, ...) call in ValidateDeploymentSpec.",
 	},
 	"apps/deployment-min-ready-seconds-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDeploymentSpec"},
-		Digest:      "sha256:e3dc5b5e520f1b808ce45922c4e21405da0a1fc8fd443038b578be3fcd601444",
+		Digest:      "sha256:70932c3277e5d6a84aa10f1fff44202f55e229d8ee603320cd39782cfd3109b8",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.MinReadySeconds, ...) call in ValidateDeploymentSpec.",
 	},
@@ -63,14 +63,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/statefulset-replicas-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
-		Digest:      "sha256:41a8b9ce87c41a9f9b7bb1a487068d18faec9784a39127780acb777a7ead8eb7",
+		Digest:      "sha256:38d87077ae011f16a6f6227cd2372a8fcb37c519a7deea1ece414fa59ef52566",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.Replicas, ...) call in ValidateStatefulSetSpec.",
 	},
 	"apps/statefulset-pod-management-policy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
-		Digest:      "sha256:41a8b9ce87c41a9f9b7bb1a487068d18faec9784a39127780acb777a7ead8eb7",
+		Digest:      "sha256:38d87077ae011f16a6f6227cd2372a8fcb37c519a7deea1ece414fa59ef52566",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default branch of the spec.podManagementPolicy switch " +
 			"(must be 'OrderedReady' or 'Parallel'). Deliberate divergence: the empty case, which " +
@@ -79,7 +79,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Additional: []runtime.UpstreamRef{{
 			Path:        "pkg/apis/apps/v1/defaults.go",
 			Functions:   []string{"SetDefaults_StatefulSet"},
-			Digest:      "sha256:28a57c312fcb8d3ef5f4227bbe29b10938e5505a6a142003bf291098133ef902",
+			Digest:      "sha256:56ffaaae3883b2d894a962815a0cdf3ab8f0d868aabcb61e650be57f8c38b175",
 			ValidatedAt: validatedAt,
 			Note: "Guards podManagementPolicy on len()==0, so an explicitly-empty value is " +
 				"defaulted to OrderedReady and must not be reported.",
@@ -88,7 +88,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/statefulset-update-strategy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateStatefulSetSpec"},
-		Digest:      "sha256:41a8b9ce87c41a9f9b7bb1a487068d18faec9784a39127780acb777a7ead8eb7",
+		Digest:      "sha256:38d87077ae011f16a6f6227cd2372a8fcb37c519a7deea1ece414fa59ef52566",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default branch of the spec.updateStrategy.type switch. " +
 			"Deliberate divergence: the empty case, which upstream reports Required, is skipped " +
@@ -104,14 +104,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/daemonset-selector-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDaemonSetSpec"},
-		Digest:      "sha256:854de045a62b38b1e3423bc962fb7ebf7c9ddfb1aeffbe429c308bcb084b3aed",
+		Digest:      "sha256:acc13d2b128b269650f1c2d39b36bb87cd6c5e601087c4928e691962c3e2ca65",
 		ValidatedAt: validatedAt,
 		Note:        selectorNote,
 	},
 	"apps/daemonset-update-strategy-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDaemonSetUpdateStrategy"},
-		Digest:      "sha256:97d4333627ad4f027549e2885800a14f425df48634dc8459d575621177f688ec",
+		Digest:      "sha256:97aaae89ad60a0885be03a03c81fb038f2fc3c0913196ab30e3de26f3bb2db11",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default -> field.NotSupported branch on updateStrategy.type. " +
 			"Deliberate divergence: an empty type, which upstream reaches through the same default " +
@@ -121,7 +121,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/daemonset-min-ready-seconds-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateDaemonSetSpec"},
-		Digest:      "sha256:854de045a62b38b1e3423bc962fb7ebf7c9ddfb1aeffbe429c308bcb084b3aed",
+		Digest:      "sha256:acc13d2b128b269650f1c2d39b36bb87cd6c5e601087c4928e691962c3e2ca65",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.MinReadySeconds, ...) call in ValidateDaemonSetSpec.",
 	},
@@ -130,14 +130,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"apps/replicaset-selector-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateReplicaSetSpec"},
-		Digest:      "sha256:f2e36085b90d34c4912750bf30c76c6325eaed55f65fe56d6a2512fc12edcfe9",
+		Digest:      "sha256:fd638e965d961324c568d3d5e4e0948ad1bf977583ee72f905b37d5185d8cec5",
 		ValidatedAt: validatedAt,
 		Note:        selectorNote,
 	},
 	"apps/replicaset-replicas-invalid": {
 		Path:        appsValidationPath,
 		Functions:   []string{"ValidateReplicaSetSpec"},
-		Digest:      "sha256:f2e36085b90d34c4912750bf30c76c6325eaed55f65fe56d6a2512fc12edcfe9",
+		Digest:      "sha256:fd638e965d961324c568d3d5e4e0948ad1bf977583ee72f905b37d5185d8cec5",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeField(spec.Replicas, ...) call in ValidateReplicaSetSpec.",
 	},

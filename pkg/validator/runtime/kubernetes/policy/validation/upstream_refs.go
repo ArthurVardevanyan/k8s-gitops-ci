@@ -17,7 +17,7 @@ const validatedAt = "v1.37.0"
 var pdbFunctions = []string{"ValidatePodDisruptionBudget", "ValidatePodDisruptionBudgetSpec"}
 
 // pdbDigest is the digest over pdbFunctions at validatedAt.
-const pdbDigest = "sha256:f0d2898b603e66847a297d2dca92cf8bb1126edc77aa8b95c8bb3c429c04ebc4"
+const pdbDigest = "sha256:476f48eb2bacb31d49a5d1970c71ce4eb7179991497c9a92b01989da2d6f3a43"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only

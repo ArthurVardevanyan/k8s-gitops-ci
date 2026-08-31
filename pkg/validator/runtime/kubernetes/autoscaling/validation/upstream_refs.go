@@ -28,7 +28,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"autoscaling/max-replicas-invalid": {
 		Path:        autoscalingValidationPath,
 		Functions:   []string{"validateHorizontalPodAutoscalerSpec"},
-		Digest:      "sha256:40627b2929c0f43c2e5fbb518c020ae43850124bbdc2a8a10fb66a10618f25f9",
+		Digest:      "sha256:ae5631d91218c869ef4ee583509993d206f00b903257e39f16ec95d84d86c267",
 		ValidatedAt: validatedAt,
 		Note: "Ports the spec.maxReplicas must-be-greater-than-0 rule. Deliberate divergence: " +
 			"a missing spec.maxReplicas is not reported here even though upstream reports it " +
@@ -42,14 +42,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"autoscaling/scale-up-invalid": {
 		Path:        autoscalingValidationPath,
 		Functions:   []string{"validateScalingRules"},
-		Digest:      "sha256:5822565c8971b326f431e10e1a0532985a8c6b0c6249d23a2a48fcab24c66b43",
+		Digest:      "sha256:9093f4e8d819240ea64681e9536eab81e26c36f3d1b8e23bd51e81d384cb7996",
 		ValidatedAt: validatedAt,
 		Note:        scalingRulesNote,
 	},
 	"autoscaling/scale-down-invalid": {
 		Path:        autoscalingValidationPath,
 		Functions:   []string{"validateScalingRules"},
-		Digest:      "sha256:5822565c8971b326f431e10e1a0532985a8c6b0c6249d23a2a48fcab24c66b43",
+		Digest:      "sha256:9093f4e8d819240ea64681e9536eab81e26c36f3d1b8e23bd51e81d384cb7996",
 		ValidatedAt: validatedAt,
 		Note:        scalingRulesNote,
 	},

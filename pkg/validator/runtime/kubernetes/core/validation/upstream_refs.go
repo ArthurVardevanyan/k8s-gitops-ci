@@ -29,7 +29,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/name-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerCommon"},
-		Digest:      "sha256:a4dbd3861f90d8ae24bebdabb6d2839506dc0d027f470059c534c0ead8d344be",
+		Digest:      "sha256:8f708a22858be520690bd972483bfcc649bcc37ee757c38dd24113e2bfa19ae0",
 		ValidatedAt: validatedAt,
 		Note: "Ports the namePath branch: an absent name is Required and a present one must pass " +
 			"ValidateDNS1123Label. The two are mutually exclusive upstream and are kept that way here. " +
@@ -42,7 +42,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/port-name-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerPorts"},
-		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		Digest:      "sha256:0c583e14a5bf64699161f2202eeb01c4d80f95a7a3525b2cf60ac1070f15fa51",
 		ValidatedAt: validatedAt,
 		Note: "Ports the IsValidPortName branch only, which upstream applies solely when a port name is " +
 			"set, since an unnamed port is legal. The other branches of validateContainerPorts are " +
@@ -73,7 +73,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Additional: []runtime.UpstreamRef{{
 			Path:        "pkg/apis/core/v1/defaults.go",
 			Functions:   []string{"SetDefaults_ReplicationController"},
-			Digest:      "sha256:804c32438cc8c65d9720942aab02fc31af06816b6a4c531139aa33180e560f0c",
+			Digest:      "sha256:2383065a64ea4d28fea31907fb5619507cbf06f8346f80770105a33c6e2827ab",
 			ValidatedAt: validatedAt,
 			Note: "Supplies the selector this rule tests. Without it the check reports every " +
 				"ReplicationController that omits spec.selector, which the API server accepts.",
@@ -89,7 +89,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/duplicate-container-names": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainers", "validateInitContainers", "validateEphemeralContainers"},
-		Digest:      "sha256:0388d1b9a2f1c4dab3ad95caeb848678dbf10a4c750ac7a63071a7fe36093464",
+		Digest:      "sha256:9e9ae5e3675f60e293157886944d3e8870cd1abd6754392acb2075b43f7a7e2e",
 		ValidatedAt: validatedAt,
 		Note: "Ports the allNames/field.Duplicate branch. Upstream splits regular, init " +
 			"and ephemeral containers across validateContainers, validateInitContainers " +
@@ -101,7 +101,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/duplicate-port-names": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerPorts"},
-		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		Digest:      "sha256:0c583e14a5bf64699161f2202eeb01c4d80f95a7a3525b2cf60ac1070f15fa51",
 		ValidatedAt: validatedAt,
 		Note: "Ports the allNames Duplicate branch only. The sibling branches of validateContainerPorts " +
 			"are covered by container/port-name-invalid (IsValidPortName), container/port-number-range " +
@@ -111,7 +111,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/port-number-range": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerPorts"},
-		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		Digest:      "sha256:0c583e14a5bf64699161f2202eeb01c4d80f95a7a3525b2cf60ac1070f15fa51",
 		ValidatedAt: validatedAt,
 		Note: "Ports the containerPort range branch, which upstream expresses as " +
 			"validation.IsValidPortNum(int(port.ContainerPort)). Deliberate divergence: upstream splits " +
@@ -124,7 +124,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/host-port-range": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerPorts"},
-		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		Digest:      "sha256:0c583e14a5bf64699161f2202eeb01c4d80f95a7a3525b2cf60ac1070f15fa51",
 		ValidatedAt: validatedAt,
 		Note: "Ports the hostPort range branch, which upstream expresses as " +
 			"validation.IsValidPortNum(int(port.HostPort)) behind its own port.HostPort != 0 guard. " +
@@ -136,7 +136,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/port-protocol-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerPorts"},
-		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		Digest:      "sha256:0c583e14a5bf64699161f2202eeb01c4d80f95a7a3525b2cf60ac1070f15fa51",
 		ValidatedAt: validatedAt,
 		Note: "Ports the !supportedPortProtocols.Has(port.Protocol) -> field.NotSupported branch " +
 			"(TCP, UDP or SCTP). Deliberate divergence: the sibling len(port.Protocol) == 0 -> " +
@@ -149,7 +149,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Additional: []runtime.UpstreamRef{{
 			Path:        coreValidationPath,
 			Functions:   []string{"supportedPortProtocols"},
-			Digest:      "sha256:918430b01b6d9c4a19b1548766e4d4f8a57ae37730848104627d62d0777dbb3d",
+			Digest:      "sha256:7025c6fa0000f2450b43be9f90f212c6c5fc60d4a0d981e9f0a4d4e827efadd4",
 			ValidatedAt: validatedAt,
 			Note: "The set this rule tests. Cited so that adding a protocol upstream moves the " +
 				"digest instead of silently leaving this check rejecting a value the API server accepts.",
@@ -170,28 +170,28 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"container/image-pull-policy": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validatePullPolicy"},
-		Digest:      "sha256:863a3c3337c6ca5d02f13c9120f634fa2ae6aa2efb894c550e454d28d8f5f808",
+		Digest:      "sha256:a0277f0d5fd7ff385f46d34f6d3927331b11ff37d17b92f7bf2deec2b3d2f2c8",
 		ValidatedAt: validatedAt,
 		Note:        "Upstream additionally requires the field (empty is Required); this check skips empty because defaulting fills it in before validation and unrendered manifests legitimately omit it.",
 	},
 	"container/mount-propagation-value": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateMountPropagation"},
-		Digest:      "sha256:74269abe2122561a5f2b0b3650c750a84e677edfea428c279c5007df28f81d46",
+		Digest:      "sha256:e5f40212f89ab7553916d10cd676ccbcf2829d83c3d16cc175a5c1309f39d05b",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the supported-value branch only. The Bidirectional-requires-privileged branch is not ported: it is a cross-field rule against the container securityContext.",
 	},
 	"container/termination-message-policy-value": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerCommon"},
-		Digest:      "sha256:a4dbd3861f90d8ae24bebdabb6d2839506dc0d027f470059c534c0ead8d344be",
+		Digest:      "sha256:8f708a22858be520690bd972483bfcc649bcc37ee757c38dd24113e2bfa19ae0",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the terminationMessagePolicy switch. The empty case is skipped rather than reported Required, because defaulting supplies it.",
 	},
 	"container/volume-mount-name-undefined": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateVolumeMounts", "IsMatchedVolume"},
-		Digest:      "sha256:557c21473e961112901aabff3714918e08bd449639d6c5685e30929a2bd389c2",
+		Digest:      "sha256:8a642b90311df5fc19224ab138c610ff5258698207a9a0430e2ca7f9117bcf32",
 		ValidatedAt: validatedAt,
 		Note: "Ports the !IsMatchedVolume -> field.NotFound branch (a volumeMount must name a declared volume). " +
 			"The set of declared volumes is the caller's, not the pod spec's alone: for a StatefulSet the API " +
@@ -201,7 +201,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Additional: []runtime.UpstreamRef{{
 			Path:        "pkg/apis/apps/validation/validation.go",
 			Functions:   []string{"volumesToAddForTemplates", "ValidateStatefulSetSpec"},
-			Digest:      "sha256:68d77b8d83710b959c4a977f22529fbd1746ba4dff01cd91f399eccc83a70532",
+			Digest:      "sha256:7555e6f4f97cd7946d82c95c278c85b64dde81bd20597d22a0ebaea3f6e845a0",
 			ValidatedAt: validatedAt,
 			Note: "Supplies the volume set the mount rule is evaluated against. volumesToAddForTemplates builds " +
 				"one volume per claim template; ValidateStatefulSetSpec is cited with it because the precedence " +
@@ -213,7 +213,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"pod-spec/restart-policy-value": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateRestartPolicy"},
-		Digest:      "sha256:bd9dd69734808b0f2de5c957e16c41adf51706310e3196757aeb21d829af6768",
+		Digest:      "sha256:46741962bb02ecee1a5dd104bb757d723cd31d72a5141fbcbc59e8c01901b55c",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default -> field.NotSupported branch on restartPolicy. Deliberate " +
 			"divergence: the empty-value Required branch is skipped, because defaulting sets " +
@@ -232,7 +232,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"pod-spec/toleration-operator-value": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateTolerations"},
-		Digest:      "sha256:26ba60c837f145eb446ab5cc88f2f24e3ac93b913527369bebd1fa1a3752c9df",
+		Digest:      "sha256:081875fd127be4a599df5ae122dd3c4078276e84c656e4b8917ce7108882f367",
 		ValidatedAt: validatedAt,
 		Note: "Ports the operator supported-value branch only; the key/value/effect branches of the same function are not ported. " +
 			"Lt and Gt are accepted: upstream rejects them only when AllowTaintTolerationComparisonOperators is off, " +
@@ -242,35 +242,35 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"pod-spec/affinity-node-selector-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePodSpec"},
-		Digest:      "sha256:dc7bb989a2aa5e7bccc0b2dcef021764e0fc18f6f7e7338d223ded13048c307f",
+		Digest:      "sha256:29b2c14aa676080fcdd79baf32563b9b20e3c616763a2eb42dd07ab58ad490b6",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the unversionedvalidation.ValidateLabels(spec.NodeSelector, ...) call in ValidatePodSpec: nodeSelector keys must be qualified names and values valid label values.",
 	},
 	"pod-spec/pod-affinity-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateAffinity", "ValidateNodeSelectorRequirement", "ValidatePodAffinityTermSelector"},
-		Digest:      "sha256:80ffe01c4d97b46a6bb2b5d17ff0955a43bbcb7662e5205be33cb71ee126b4ec",
+		Digest:      "sha256:ce4fef4c89ca006441e9a50a632b95f57d7a4097d3a83b739f8c35e2b74c1c13",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the label-key/label-value branches reached from validateAffinity: required nodeAffinity matchExpressions/matchFields keys, and pod (anti-)affinity labelSelector keys and values.",
 	},
 	"pod-spec/topology-spread-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateTopologySpreadConstraints"},
-		Digest:      "sha256:6e495685a8d1a7f0dc55ff9ae093bef92b4dfbdedba7521e0e9ee9fcfb8bfd8f",
+		Digest:      "sha256:68a04e8603d2bd346fb134f3b07c78dde0e2f8bb145cc9e2e4484cb936bbfe7c",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the labelSelector validation branch only; maxSkew/whenUnsatisfiable/topologyKey/minDomains branches are not ported.",
 	},
 	"pod-spec/service-account-name-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePodSpec"},
-		Digest:      "sha256:dc7bb989a2aa5e7bccc0b2dcef021764e0fc18f6f7e7338d223ded13048c307f",
+		Digest:      "sha256:29b2c14aa676080fcdd79baf32563b9b20e3c616763a2eb42dd07ab58ad490b6",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateServiceAccountName(spec.ServiceAccountName, false) call in ValidatePodSpec. ValidateServiceAccountName is an alias for apimachinery NameIsDNSSubdomain (generic.go), i.e. IsDNS1123Subdomain.",
 	},
 	"pod-spec/active-deadline-seconds-negative": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidatePodSpec"},
-		Digest:      "sha256:dc7bb989a2aa5e7bccc0b2dcef021764e0fc18f6f7e7338d223ded13048c307f",
+		Digest:      "sha256:29b2c14aa676080fcdd79baf32563b9b20e3c616763a2eb42dd07ab58ad490b6",
 		ValidatedAt: validatedAt,
 		Note: "Ports the activeDeadlineSeconds InclusiveRangeError(1, math.MaxInt32) branch in ValidatePodSpec, " +
 			"both bounds. The note here previously claimed the upper bound was unreachable through int32 " +
@@ -290,7 +290,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"resources/resource-requests-greater-than-limits": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateResourceRequirements"},
-		Digest:      "sha256:9661ff4744e2decbcc616e53c290a5f85574822c5a48e3aa05d4589a0eaf4308",
+		Digest:      "sha256:ebd45fa41579856ed97f11415251a6cf9664e0f1c24da20bdfce141cc5b1b155",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the \"must be less than or equal to <resource> limit\" branch only. The stricter must-be-equal branch for non-overcommittable resources and the Required-limit branch are not ported, since both depend on helper.IsOvercommitAllowed.",
 	},
@@ -306,21 +306,21 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"volume/duplicate-volume-names": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateVolumes"},
-		Digest:      "sha256:24672f720f50d50fcf7f45b1a24a2fc36b995bbffa4b731e45479e983ff1b0c4",
+		Digest:      "sha256:e450f197ceafe7b4881598cc69fac729929f6cb99801e9a263d2b1c0a7dc5e6f",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the allNames/field.Duplicate branch on spec.volumes[].name.",
 	},
 	"volume/secret-name-required": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateSecretVolumeSource"},
-		Digest:      "sha256:fc0888d9a77954b5901bfa011532f80363e4c757bbec470c93a37510f7f029c4",
+		Digest:      "sha256:0e113cdc5ab9c008ad9db36223e94de4651918f4708df956cd358b66bed7badc",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the len(secretSource.SecretName) == 0 -> field.Required branch. It is a required-field rule, not a live lookup: whether the Secret exists in the cluster cannot be checked from a manifest.",
 	},
 	"volume/configmap-name-required": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateConfigMapVolumeSource"},
-		Digest:      "sha256:a0573b41524df4ef32f8d50e05570cb3b64a567ee6c6ff957cda243186ec18cc",
+		Digest:      "sha256:a75fc50ffc885294d3229e8cd29f6f1931e3dacde347a20c9a7c6a93c5157a69",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the len(configMapSource.Name) == 0 -> field.Required branch. As with volume/secret-name-required this is a required-field rule, not a live lookup.",
 	},
@@ -329,7 +329,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"core/object-meta-name-invalid": {
 		Path:        objectMetaPath,
 		Functions:   []string{"ValidateObjectMetaAccessor"},
-		Digest:      "sha256:1ee0006f3c2e88f2728e5641f03cd5282af542416a87b2f879c7dffc6dfb3bfd",
+		Digest:      "sha256:011fc471f77a7b587b23815678cbd425116995d69cd4777631cb5662e41aa4e3",
 		ValidatedAt: validatedAt,
 		Note: "Ports the name/generateName half: generateName is validated with prefix=true whenever set. " +
 			"Deliberate divergence on the name-Required branch: upstream requires a name whenever it is " +
@@ -346,7 +346,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"core/object-meta-namespace-invalid": {
 		Path:        objectMetaPath,
 		Functions:   []string{"validateObjectMetaAccessorWithOptsCommon"},
-		Digest:      "sha256:353cac5eff6478c7fe4c4e9031ee216b69cb7e84077ab1ec571ff1577d2366c6",
+		Digest:      "sha256:feddb0b049625d7337a51a56e16edfb736b1e5faff7e35325ba1cd7aebeba3f6",
 		ValidatedAt: validatedAt,
 		Note: "Ports the ValidateNamespaceName(meta.GetNamespace(), false) branch only; ValidateNamespaceName " +
 			"is an alias for apimachinery NameIsDNSLabel (generic.go), i.e. IsDNS1123Label. " +
@@ -371,7 +371,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"core/object-meta-annotations-invalid": {
 		Path:        objectMetaPath,
 		Functions:   []string{"ValidateAnnotations", "ValidateAnnotationsSize"},
-		Digest:      "sha256:89a0f370e961b4895558f35f64622501b96c778d0aa0f7603abbe85f951b8e23",
+		Digest:      "sha256:ecb199a418fee63df7b67bd1395ca179ca467a468832c2e21bdd19e7997c8760",
 		ValidatedAt: validatedAt,
 		Note: "Ports the qualified-name branch, which lowercases the key first because annotation keys " +
 			"are case-insensitive where label keys are not, and the ValidateAnnotationsSize branch, " +
@@ -385,28 +385,28 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"core/configmap-data-size-exceeded": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateConfigMap"},
-		Digest:      "sha256:6093ed83cf1d9045aa732c0224d29b8f979becf7ec61a799583906783d7c1885",
+		Digest:      "sha256:68ca05c6b2c16e575a3f69b8f91df2a521aef82847031cbf26356d3dea32428d",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the totalSize > core.MaxSecretSize -> field.TooLong branch (data plus binaryData, 1 MiB). The key-name and duplicate-key branches are not ported.",
 	},
 	"core/limitrange-max-min-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateLimitRange"},
-		Digest:      "sha256:e9cf91adcc0d363670085e3760afd4655184ecdcaf826a893b80f93d5a451d61",
+		Digest:      "sha256:cf0cc0f55f463f84b530e2c26f7571df82fcd888b1f63fb94c1ae619005f5503",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the \"min value %s is greater than max value %s\" branch. Upstream reports it on the spec.limits[i].min[k] path; this check reports the equivalent condition on the max path. The default/defaultRequest/maxLimitRequestRatio branches are not ported.",
 	},
 	"core/resourcequota-hard-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateResourceQuotaSpec", "ValidateResourceQuotaResourceName"},
-		Digest:      "sha256:c189076c8a34be4496c148ded6261c5f12b7c339e4f1e338cd19c43b1cd56aca",
+		Digest:      "sha256:af9133fdbf0ed46bab48e778d94f5c180c2df434749ae893cfc66c5087ea7019",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the qualified-name half of ValidateResourceQuotaResourceName as applied to every key of spec.hard; the standard-resource-prefix branch is not ported.",
 	},
 	"core/resourcequota-hard-negative": {
 		Path:        coreValidationPath,
 		Functions:   []string{"ValidateResourceQuotaSpec", "ValidateResourceQuantityValue"},
-		Digest:      "sha256:1f684551a899ad11ae80d01e226de8d1506cad72e7ac09f5309c0322edd2c159",
+		Digest:      "sha256:22aa55408c0e636bd89987ad9b44672f8d9f375fec3708d6faa90d52ab921266",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the ValidateNonnegativeQuantity path of ValidateResourceQuantityValue as applied to every value of spec.hard; the integer-resource branch is not ported.",
 	},

@@ -66,9 +66,23 @@ func Render(src []byte, functions []string) (string, error) {
 			continue
 		}
 		var b strings.Builder
-		// printer.Fprint canonicalizes formatting, so upstream gofmt churn
-		// does not move the digest.
-		if err := (&printer.Config{Mode: printer.RawFormat, Tabwidth: 8}).Fprint(&b, fset, decl); err != nil {
+		// Printed against a fresh, empty FileSet rather than the one the
+		// source was parsed with. The printer uses position information to
+		// decide where to preserve blank lines, so printing with the parse
+		// FileSet leaks the source's line structure into the output: a
+		// dropped comment leaves the blank line it occupied, and adding or
+		// removing a blank line moves the digest.
+		//
+		// That defeated the normalization this digest exists to provide.
+		// Upstream edits doc comments on every release, so citations would
+		// fail for reasons unrelated to validation behaviour - and a check
+		// that cries wolf every release is one whose failures get waved
+		// through, including the real ones.
+		//
+		// An empty FileSet resolves every position as unknown, so the
+		// printer emits its canonical layout and the digest depends only on
+		// the syntax tree.
+		if err := (&printer.Config{Mode: printer.RawFormat, Tabwidth: 8}).Fprint(&b, token.NewFileSet(), decl); err != nil {
 			return "", fmt.Errorf("render %s: %w", name, err)
 		}
 		found[name] = b.String()

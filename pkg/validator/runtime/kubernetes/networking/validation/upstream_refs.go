@@ -24,7 +24,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"ingress/path-type-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"validateHTTPIngressPath"},
-		Digest:      "sha256:1f1d5b2706899fa638f06ca9d47e43fdb88a5ba0954d6da02c49f01dfe5126bd",
+		Digest:      "sha256:b080f2e353f20f1fc91b9e31b93c664238b8f70683cd8a3816441e67c266d43b",
 		ValidatedAt: validatedAt,
 		Note: "Ports the default: field.NotSupported branch of the pathType switch. Upstream additionally " +
 			"reports a nil pathType as Required. Deliberate divergence: an omitted pathType is not " +
@@ -36,7 +36,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Additional: []runtime.UpstreamRef{{
 			Path:        networkingValidationPath,
 			Functions:   []string{"supportedPathTypes"},
-			Digest:      "sha256:321ec83f450fb296ec5701ae0fbb586889850c16f0a6a15909dc81ea6b54454b",
+			Digest:      "sha256:cca5ee444bcc0489ce31d3bfebf981dcf6c1b656615575b2703d924f34bc5e4d",
 			ValidatedAt: validatedAt,
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
@@ -46,14 +46,14 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"network-policy/policy-type-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicySpec"},
-		Digest:      "sha256:8c5cb74a1b8b6305913af7959b4617b8fae62d8dbb507aa48ad06b14103b2cea",
+		Digest:      "sha256:8d49962ef76cfba94b53e58a687cc3d56d9b67512ae1b730ea91afcef6f798e0",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !allowed.Has(string(pType)) -> field.NotSupported branch on spec.policyTypes. The \"may not specify more than two policyTypes\" branch and the podSelector/peer branches are not ported.",
 	},
 	"network-policy/port-range-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicyPort"},
-		Digest:      "sha256:170d64ffe974b384932f1c67058e0acc0f2feb3cbad540924a90b500f9859996",
+		Digest:      "sha256:44de03ec43f9534a14917e64cf75a17ed94dd8b5c726781610e0969d3f5b5132",
 		ValidatedAt: validatedAt,
 		Note: "Ports the three endPort-pairing branches: *port.EndPort < port.Port.IntVal (\"must be " +
 			"greater than or equal to `port`\"), endPort set with no port (\"may not be specified when " +
@@ -65,7 +65,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"network-policy/protocol-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicyPort"},
-		Digest:      "sha256:170d64ffe974b384932f1c67058e0acc0f2feb3cbad540924a90b500f9859996",
+		Digest:      "sha256:44de03ec43f9534a14917e64cf75a17ed94dd8b5c726781610e0969d3f5b5132",
 		ValidatedAt: validatedAt,
 		Note: "Ports the protocol field.NotSupported branch (TCP, UDP or SCTP) only. " +
 			"network-policy/port-range-invalid covers the endPort-pairing branches of the same " +
@@ -76,13 +76,13 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"service/type-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateService"},
-		Digest:      "sha256:dda4013238c5d4cc19046be1a5fdfa8ae764452fdfadac074d1b49b436144674",
+		Digest:      "sha256:021ecdc235c0d6920a1f8e94a91d9e4e62f6b572fbf554c5a1158ad4243b3149",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !supportedServiceType.Has(service.Spec.Type) -> field.NotSupported branch. Upstream additionally reports an empty type as Required; this check skips empty because defaulting supplies ClusterIP.",
 		Additional: []runtime.UpstreamRef{{
 			Path:        coreValidationPath,
 			Functions:   []string{"supportedServiceType"},
-			Digest:      "sha256:8902d9b5c9e3a6acc7f51200a2795e13980426892388637f4e28cc994fd06f97",
+			Digest:      "sha256:45b41734a8b04054f17cb3288bdfbef297f3f1e367776a7621e819b8af82b234",
 			ValidatedAt: validatedAt,
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
@@ -90,7 +90,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	"service/session-affinity-invalid": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateService"},
-		Digest:      "sha256:dda4013238c5d4cc19046be1a5fdfa8ae764452fdfadac074d1b49b436144674",
+		Digest:      "sha256:021ecdc235c0d6920a1f8e94a91d9e4e62f6b572fbf554c5a1158ad4243b3149",
 		ValidatedAt: validatedAt,
 		Note:        "Ports the !supportedSessionAffinityType.Has(service.Spec.SessionAffinity) -> field.NotSupported branch (ClientIP or None). Upstream additionally reports an empty sessionAffinity as Required; this check skips empty because defaulting supplies None. The sessionAffinityConfig branches are not ported.",
 		Additional: []runtime.UpstreamRef{{

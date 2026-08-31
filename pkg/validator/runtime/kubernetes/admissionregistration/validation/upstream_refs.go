@@ -17,8 +17,8 @@ const validatedAt = "v1.37.0"
 // validates reinvocationPolicy), so each variant of a shared check cites and
 // digests its own upstream function rather than sharing one ref.
 const (
-	mutatingWebhookDigest   = "sha256:95350f655c63f4d0ff865a4d59f2bc48f9b1dce7dc21c685339a37b5a5beb894"
-	validatingWebhookDigest = "sha256:8cb89d2d65fa921123ff73561cf58679bbd830cde45138f74a43cd529b0d53eb"
+	mutatingWebhookDigest   = "sha256:a921ba2615a614386c350ad5c6f020dfca2c3acbfd5d364a5e93e8834d06141c"
+	validatingWebhookDigest = "sha256:f032b44225340e7948aadc8a67e6a4154c4fe1639d1e3f30f196fa773d1ad2c9"
 )
 
 // Notes shared between the mutating and validating variants of each rule.
@@ -59,7 +59,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Additional: []runtime.UpstreamRef{{
 			Path:        admissionregistrationValidationPath,
 			Functions:   []string{"supportedFailurePolicies"},
-			Digest:      "sha256:d052558bfaeeeb961b66785c3151d6bbab94b71358e2ff6b137985fc0c86e29e",
+			Digest:      "sha256:dd0059f1e133b857360b03a0a562deaac33cd75689305b1d1a7aec30f732497a",
 			ValidatedAt: validatedAt,
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
@@ -89,7 +89,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Additional: []runtime.UpstreamRef{{
 			Path:        admissionregistrationValidationPath,
 			Functions:   []string{"supportedFailurePolicies"},
-			Digest:      "sha256:d052558bfaeeeb961b66785c3151d6bbab94b71358e2ff6b137985fc0c86e29e",
+			Digest:      "sha256:dd0059f1e133b857360b03a0a562deaac33cd75689305b1d1a7aec30f732497a",
 			ValidatedAt: validatedAt,
 			Note:        "The set the ported branch tests membership against. Upstream decides acceptance here, not in the function body, so a value added to this set alone would leave the function digest unchanged while this check went on rejecting a manifest the API server accepts.",
 		}},
