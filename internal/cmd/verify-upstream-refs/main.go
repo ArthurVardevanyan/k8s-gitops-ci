@@ -55,6 +55,14 @@ func main() {
 	// without a valid digest (RegisterAll rejects it), so the digest has to
 	// be obtainable before the table entry exists.
 	if *compute != "" {
+		// -repo comes straight from the command line and is then used to
+		// build a raw.githubusercontent.com URL and a cache path. Reject a
+		// malformed slug here, against the same rule the ref tables enforce,
+		// so it fails with a clear message instead of surfacing later as a
+		// confusing fetch error or a "no go.mod requirement found".
+		if err := runtime.ValidateRepo(*repoFlag); err != nil {
+			fatalf("-repo: %v", err)
+		}
 		tagFor, err := versionFor(*repoFlag, *tag)
 		if err != nil {
 			fatalf("%v", err)
@@ -340,9 +348,22 @@ func cachePathFor(cacheDir, repo, version, path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving cache dir %q: %w", cacheDir, err)
 	}
-	for name, part := range map[string]string{"repo": repo, "version": version, "path": path} {
-		if filepath.IsAbs(filepath.FromSlash(part)) {
-			return "", fmt.Errorf("refusing to use cache path: %s %q must not be absolute", name, part)
+	// Ordered, not a map: with a map the component named in the error is
+	// whichever the iteration happened to yield, so the same bad input
+	// describes itself differently on consecutive runs.
+	for _, part := range []struct{ name, value string }{
+		{"repo", repo},
+		{"version", version},
+		{"path", path},
+	} {
+		// An empty component is rejected rather than tolerated because
+		// filepath.Join silently drops it, collapsing distinct refs onto one
+		// cache file - a wrong cache hit, not a failed lookup.
+		if part.value == "" {
+			return "", fmt.Errorf("refusing to use cache path: %s must not be empty", part.name)
+		}
+		if filepath.IsAbs(filepath.FromSlash(part.value)) {
+			return "", fmt.Errorf("refusing to use cache path: %s %q must not be absolute", part.name, part.value)
 		}
 	}
 	joined := filepath.Join(base, filepath.FromSlash(repo), version, filepath.FromSlash(path))

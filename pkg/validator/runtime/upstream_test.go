@@ -263,3 +263,31 @@ func TestPseudoVersionAgreesWithGoModule(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateRepo(t *testing.T) {
+	valid := []string{
+		"kubernetes/kubernetes",
+		"ovn-kubernetes/ovn-kubernetes",
+		"davecgh/go-spew",
+		"Some.Org/some_repo-v2",
+	}
+	for _, r := range valid {
+		if err := ValidateRepo(r); err != nil {
+			t.Errorf("ValidateRepo(%q) = %v, want nil", r, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"kubernetes",
+		"../../etc",
+		"owner/name/extra",
+		"owner /name",
+		"https://github.com/owner/name",
+	}
+	for _, r := range invalid {
+		if err := ValidateRepo(r); err == nil {
+			t.Errorf("ValidateRepo(%q) = nil, want an error", r)
+		}
+	}
+}

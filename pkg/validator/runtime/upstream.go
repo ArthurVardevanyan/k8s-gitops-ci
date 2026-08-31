@@ -185,8 +185,10 @@ func (r UpstreamRef) EffectiveKind() RefKind {
 // Validate reports whether the ref is structurally usable. It does not touch
 // the network; `task verify:upstream-refs` performs the upstream check.
 func (r UpstreamRef) Validate() error {
-	if r.Repo != "" && !repoPattern.MatchString(r.Repo) {
-		return fmt.Errorf("repo %q must be an \"owner/name\" GitHub slug", r.Repo)
+	if r.Repo != "" {
+		if err := ValidateRepo(r.Repo); err != nil {
+			return err
+		}
 	}
 	kind := r.kind()
 	if kind != RefKindRewrite && kind != RefKindImport {
@@ -233,6 +235,18 @@ func (r UpstreamRef) Validate() error {
 		if err := a.Validate(); err != nil {
 			return fmt.Errorf("additional[%d]: %w", i, err)
 		}
+	}
+	return nil
+}
+
+// ValidateRepo reports whether repo is a well-formed GitHub "owner/name"
+// slug. It is exported so that callers accepting a repository from outside
+// the ref tables - verify-upstream-refs' -repo flag, for one - can reject a
+// bad value up front and against the same rule the ref tables enforce,
+// rather than re-deriving it and drifting.
+func ValidateRepo(repo string) error {
+	if !repoPattern.MatchString(repo) {
+		return fmt.Errorf("repo %q must be an \"owner/name\" GitHub slug", repo)
 	}
 	return nil
 }

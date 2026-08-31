@@ -543,3 +543,56 @@ func TestSameVersionHandlesHyphenatedPrerelease(t *testing.T) {
 		t.Error("sameVersion() did not match a hyphenated-prerelease pseudo-version against its own commit")
 	}
 }
+
+// cachePathFor's diagnostics must be reproducible. Reporting whichever
+// invalid component a map iteration happened to yield first makes a failure
+// describe itself differently on consecutive identical runs.
+func TestCachePathForReportsComponentsInAFixedOrder(t *testing.T) {
+	dir := t.TempDir()
+	// Every component is invalid, so only the ordering decides which is named.
+	var first string
+	for i := 0; i < 50; i++ {
+		_, err := cachePathFor(dir, "/abs-repo", "/abs-version", "/abs-path")
+		if err == nil {
+			t.Fatal("expected an error when every component is absolute")
+		}
+		if i == 0 {
+			first = err.Error()
+			continue
+		}
+		if err.Error() != first {
+			t.Fatalf("error text varies between identical calls:\n  %q\n  %q", first, err.Error())
+		}
+	}
+	if !strings.Contains(first, "repo") {
+		t.Errorf("expected the first-declared component (repo) to be reported, got %q", first)
+	}
+}
+
+// An empty component silently collapses in filepath.Join, so distinct refs
+// can map onto the same cache file.
+func TestCachePathForRejectsEmptyComponents(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct{ name, repo, version, path string }{
+		{"empty repo", "", "v1.0.0", "pkg/a.go"},
+		{"empty version", "some-org/dep", "", "pkg/a.go"},
+		{"empty path", "some-org/dep", "v1.0.0", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := cachePathFor(dir, tc.repo, tc.version, tc.path); err == nil {
+				t.Error("expected an error for an empty component")
+			}
+		})
+	}
+
+	// Demonstrates why: without the check these two distinct refs collapse
+	// onto one file.
+	t.Run("collision the check prevents", func(t *testing.T) {
+		a := filepath.Join(dir, "some-org/dep", "", "v1.0.0/pkg/a.go")
+		b := filepath.Join(dir, "some-org/dep", "v1.0.0", "pkg/a.go")
+		if a != b {
+			t.Skip("join semantics differ on this platform")
+		}
+	})
+}
