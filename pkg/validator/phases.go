@@ -832,13 +832,28 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	allFindings = append(allFindings, docResult.Findings...)
 	allFindings = append(allFindings, overlayResult.Findings...)
 
+	// Separate findings by section: runtime-validation checks (core, rbac,
+	// policy, etc.) render as their own section; everything else falls into
+	// resource-compliance. A finding's section is determined by looking up
+	// its CheckID in the check registry.
+	runtimeFindings, complianceFindings := separateFindingsBySection(allFindings)
+
+	if len(runtimeFindings) > 0 {
+		res.Blocking = true
+		log.Error("RuntimeValidation: %d finding(s)", len(runtimeFindings))
+		for _, f := range runtimeFindings {
+			log.ErrorInSection("RuntimeValidation", "%s (%s/%s): %s", complianceTitle(f.CheckID), f.Kind, f.Name, f.Message)
+		}
+		res.Sections = append(res.Sections, ComposeRuntimeValidationSection(runtimeFindings))
+	}
+
 	// Resource-level blocking/warning classification. Uses the attribution
 	// context (built from the PR's changed files) so a finding is blocking
 	// only when its specific resource (Kind/Name) was directly modified in a
 	// source file that feeds this overlay - not when an entirely unrelated
 	// overlay kustomization.yaml was touched (see compliance_attribution.go).
 	attrCtx := buildAttributionCtx(changed, apps)
-	blockingByCheck, nonblockingByCheck := classifyResourceCompliance(allFindings, attrCtx)
+	blockingByCheck, nonblockingByCheck := classifyResourceCompliance(complianceFindings, attrCtx)
 
 	var directTotal, indirectTotal int
 	combinedBlocking := make([]check.Finding, 0, len(allFindings))
@@ -878,13 +893,31 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		return indexOfComplianceCheck(indirect[i].CheckID) < indexOfComplianceCheck(indirect[j].CheckID)
 	})
 
+	// Runtime findings lead the structured result. They are excluded from the
+	// compliance classification above - they are never attributed, exempted or
+	// demoted to a warning - but they must still appear in Check.Findings, the
+	// public per-finding result. Omitting them made a run with a runtime
+	// violation report Blocking=true and render an error section while
+	// Check.Findings was empty, so any consumer reading findings rather than
+	// sections saw a clean run. They sort first because they are the
+	// unconditionally-blocking family, and they carry no rank in
+	// complianceCheckOrder to sort by.
+	combinedFindings := make([]check.Finding, 0, len(runtimeFindings)+len(direct)+len(indirect))
+	combinedFindings = append(combinedFindings, runtimeFindings...)
+	combinedFindings = append(combinedFindings, direct...)
+	combinedFindings = append(combinedFindings, indirect...)
+
 	combinedCheck := check.Result{
-		Findings: append(direct, indirect...),
+		Findings: combinedFindings,
 		Exempted: append(docResult.Exempted, overlayResult.Exempted...),
 	}
 	res.Check = combinedCheck
 
-	res.Blocking = len(direct) > 0 || ghostBlockingCount > 0
+	// Runtime findings are always blocking: they describe manifests the API
+	// server itself rejects. They must be OR-ed in here rather than relying
+	// on the earlier assignment, which this line would otherwise overwrite -
+	// leaving Blocking=false and Status="ok" on a run that Failed().
+	res.Blocking = len(direct) > 0 || ghostBlockingCount > 0 || len(runtimeFindings) > 0
 
 	// Per-check console lines: blocking
 	// sub-checks log an error (fail the run), non-blocking sub-checks log a
@@ -1540,4 +1573,19 @@ func finalizeCompliance(findings []check.Finding, changedFiles map[string]bool) 
 		}
 	}
 	return direct, indirect
+}
+
+// separateFindingsBySection splits findings into runtime-validation (checks
+// whose registered Section() returns "runtime-validation") and everything
+// else (resource-compliance). Uses the check registry to look up each
+// finding's CheckID.
+func separateFindingsBySection(findings []check.Finding) (runtimeFindings, complianceFindings []check.Finding) {
+	for _, f := range findings {
+		if c, ok := check.ByID(f.CheckID); ok && c.Section() == "runtime-validation" {
+			runtimeFindings = append(runtimeFindings, f)
+		} else {
+			complianceFindings = append(complianceFindings, f)
+		}
+	}
+	return runtimeFindings, complianceFindings
 }

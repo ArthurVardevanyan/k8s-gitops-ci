@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: j
+spec:
+  completionMode: ""
+  podReplacementPolicy: ""
+  template:
+    metadata:
+      labels:
+        app: j
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: c
+          image: nginx:1.25

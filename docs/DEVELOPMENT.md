@@ -85,6 +85,13 @@ pkg/
                        `nad_wiring.go`, `nonapp_wiring.go`, and
                        `dispatch.go` (see
                        docs/ARCHITECTURE.md#future-simplifications).
+  validator/runtime/ shared types (Finding, Check interface) and the
+                     dual-pass wiring (ScopeDoc + IsRenderSensitive)
+                     used by the runtime validation checks; the checks
+                     themselves live under runtime/kubernetes/* (one
+                     package per API group, each with a validation/
+                     subpackage containing admission-enforced
+                     structural rules)
   lint/              CLI-tool wrappers, one package per tool (golangci,
                      kubeconform, kyverno, markdownlint, prettier,
                      shellcheck, yamlsyntax)
@@ -912,34 +919,36 @@ See [`CI.md`](CI.md) for what `task ci`'s underlying pipeline
 (`k8s-gitops-ci pipeline`/`ci`) actually checks once built — this table
 is about the local dev-loop `task` targets themselves.
 
-| Target                    | Purpose                                                                                                                                                               |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `version:check`           | Validate the `VERSION` file (semver; never behind latest tag/`main` unless this PR doesn't touch `VERSION`; not an under-bump for the commits since the last release) |
-| `mod`                     | Download and tidy Go modules                                                                                                                                          |
-| `mod:check`               | Ensure `go.mod`/`go.sum` are tidy without modifying the working tree                                                                                                  |
-| `mod:verify`              | Verify Go module integrity and checksums                                                                                                                              |
-| `install-tools`           | Install all Go development tools to `.tool/`                                                                                                                          |
-| `install-tools:go`        | Install Go tooling (golangci-lint, govulncheck, gofumpt, goimports)                                                                                                   |
-| `format`                  | Auto-format Go code (goimports + gofumpt) and tidy modules                                                                                                            |
-| `format:check`            | Check Go formatting without modifying files (fails if changes needed)                                                                                                 |
-| `lint`                    | Run golangci-lint                                                                                                                                                     |
-| `vet`                     | Run `go vet`                                                                                                                                                          |
-| `vulncheck`               | Check for known vulnerabilities (only fails on fixable findings)                                                                                                      |
-| `build`                   | Build `bin/k8s-gitops-ci`                                                                                                                                             |
-| `test`                    | Run test suite                                                                                                                                                        |
-| `test:cover`              | Run tests with coverage profile + race detector                                                                                                                       |
-| `test:race`               | Alias for `test:cover` (race detector runs there)                                                                                                                     |
-| `test:homelab-prs`        | Replay the last _N_ merged PRs of a real GitOps repo (default HomeLab) — smoke gate, see [Testing](#end-to-end--regression-replay)                                    |
-| `coverage:report`         | Print per-file coverage report                                                                                                                                        |
-| `coverage:html`           | Generate HTML coverage report and open in browser                                                                                                                     |
-| `ci`                      | Full CI pipeline — version check, mod check, format, schemas, lint, vulncheck, test, build                                                                            |
-| `clean`                   | Remove build artifacts, caches, and temp files                                                                                                                        |
-| `update`                  | Run all update tasks (deps, schemas/policies pin bump + repack, scoped-resources)                                                                                     |
-| `update:deps`             | Upgrade all Go dependencies and tidy `go.mod`/`go.sum`                                                                                                                |
-| `schemas:pull`            | Repack embedded kubeconform schemas from the pinned `SCHEMA_REPO_SHA` (see `docs/SCHEMAS.md`)                                                                         |
-| `policies:pull`           | Repack embedded Kyverno policies (placeholder by default — see `docs/SCHEMAS.md`)                                                                                     |
-| `update:schemas`          | Bump the pinned `SCHEMA_REPO_SHA` in `scripts/pull-schemas.sh` to the `SCHEMA_REPO_BRANCH` tip (see `docs/SCHEMAS.md`)                                                |
-| `update:policies`         | Bump the pinned policy ref (no-op while policies are a static placeholder — see `docs/SCHEMAS.md`)                                                                    |
-| `update:scoped-resources` | Regenerate `resource_scope.go`/`extra_resource_scope.go` from a live cluster's `kubectl api-resources`                                                                |
+| Target                    | Purpose                                                                                                                                                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `version:check`           | Validate the `VERSION` file (semver; never behind latest tag/`main` unless this PR doesn't touch `VERSION`; not an under-bump for the commits since the last release)            |
+| `mod`                     | Download and tidy Go modules                                                                                                                                                     |
+| `mod:check`               | Ensure `go.mod`/`go.sum` are tidy without modifying the working tree                                                                                                             |
+| `mod:verify`              | Verify Go module integrity and checksums                                                                                                                                         |
+| `install-tools`           | Install all Go development tools to `.tool/`                                                                                                                                     |
+| `install-tools:go`        | Install Go tooling (golangci-lint, govulncheck, gofumpt, goimports)                                                                                                              |
+| `format`                  | Auto-format Go code (goimports + gofumpt) and tidy modules                                                                                                                       |
+| `format:check`            | Check Go formatting without modifying files (fails if changes needed)                                                                                                            |
+| `lint`                    | Run golangci-lint                                                                                                                                                                |
+| `vet`                     | Run `go vet`                                                                                                                                                                     |
+| `vulncheck`               | Check for known vulnerabilities (only fails on fixable findings)                                                                                                                 |
+| `build`                   | Build `bin/k8s-gitops-ci`                                                                                                                                                        |
+| `test`                    | Run test suite                                                                                                                                                                   |
+| `test:cover`              | Run tests with coverage profile + race detector                                                                                                                                  |
+| `test:race`               | Alias for `test:cover` (race detector runs there)                                                                                                                                |
+| `test:homelab-prs`        | Replay the last _N_ merged PRs of a real GitOps repo (default HomeLab) — smoke gate, see [Testing](#end-to-end--regression-replay)                                               |
+| `coverage:report`         | Print per-file coverage report                                                                                                                                                   |
+| `coverage:html`           | Generate HTML coverage report and open in browser                                                                                                                                |
+| `ci`                      | Full CI pipeline — version check, mod check, format, schemas, upstream refs, lint, vulncheck, test, build, smoke gate                                                            |
+| `clean`                   | Remove build artifacts, caches, and temp files                                                                                                                                   |
+| `update`                  | Run all update tasks (deps, schemas/policies pin bump + repack, scoped-resources)                                                                                                |
+| `update:deps`             | Upgrade all Go dependencies and tidy `go.mod`/`go.sum`                                                                                                                           |
+| `schemas:pull`            | Repack embedded kubeconform schemas from the pinned `SCHEMA_REPO_SHA` (see `docs/SCHEMAS.md`)                                                                                    |
+| `policies:pull`           | Repack embedded Kyverno policies (placeholder by default — see `docs/SCHEMAS.md`)                                                                                                |
+| `update:checks`           | Regenerate the registered runtime checks snapshot (`testdata/registered_checks.txt`)                                                                                             |
+| `update:schemas`          | Bump the pinned `SCHEMA_REPO_SHA` in `scripts/pull-schemas.sh` to the `SCHEMA_REPO_BRANCH` tip (see `docs/SCHEMAS.md`)                                                           |
+| `update:policies`         | Bump the pinned policy ref (no-op while policies are a static placeholder — see `docs/SCHEMAS.md`)                                                                               |
+| `update:scoped-resources` | Regenerate `resource_scope.go`/`extra_resource_scope.go` from a live cluster's `kubectl api-resources`                                                                           |
+| `verify:upstream-refs`    | Prove every runtime validation check's cited upstream Kubernetes function still exists and is unchanged since it was validated (runs as a step in `task ci`; fetches are cached) |
 
 Run `task --list` for the authoritative, up-to-date list.

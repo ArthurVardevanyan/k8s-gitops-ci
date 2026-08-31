@@ -29,6 +29,15 @@ package map; this is the detailed, step-by-step reference.
     - [Ghost Patch Detection](#ghost-patch-detection)
     - [Scaffold Validation](#scaffold-validation)
     - [Registered checks](#registered-checks)
+      - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
+        - [Every check must cite a verifiable upstream function](#every-check-must-cite-a-verifiable-upstream-function)
+        - [Version skew and feature gates (known limitation)](#version-skew-and-feature-gates-known-limitation)
+        - [Cite the set when the set decides acceptance](#cite-the-set-when-the-set-decides-acceptance)
+        - [What the citation does not prove: `Note`](#what-the-citation-does-not-prove-note)
+        - [Dispatch owns kind filtering](#dispatch-owns-kind-filtering)
+        - [Object name validation](#object-name-validation)
+        - [Known gaps: upstream rules not yet ported](#known-gaps-upstream-rules-not-yet-ported)
+        - [Deferred: policy-style checks removed from this family](#deferred-policy-style-checks-removed-from-this-family)
       - [Raw vs. rendered check input (dual-pass compliance)](#raw-vs-rendered-check-input-dual-pass-compliance)
       - [`namespace`](#namespace)
       - [`psa-labels`](#psa-labels)
@@ -743,6 +752,566 @@ automatically exemptable via its own check ID (see
 | `podspec-defaults` | `pkg/validator/podspec`     | Doc     | Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...) and container `securityContext`/`resources.requests`/`resources.limits` are all set                                                                                                                                                                                                                                                                                            |
 | `placeholder`      | `pkg/validator/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML (AVP-scheme secret-reference tokens like `<path:...>` are deliberately not flagged — see below)                                                                                                                                                                                                                                 |
 | `cluster-identity` | `pkg/validator/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID)                                                                                                                                                                    |
+
+#### Runtime validation checks (admission rules)
+
+Runtime-validation checks are ports of the Kubernetes API server's own
+validation logic — the `k8s.io/kubernetes/pkg/apis/*/validation` packages,
+which upstream does not publish as an importable library. They catch
+manifests the API server itself would reject at apply time: things
+JSON-schema validation structurally cannot express (allowed values,
+numeric ranges and signs, uniqueness, cross-field consistency, and string
+formats such as DNS-1123 labels, qualified names, or cron syntax). See
+[SCHEMAS.md](SCHEMAS.md#runtime-validation-vs-kubeconform) for why these
+cannot come out of the schema pipeline instead.
+
+They live under `pkg/validator/runtime/` (shared adapter and finding
+types) and `pkg/validator/runtime/kubernetes/<apigroup>/validation/` (the
+checks themselves), and they render as their **own report section,
+"Runtime Validation"** (`Section()` returns `"runtime-validation"`),
+separate from Resource Compliance.
+
+Three properties distinguish this family from the registered checks
+table above:
+
+- **Always blocking, never exemptable.** A runtime finding describes a
+  manifest the cluster rejects, so suppressing it would only defer the
+  failure to apply time — the PR would go green and the sync would fail.
+  The adapter implements the `check.NonExemptable` interface
+  (`pkg/validator/check/check.go`), which makes `check.Register` skip its
+  usual `exempt.RegisterExemptable` call, so no annotation and no
+  `EXEMPTIONS=(...)` selector can match one. `TestRuntimeChecksAreNonExemptable`
+  enforces this for every registered runtime check. See
+  [EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids).
+- **Kind-scoped by declaration.** Each check declares the kinds it
+  applies to in its embedded `runtime.Meta`; the adapter inverts that
+  applies-to list into the existing `check.DocSkipper` contract
+  (`SkipDoc(kind) bool`), so a check is never handed a document kind it
+  doesn't care about. An empty list means "every kind". The adapter is the
+  only kind filter: most checks do not repeat the guard inside `Run`, and
+  rely on never being handed the wrong kind. See
+  [Dispatch owns kind filtering](#dispatch-owns-kind-filtering) for why
+  that matters when calling a check directly.
+- **Registration is asserted, not assumed.** Each `validation`
+  sub-package registers its checks from an `init()`, pulled in by blank
+  imports in `pkg/validator/runtime/kubernetes/register.go`.
+  `TestEveryValidationPackageRegisters` asserts one representative check
+  ID per sub-package is actually present in the registry. A package that
+  is never imported, or imported without an `init()`, registers nothing
+  and its checks simply never run — a failure that is invisible in a
+  passing pipeline, since a check that never runs reports nothing.
+
+**The standard for adding a new one: a runtime check must be a faithful
+1:1 port of a specific upstream Kubernetes validation rule, or it does
+not belong in this family.** "Always blocking, non-exemptable" is only
+defensible if the cluster really would reject the manifest. Anything that
+is merely a best practice — however good a practice — belongs in the
+exemptable resource-compliance family in the table above instead.
+
+Two failure modes disqualify a rule, and both are easy to write by
+accident. A **fabricated** rule is one upstream has no equivalent for at
+all. A **distorted** one is a real rule with materially wrong semantics:
+the wrong validator (`IsDNS1123Subdomain` where upstream uses
+`ValidateDNS1123Label`), the wrong field name, the wrong threshold, the
+wrong enum, or a condition that can never fire. Neither is detectable by
+reading the check in isolation, which is why the citation requirement
+below is mandatory rather than advisory.
+
+##### Every check must cite a verifiable upstream function
+
+That standard is enforced, not merely stated. Each check supplies an
+`UpstreamRef` in its package's `upstream_refs.go`:
+
+```go
+"apps/deployment-replicas-invalid": {
+    Path:        "pkg/apis/apps/validation/validation.go",
+    Functions:   []string{"ValidateDeploymentSpec"},
+    Digest:      "sha256:...",
+    ValidatedAt: "v1.37.0",
+},
+```
+
+`runtime.RegisterAll` **panics** if a registered check has no valid ref, so
+a check added without a citation fails on the first `go test` or binary
+start. `Path` is relative to the root of `kubernetes/kubernetes`, which
+lets refs into staging modules (apimachinery, apiextensions-apiserver) use
+the same form as refs into `pkg/apis/*`.
+
+Citing a **function**, not a file, is the point. A file path such as
+`pkg/apis/core/validation/validation.go` is equally true of a faithful
+port and of an invented rule — which is exactly how the fabricated checks
+above survived review. Line numbers are forbidden outright: they drift on
+every upstream release, and every incorrect citation in this repository's
+history was a stale line range (one file cited `validation.go:5200-5210`
+for a rule that actually lived some 3000 lines away).
+
+Two layers verify this:
+
+- **Offline, in `task ci`** — `TestEveryRuntimeCheckCitesUpstream` walks
+  the registry and asserts every runtime check has a well-formed ref
+  pointing at a Kubernetes API validation location. It walks the registry
+  rather than scanning source because the admissionregistration checks
+  compose their IDs at runtime, so no grep or AST pass can enumerate them.
+- **Online, via `task verify:upstream-refs`** — fetches each cited file at
+  the pinned tag and proves every cited function still exists and is
+  unchanged. `Digest` is a hash of the cited functions' normalized source
+  (comments and formatting stripped), so upstream documentation churn and
+  gofmt changes are quiet while real logic changes fail. "Stripped" means
+  the syntax tree only: the cited declarations are re-printed against an
+  empty `FileSet`, so no position information from the source survives. That
+  detail matters — printing against the parse `FileSet` leaves the blank line
+  a dropped comment occupied, which made a doc-comment edit move the digest
+  and would have failed every citation on releases that changed no logic.
+  `internal/upstreamref` has unit tests asserting both halves: what must not
+  move the digest (comments, blank lines, gofmt, declaration order, unrelated
+  code) and what must (any change to a cited body or set, and a cited name
+  disappearing). This runs as its
+  own step in `task ci`. Fetched sources are cached under `XDG_CACHE_HOME`,
+  so a warm run does no network I/O - the same pattern `schemas:pull`
+  already uses.
+
+###### Cite the set when the set decides acceptance
+
+Upstream writes an enum in one of two shapes, and they are not equally covered
+by a digest:
+
+```go
+switch policy {                          // members live IN the function
+case core.PullAlways, core.PullNever:    // -> the function digest covers them
+
+if !supportedServiceType.Has(t) {        // members live in a package-level set
+                                         // -> the function digest does NOT
+```
+
+In the second shape the function body can be byte-identical across releases
+while the values it accepts change underneath it. A check that copies those
+members would keep rejecting a value the API server now accepts, and
+`verify:upstream-refs` would stay green throughout, because the function it
+digests never moved — a silent false rejection on a rule that is
+always-blocking and non-exemptable.
+
+So a check whose accepted values come from a package-level set cites that set
+in `Additional`, where it is verified exactly like the function. Eleven checks
+do (`supportedServiceType`, `supportedSessionAffinityType`,
+`supportedPathTypes`, `supportedAccessModes`, `supportedVolumeModes`,
+`supportedReclaimPolicy`, `supportedVolumeBindingModes`,
+`supportedFailurePolicies`, `supportedPortProtocols`), and
+`TestEnumBackedChecksCiteTheirUpstreamSet` pins them.
+
+Do not cite a set that only formats the error message. `validatePullPolicy`
+decides acceptance in its `switch` and passes `supportedPullPolicies` to
+`field.NotSupported` purely for the message; citing it would imply a guarantee
+the citation does not give. The same applies to sets built locally inside the
+function, as `validateMountPropagation` does — the digest already covers those.
+
+###### What the citation does not prove: `Note`
+
+A ref also carries a required `Note` recording which branches of the cited
+function the check ports and which it deliberately skips. Neither layer
+above verifies a word of it. The digest proves the upstream function has
+not changed; it says nothing about whether the note describes what the
+check actually implements. A note is therefore the one part of a ref that
+can drift from the code silently, and in practice it does — a note written
+when a branch genuinely was unported stays behind when a later fix ports
+it.
+
+This matters more than a stale comment normally would, because a note is
+what a reviewer reads to accept an always-blocking, non-exemptable rule as
+a deliberate subset rather than an incomplete port. Every note defect found
+so far concealed a real gap: notes claiming a branch was "covered by" a
+sibling check that did not cover it (hiding container `hostPort` and
+`protocol` going unvalidated entirely), and a note describing an upstream
+`Required` branch that does not exist in the cited function at all.
+
+One part of a note has enough structure to enforce, and
+`TestCoveredByClaimsResolve` enforces it: if a note defers a branch with
+"covered by X", then X must be a registered check citing the same upstream
+function. Deferring to a check that does not exist, or to one that reads
+different code, fails the build.
+
+Be precise about the limit. That test proves the deferral target exists and
+reads the same function. It **cannot** prove the target implements the
+specific branch deferred to it — a note deferring `hostPort` to a check
+that reads the same function but only validates `containerPort` still
+passes. The rest of a note's accuracy has no mechanical guard and is
+established only by reading it against upstream. Treat a note as a claim
+under review, not as a verified fact.
+
+Existence checking alone is not enough, which is why the digest exists:
+between v1.30 and v1.37 `ValidateServiceCreate` kept its name while its
+behavior changed substantially, and `validateResourceRequirements` did not
+exist under that name at all in v1.30. Meanwhile `validateContainerPorts`
+and `ValidateEnv` are byte-identical across that same span, so in practice
+the check is quiet.
+
+To add a check: find the upstream function, get a digest with
+`task verify:upstream-refs -- -compute "<path>" -functions "<Fn>"`,
+and add the entry. If no specific upstream function implements the rule,
+the check does not belong in this family — put it in the exemptable
+resource-compliance family instead.
+
+A check declares its identity once, by embedding `runtime.Meta`, and
+implements `Run`:
+
+```go
+type deploymentReplicasInvalidCheck struct{ runtime.Meta }
+
+func newDeploymentReplicasInvalidCheck() deploymentReplicasInvalidCheck {
+    return deploymentReplicasInvalidCheck{runtime.Meta{
+        RuleID:    "apps/deployment-replicas-invalid",
+        RuleTitle: "Replicas Must Be >= 0",
+        AppliesTo: []string{"Deployment"},
+    }}
+}
+```
+
+`Meta` supplies `Blocking` and `RenderSensitive` (both always true for
+this family) and the report category is derived from the rule ID's
+prefix by `runtime.CategoryOf`, so there is no second copy of either to
+fall out of step. Build findings with `runtime.NewFinding(c, ...)`,
+which attaches the rule and citation metadata reporting depends on.
+
+Adding or renaming a check changes its identity, which is pinned by a
+golden file listing every registered rule ID, title and applies-to list.
+Regenerate it in the same commit:
+
+```sh
+task update:checks
+```
+
+The diff is the review surface for the change: a new check is one added
+line, and a rename that was not intended shows up as a deletion next to
+an insertion. Behavior that is identical across the whole family —
+blocking, non-exemptable, render-sensitive, parsing and kind filtering —
+is asserted for every registered check rather than recorded per check,
+so a new check inherits those tests without adding any.
+
+A digest covers only the bodies of the functions named in `Functions`. When
+a cited function **delegates** part of its work to a helper in another file,
+a change confined to that helper leaves the caller's digest unchanged, so
+verification can report all-clear while the ported rule has shifted
+underneath it. `Functions` is a list precisely so a check can cite the
+callee it actually ports, and a check whose rule lives entirely in a shared
+helper should call that helper rather than reimplement it — as
+`policy/selector-invalid` does with apimachinery's `ValidateLabelSelector`.
+Resolving callees transitively would close the gap generally; it is not
+implemented.
+
+The same gap runs in the other direction, and that one has bitten. Where the
+API server **prepares the input** before calling the function that reports
+the error, the preparation is part of the rule: porting only the callee
+applies correct logic to the wrong data.
+`container/volume-mount-name-undefined` rejected nearly every real
+StatefulSet for exactly this reason — it ported `ValidateVolumeMounts`
+faithfully, but upstream's caller first synthesizes a volume for each
+`volumeClaimTemplate`, so the mount it flagged does resolve. The digest over
+the cited function was correct and verified throughout.
+
+**Defaulting is the most common form of this preparation**, and the trap is
+that whether it applies is invisible from the validation source. It is decided
+by the shape of the guard in the defaulting function:
+
+```go
+if len(obj.Spec.PodManagementPolicy) == 0 {   // value:   "" IS defaulted
+if obj.ReclaimPolicy == nil {                 // pointer: "" is NOT defaulted
+```
+
+A value-typed field cannot distinguish an absent field from an explicit `""`,
+so both are replaced before validation and a rule rejecting `""` is a false
+positive. A pointer-typed field can: an explicit `""` unmarshals to a non-nil
+pointer, defaulting is skipped, and the API server really does reject it — so
+there the rule is correct and relaxing it would hide a genuine failure.
+
+Every `SetDefaults_*` function in the ported API groups was audited against
+the fields the checks read. It found three false positives — StatefulSet
+`podManagementPolicy` and the `roleRef.apiGroup` rules on both binding kinds —
+and confirmed four look-alikes (`volumeMode`, `volumeBindingMode`,
+NetworkPolicy `protocol`, webhook `failurePolicy`) as correct, because those
+fields are pointer-typed and their ported functions reject an empty value.
+
+`reclaimPolicy` is the exception, and it shows the audit's original question
+was too narrow. Being pointer-typed only settles whether `""` _reaches_ the
+ported function; it does not settle whether that function _rejects_ it.
+`validateReclaimPolicy` wraps its `NotSupported` branch in a
+`len(string(*reclaimPolicy)) > 0` guard, so the API server accepts
+`reclaimPolicy: ""` — while `validateVolumeBindingMode`, on the same kind and
+defaulted by the same function, has no such guard and does reject it. Reporting
+the empty reclaim policy was a false positive on an always-blocking rule.
+
+So an entry has to answer two questions, not one: does the empty value survive
+defaulting, and does the cited function then reject it?
+`TestExplicitlyEmptyDefaultedFields` pins both directions with one fixture per
+kind that sets every defaulted field empty at once, so a new check reading one
+of those fields is covered without a new case.
+
+Cite supporting code in `Additional`, a list of refs in other files verified
+exactly like the primary one:
+
+```go
+"container/volume-mount-name-undefined": {
+    Path:      coreValidationPath,
+    Functions: []string{"ValidateVolumeMounts", "IsMatchedVolume"},
+    // ...
+    Additional: []runtime.UpstreamRef{{
+        Path:      "pkg/apis/apps/validation/validation.go",
+        Functions: []string{"volumesToAddForTemplates", "ValidateStatefulSetSpec"},
+        // ...
+    }},
+},
+```
+
+Describing such a dependency in `Note` instead leaves it unchecked, which is
+how that bug survived review. Nesting is one level deep, and `--update` does
+not rewrite supporting entries — update them by hand after re-reading the
+upstream function.
+
+##### Version skew and feature gates (known limitation)
+
+Runtime checks are ports of **one** Kubernetes version's validation logic —
+the tag derived from `k8s.io/api` in `go.mod`, which is also what
+`ValidatedAt` records. `ValidatedAt` says a human validated the port
+against that tag. It is **not** a claim that the check is correct for every
+cluster version, and handling multi-version targeting is out of scope for
+this family today.
+
+A faithful port can still disagree with a real cluster in two ways.
+
+**Version skew.** Upstream rules are added, changed and relocated between
+releases:
+
+| Function                       | v1.30 → v1.37                                                    |
+| ------------------------------ | ---------------------------------------------------------------- |
+| `ValidateServiceCreate`        | changed materially — this is the Service name rule being relaxed |
+| `validateResourceRequirements` | did not exist under that name in v1.30                           |
+| `validateContainerPorts`       | byte-identical — most rules are in fact stable                   |
+
+**Feature gates.** Validation differs _within_ a single version depending
+on which gates are enabled. Core validation alone has 14
+`DefaultFeatureGate.Enabled` call sites; batch validation has 28
+option-gated branches:
+
+| Gate                                   | Timeline                                | Effect                              |
+| -------------------------------------- | --------------------------------------- | ----------------------------------- |
+| `RelaxedServiceNameValidation`         | 1.34 alpha off → 1.36 beta on → 1.37 GA | Service name: DNS-1035 → DNS-1123   |
+| `RelaxedEnvironmentVariableValidation` | 1.30 alpha off → 1.32 beta on → 1.34 GA | env var name charset                |
+| `TaintTolerationComparisonOperators`   | 1.35 alpha, off                         | adds `Lt`/`Gt` toleration operators |
+
+**When versions or gates disagree, port the permissive rule.** Because
+these findings are blocking and non-exemptable, the two failure directions
+are not symmetric:
+
+- _Under-enforcement_ — a manifest passes CI and is rejected at apply
+  time. Visible, recoverable, and the cluster is the backstop.
+- _Over-enforcement_ — a valid manifest is blocked with **no escape
+  hatch**, since runtime findings cannot be exempted.
+
+The Service name check is the worked example already in the tree: it uses
+the relaxed DNS-1123 label rule, so a Service named `1st-api` is never
+falsely blocked on a cluster where the gate is on, while uppercase,
+underscores, dots and over-length names are still caught everywhere.
+
+If version skew ever does produce a real false positive, the correct
+response is to fix or delete the check — not to add an exemption, which
+this family deliberately does not support.
+
+Out of scope today: the tool has no per-cluster version or feature-gate
+awareness, which matters for a GitOps repository targeting clusters at
+several versions. `UpstreamRef` is shaped so that `MinVersion`/`MaxVersion`
+/`FeatureGate` fields could be added additively, with registration
+filtering on them, if that becomes necessary.
+
+The remaining checks group by API group:
+
+| Package                                               | Rules ported                                                                                                                                                            |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime/kubernetes/core/validation`                  | Object metadata (name/generateName/namespace, all kinds), core objects (ConfigMap, ResourceQuota, LimitRange), container, pod-spec, resource-quantity, and volume rules |
+| `runtime/kubernetes/apps/validation`                  | Deployment, StatefulSet, ReplicaSet, DaemonSet                                                                                                                          |
+| `runtime/kubernetes/batch/validation`                 | Job, CronJob                                                                                                                                                            |
+| `runtime/kubernetes/storage/validation`               | PersistentVolume, PersistentVolumeClaim, StorageClass                                                                                                                   |
+| `runtime/kubernetes/networking/validation`            | Service, Ingress, NetworkPolicy                                                                                                                                         |
+| `runtime/kubernetes/rbac/validation`                  | RoleBinding/ClusterRoleBinding `roleRef` and subject shape                                                                                                              |
+| `runtime/kubernetes/admissionregistration/validation` | ValidatingWebhookConfiguration, MutatingWebhookConfiguration                                                                                                            |
+| `runtime/kubernetes/apiextensions/validation`         | CustomResourceDefinition                                                                                                                                                |
+| `runtime/kubernetes/autoscaling/validation`           | HorizontalPodAutoscaler (v1/v2)                                                                                                                                         |
+| `runtime/kubernetes/policy/validation`                | PodDisruptionBudget                                                                                                                                                     |
+
+`pkg/validator/runtime/kubernetes/` is the authoritative list — the check
+IDs (`<category>/<rule>`, e.g. `apps/daemonset-min-ready-seconds-invalid`)
+are declared next to the rules they enforce, and this table is a map, not
+an inventory.
+
+##### Dispatch owns kind filtering
+
+A runtime check declares the kinds it applies to, and the engine filters on
+that before running it: `evaluateDoc` reads the document's kind once and skips
+any check whose `SkipDoc` rejects it. Most checks therefore do **not** re-check
+the kind inside `Run` — 55 of them decode a typed struct and read a field,
+which is sufficient once dispatch has guaranteed the kind. That is the design,
+not an oversight, and it is what lets the pod-spec and container rules serve a
+dozen workload kinds from one implementation.
+
+The consequence is a trap for tests. A test that calls `CheckDoc` directly,
+without consulting `SkipDoc` first, drops the guarantee the checks are written
+against and will observe findings production cannot produce — any two kinds
+with a structurally similar spec leak into each other. `PersistentVolume` and
+`PersistentVolumeClaim` both have `spec.volumeMode`, so the claim rule decodes
+a volume quite happily; a fixture test asserting on that finding looked like
+coverage and was measuring a leak.
+
+Tests that assert **what the engine would report** must filter by kind the way
+`evaluateDoc` does; `runtimeFindingsForKind` in `defaulting_test.go` is the
+helper for that. Tests that deliberately probe `Run` in isolation —
+`TestChecksIgnoreMalformedInput` and `TestChecksIgnoreKindsTheyDoNotDeclare` —
+bypass dispatch on purpose, because robustness of the individual function is
+exactly what they are checking.
+
+##### Object name validation
+
+`core/object-meta-name-invalid` covers `metadata.name` and
+`metadata.generateName` for every kind in one place. This is worth a
+separate note because the rules are **not uniform** — assuming a blanket
+DNS-1123 subdomain rule produces false positives on valid manifests:
+
+| Name function                                    | Kinds                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NameIsDNSSubdomain` (≤253, dots allowed)        | Pod, ConfigMap, Secret, ServiceAccount, LimitRange, ResourceQuota, PersistentVolume, PersistentVolumeClaim, PriorityClass, StorageClass, Deployment, DaemonSet, ReplicaSet, Job, CronJob, HorizontalPodAutoscaler, Ingress, IngressClass, NetworkPolicy, webhook configurations |
+| `NameIsDNSLabel` (≤63, **no dots**)              | Namespace, **StatefulSet**, Service                                                                                                                                                                                                                                             |
+| `IsPathSegmentName` (no charset or length limit) | Role, ClusterRole, RoleBinding, ClusterRoleBinding                                                                                                                                                                                                                              |
+
+Three traps this encodes:
+
+- **StatefulSet uses a DNS _label_, not a subdomain** — its name becomes a
+  pod-name prefix, so `my.db` is rejected by the API server even though it
+  would be a fine Deployment name.
+- **RBAC names are barely validated at all.** `IsPathSegmentName` rejects
+  only `.`/`..` and names containing `/` or `%`. A `ClusterRole` named
+  `system:controller:foo` or `My.Role` is entirely valid; flagging it
+  would block correct RBAC.
+- **Service uses the relaxed rule.** Historically Service names were
+  `NameIsDNS1035Label`, which additionally requires a leading letter.
+  KEP-5311 (`RelaxedServiceNameValidation`) relaxes this to
+  `NameIsDNSLabel`: off by default in 1.34, **on by default from 1.36**,
+  GA and locked on in 1.37. We use the relaxed rule because it is the
+  modern default and the permissive one — a Service named `1st-api` is
+  never falsely blocked, while uppercase, underscores, dots and
+  over-length names are still caught on every version.
+
+Kinds absent from that map are **skipped, not defaulted**. Custom
+resources are the bulk of documents in a typical GitOps repository and
+their name rules are not reliably DNS-1123, so guessing would risk
+blocking valid manifests — and these findings are non-exemptable.
+`CustomResourceDefinition` is also excluded here: its name rule is the
+cross-field `<plural>.<group>` form and belongs with the other
+apiextensions checks.
+
+`core/object-meta-namespace-invalid` validates the **format** of
+`metadata.namespace` (a DNS-1123 label) when one is set. It deliberately
+does not check whether a namespace is present or forbidden for the
+object's scope — that rule belongs to the exemptable `namespace` static
+check, which owns the generated cluster resource-scope map. Duplicating it
+would double-report and would turn an exemptable policy decision into an
+unexemptable one.
+
+`core/object-meta-labels-invalid` and
+`core/object-meta-annotations-invalid` validate `metadata.labels` and
+`metadata.annotations`. Unlike the name rules above these are **not
+kind-scoped**: the API server applies them to every object it accepts, so
+both checks declare no `Kinds()` and run against every document, custom
+resources included. They are the only runtime checks allowed to do so,
+enforced by an explicit allowlist in `TestRuntimeChecksDeclareKinds`.
+
+They are two checks rather than one because the key rule genuinely
+differs: **label keys are case-sensitive, annotation keys are
+lowercased** before the qualified-name test. Merging them would mean
+falsely rejecting the many real annotations that carry uppercase
+characters. Annotation **size** is a single 256 kB budget summed across
+all keys and values, so it is reported once per object rather than per
+annotation.
+
+A handful of Kubernetes resource kinds are deliberately **not** covered by
+runtime validation checks. These are runtime-generated, ephemeral, or
+trivially validated by the API server:
+
+- `Event`, `EventSource` — cluster-internal, never committed to GitOps
+- `Endpoints` — auto-generated by Services; use `EndpointSlice` instead
+- `Lease` — controller-manager heartbeat objects
+- `Node` — provisioned by the infrastructure layer, not GitOps-managed (use nodeSelector/taints in workloads instead)
+- `RuntimeClass` — node-level configuration, not workload-relevant
+- `VolumeAttachment`, `CSIDriver`, `CSINode` — CSI driver objects, node-local
+- `ClusterRoleBinding` subject namespace checks are handled by the existing `crb` registered check
+- `FlowSchema`, `PriorityLevelConfiguration` — API-priority-and-fairness config, not workload-relevant
+- `CertificateSigningRequest` — CSR lifecycle is handled by a certificate controller, not static YAML
+
+##### Known gaps: upstream rules not yet ported
+
+The per-check `Note` in each package's `upstream_refs.go` records which
+branches of a cited function are ported and which are not, so a
+reviewer reading a single check can see its exact scope. The list below
+aggregates the rules that are **not covered by any check today**, so
+the omissions are recorded decisions rather than silent holes.
+
+None of these are catchable by kubeconform: the schema census in
+[docs/SCHEMAS.md](SCHEMAS.md) found zero field-level `pattern`, `enum`,
+`minimum`/`maximum` or `minLength` keywords, so any format or bound
+rule must live here or nowhere.
+
+- **Env var names** (`ValidateEnv`). Deliberately not ported.
+  Upstream chooses between `IsEnvVarName` and the far more permissive
+  `IsRelaxedEnvVarName` based on the
+  `AllowRelaxedEnvironmentVariableValidation` feature gate. This tool
+  has no per-cluster feature-gate knowledge (see [version skew
+  above](#version-skew-and-feature-gates-known-limitation)), so the
+  strict rule would risk false positives on an always-blocking,
+  non-exemptable check, and the relaxed rule would catch almost
+  nothing. Neither is worth adding.
+- **Service**: `nodePort` range, `externalName` format, and the
+  "ports required" rule. Only `type` and `sessionAffinity` are ported
+  today.
+- **Ingress**: the `Required` branch for an absent `pathType`, and the
+  rule that a path must begin with `/` for `Exact`/`Prefix`.
+- **NetworkPolicy**: `ipBlock` CIDR validity, including the rule that
+  each `except` entry must fall within `cidr`.
+- **PersistentVolumeClaim**: the `Required` branch for an empty
+  `accessModes` list, and the `ReadWriteOncePod`-with-other-modes rule.
+- **ConfigMap/Secret**: key-name and duplicate-key branches of
+  `ValidateConfigMap` (only the 1 MiB size branch is ported).
+- **StatefulSet**: `volumeClaimTemplates` validation.
+- **ReplicationController**: the RC-only branches of
+  `ValidatePodTemplateSpecForRC` — that the template's `restartPolicy`
+  must be `Always` (the generic pod-spec rule accepts the whole enum),
+  that `activeDeadlineSeconds` is forbidden outright, and that the
+  selector must match the template's labels. The three spec-level
+  rules — `replicas`, `selector` and `minReadySeconds` — are ported, so
+  the kind has the same controller-level coverage as every other
+  workload; these three are additional semantics unique to it.
+- **HorizontalPodAutoscaler**: `metrics` validation (only the replica
+  bounds and behavior windows are ported).
+
+Adding any of these follows the [citation
+standard](#every-check-must-cite-a-verifiable-upstream-function): port
+one branch, cite the exact function, and record the digest.
+
+##### Deferred: policy-style checks removed from this family
+
+The following checks were **removed** from runtime validation and are
+recorded here as a backlog to revisit for enforcement somewhere else —
+Pod Security Admission, a Kyverno policy, or a new **exemptable**
+resource-compliance check (see the [registered checks](#registered-checks)
+table above):
+
+- Container security-context combinations: `privileged: true` together
+  with `allowPrivilegeEscalation`, `runAsNonRoot: true` with a `runAsUser`
+  of `0`, and `capabilities.drop: ["ALL"]` alongside
+  `capabilities.add: ["SYS_ADMIN"]`.
+- Pod-level host namespace sharing: `hostNetwork`, `hostPID`, `hostIPC`.
+- "Containers must declare `resources.requests` and `resources.limits`."
+
+None of these belong in runtime validation, because **the API server does
+not reject any of them**. They are best practices, not admission errors —
+a cluster will happily admit every one. Enforcing them as always-blocking,
+non-exemptable findings would have made the family's central claim ("this
+manifest cannot be applied") false. Note that the resource-requests/limits
+case is already covered as an exemptable finding by `podspec-defaults`.
 
 A handful of documents/directories are excluded from the doc-check pass
 above entirely (not merely exempted — they never generate a finding to

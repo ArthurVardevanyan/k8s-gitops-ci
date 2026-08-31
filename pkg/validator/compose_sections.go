@@ -265,6 +265,109 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 	return composeParentFromChildren("Static Checks", children)
 }
 
+// ComposeRuntimeValidationSection renders runtime validation findings
+// grouped by CheckID into per-check nested <details> sub-sections.
+// Runtime checks (core, rbac, policy, apps, batch, networking, storage,
+// admissionregistration) return Section() == "runtime-validation" and are
+// always blocking — the cluster rejects non-compliant manifests regardless
+// of any exemptions, so this section never shows ⚠️ or StatusWarning, only
+// ❌/StatusError or ✅/StatusPassed. Check IDs are sorted for deterministic
+// output.
+func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
+	// Group by category ("core", "batch", ...), not CheckID. CheckID is the
+	// rule ID, so grouping on it would render one <details> block per rule -
+	// dozens of single-finding sub-sections. Category keeps the section
+	// readable while CheckID remains the finding's true identity for
+	// dispatch and registry lookups.
+	byCheck := map[string][]check.Finding{}
+	for _, f := range findings {
+		key := f.Extra["category"]
+		if key == "" {
+			key = f.CheckID
+		}
+		byCheck[key] = append(byCheck[key], f)
+	}
+	if len(byCheck) == 0 {
+		return ReportSection{Name: "Runtime Validation", Status: StatusPassed, Body: "No runtime validation findings."}
+	}
+
+	var b strings.Builder
+	b.WriteString("These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject.\n\n")
+
+	for _, id := range orderedComplianceIDs(byCheck) {
+		findings := byCheck[id]
+		icon := "❌"
+		count, body := renderRuntimeSub(findings)
+		fmt.Fprintf(&b, "<details>\n<summary>%s%s %s (%d finding(s))</summary>\n\n", summaryIndent(1), icon, complianceTitle(id), count)
+		b.WriteString(body)
+		b.WriteString("\n</details>\n\n")
+	}
+
+	return ReportSection{Name: "Runtime Validation", Body: b.String(), Status: StatusError}
+}
+
+// renderRuntimeSub renders one category's runtime findings.
+//
+// The generic compliance renderer cannot be reused here. It looks up a
+// TableSpec by the sub-section's ID, and these are grouped by category, which
+// has no spec - so it fell back to a File/Message table that dropped the
+// resource, the field path, the rule that fired and the upstream citation,
+// and skipped deduplication, printing the same finding once per overlay it
+// was rendered from.
+//
+// The citation is the whole claim this family makes: that a finding
+// corresponds to a specific function in the API server rather than to this
+// tool's opinion. It is listed once per rule under the table instead of
+// repeated on every row, which keeps the rows narrow enough to read.
+func renderRuntimeSub(findings []check.Finding) (count int, body string) {
+	rows := dedupFindingsForTable(findings)
+
+	cell := func(s string) string {
+		if s == "" {
+			return "—"
+		}
+		// sanitizeCell escapes pipes and folds newlines. A resource name or
+		// field value is copied from the manifest, so it can contain either;
+		// an unescaped newline splits one row into several and corrupts the
+		// rest of the table.
+		return sanitizeCell(s)
+	}
+
+	var b strings.Builder
+	b.WriteString("| Rule | Resource | File | Field | Message |\n| --- | --- | --- | --- | --- |\n")
+
+	refs := map[string]string{}
+	order := []string{}
+	for _, f := range rows {
+		resource := f.Kind
+		if f.Name != "" {
+			resource += "/" + f.Name
+		}
+		rule := f.Extra["ruleId"]
+		if rule == "" {
+			rule = f.CheckID
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n",
+			cell(rule), cell(resource), cell(f.File), cell(f.Path), cell(f.Message))
+
+		if ref := f.Extra["upstreamRef"]; ref != "" {
+			if _, seen := refs[rule]; !seen {
+				order = append(order, rule)
+			}
+			refs[rule] = ref
+		}
+	}
+
+	if len(order) > 0 {
+		b.WriteString("\nUpstream Kubernetes validation these rules are ported from:\n\n")
+		for _, rule := range order {
+			fmt.Fprintf(&b, "- `%s` — `%s`\n", rule, refs[rule])
+		}
+	}
+
+	return len(rows), b.String()
+}
+
 // ComposeResourceComplianceSection renders resource-compliance findings
 // grouped by CheckID into per-check nested <details> sub-sections (rather
 // than one flat table for every finding regardless of check type), plus an
