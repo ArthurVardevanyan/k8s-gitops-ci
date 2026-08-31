@@ -473,6 +473,29 @@ func versionFor(repo, explicitTag string) (string, error) {
 // root - and returns the git ref that requirement pins: the tag itself for
 // an ordinary semver requirement, or the trailing commit hash for a Go
 // pseudo-version (an untagged commit).
+// modulePathMatchesRepo reports whether a go.mod module path belongs to the
+// repository named by prefix ("github.com/<owner>/<name>"), either exactly or
+// as a subdirectory module such as ovn-kubernetes's go-controller.
+//
+// The comparison is case-insensitive because GitHub owner and repository
+// names are, and UpstreamRef.Repo is validated against [A-Za-z0-9_.-] without
+// being canonicalized. A ref could therefore name a repo in a different case
+// than go.mod spells it - this repository's own module path is
+// github.com/ArthurVardevanyan/k8s-gitops-ci - and pass validation only to
+// fail resolution with a "no go.mod requirement found" error that gives no
+// hint that case was the problem.
+//
+// Matching the "/" boundary explicitly keeps this from becoming a loose
+// prefix test: "SomeOrg/Some" must not match "SomeOrg/SomeRepo".
+func modulePathMatchesRepo(modPath, prefix string) bool {
+	if strings.EqualFold(modPath, prefix) {
+		return true
+	}
+	return len(modPath) > len(prefix) &&
+		modPath[len(prefix)] == '/' &&
+		strings.EqualFold(modPath[:len(prefix)], prefix)
+}
+
 func moduleVersionForRepo(repo string) (string, error) {
 	b, err := os.ReadFile("go.mod")
 	if err != nil {
@@ -490,8 +513,7 @@ func moduleVersionForRepo(repo string) (string, error) {
 	}
 	prefix := "github.com/" + repo
 	for _, req := range f.Require {
-		modPath := req.Mod.Path
-		if modPath != prefix && !strings.HasPrefix(modPath, prefix+"/") {
+		if !modulePathMatchesRepo(req.Mod.Path, prefix) {
 			continue
 		}
 		v := req.Mod.Version

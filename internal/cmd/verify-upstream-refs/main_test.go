@@ -418,3 +418,49 @@ func TestSameVersionMatchesPseudoVersionAgainstItsCommit(t *testing.T) {
 		})
 	}
 }
+
+// mixedCaseGoMod uses module paths whose owner segment is not lowercase.
+// These are ordinary on GitHub - this repository's own module path is
+// github.com/ArthurVardevanyan/k8s-gitops-ci - and repoPattern accepts
+// [A-Za-z], so a ref can name one in any case and still validate.
+const mixedCaseGoMod = "" +
+	"module example.com/sample\n\n" +
+	"go 1.24\n\n" +
+	"require (\n" +
+	"\tgithub.com/Masterminds/semver/v3 v3.2.1\n" +
+	"\tgithub.com/SomeOrg/SomeRepo v1.0.0\n" +
+	")\n"
+
+func TestModuleVersionForRepoIsCaseInsensitive(t *testing.T) {
+	withTempGoMod(t, mixedCaseGoMod, func() {
+		cases := []struct {
+			name, repo, want string
+		}{
+			{"exact case", "Masterminds/semver", "v3.2.1"},
+			{"lowercased owner", "masterminds/semver", "v3.2.1"},
+			{"uppercased owner", "MASTERMINDS/semver", "v3.2.1"},
+			{"exact case, no subdirectory", "SomeOrg/SomeRepo", "v1.0.0"},
+			{"lowercased owner and name", "someorg/somerepo", "v1.0.0"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				got, err := moduleVersionForRepo(tc.repo)
+				if err != nil {
+					t.Fatalf("moduleVersionForRepo(%q): unexpected error: %v", tc.repo, err)
+				}
+				if got != tc.want {
+					t.Errorf("moduleVersionForRepo(%q) = %q, want %q", tc.repo, got, tc.want)
+				}
+			})
+		}
+
+		// Case-insensitivity must not turn into prefix sloppiness: a repo
+		// that merely shares a prefix with a required module is still not a
+		// match, or "some-org/some" would resolve "some-org/something".
+		t.Run("a shared prefix is still not a match", func(t *testing.T) {
+			if _, err := moduleVersionForRepo("SomeOrg/Some"); err == nil {
+				t.Error("expected an error: SomeOrg/Some is not SomeOrg/SomeRepo")
+			}
+		})
+	})
+}
