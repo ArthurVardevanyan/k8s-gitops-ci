@@ -93,8 +93,9 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Note: "Ports the default branch of the spec.updateStrategy.type switch. " +
 			"Deliberate divergence: the empty case, which upstream reports Required, is skipped " +
 			"because defaulting supplies RollingUpdate. The rollingUpdate sub-branches are not ported. " +
-			"Deliberate divergence: 'Recreate' is accepted. Kubernetes 1.37 adds it behind the " +
-			"AllowStatefulSetRecreateStrategy gate, and this tool cannot see a cluster's feature " +
+			"Deliberate divergence: 'Recreate' is accepted. Upstream gates it behind the " +
+			"StatefulSetRecreateStrategy feature gate, which reaches the validator as the " +
+			"setOpts.AllowStatefulSetRecreateStrategy option, and this tool cannot see a cluster's feature " +
 			"gates, so it takes the permissive branch rather than risk blocking a valid manifest " +
 			"with a non-exemptable check; a cluster with the gate off rejects it at apply time.",
 	},

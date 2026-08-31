@@ -34,6 +34,9 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 			"a missing spec.maxReplicas is not reported here even though upstream reports it " +
 			"Required, because maxReplicas is in the `required` array of every HPA schema variant " +
 			"and kubeconform already rejects it; reporting it here would double-report. " +
+			"An explicitly-present maxReplicas of 0 is reported here as an invalid value, where " +
+			"upstream reports its MaxReplicas == 0 branch as Required; the divergence above covers " +
+			"only the absent field, which the schema already rejects. " +
 			"The minReplicas lower-bound and maxReplicas >= minReplicas branches are not ported.",
 	},
 	"autoscaling/scale-up-invalid": {

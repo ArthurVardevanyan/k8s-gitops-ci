@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -229,4 +230,99 @@ func TestIsUpstreamValidationPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// checkIDPattern matches a check ID as it appears in note prose.
+var checkIDPattern = regexp.MustCompile(`[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*`)
+
+// coveredByTargets returns every check ID a note defers a branch to.
+//
+// A deferral is written "covered by X" but frequently names several checks
+// ("covered by a/b, c/d and e/f"), so this reads to the end of the sentence
+// rather than taking the first ID after the phrase. Matching only the first
+// would let every later entry in a list go unchecked while the test still
+// reported a pass - which is how the defects this test exists to catch got in.
+func coveredByTargets(note string) []string {
+	var out []string
+	for _, sentence := range strings.Split(note, ". ") {
+		i := strings.Index(sentence, "covered by ")
+		if i < 0 {
+			continue
+		}
+		out = append(out, checkIDPattern.FindAllString(sentence[i:], -1)...)
+	}
+	return out
+}
+
+// TestCoveredByClaimsResolve enforces the one part of a note's prose that can
+// be checked mechanically.
+//
+// A note is required prose, but nothing verifies it. `task verify:upstream-refs`
+// re-derives the digest of the cited function, which proves the function has
+// not changed - it says nothing about whether the note describes what the
+// check actually implements. Notes drift from the code silently, and every
+// such drift found so far has concealed a real gap: a note claiming a branch
+// was "covered by" a sibling that did not in fact cover it, and a note
+// describing an upstream Required branch that does not exist.
+//
+// The "covered by X" form is the one claim with enough structure to test. If
+// a note defers a branch to another check, that check must at least exist and
+// cite the same upstream function - otherwise the deferral is to nowhere, and
+// the branch is unvalidated while the note says it is handled.
+//
+// This is deliberately a weak guarantee, and it is worth being precise about
+// its limit: it proves the deferral target exists and reads the same upstream
+// function. It cannot prove the target implements the specific branch that was
+// deferred to it. A note that defers the hostPort branch to a check which
+// reads the same function but only validates containerPort would still pass
+// here. The rest of a note's accuracy is not mechanically checkable and is
+// verified by reading it against upstream.
+func TestCoveredByClaimsResolve(t *testing.T) {
+	refs := runtime.AllRefs()
+	if len(refs) == 0 {
+		t.Fatal("no upstream refs registered; the walk cannot prove anything")
+	}
+
+	var claims int
+	for id, ref := range refs {
+		for _, target := range coveredByTargets(ref.Note) {
+			claims++
+
+			targetRef, ok := refs[target]
+			if !ok {
+				t.Errorf("check %q defers a branch to %q, which is not a registered check: "+
+					"the branch is unvalidated while the note claims it is handled", id, target)
+				continue
+			}
+			if target == id {
+				t.Errorf("check %q defers a branch to itself", id)
+				continue
+			}
+			// Same upstream function, or the deferral crosses to a rule
+			// reading different code and cannot cover the branch at all.
+			if !sharesFunction(ref, targetRef) {
+				t.Errorf("check %q defers a branch to %q, but %q cites %s %v while %q cites %s %v; "+
+					"a check reading a different function cannot cover this one's branches",
+					id, target, id, ref.Path, ref.Functions, target, targetRef.Path, targetRef.Functions)
+			}
+		}
+	}
+
+	if claims == 0 {
+		t.Fatal("no \"covered by\" claims found; if the phrasing changed, this test silently stopped checking anything")
+	}
+}
+
+func sharesFunction(a, b runtime.UpstreamRef) bool {
+	if a.Path != b.Path {
+		return false
+	}
+	for _, af := range a.Functions {
+		for _, bf := range b.Functions {
+			if af == bf {
+				return true
+			}
+		}
+	}
+	return false
 }

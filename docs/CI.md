@@ -32,6 +32,7 @@ package map; this is the detailed, step-by-step reference.
       - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
         - [Every check must cite a verifiable upstream function](#every-check-must-cite-a-verifiable-upstream-function)
         - [Version skew and feature gates (known limitation)](#version-skew-and-feature-gates-known-limitation)
+        - [What the citation does not prove: `Note`](#what-the-citation-does-not-prove-note)
         - [Dispatch owns kind filtering](#dispatch-owns-kind-filtering)
         - [Object name validation](#object-name-validation)
         - [Known gaps: upstream rules not yet ported](#known-gaps-upstream-rules-not-yet-ported)
@@ -857,6 +858,39 @@ Two layers verify this:
   own step in `task ci`. Fetched sources are cached under `XDG_CACHE_HOME`,
   so a warm run does no network I/O - the same pattern `schemas:pull`
   already uses.
+
+###### What the citation does not prove: `Note`
+
+A ref also carries a required `Note` recording which branches of the cited
+function the check ports and which it deliberately skips. Neither layer
+above verifies a word of it. The digest proves the upstream function has
+not changed; it says nothing about whether the note describes what the
+check actually implements. A note is therefore the one part of a ref that
+can drift from the code silently, and in practice it does — a note written
+when a branch genuinely was unported stays behind when a later fix ports
+it.
+
+This matters more than a stale comment normally would, because a note is
+what a reviewer reads to accept an always-blocking, non-exemptable rule as
+a deliberate subset rather than an incomplete port. Every note defect found
+so far concealed a real gap: notes claiming a branch was "covered by" a
+sibling check that did not cover it (hiding container `hostPort` and
+`protocol` going unvalidated entirely), and a note describing an upstream
+`Required` branch that does not exist in the cited function at all.
+
+One part of a note has enough structure to enforce, and
+`TestCoveredByClaimsResolve` enforces it: if a note defers a branch with
+"covered by X", then X must be a registered check citing the same upstream
+function. Deferring to a check that does not exist, or to one that reads
+different code, fails the build.
+
+Be precise about the limit. That test proves the deferral target exists and
+reads the same function. It **cannot** prove the target implements the
+specific branch deferred to it — a note deferring `hostPort` to a check
+that reads the same function but only validates `containerPort` still
+passes. The rest of a note's accuracy has no mechanical guard and is
+established only by reading it against upstream. Treat a note as a claim
+under review, not as a verified fact.
 
 Existence checking alone is not enough, which is why the digest exists:
 between v1.30 and v1.37 `ValidateServiceCreate` kept its name while its

@@ -45,16 +45,21 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"ValidateNetworkPolicyPort"},
 		Digest:      "sha256:170d64ffe974b384932f1c67058e0acc0f2feb3cbad540924a90b500f9859996",
 		ValidatedAt: validatedAt,
-		Note: "Ports the endPort branches: *port.EndPort < port.Port.IntVal (\"must be greater than or equal " +
-			"to `port`\") and endPort set with no port (\"may not be specified when `port` is not " +
-			"specified\"). The port-number-range and named-port branches are not ported.",
+		Note: "Ports the three endPort-pairing branches: *port.EndPort < port.Port.IntVal (\"must be " +
+			"greater than or equal to `port`\"), endPort set with no port (\"may not be specified when " +
+			"`port` is not specified\"), and endPort set with a named port (\"may not be specified when " +
+			"`port` is non-numeric\"). Not ported: the two IsValidPortNum branches, on port and on " +
+			"endPort, and the IsValidPortName branch on a named port. No other check covers those " +
+			"three, so a NetworkPolicy port outside 1-65535 is currently unreported.",
 	},
 	"network-policy/protocol-invalid": {
 		Path:        networkingValidationPath,
 		Functions:   []string{"ValidateNetworkPolicyPort"},
 		Digest:      "sha256:170d64ffe974b384932f1c67058e0acc0f2feb3cbad540924a90b500f9859996",
 		ValidatedAt: validatedAt,
-		Note:        "Ports the protocol field.NotSupported branch (TCP, UDP or SCTP) only; the port/endPort branches of the same function are covered by network-policy/port-range-invalid.",
+		Note: "Ports the protocol field.NotSupported branch (TCP, UDP or SCTP) only. " +
+			"network-policy/port-range-invalid covers the endPort-pairing branches of the same " +
+			"function, but not its IsValidPortNum or IsValidPortName branches, which no check covers.",
 	},
 
 	// --- Service -----------------------------------------------------------
