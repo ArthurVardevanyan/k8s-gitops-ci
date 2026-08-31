@@ -317,6 +317,19 @@ func TestRuntimeSectionGroupsByFamily(t *testing.T) {
 		t.Errorf("single family rendered a family wrapper:\n%s", single.Body)
 	}
 
+	// The whole claim of the family change is that a single-family run - which
+	// is every run today, since every registered check is in the kubernetes
+	// family - renders exactly as it did before. A family wrapper is the
+	// obvious way to break that, but so is quietly generalising the intro to
+	// suit families that do not exist yet. Pin the sentence verbatim: it is
+	// accurate precisely because the only family shipping is one the API
+	// server does enforce, and it should not change until that stops being
+	// true.
+	const intro = "These are structural/runtime Kubernetes validation rules enforced by the cluster API server. Findings here indicate manifests that the cluster would reject."
+	if !strings.Contains(single.Body, intro) {
+		t.Errorf("single-family intro changed; a report from this branch no longer\ndiffers from its base only in check IDs.\nwant: %s\ngot:\n%s", intro, single.Body)
+	}
+
 	multi := ComposeRuntimeValidationSection([]check.Finding{
 		mk("kubernetes/batch/schedule-invalid", "CronJob"),
 		mk("example/net-attach-def/config-invalid", "NetworkAttachmentDefinition"),
