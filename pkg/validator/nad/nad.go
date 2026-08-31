@@ -244,46 +244,40 @@ func validateNADFile(path string) (errs, warns []ValidationError) {
 		if doc.Kind != "NetworkAttachmentDefinition" {
 			continue
 		}
-		e, w := validateNAD(path, doc)
-		errs = append(errs, e...)
-		warns = append(warns, w...)
+		warns = append(warns, validateNAD(path, doc)...)
 	}
 	return errs, warns
 }
 
-// validateNAD applies the structural gates common to every NAD and then
-// dispatches on the CNI plugin type: OVN NADs get OVN's semantic rules,
-// everything else gets advisory-only checks.
-func validateNAD(path string, doc nadDoc) (errs, warns []ValidationError) {
+// validateNAD produces this section's advisories for one NAD.
+//
+// It reports no hard failures. Whether spec.config parses at all is decided by
+// the runtime check "k8scni/net-attach-def/config-invalid", which covers every
+// case this gate used to reject - an unreadable or empty config, one that is
+// not valid JSON, one that is not a CNI configuration, and a missing plugin
+// "type" in either config shape. Reporting them here as well put one
+// malformed config in two sections as two blocking findings, leaving a reader
+// to work out that they were the same defect and which layer to act on.
+//
+// It still has to parse the config, because the advisories below are about its
+// contents. When that fails it returns nothing and lets the runtime check
+// report it, rather than describing a config it could not read.
+func validateNAD(path string, doc nadDoc) (warns []ValidationError) {
 	id := doc.Metadata.Namespace + "/" + doc.Metadata.Name
-	hardf := func(msg string) {
-		errs = append(errs, ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg)})
-	}
 	warnf := func(msg string) {
 		warns = append(warns, ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg), Warning: true})
 	}
 
 	cfg, err := configString(doc)
-	if err != nil {
-		hardf(err.Error())
-		return errs, warns
+	if err != nil || strings.TrimSpace(cfg) == "" {
+		return warns
 	}
-	if strings.TrimSpace(cfg) == "" {
-		hardf("spec.config is empty")
-		return errs, warns
-	}
-
-	// spec.config must be valid JSON (a single CNI config object or a
-	// conflist). This org/CNI-neutral gate catches malformed configs for every
-	// plugin type, not just OVN - previously only OVN NADs were JSON-checked.
 	if !json.Valid([]byte(cfg)) {
-		hardf("spec.config is not valid JSON")
-		return errs, warns
+		return warns
 	}
 	var probe cniProbe
 	if err := json.Unmarshal([]byte(cfg), &probe); err != nil {
-		hardf(fmt.Sprintf("spec.config is not a valid CNI configuration: %v", err))
-		return errs, warns
+		return warns
 	}
 
 	// Resolve the effective plugin type and ipam from either shape (a conflist
@@ -293,16 +287,14 @@ func validateNAD(path string, doc nadDoc) (errs, warns []ValidationError) {
 	if len(probe.Plugins) > 0 {
 		cniType = strings.TrimSpace(probe.Plugins[0].Type)
 		ipam = ipamTypeOf(probe.Plugins[0].IPAM)
-		for i, p := range probe.Plugins {
+		for _, p := range probe.Plugins {
 			if strings.TrimSpace(p.Type) == "" {
-				hardf(fmt.Sprintf("spec.config plugins[%d] is missing a CNI \"type\"", i))
-				return errs, warns
+				return warns
 			}
 		}
 	}
 	if cniType == "" {
-		hardf("spec.config is missing a CNI \"type\"")
-		return errs, warns
+		return warns
 	}
 
 	// Non-gating advisories for likely authoring mistakes. OVN-Kubernetes
@@ -319,5 +311,5 @@ func validateNAD(path string, doc nadDoc) (errs, warns []ValidationError) {
 	if strings.TrimSpace(probe.CNIVersion) == "" {
 		warnf("spec.config is missing the recommended \"cniVersion\" field (not gating)")
 	}
-	return errs, warns
+	return warns
 }

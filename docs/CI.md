@@ -1644,16 +1644,19 @@ hard CI dependency.
 NAD validation splits across two homes, by whether a rule has a citable
 upstream function:
 
-- **Structural gate + advisories** (`pkg/validator/nad`): `spec.config`
-  must be a non-empty JSON **string** and parse as **valid JSON** (a
-  single config object or a `plugins` conflist) with a non-empty plugin
-  `type` (blocking, org/CNI-neutral - applies to every NAD regardless of
-  which CNI plugin owns it), plus **non-blocking advisories** (⚠️) for
-  likely authoring mistakes (unrecognized CNI/IPAM `type`, missing
-  `cniVersion`) - applied uniformly to every NAD, OVN included. Neither
-  tier corresponds to a specific upstream function - the structural
-  rules are the CNI Specification's config-shape requirements, and the
-  advisories are this tool's own heuristics - so this is **not** part of
+- **Advisories** (`pkg/validator/nad`): **non-blocking advisories** (⚠️)
+  for likely authoring mistakes (unrecognized CNI/IPAM `type`, missing
+  `cniVersion`) - applied uniformly to every NAD, OVN included. This tier
+  reports **no hard failures**. Whether `spec.config` is a non-empty JSON
+  string that parses as a valid CNI configuration with a plugin `type` is
+  decided by the `k8scni/net-attach-def/config-invalid` runtime check
+  below, which covers every case this layer used to reject; reporting them
+  in both places put one malformed config in two sections as two blocking
+  findings describing the same defect. Note the consequence: config
+  parsing is now gateable via `DisabledChecks` like any other registered
+  check, where this layer was always on. The advisories are this tool's
+  own heuristics and correspond to no upstream function, so this is
+  **not** part of
   the `check.Register` framework: it is always on (not gateable via
   `DisabledChecks`/`EnabledChecks`), not exemptable via
   `EXEMPTIONS=(...)` or the `gitops-ci.k8s.io/exempt-<check-id>`

@@ -50,24 +50,33 @@ func TestRunNADValidation_ValidNADShowsPassingSection(t *testing.T) {
 	}
 }
 
-func TestRunNADValidation_ErrorFindingRemapsToOverlay(t *testing.T) {
+func TestRunNADValidation_AdvisoryRemapsToOverlayAndDoesNotGate(t *testing.T) {
 	t.Parallel()
 	log := logger.NewLogger(false, "")
 	outputs := []renderedOverlay{
-		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: bad\nspec:\n  config: ''\n")},
+		{overlay: "myapp/overlays/prod", data: []byte("apiVersion: k8s.cni.cncf.io/v1\nkind: NetworkAttachmentDefinition\nmetadata:\n  name: bad\nspec:\n  config: '{\"cniVersion\":\"0.3.1\",\"type\":\"not-a-real-cni-plugin\"}'\n")},
 	}
 	s, present := runNADValidation(outputs, log)
 	if !present {
 		t.Fatal("expected a section (present=true) when a NAD is in the chain")
 	}
-	if s.Status != StatusError {
-		t.Fatalf("expected an error section for an empty spec.config, got: %+v", s)
-	}
+
+	// Findings are produced against a temp file written per rendered overlay,
+	// so the path a reader sees has to be mapped back to the overlay it came
+	// from. That remapping is what this test is for, and it has to keep
+	// working now that the only findings this section produces are advisories.
 	if !strings.Contains(s.Body, "myapp/overlays/prod") {
 		t.Errorf("expected the finding remapped back to the overlay path, got body: %s", s.Body)
 	}
-	if !log.HasFailures() {
-		t.Error("a hard NAD error must record a failure so the run gates")
+	if !strings.Contains(s.Body, "unrecognized CNI type") {
+		t.Errorf("expected the advisory in the section body, got: %s", s.Body)
+	}
+
+	// This section no longer gates. An empty spec.config used to fail the run
+	// from here; it is now reported by the config-invalid runtime check, which
+	// gates through the normal doc-check dispatch instead.
+	if log.HasFailures() {
+		t.Error("an advisory must not fail the run")
 	}
 }
 
