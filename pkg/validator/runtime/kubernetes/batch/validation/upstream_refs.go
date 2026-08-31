@@ -38,16 +38,19 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 	// --- CronJob -----------------------------------------------------------
 	"batch/schedule-invalid": {
 		Path:        batchValidationPath,
-		Functions:   []string{"validateScheduleFormat"},
-		Digest:      "sha256:aa239363d1159d12d4f403084a1cfa1c58e5b737414d05e9f597411716bf4061",
+		Functions:   []string{"validateCronJobSpec", "validateScheduleFormat"},
+		Digest:      "sha256:2e26cd4c64b4c3c8b0c5adbcc20bcfccbcd0929f5d214385f097f3fddb9cbb0c",
 		ValidatedAt: validatedAt,
 		Note: "Ports the ParseCronScheduleWithPanicRecovery -> field.Invalid branch, calling the " +
 			"same parser upstream does: cron.ParseStandard from github.com/robfig/cron/v3 at the " +
 			"v3.0.1 revision Kubernetes pins, wrapped in the same panic recovery (ParseStandard " +
-			"panics on inputs such as \"TZ=0\"). An empty schedule is skipped rather than reported " +
-			"Required (that branch lives in validateCronJobSpec and is covered by the schema's " +
-			"`required`), and the TZ-vs-timeZone conflict branches are not ported, since they " +
-			"depend on the CronJobTimeZone feature gate.",
+			"panics on inputs such as \"TZ=0\"). Also ports validateCronJobSpec's " +
+			"len(spec.Schedule) == 0 -> field.Required branch, but only when the key is present " +
+			"and empty. An omitted schedule is left to the schema's `required` array to avoid " +
+			"double-reporting; that array does not cover an explicitly-empty schedule, since it " +
+			"asserts the key exists and the schema puts no minLength on the value. The " +
+			"TZ-vs-timeZone conflict branches are not ported, since they depend on the " +
+			"CronJobTimeZone feature gate.",
 	},
 	"batch/concurrency-policy-invalid": {
 		Path:        batchValidationPath,

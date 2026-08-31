@@ -38,9 +38,27 @@ func (c scheduleInvalidCheck) Run(data []byte, source string) []runtime.Finding 
 	if cj.Kind != "CronJob" {
 		return nil
 	}
-	schedule := cj.Spec.Schedule
-	if schedule == "" {
+	if cj.Spec.Schedule == nil {
+		// Omitted. Upstream reports Required, but the schema's `required`
+		// array already rejects this, so reporting it here double-reports.
 		return nil
+	}
+	schedule := *cj.Spec.Schedule
+	if schedule == "" {
+		// Present but empty. This is upstream's same Required branch, and
+		// nothing else catches it: `required` is satisfied by the key
+		// existing, and the schema allows an empty string. Left unreported,
+		// `schedule: ""` passed CI and was then rejected by the API server.
+		return []runtime.Finding{{
+			RuleID:    c.ID(),
+			RuleTitle: c.Title(),
+			Finding: check.Finding{
+				Path:    field.NewPath("spec").Child("schedule").String(),
+				Message: "schedule: Required value: must not be empty",
+				Kind:    cj.Kind,
+				Name:    cj.Metadata.Name,
+			},
+		}}
 	}
 	if err := parseCronSchedule(schedule); err != nil {
 		return []runtime.Finding{{
@@ -158,8 +176,13 @@ func (c startingDeadlineSecondsInvalidCheck) Run(data []byte, source string) []r
 // cronJobSpecWrapper holds batch/v1.CronJobSpec fields we need to validate.
 // The numeric "must be >= 0" fields live in nonNegativeSpecWrapper.
 type cronJobSpecWrapper struct {
-	Schedule          string `json:"schedule"`
-	ConcurrencyPolicy string `json:"concurrencyPolicy"`
+	// Schedule is a pointer so an omitted schedule is distinguishable from
+	// an explicitly-empty one. Upstream rejects both with the same Required
+	// branch, but only the omitted case is already covered by the schema's
+	// `required` array - `required` asserts the key is present, not that its
+	// value is non-empty, and the schema puts no minLength on it.
+	Schedule          *string `json:"schedule"`
+	ConcurrencyPolicy string  `json:"concurrencyPolicy"`
 }
 
 // parseCronSchedule parses a cron schedule exactly as the API server does.

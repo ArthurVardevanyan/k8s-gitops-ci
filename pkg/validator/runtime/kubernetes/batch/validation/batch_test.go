@@ -85,31 +85,40 @@ func TestScheduleInvalidCheck(t *testing.T) {
 		name     string
 		kind     string
 		schedule string
-		want     bool
+		// omit drops the schedule key entirely, which is a different case
+		// from a present-but-empty value: upstream rejects both with the
+		// same Required branch, but only the omitted one is already caught
+		// by the schema's `required` array.
+		omit bool
+		want bool
 	}{
-		{"non-cronjob", "Job", "", false},
-		{"empty schedule", "CronJob", "", false},
-		{"valid schedule", "CronJob", "0 0 * * *", false},
-		{"valid schedule with minute", "CronJob", "*/5 * * * *", false},
-		{"valid schedule with range", "CronJob", "0 1-5 * * *", false},
+		{name: "non-cronjob", kind: "Job", omit: true},
+		// `required` asserts the key exists and the schema puts no minLength
+		// on it, so nothing else rejects this - it passed CI and was then
+		// rejected by the API server.
+		{name: "present but empty is reported", kind: "CronJob", schedule: "", want: true},
+		// Omitted is left to the schema to avoid double-reporting.
+		{name: "omitted is left to the schema", kind: "CronJob", omit: true, want: false},
+		{name: "valid schedule", kind: "CronJob", schedule: "0 0 * * *"},
+		{name: "valid schedule with minute", kind: "CronJob", schedule: "*/5 * * * *"},
+		{name: "valid schedule with range", kind: "CronJob", schedule: "0 1-5 * * *"},
 		// Quarter-hourly. The values belong in the minute field: as hours,
 		// 30 and 45 exceed the 0-23 range and the API server rejects the
 		// schedule. The previous hand-rolled parser did not range-check
 		// field values, so it accepted this invalid schedule.
-		{"valid schedule with list", "CronJob", "0,15,30,45 * * * *", false},
-		{"list value out of range for field", "CronJob", "0 0,15,30,45 * * *", true},
-		{"invalid schedule - too few fields", "CronJob", "* *", true},
-		{"invalid schedule - bad number", "CronJob", "abc 0 * * *", true},
+		{name: "valid schedule with list", kind: "CronJob", schedule: "0,15,30,45 * * * *"},
+		{name: "list value out of range for field", kind: "CronJob", schedule: "0 0,15,30,45 * * *", want: true},
+		{name: "invalid schedule - too few fields", kind: "CronJob", schedule: "* *", want: true},
+		{name: "invalid schedule - bad number", kind: "CronJob", schedule: "abc 0 * * *", want: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := map[string]interface{}{
-				"kind": tt.kind,
-				"spec": map[string]interface{}{
-					"schedule": tt.schedule,
-				},
+			spec := map[string]interface{}{}
+			if !tt.omit {
+				spec["schedule"] = tt.schedule
 			}
+			data := map[string]interface{}{"kind": tt.kind, "spec": spec}
 			bytes, _ := yaml.Marshal(data)
 			findings := c.Run(bytes, "test.yaml")
 			if tt.want && len(findings) == 0 {
