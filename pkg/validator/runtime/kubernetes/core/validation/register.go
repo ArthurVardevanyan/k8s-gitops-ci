@@ -36,6 +36,8 @@ func register() {
 		newContainerPortNameInvalidCheck(),
 		newDuplicatePortNamesCheck(),
 		newPortNumberRangeCheck(),
+		newHostPortRangeCheck(),
+		newPortProtocolInvalidCheck(),
 		newImagePullPolicyCheck(),
 		newMountPropagationValueCheck(),
 		newTerminationMessagePolicyValueCheck(),

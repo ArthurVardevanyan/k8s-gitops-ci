@@ -31,11 +31,13 @@ batch/starting-deadline-seconds-invalid	StartingDeadlineSeconds Must Be >= 0	Cro
 batch/successful-jobs-history-limit-invalid	SuccessfulJobsHistoryLimit Must Be >= 0	CronJob
 container/duplicate-container-names	Duplicate Container Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/duplicate-port-names	Duplicate Port Names Not Allowed	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+container/host-port-range	Host Port Must Be In Range 1-65535	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/image-pull-policy	ImagePullPolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/mount-propagation-value	MountPropagation Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/name-invalid	Container Name Must Be A DNS-1123 Label	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/port-name-invalid	Container Port Name Must Be A Valid IANA Service Name	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/port-number-range	Port Number Must Be In Range 1-65535	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
+container/port-protocol-invalid	Container Port Protocol Must Be TCP, UDP or SCTP	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/termination-message-policy-value	TerminationMessagePolicy Must Be Valid	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 container/volume-mount-name-undefined	VolumeMount Name Must Match a Volume Definition	CronJob,DaemonSet,Deployment,Job,Pod,ReplicaSet,ReplicationController,StatefulSet
 core/configmap-data-size-exceeded	ConfigMap Data Size Must Not Exceed 1 MiB	ConfigMap

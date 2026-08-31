@@ -33,7 +33,10 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		ValidatedAt: validatedAt,
 		Note: "Ports the namePath branch: an absent name is Required and a present one must pass " +
 			"ValidateDNS1123Label. The two are mutually exclusive upstream and are kept that way here. " +
-			"The rest of validateContainerCommon (image, lifecycle, probes, resources) is not ported.",
+			"The rest of validateContainerCommon (image, terminationMessagePolicy, ports, env/envFrom, " +
+			"volumeMounts/volumeDevices, imagePullPolicy, resources, resizePolicy, securityContext) is " +
+			"not ported. lifecycle and probes are validated in validateContainers/validateInitContainers/" +
+			"validateEphemeralContainers, not in validateContainerCommon.",
 	},
 
 	"container/port-name-invalid": {
@@ -42,9 +45,10 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
 		ValidatedAt: validatedAt,
 		Note: "Ports the IsValidPortName branch only, which upstream applies solely when a port name is " +
-			"set, since an unnamed port is legal. The Duplicate branch of the same function is covered " +
-			"by container/duplicate-port-names, and the containerPort/hostPort/protocol branches by " +
-			"container/port-number-range.",
+			"set, since an unnamed port is legal. The other branches of validateContainerPorts are " +
+			"covered by container/duplicate-port-names (Duplicate), container/port-number-range " +
+			"(containerPort), container/host-port-range (hostPort) and container/port-protocol-invalid " +
+			"(protocol).",
 	},
 
 	"core/replicationcontroller-replicas-invalid": {
@@ -99,15 +103,70 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"validateContainerPorts"},
 		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
 		ValidatedAt: validatedAt,
-		Note:        "Ports the allNames duplicate-port-name branch only; the sibling rules in the same function are covered by container/port-number-range.",
+		Note: "Ports the allNames Duplicate branch only. The sibling branches of validateContainerPorts " +
+			"are covered by container/port-name-invalid (IsValidPortName), container/port-number-range " +
+			"(containerPort), container/host-port-range (hostPort) and container/port-protocol-invalid " +
+			"(protocol).",
 	},
 	"container/port-number-range": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validateContainerPorts"},
 		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
 		ValidatedAt: validatedAt,
-		Note:        "Ports the ValidatePortNumOrName/containerPort range branch only; the duplicate-name branch is covered by container/duplicate-port-names.",
+		Note: "Ports the containerPort range branch, which upstream expresses as " +
+			"validation.IsValidPortNum(int(port.ContainerPort)). Deliberate divergence: upstream splits " +
+			"zero out first and reports it as field.Required; this check folds 0 into the range finding, " +
+			"since both say the same thing about a manifest and a separate Required rule would " +
+			"double-report. The other branches of the same function are covered by " +
+			"container/duplicate-port-names, container/port-name-invalid, container/host-port-range and " +
+			"container/port-protocol-invalid.",
 	},
+	"container/host-port-range": {
+		Path:        coreValidationPath,
+		Functions:   []string{"validateContainerPorts"},
+		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		ValidatedAt: validatedAt,
+		Note: "Ports the hostPort range branch, which upstream expresses as " +
+			"validation.IsValidPortNum(int(port.HostPort)) behind its own port.HostPort != 0 guard. " +
+			"That guard is upstream's, not a defaulting concession: a zero hostPort means the port was " +
+			"not requested, so it is skipped here for the same reason. The other branches of the same " +
+			"function are covered by container/duplicate-port-names, container/port-name-invalid, " +
+			"container/port-number-range and container/port-protocol-invalid.",
+	},
+	"container/port-protocol-invalid": {
+		Path:        coreValidationPath,
+		Functions:   []string{"validateContainerPorts"},
+		Digest:      "sha256:1e4b6749f5bdbb16b08c779591cf18d912380cbc1300b2c11c5a0aaa6ca1213f",
+		ValidatedAt: validatedAt,
+		Note: "Ports the !supportedPortProtocols.Has(port.Protocol) -> field.NotSupported branch " +
+			"(TCP, UDP or SCTP). Deliberate divergence: the sibling len(port.Protocol) == 0 -> " +
+			"field.Required branch is skipped, because ContainerPort.Protocol carries a +default=\"TCP\" " +
+			"marker and is defaulted before validation runs; reporting it would fail nearly every " +
+			"manifest, since omitting the protocol is the ordinary way to write a port. That marker is " +
+			"cited below. The other branches of the same function are covered by " +
+			"container/duplicate-port-names, container/port-name-invalid, container/port-number-range " +
+			"and container/host-port-range.",
+		Additional: []runtime.UpstreamRef{{
+			Path:        coreValidationPath,
+			Functions:   []string{"supportedPortProtocols"},
+			Digest:      "sha256:918430b01b6d9c4a19b1548766e4d4f8a57ae37730848104627d62d0777dbb3d",
+			ValidatedAt: validatedAt,
+			Note: "The set this rule tests. Cited so that adding a protocol upstream moves the " +
+				"digest instead of silently leaving this check rejecting a value the API server accepts.",
+		}, {
+			Path:        "pkg/apis/core/v1/zz_generated.defaults.go",
+			Functions:   []string{"SetObjectDefaults_Pod"},
+			Digest:      "sha256:4be5038e07f9acd07b07a4a570079362f4c06bf14d2ccc5cbf75643872436a84",
+			ValidatedAt: validatedAt,
+			Note: "Supplies the protocol this rule skips. It applies the ContainerPort.Protocol " +
+				"+default=\"TCP\" marker as generated code, so an omitted protocol never reaches " +
+				"upstream's Required branch. The marker itself is a comment, which the digest " +
+				"mechanism strips; this generated function is the closest citable form of it. Pod is " +
+				"cited as the representative kind: the generator emits the same protocol block into " +
+				"every workload kind's defaulter.",
+		}},
+	},
+
 	"container/image-pull-policy": {
 		Path:        coreValidationPath,
 		Functions:   []string{"validatePullPolicy"},
@@ -272,8 +331,11 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Functions:   []string{"ValidateObjectMetaAccessor"},
 		Digest:      "sha256:1ee0006f3c2e88f2728e5641f03cd5282af542416a87b2f879c7dffc6dfb3bfd",
 		ValidatedAt: validatedAt,
-		Note: "Ports the name/generateName half: generateName is validated with prefix=true whenever set, " +
-			"and a name is required only when generateName is absent. The per-kind nameFn is resolved from " +
+		Note: "Ports the name/generateName half: generateName is validated with prefix=true whenever set. " +
+			"Deliberate divergence on the name-Required branch: upstream requires a name whenever it is " +
+			"empty, regardless of generateName, because ValidateObjectMetaAccessor runs after the API " +
+			"server has already generated one. This check reads the manifest as written, before that " +
+			"generation, so it requires a name only when generateName is absent too. The per-kind nameFn is resolved from " +
 			"the kind's upstream call site and evaluates to apimachinery NameIsDNSSubdomain / NameIsDNSLabel " +
 			"(generic.go, including maskTrailingDash) or content.IsPathSegmentName for RBAC kinds. " +
 			"Deliberate divergence: Service uses the KEP-5311 relaxed DNS-1123 label rule (NameIsDNSLabel) " +
