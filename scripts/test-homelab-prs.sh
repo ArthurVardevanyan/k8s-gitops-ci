@@ -16,12 +16,12 @@
 #      Eyeball the diff; don't treat a single red as a regression on its own.
 #
 # Usage:
-#   ./scripts/test-homelab-prs.sh [--count N] [--repos R1,R2] [--output FILE]
-#                                 [--binary PATH] [--parallel N] [--enable-avp]
+#   ./scripts/test-homelab-prs.sh [flags]   # --help lists every flag
 #
 # Examples:
 #   ./scripts/test-homelab-prs.sh --count 10
 #   ./scripts/test-homelab-prs.sh --repos ArthurVardevanyan/HomeLab --output report.md
+#   ./scripts/test-homelab-prs.sh --repos a/one,b/two --openshift-repos b/two
 
 set -o errexit
 set -o nounset
@@ -34,13 +34,14 @@ shopt -s inherit_errexit
 # aborts via errexit; normalize that to exit code 2 ("harness error") so CI
 # can tell a setup failure apart from the exit-1 "some PRs failed" signal.
 # Deliberate `exit 0`/`exit 1` at the end do NOT trigger ERR, so they win.
-# shellcheck disable=SC2329  # invoked indirectly via `trap ... ERR`
-on_err() {
-  local rc=$?
-  echo "test-homelab-prs: harness error (exit ${rc})" >&2
-  exit 2
-}
-trap on_err ERR
+#
+# Inline rather than a named function, matching the other scripts here: a
+# handler only ever reached through `trap` looks unreachable to static
+# analysis, and the two codes reported for that (SC2317, SC2329) differ by
+# linter version - so a named handler needs a disable whose correctness
+# depends on which version a given machine ships. `$?` is expanded while the
+# echo command is built, so it is still the failing command's status.
+trap 'echo "test-homelab-prs: harness error (exit $?)" >&2; exit 2' ERR
 
 # --- Defaults ---
 COUNT=15
@@ -51,8 +52,30 @@ PARALLEL=5
 # AVP (secret rendering) needs org-specific secret-backend access, which a
 # generic replay of a public repo does not have — off by default here.
 ENABLE_AVP=false
+# A replay is only evidence if it runs the pipeline the way the replayed
+# repo's own CI runs it. --assume-openshift exempts API groups that ship with
+# OpenShift but also run standalone (OLM, Prometheus Operator, ...) from the
+# sync-options check, so replaying an OpenShift repo without it reports
+# findings that repo's CI never reported — a PR touching OLM manifests failed
+# this gate while its real CI had passed it clean.
+#
+# It is per-repo, not global: it is a fact about the repo being replayed, not
+# about the replay. A corpus mixing an OpenShift repo with a vanilla-Kubernetes
+# one needs the flag for the former and would be wrong for the latter, so
+# repos that need it are listed here rather than the flag being applied to
+# whatever REPOS happens to contain.
+OPENSHIFT_REPOS="ArthurVardevanyan/HomeLab"
 
 # --- Parse args ---
+
+# usage is the single source of the flag list. The file header used to carry a
+# second copy and the two drifted the moment a flag was added, so the header
+# now points here instead of restating it.
+usage() {
+  echo "Usage: $0 [--count N] [--repos R1,R2] [--output FILE] [--binary PATH]"
+  echo "          [--parallel N] [--enable-avp] [--openshift-repos R1,R2]"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --count | -n)
@@ -79,16 +102,29 @@ while [[ $# -gt 0 ]]; do
     ENABLE_AVP=true
     shift
     ;;
+  --openshift-repos)
+    OPENSHIFT_REPOS="$2"
+    shift 2
+    ;;
   --help | -h)
-    echo "Usage: $0 [--count N] [--repos R1,R2] [--output FILE] [--binary PATH] [--parallel N] [--enable-avp]"
+    usage
     exit 0
     ;;
   *)
-    echo "Unknown option: $1"
+    echo "Unknown option: $1" >&2
+    usage >&2
     exit 1
     ;;
   esac
 done
+
+# A repo slug can never contain whitespace, so squeezing it out lets the list
+# be written either way ("a/one,b/two" or "a/one, b/two"). The REPOS elements
+# are already trimmed individually where they are consumed; without the same
+# normalization here, a list written the second way would match only its first
+# element and silently drop --assume-openshift for every repo after it - the
+# exact class of silently-omitted flag this file exists to prevent.
+OPENSHIFT_REPOS="${OPENSHIFT_REPOS//[[:space:]]/}"
 
 # --- Validate binary exists ---
 if [[ ! -x "${BINARY}" ]]; then
@@ -107,9 +143,7 @@ SCRIPT_START=$(date +%s)
 # derive its exit code even when the report is generated inside a redirect.
 FAIL_TALLY_FILE="${RESULTS_DIR}/.fail_tally"
 TOTAL_TESTS=0
-# shellcheck disable=SC2329  # invoked indirectly via `trap ... EXIT`
-cleanup() { rm -rf "${RESULTS_DIR}"; }
-trap cleanup EXIT
+trap 'rm -rf "${RESULTS_DIR}"' EXIT
 
 # Get current progress count (counts completed result files)
 get_progress() {
@@ -135,6 +169,11 @@ run_test() {
   local EXTRA_FLAGS=()
   if [[ "${ENABLE_AVP}" == "false" ]]; then
     EXTRA_FLAGS+=(--disable-checks avp)
+  fi
+  # Whole-element match: the commas around both sides mean "org/homelab-docs"
+  # cannot match a list entry of "org/homelab".
+  if [[ ",${OPENSHIFT_REPOS}," == *",${REPO},"* ]]; then
+    EXTRA_FLAGS+=(--assume-openshift)
   fi
 
   # Unset GH_TOKEN for the binary so it can never post/update PR comments.

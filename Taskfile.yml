@@ -630,6 +630,11 @@ tasks:
       PARALLEL: '{{.PARALLEL | default "5"}}'
       REPOS: '{{.REPOS | default "ArthurVardevanyan/HomeLab"}}'
       OUTPUT: '{{.OUTPUT | default ""}}'
+      # Repos whose own pipeline passes --assume-openshift, so the replay
+      # matches it. Per-repo because it is a fact about the repo, not the
+      # replay: a corpus mixing an OpenShift repo with a vanilla-Kubernetes
+      # one needs it for one and not the other.
+      OPENSHIFT_REPOS: '{{.OPENSHIFT_REPOS | default "ArthurVardevanyan/HomeLab"}}'
     cmds:
       - >
         ./scripts/test-homelab-prs.sh
@@ -637,6 +642,7 @@ tasks:
         --count "{{.COUNT}}"
         --parallel "{{.PARALLEL}}"
         --repos "{{.REPOS}}"
+        --openshift-repos "{{.OPENSHIFT_REPOS}}"
         {{if .OUTPUT}}--output "{{.OUTPUT}}"{{end}}
 
   coverage:report:

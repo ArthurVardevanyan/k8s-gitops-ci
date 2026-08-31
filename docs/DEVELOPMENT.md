@@ -814,11 +814,22 @@ real-world break surfaces as a real failure. `GH_TOKEN` is scrubbed for
 the binary (it can never post a comment) and `avp` is disabled by default
 (no secret backend for a public repo).
 
+Flags a replayed repo's own pipeline passes have to be passed here too,
+or the replay is not replaying that repo's CI. `--assume-openshift` is
+the current case: it exempts API groups that ship with OpenShift but also
+run standalone (OLM, Prometheus Operator, ...) from the sync-options
+check, and without it a PR touching OLM manifests fails this gate while
+its real CI passed it clean. It is applied **per repo**, from
+`OPENSHIFT_REPOS`, because it is a fact about the repo rather than about
+the replay — a corpus mixing an OpenShift repo with a vanilla-Kubernetes
+one needs it for the former and would be wrong for the latter.
+
 ```sh
 task test:homelab-prs                       # last 15 HomeLab PRs
 task test:homelab-prs COUNT=5               # fewer, faster
 task test:homelab-prs OUTPUT=report.md      # write a Markdown report
 task test:homelab-prs REPOS=some/other-repo # a different corpus
+task test:homelab-prs REPOS=a/one,b/two OPENSHIFT_REPOS=b/two
 ```
 
 **This is a smoke/acceptance gate, not a deterministic regression lock.**
