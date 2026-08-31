@@ -94,7 +94,7 @@ func checkIdentityLines(t *testing.T) []string {
 //
 // Regenerate deliberately with:
 //
-//	go test ./pkg/validator/runtime/kubernetes/ -update-checks
+//	task update:checks
 func TestRegisteredCheckIdentityIsStable(t *testing.T) {
 	got := checkIdentityLines(t)
 	if len(got) == 0 {
@@ -102,7 +102,7 @@ func TestRegisteredCheckIdentityIsStable(t *testing.T) {
 	}
 
 	header := "# Registered runtime checks: <rule id>\\t<title>\\t<kinds, comma-separated, * = all>\n" +
-		"# Regenerate: go test ./pkg/validator/runtime/kubernetes/ -update-checks\n"
+		"# Regenerate: task update:checks\n"
 	content := header + strings.Join(got, "\n") + "\n"
 
 	if *updateChecks {
@@ -118,7 +118,7 @@ func TestRegisteredCheckIdentityIsStable(t *testing.T) {
 
 	raw, err := os.ReadFile(goldenPath)
 	if err != nil {
-		t.Fatalf("reading %s (regenerate with -update-checks): %v", goldenPath, err)
+		t.Fatalf("reading %s (regenerate with `task update:checks`): %v", goldenPath, err)
 	}
 
 	var want []string

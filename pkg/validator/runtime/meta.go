@@ -12,10 +12,10 @@ import (
 //	type duplicateVolumeNamesCheck struct{ runtime.Meta }
 //
 // Every check previously spelled out six accessors, four of which said the
-// same thing for all of them. Blocking and RenderSensitive were true in all
-// 81 with no exception - a check that is neither does not belong in a family
-// defined as always-blocking and evaluated against rendered output - and
-// Category was always the ID prefix. Only the ID, title and kind list carry
+// same thing for all of them. Blocking and RenderSensitive are true for every
+// check with no exception - a check that is neither does not belong in a
+// family defined as always-blocking and evaluated against rendered output -
+// and Category was always the ID prefix. Only the ID, title and kind list carry
 // information, so only those are declared.
 type Meta struct {
 	// RuleID is the registered check ID, "<category>/<rule>". Findings are

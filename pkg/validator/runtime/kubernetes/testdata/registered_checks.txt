@@ -1,5 +1,5 @@
 # Registered runtime checks: <rule id>\t<title>\t<kinds, comma-separated, * = all>
-# Regenerate: go test ./pkg/validator/runtime/kubernetes/ -update-checks
+# Regenerate: task update:checks
 admissionregistration/failure-policy-invalid	Webhook FailurePolicy Must Be Valid	MutatingWebhookConfiguration
 admissionregistration/service-invalid	Webhook Service Reference Must Be Valid	MutatingWebhookConfiguration
 admissionregistration/timeout-invalid	Webhook TimeoutSeconds Must Be Between 1 and 30	MutatingWebhookConfiguration

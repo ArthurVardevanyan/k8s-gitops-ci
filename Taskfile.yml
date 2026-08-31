@@ -784,6 +784,14 @@ tasks:
     generates:
       - pkg/lint/kyverno/policies/policies.tar.gz
 
+  update:checks:
+    desc: Regenerate the registered runtime checks snapshot (testdata/registered_checks.txt)
+    cmds:
+      # Goes through `task` like every other generator so the snapshot is
+      # produced with the repository's standard test setup rather than a
+      # hand-typed `go test` invocation that can drift from it.
+      - go test ./pkg/validator/runtime/kubernetes/ -update-checks
+
   update:schemas:
     desc: Bump the pinned SCHEMA_REPO_SHA in scripts/pull-schemas.sh to the SCHEMA_REPO_BRANCH tip
     silent: true
