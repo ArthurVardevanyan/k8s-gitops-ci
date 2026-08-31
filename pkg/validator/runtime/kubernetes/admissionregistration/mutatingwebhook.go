@@ -1,4 +1,4 @@
-package validation
+package admissionregistration
 
 // mutatingWebhookKinds is the Kinds() list for MutatingWebhookConfiguration
 // checks.

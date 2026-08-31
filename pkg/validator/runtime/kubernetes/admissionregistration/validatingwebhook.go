@@ -1,4 +1,4 @@
-package validation
+package admissionregistration
 
 // validatingWebhookKinds is the Kinds() list for
 // ValidatingWebhookConfiguration checks.
