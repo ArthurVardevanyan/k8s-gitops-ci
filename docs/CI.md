@@ -1491,6 +1491,11 @@ No `"*"` in `verbs`/`resources`/`apiGroups` on `Role`/`ClusterRole`.
 Non-builtin API-group resources carry the ArgoCD
 `SkipDryRunOnMissingResource=true` sync-options annotation.
 
+Findings are attributed per-namespace: a rendered resource is matched back
+to its originating source file using `Namespace/Kind/Name`, so two
+resources with the same kind and name but different namespaces resolve to
+their own source file rather than a co-named one.
+
 - **Package:** `pkg/validator/static/syncopts`
 - **Scope:** Doc
 - **Exemptions:** builtin/core groups and OpenShift/OKD-exclusive API
@@ -1718,7 +1723,8 @@ overlay stream — see
 [Raw vs. rendered check input](#raw-vs-rendered-check-input-dual-pass-compliance)),
 the same direct/external split is decided at the **resource** level rather
 than the file level: a finding is direct (blocking) only when this
-changeset directly modified that specific resource (`Kind/Name`) via a
+changeset directly modified that specific resource (`Namespace/Kind/Name`,
+with the namespace omitted for cluster-scoped resources) via a
 source file feeding the affected overlay
 (`changedResourceKeys`/`isResourceAffected`,
 `pkg/validator/compliance_attribution.go`). A PR that only touches an

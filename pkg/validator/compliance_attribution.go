@@ -23,8 +23,23 @@ type complianceAttributionCtx struct {
 	overlaysByDir  map[string]map[string]bool // changed dir → set of overlay keys it feeds
 }
 
-// kindNameKey is the standard resource identity key for a finding.
-func kindNameKey(f check.Finding) string { return f.Kind + "/" + f.Name }
+// kindNameKey is the standard resource identity key for a finding. It becomes
+// namespace-aware when the finding populates Namespace, and degrades to the
+// legacy Kind/Name form otherwise (see resourceKeyFor); currently only
+// sync-options populates Namespace, so the other checks key namespace-blind.
+func kindNameKey(f check.Finding) string { return resourceKeyFor(f.Namespace, f.Kind, f.Name) }
+
+// resourceKeyFor builds the resource-identity attribution key, incorporating
+// the namespace so two resources with the same Kind/Name but different
+// namespaces are attributed independently. For cluster-scoped resources
+// (empty namespace) it degrades byte-identically to Kind/Name, preserving the
+// historical key for all existing checks.
+func resourceKeyFor(namespace, kind, name string) string {
+	if namespace == "" {
+		return kind + "/" + name
+	}
+	return namespace + "/" + kind + "/" + name
+}
 
 // appRootOf derives the app root (the directory whose overlays/<cluster> tree an
 // overlay lives under) from a changed file path, matching appFromOverlayPath's
@@ -81,7 +96,8 @@ func changedResourceKeys(changedFiles []string) map[string][]string {
 			var doc struct {
 				Kind     string `yaml:"kind"`
 				Metadata struct {
-					Name string `yaml:"name"`
+					Name      string `yaml:"name"`
+					Namespace string `yaml:"namespace"`
 				} `yaml:"metadata"`
 			}
 			err := decoder.Decode(&doc)
@@ -89,8 +105,23 @@ func changedResourceKeys(changedFiles []string) map[string][]string {
 				break
 			}
 			if doc.Kind != "" && doc.Metadata.Name != "" {
-				key := doc.Kind + "/" + doc.Metadata.Name
+				// Register under BOTH the namespace-aware key and the legacy
+				// Kind/Name key. Only checks that populate Finding.Namespace
+				// (currently sync-options) key on the namespace-aware form; every
+				// other resource-compliance check still uses the legacy
+				// namespace-blind key. Without the dual write, a changed source
+				// manifest that declares metadata.namespace would be unreachable
+				// by the legacy checks' ResourceKey and their direct findings
+				// would be silently downgraded to non-blocking warnings.
+				key := resourceKeyFor(doc.Metadata.Namespace, doc.Kind, doc.Metadata.Name)
 				keys[key] = append(keys[key], f)
+				// Namespaced resources get a separate legacy entry; cluster-scoped
+				// resources already collapse to Kind/Name via resourceKeyFor, so an
+				// extra write here would duplicate f in the same slice.
+				if doc.Metadata.Namespace != "" {
+					legacy := doc.Kind + "/" + doc.Metadata.Name
+					keys[legacy] = append(keys[legacy], f)
+				}
 			}
 		}
 	}

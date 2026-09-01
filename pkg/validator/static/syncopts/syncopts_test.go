@@ -29,6 +29,39 @@ metadata:
 	}
 }
 
+func TestValidateReader_CRD_NamespacePopulated(t *testing.T) {
+	cases := []struct {
+		name      string
+		data      string
+		wantNS    string
+		wantError bool
+	}{
+		{
+			name:   "namespaced resource",
+			data:   "kind: Certificate\napiVersion: cert-manager.io/v1\nmetadata:\n  name: cert\n  namespace: stackrox\n",
+			wantNS: "stackrox", wantError: true,
+		},
+		{
+			name:   "cluster-scoped resource",
+			data:   "kind: ClusterIssuer\napiVersion: cert-manager.io/v1\nmetadata:\n  name: ci\n",
+			wantNS: "", wantError: true,
+		},
+	}
+	for _, c := range cases {
+		errs := ValidateReader(strings.NewReader(c.data), "x.yaml")
+		if c.wantError {
+			if len(errs) != 1 {
+				t.Fatalf("%s: expected 1 error: %v", c.name, errs)
+			}
+			if errs[0].Namespace != c.wantNS {
+				t.Errorf("%s: Namespace = %q, want %q", c.name, errs[0].Namespace, c.wantNS)
+			}
+		} else if len(errs) != 0 {
+			t.Errorf("%s: expected no errors: %v", c.name, errs)
+		}
+	}
+}
+
 func TestValidateReader_KustomizeComponent(t *testing.T) {
 	data := `kind: Component
 apiVersion: kustomize.config.k8s.io/v1alpha1

@@ -190,7 +190,7 @@ var installerOnlyKinds = map[string]bool{
 
 // ValidationError records a missing sync-options annotation.
 type ValidationError struct {
-	File, Name, Kind, APIVersion string
+	File, Name, Kind, APIVersion, Namespace string
 }
 
 func (e ValidationError) String() string {
@@ -251,7 +251,8 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 			continue
 		}
 		name := quickName(mapping)
-		errs = append(errs, ValidationError{File: source, Kind: kind, APIVersion: apiVersion, Name: name})
+		namespace := quickNamespace(mapping)
+		errs = append(errs, ValidationError{File: source, Kind: kind, APIVersion: apiVersion, Name: name, Namespace: namespace})
 	}
 	return errs
 }
@@ -354,6 +355,15 @@ func quickName(mapping *yaml.Node) string {
 		}
 	}
 	return "(unnamed)"
+}
+
+// quickNamespace returns the object's metadata.namespace, or "" for
+// cluster-scoped resources.
+func quickNamespace(mapping *yaml.Node) string {
+	if meta := findKey(mapping, "metadata"); meta != nil && meta.Kind == yaml.MappingNode {
+		return quickString(findKey(meta, "namespace"))
+	}
+	return ""
 }
 
 func quickString(n *yaml.Node) string {
