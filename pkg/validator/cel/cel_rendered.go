@@ -2,6 +2,7 @@ package cel
 
 import (
 	"path/filepath"
+	"runtime"
 	"sync"
 )
 
@@ -61,5 +62,5 @@ func runtimeNumCPUTimes2() int {
 // numCPU returns runtime.NumCPU().
 // Extracted to allow testing.
 func numCPU() int {
-	return 1
+	return runtime.NumCPU()
 }

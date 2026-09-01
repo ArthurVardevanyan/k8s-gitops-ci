@@ -852,11 +852,47 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	// CEL raw pass: validate changed YAML files that weren't covered by
 	// the rendered pass (e.g., files not in any overlay, or lint-only mode).
-	// Only runs when CEL is enabled and we have compiled rules.
-	if stepEnabled(stepCEL, disabled, enabled) && !opts.LintOnly && len(renderedOverlays) > 0 {
-		// Reuse the compiled rules from the rendered pass above.
-		// For lint-only mode or no rendered overlays, we'd need to compile
-		// rules separately - handled below.
+	// Mirrors the kubeconform raw pass pattern: exclude scaffold artifacts,
+	// known non-manifest files, and files covered by scoped overlays.
+	if stepEnabled(stepCEL, disabled, enabled) {
+		// Determine schema directory (reuse from rendered pass if available).
+		schemaDir := opts.SchemaDir
+		if schemaDir == "" {
+			extracted, c, err := kubeconform.ExtractSchemas()
+			if err == nil {
+				schemaDir = extracted
+				defer c()
+			}
+		}
+		if schemaDir != "" {
+			// Compile CEL rules for raw pass (may already be compiled from
+			// rendered pass, but CompileRules is idempotent and cheap).
+			compiledRules, compileErr := cel.CompileRules(schemaDir)
+			if compileErr != nil {
+				log.Warn("cel: failed to compile rules: %v", compileErr)
+			}
+			if compiledRules != nil {
+				// Collect changed YAML files, mirroring kubeconform's raw pass.
+				yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
+				yamlFiles = excludeScaffoldArtifacts(yamlFiles)
+				yamlFiles = excludeInvalidTestdata(yamlFiles)
+				yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
+				// Exclude files covered by scoped overlays unless in lint-only
+				// mode (rendered pass is authoritative for those).
+				if !opts.LintOnly && len(renderedOverlays) > 0 {
+					scoped := detectOverlaysForChanges(changed)
+					yamlFiles = filesNotCovered(yamlFiles, coverByScopedOverlays(scoped, yamlFiles))
+				}
+				if len(yamlFiles) > 0 {
+					rawCel := cel.ValidateFiles(yamlFiles, compiledRules, Workers(opts))
+					log.Info("cel (raw): %d valid, %d invalid, %d errors",
+						rawCel.Valid, rawCel.Invalid, rawCel.Errors)
+					if rawCel.Invalid > 0 || rawCel.Errors > 0 {
+						res.Sections = append(res.Sections, ComposeCELSection(rawCel))
+					}
+				}
+			}
+		}
 	}
 
 	// NetworkAttachmentDefinition advisories over every successfully-rendered

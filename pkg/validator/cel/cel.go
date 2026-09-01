@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/types"
 	"k8s.io/apiserver/pkg/cel/library"
 
 	"gopkg.in/yaml.v3"
@@ -355,6 +357,10 @@ func isTruthy(val interface{}) bool {
 		return true
 	}
 	// CEL returns types.Val, check if it's a boolean false.
+	if tb, ok := val.(*types.Bool); ok {
+		return bool(*tb)
+	}
+	// Fallback: check if it's a Go bool (for tests).
 	if b, ok := val.(bool); ok {
 		return b
 	}
@@ -412,8 +418,9 @@ func splitDocuments(data []byte) [][]byte {
 	return nonEmpty
 }
 
-// validateFilesPar validates files in parallel using a worker pool.
-func validateFilesPar(files []string, compiled *CompiledRules, workers int) *Result {
+// ValidateFiles validates a list of YAML files in parallel using a worker pool.
+// Workers default to runtime.NumCPU()*2 when <= 0.
+func ValidateFiles(files []string, compiled *CompiledRules, workers int) *Result {
 	if workers <= 0 {
 		workers = runtime.NumCPU() * 2
 	}
@@ -426,9 +433,12 @@ func validateFilesPar(files []string, compiled *CompiledRules, workers int) *Res
 
 	jobs := make(chan string, len(files))
 	results := make(chan *Result, len(files))
+	var wg sync.WaitGroup
 
 	for i := 0; i < workers; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for f := range jobs {
 				data, err := os.ReadFile(f)
 				if err != nil {
@@ -446,16 +456,13 @@ func validateFilesPar(files []string, compiled *CompiledRules, workers int) *Res
 	close(jobs)
 
 	go func() {
-		for i := 0; i < workers; i++ {
-			<-results
-		}
+		wg.Wait()
 		close(results)
 	}()
 
 	// Collect results.
 	combined := &Result{}
-	for i := 0; i < workers; i++ {
-		r := <-results
+	for r := range results {
 		combined.Merge(r)
 	}
 
