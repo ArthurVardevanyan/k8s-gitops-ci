@@ -65,9 +65,11 @@ Annotation-mode support is separate: a check only honors
 `kubernetes/storage-class/...`, `kubernetes/pod-spec/...`) comes from
 `pkg/validator/runtime/<family>/` and appears in the
 **"Runtime Validation"** report section, not "Resource Compliance". These
-are 1:1 ports of the Kubernetes API server's own validation, so they only
-fire on manifests the cluster itself would reject — an exemption would
-just defer the failure to apply time. The runtime adapter implements
+are 1:1 ports of validation the cluster performs itself, so they only fire
+on manifests it will not accept or cannot act on — an exemption would just
+defer the failure to apply time. `kubernetes/*` rules come from the API
+server and reject at admission; `k8scni/*` rules are enforced afterwards,
+when the network is attached. The runtime adapter implements
 `check.NonExemptable`, so `check.Register` never registers these IDs as
 exemptable; neither an annotation nor a `check=` selector can match one.
 **Fix the manifest.** Never write an `EXEMPTIONS` entry for a finding in

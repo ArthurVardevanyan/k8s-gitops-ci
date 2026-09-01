@@ -842,11 +842,16 @@ table above:
   passing pipeline, since a check that never runs reports nothing.
 
 **The standard for adding a new one: a runtime check must be a faithful
-1:1 port of a specific upstream Kubernetes validation rule, or it does
-not belong in this family.** "Always blocking, non-exemptable" is only
-defensible if the cluster really would reject the manifest. Anything that
-is merely a best practice — however good a practice — belongs in the
-exemptable resource-compliance family in the table above instead.
+1:1 port of a specific upstream validation rule, cited to the function
+that implements it, or it does not belong in this family.** For
+`kubernetes/*` that upstream is the API server; for other families it is
+whatever component actually enforces the rule — the `k8scni/*` checks port
+CNI config parsing and OVN-Kubernetes' own `ValidateNetConf`, which bite
+when the network is attached rather than at admission. "Always blocking,
+non-exemptable" is only defensible if the cluster really would refuse the
+manifest, at admission or afterwards. Anything that is merely a best
+practice — however good a practice — belongs in the exemptable
+resource-compliance family in the table above instead.
 
 Two failure modes disqualify a rule, and both are easy to write by
 accident. A **fabricated** rule is one upstream has no equivalent for at

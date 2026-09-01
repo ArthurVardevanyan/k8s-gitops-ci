@@ -244,12 +244,18 @@ always blocks. See
 [CI.md](CI.md#runtime-validation-checks-admission-rules) for the family
 itself.
 
-The rationale is that these checks are 1:1 ports of the Kubernetes API
-server's own validation logic — they only fire on a manifest the cluster
-itself would reject. Exempting one wouldn't make the manifest valid; it
+The rationale is that these checks are 1:1 ports of validation the cluster
+performs itself — they only fire on a manifest the cluster will not accept
+or cannot act on. Which component performs it, and when, varies by family:
+`kubernetes/*` rules are ported from the API server and reject at
+admission, while `k8scni/*` rules are enforced afterwards, when the network
+is attached, so a NAD is admitted and then fails to work. The consequence
+is the same either way. Exempting one wouldn't make the manifest valid; it
 would just move the failure from CI (where it's cheap and attributable to
-a PR) to apply/sync time (where it's a broken deployment). An exemption
-here can only ever defer a failure, never prevent one.
+a PR) to apply/sync time (where it's a broken deployment) — or, for a
+family enforced after admission, to something that merged, synced and only
+then failed. An exemption here can only ever defer a failure, never
+prevent one.
 
 This is enforced structurally rather than by an ID allowlist: the runtime
 adapter implements the `check.NonExemptable` interface
