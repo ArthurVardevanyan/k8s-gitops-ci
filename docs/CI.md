@@ -807,6 +807,22 @@ table above:
   `EXEMPTIONS=(...)` selector can match one. `TestRuntimeChecksAreNonExemptable`
   enforces this for every registered runtime check. See
   [EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids).
+
+  This holds only while every family's rejection is **unconditional**,
+  which is not the same as every family's rejection happening at the same
+  moment:
+
+  | Family       | Rejected by     | When                         | Conditional on |
+  | ------------ | --------------- | ---------------------------- | -------------- |
+  | `kubernetes` | the API server  | during admission             | nothing        |
+  | `k8scni`     | the CNI runtime | when the network is attached | nothing        |
+
+  Both are unconditional, so both can honestly be non-exemptable. A family
+  whose rejection depends on something being installed — an operator's
+  admission webhook, which rejects nothing on a cluster not running that
+  operator — could not, and adding one means making `NonExemptable`
+  per-check rather than widening what the constant already claims.
+
 - **Kind-scoped by declaration.** Each check declares the kinds it
   applies to in its embedded `runtime.Meta`; the adapter inverts that
   applies-to list into the existing `check.DocSkipper` contract
@@ -826,11 +842,16 @@ table above:
   passing pipeline, since a check that never runs reports nothing.
 
 **The standard for adding a new one: a runtime check must be a faithful
-1:1 port of a specific upstream Kubernetes validation rule, or it does
-not belong in this family.** "Always blocking, non-exemptable" is only
-defensible if the cluster really would reject the manifest. Anything that
-is merely a best practice — however good a practice — belongs in the
-exemptable resource-compliance family in the table above instead.
+1:1 port of a specific upstream validation rule, cited to the function
+that implements it, or it does not belong in this family.** For
+`kubernetes/*` that upstream is the API server; for other families it is
+whatever component actually enforces the rule — the `k8scni/*` checks port
+CNI config parsing and OVN-Kubernetes' own `ValidateNetConf`, which bite
+when the network is attached rather than at admission. "Always blocking,
+non-exemptable" is only defensible if the cluster really would refuse the
+manifest, at admission or afterwards. Anything that is merely a best
+practice — however good a practice — belongs in the exemptable
+resource-compliance family in the table above instead.
 
 Two failure modes disqualify a rule, and both are easy to write by
 accident. A **fabricated** rule is one upstream has no equivalent for at
@@ -1625,57 +1646,57 @@ hard CI dependency.
 
 ### NetworkAttachmentDefinition (NAD) validation
 
-`pkg/validator/nad` validates every successfully-rendered overlay's
-`NetworkAttachmentDefinition` resources (`runNADValidation` in
-`pkg/validator/nad_wiring.go`, over the same batch of rendered overlay
-output the `kyverno` step consumes — see
-[Build Strategies](#build-strategies)). Unlike the checks in the table
-above, it is **not** part of the `check.Register` framework: it's always
-on (not gateable via `DisabledChecks`/`EnabledChecks`) and its findings
-are **not** exemptable via `EXEMPTIONS=(...)` or the
-`gitops-ci.k8s.io/exempt-<check-id>` annotation (see
-[EXEMPTIONS.md](EXEMPTIONS.md)). It renders as its own
-"NetworkAttachmentDefinition Validation" report section, blocking on any
-hard error (advisory warnings render ⚠️ and never block). The section is
-**omit-when-absent** (like the opt-in Kyverno
-section): it's rendered only when at least one
-`NetworkAttachmentDefinition` is actually present in the rendered-overlay
-chain, showing the result whether it passed or failed — a changeset that
-touches no NAD gets no section rather than an empty "0 NADs, all good"
-stub. The validator itself still always runs; only the (empty) section is
-suppressed.
+NAD validation splits across two homes, by whether a rule has a citable
+upstream function:
 
-Validation dispatches on the CNI plugin `type` declared in each NAD's
-`spec.config` (a stringified CNI netconf), rather than on a global
-platform flag — the `type` field is self-describing:
+- **Advisories** (`pkg/validator/nad`): **non-blocking advisories** (⚠️)
+  for likely authoring mistakes (unrecognized CNI/IPAM `type`, missing
+  `cniVersion`) - applied uniformly to every NAD, OVN included. This tier
+  reports **no hard failures**. Whether `spec.config` is a non-empty JSON
+  string that parses as a valid CNI configuration with a plugin `type` is
+  decided by the `k8scni/net-attach-def/config-invalid` runtime check
+  below, which covers every case this layer used to reject; reporting them
+  in both places put one malformed config in two sections as two blocking
+  findings describing the same defect. Note the consequence: config
+  parsing is now gateable via `DisabledChecks` like any other registered
+  check, where this layer was always on. The advisories are this tool's
+  own heuristics and correspond to no upstream function, so this is
+  **not** part of
+  the `check.Register` framework: it is always on (not gateable via
+  `DisabledChecks`/`EnabledChecks`), not exemptable via
+  `EXEMPTIONS=(...)` or the `gitops-ci.k8s.io/exempt-<check-id>`
+  annotation (see [EXEMPTIONS.md](EXEMPTIONS.md)), and renders as its own
+  "NetworkAttachmentDefinition Validation" report section
+  (`runNADValidation` in `pkg/validator/nad_wiring.go`, over the same
+  rendered-overlay batch the `kyverno` step consumes - see
+  [Build Strategies](#build-strategies)). The section is
+  **omit-when-absent** (like the opt-in Kyverno section): rendered only
+  when at least one NAD is present in the rendered-overlay chain, whether
+  it passed or failed.
+- **OVN-Kubernetes semantic rules** (`type: ovn-k8s-cni-overlay`):
+  topology/role/subnet/transport constraints, ported from
+  `ovn-kubernetes/go-controller/pkg/util.ValidateNetConf` (see the
+  `k8scni/net-attach-def/ovn-netconf-invalid` check's `UpstreamRef` for the exact
+  citation and what's intentionally omitted: runtime-only checks that
+  depend on live cluster state). This genuinely is a citable upstream
+  rule the OVN-Kubernetes network controller enforces, so it lives in
+  `pkg/validator/runtime/k8scni` alongside `k8scni/net-attach-def/config-invalid` (a
+  second, CNI-plugin-neutral check that calls containernetworking/cni's
+  own reference parser directly rather than reimplementing the CNI
+  Specification's config-shape rules by hand) - both are part of the
+  **Runtime Validation** family: always-blocking, non-exemptable, and
+  require a verified `UpstreamRef` exactly like every other runtime
+  check (see "Runtime validation checks" above). A non-OVN NAD is never
+  judged by `k8scni/net-attach-def/ovn-netconf-invalid` at all - ovn-kubernetes's own
+  `ParseNetConf` treats it as a no-op skip
+  (`config.ErrorAttachDefNotOvnManaged`), never a failure, exactly
+  matching how the OVN-Kubernetes network controller itself behaves.
+  This is what keeps OVN validation from false-failing valid non-OVN
+  secondary networks (e.g. ODF's macvlan NADs).
 
-- **Structural gates** (always, org/CNI-neutral, blocking): `spec.config`
-  must be a non-empty JSON **string**, must parse as **valid JSON** (a
-  single config object or a `plugins` conflist), and must declare a
-  non-empty plugin `type`.
-- **OVN-Kubernetes NADs** (`type: ovn-k8s-cni-overlay`, blocking): OVN's
-  semantic rules (topology/role/subnet/transport constraints, ported from
-  `ovn-kubernetes/util.ValidateNetConf` — see `pkg/validator/nad`'s
-  package doc comment for what's intentionally omitted: runtime-only
-  checks that depend on live cluster state) are additionally applied.
-  These run wherever such a NAD is authored.
-- **Non-OVN NADs** (`macvlan`, `bridge`, `ipvlan`, `host-device`,
-  SR-IOV, …): their config is owned by the respective CNI plugin, so no
-  hard semantic checks are applied — only **non-blocking advisories**
-  (⚠️) for likely authoring mistakes (unrecognized CNI/IPAM `type`,
-  missing `cniVersion`). CNI types are open-ended, so an unrecognized
-  type is a warning, never a hard failure.
-
-Dispatching on the type field is what keeps OVN validation from
-false-failing valid non-OVN secondary networks (upstream ovn-kubernetes
-itself skips a non-OVN NAD rather than failing it). NAD validation does
-**not** depend on `--assume-openshift` (that flag still governs the
-`sync-options` exemption above).
-
-`validate-nad` also exposes this directly as a CLI subcommand, bypassing
-the full pipeline, for validating a directory or explicit file list
-(`k8s-gitops-ci validate-nad --dir <path>` or
-`... <file.yaml> ...`).
+NAD validation does **not** depend on `--assume-openshift` (that flag
+still governs the `sync-options` exemption above) - dispatch is entirely
+driven by the CNI `type` field declared in each NAD's `spec.config`.
 
 ## Direct vs. external findings
 

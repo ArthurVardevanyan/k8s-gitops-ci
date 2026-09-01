@@ -465,3 +465,122 @@ func TestUnknownCheckIDsAreReported(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryRuntimeCheckHasExactlyOneRef is the cross-family half of the
+// citation requirement.
+//
+// Each family's own test can only assert the shape its upstream uses, and it
+// walks a registry containing whichever families that test binary happens to
+// link - so none of them can prove the invariant holds across all of them at
+// once. This package blank-imports every family (register_checks.go), so it is
+// the only place that walk is complete.
+//
+// Two things are deliberately *not* asserted, because they cannot reach a
+// test: a duplicate check ID panics in check.Register, and a check with no
+// UpstreamRef panics in runtime.RegisterAll. Both fail at init, so asserting
+// them again would only imply coverage this test cannot provide.
+//
+// The count comparison catches the one gap those panics leave: a check that
+// reaches the runtime-validation section without going through
+// runtime.RegisterAll at all - registered straight through check.Register, so
+// no panic fires and no citation is ever demanded of it.
+//
+// Known gap, not covered here or anywhere: an *orphan ref*, an entry left in
+// a package's upstream_refs.go whose check was renamed or deleted.
+// RegisterAll copies refs by walking checks, so an unclaimed entry is never
+// added to the global map - it is invisible to both this assertion and `task
+// verify:upstream-refs`, which only verifies what got registered. Catching it
+// needs a source-level walk of refsRoot, which the --update path already does.
+func TestEveryRuntimeCheckHasExactlyOneRef(t *testing.T) {
+	checks := runtimeChecks(t)
+
+	families := map[string]int{}
+	for _, c := range checks {
+		id := c.ID()
+		if n := strings.Count(id, "/"); n != 2 {
+			t.Errorf("check %q has %d %q separators, want 2 (<family>/<category>/<rule>)", id, n, "/")
+		}
+		families[runtimepkg.FamilyOf(id)]++
+	}
+
+	if got := len(runtimepkg.AllRefs()); got != len(checks) {
+		t.Errorf("registered %d runtime checks but %d upstream refs; a runtime check that skipped runtime.RegisterAll cites nothing",
+			len(checks), got)
+	}
+
+	// Guards the walk itself: if a family stopped registering, every
+	// assertion above would pass vacuously for it.
+	for _, want := range []string{"kubernetes", "k8scni"} {
+		if families[want] == 0 {
+			t.Errorf("no checks registered for family %q; its blank import in register_checks.go is missing", want)
+		}
+	}
+}
+
+// TestRuntimeSectionIntroMatchesFamilies pins the section's opening line.
+//
+// The line is the only place the guarantee is stated when a single family is
+// present, because that is exactly when the family heading carrying it is
+// omitted. Getting it wrong therefore either overstates what a finding proves
+// or, in the multi-family case, states something untrue of half the section.
+func TestRuntimeSectionIntroMatchesFamilies(t *testing.T) {
+	mk := func(ruleID, kind string) check.Finding {
+		return runtimepkg.Finding{
+			RuleID: ruleID, RuleTitle: "Some Rule",
+			Finding: check.Finding{File: "a.yaml", Kind: kind, Name: "x", Path: "spec", Message: "boom"},
+		}.ToCheckFinding()
+	}
+	k8s := mk("kubernetes/batch/schedule-invalid", "CronJob")
+	cni := mk("k8scni/net-attach-def/config-invalid", "NetworkAttachmentDefinition")
+
+	tests := []struct {
+		name     string
+		findings []check.Finding
+		want     string
+		absent   []string
+	}{
+		{
+			// The common case, and the one that must not regress: a
+			// kubernetes-only run reads exactly as it did before families.
+			name:     "kubernetes only keeps the API-server wording",
+			findings: []check.Finding{k8s},
+			want:     "Kubernetes validation rules enforced by the cluster API server",
+		},
+		{
+			// Says when the rules bite rather than naming a component: this
+			// family covers both plugin-independent config parsing and one
+			// plugin's semantic rules, which are not enforced by the same
+			// thing, so any single component named here is wrong for one of
+			// them.
+			name:     "k8scni only states attachment-time enforcement",
+			findings: []check.Finding{cni},
+			want:     "enforced when the network is attached rather than at admission",
+			absent:   []string{"cluster API server"},
+		},
+		{
+			// No single sentence is true of both, so it must not claim the
+			// API server rejects a rule the API server never sees.
+			name:     "both families fall back to general wording",
+			findings: []check.Finding{k8s, cni},
+			want:     "validation rules enforced by the cluster.",
+			// "Rejected" is true of the kubernetes half and false of the CNI
+			// half, whose findings are admitted and only fail later, so a
+			// sentence covering both must not claim plain rejection.
+			absent: []string{"cluster API server", "manifests that would be rejected"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := ComposeRuntimeValidationSection(tt.findings).Body
+			if !strings.Contains(body, tt.want) {
+				t.Errorf("intro omits %q:\n%s", tt.want, body)
+			}
+			for _, absent := range tt.absent {
+				if strings.Contains(body, absent) {
+					t.Errorf("intro should not claim %q:\n%s", absent, body)
+				}
+			}
+		})
+	}
+}

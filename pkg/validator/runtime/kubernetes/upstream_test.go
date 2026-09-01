@@ -9,6 +9,11 @@ import (
 	runtime "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime"
 )
 
+// family is the upstream family every check in this package belongs to - the
+// first segment of its ID. The assertions below encode kubernetes/kubernetes'
+// source layout, so they must apply to this family and no other.
+const family = "kubernetes"
+
 // upstreamRoots are the modules a runtime check may cite from.
 //
 // A root alone is not sufficient: "pkg/apis/" also contains types.go,
@@ -64,6 +69,18 @@ func TestEveryRuntimeCheckCitesUpstream(t *testing.T) {
 		if c.Section() != "runtime-validation" {
 			continue
 		}
+		// isUpstreamValidationPath encodes kubernetes/kubernetes' source
+		// layout, so it is only meaningful for that family. Scoping on the
+		// ID rather than on which packages happen to be linked into this
+		// test binary is deliberate: this test walks the global registry,
+		// so it currently sees only Kubernetes checks by the accident that
+		// kubernetes/register.go does not import a sibling family. The day
+		// anything pulls one in, an unscoped assertion would fail a
+		// perfectly valid check with "not a Kubernetes API validation
+		// source file" - a confusing error about the wrong thing.
+		if runtime.FamilyOf(c.ID()) != family {
+			continue
+		}
 		runtimeChecks++
 
 		ref, ok := runtime.Ref(c.ID())
@@ -86,9 +103,19 @@ func TestEveryRuntimeCheckCitesUpstream(t *testing.T) {
 	if runtimeChecks == 0 {
 		t.Fatal("no runtime checks registered; the registry walk cannot prove anything")
 	}
-	if got := len(runtime.AllRefs()); got != runtimeChecks {
-		t.Errorf("registered %d runtime checks but %d upstream refs; every check must have exactly one",
-			runtimeChecks, got)
+
+	// Every ref registered from this family's packages must belong to a
+	// check in it. Counting family-scoped refs rather than runtime.AllRefs()
+	// keeps this honest once a second family registers into the same map.
+	var familyRefs int
+	for id := range runtime.AllRefs() {
+		if runtime.FamilyOf(id) == family {
+			familyRefs++
+		}
+	}
+	if familyRefs != runtimeChecks {
+		t.Errorf("registered %d %s runtime checks but %d upstream refs; every check must have exactly one",
+			runtimeChecks, family, familyRefs)
 	}
 }
 

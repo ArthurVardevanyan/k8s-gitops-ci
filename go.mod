@@ -3,6 +3,7 @@ module github.com/ArthurVardevanyan/k8s-gitops-ci
 go 1.27.0
 
 require (
+	github.com/containernetworking/cni v1.3.0
 	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260827164301-e63fce3cf15d
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/yannh/kubeconform v0.8.0
@@ -24,7 +25,6 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
-	github.com/containernetworking/cni v1.3.0 // indirect
 	github.com/containernetworking/plugins v1.9.1 // indirect
 	github.com/coreos/go-iptables v0.8.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect

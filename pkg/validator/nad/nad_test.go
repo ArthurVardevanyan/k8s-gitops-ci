@@ -27,63 +27,6 @@ spec:
 	}
 }
 
-func TestValidateFiles_MissingConfig(t *testing.T) {
-	tmp := t.TempDir()
-	nadPath := filepath.Join(tmp, "nad.yaml")
-	_ = os.WriteFile(nadPath, []byte(`apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: my-network
-spec:
-  plugins: []
-`), 0o600)
-
-	errs, _ := ValidateFiles([]string{nadPath})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for missing config, got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "spec.config is empty") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
-	}
-}
-
-func TestValidateFiles_EmptyConfig(t *testing.T) {
-	tmp := t.TempDir()
-	nadPath := filepath.Join(tmp, "nad.yaml")
-	_ = os.WriteFile(nadPath, []byte(`apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: my-network
-spec:
-  config:
-`), 0o600)
-
-	errs, _ := ValidateFiles([]string{nadPath})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for empty config, got %d: %v", len(errs), errs)
-	}
-	if errs[0].File != nadPath {
-		t.Errorf("expected file %q, got %q", nadPath, errs[0].File)
-	}
-}
-
-func TestValidateFiles_EmptyStringConfig(t *testing.T) {
-	tmp := t.TempDir()
-	nadPath := filepath.Join(tmp, "nad.yaml")
-	_ = os.WriteFile(nadPath, []byte(`apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: my-network
-spec:
-  config: ''
-`), 0o600)
-
-	errs, _ := ValidateFiles([]string{nadPath})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for empty string config, got %d: %v", len(errs), errs)
-	}
-}
-
 func TestValidateFiles_NonNADFilesSkipped(t *testing.T) {
 	tmp := t.TempDir()
 	// Regular ConfigMap - should be skipped
@@ -129,16 +72,19 @@ kind: NetworkAttachmentDefinition
 metadata:
   name: good
 spec:
-  config: '{"type":"bridge"}'
+  config: '{"cniVersion":"0.3.1","type":"bridge"}'
 `), 0o600)
 
-	// Invalid NAD (empty config) -> hard error.
+	// A NAD this layer still has something to say about. It used to be one
+	// with an empty config, but parse failures belong to the runtime check
+	// now, and this test is about walking the directory and dispatching what
+	// it finds - so it needs a finding this layer still produces.
 	_ = os.WriteFile(filepath.Join(tmp, "bad-nad.yaml"), []byte(`apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
   name: bad
 spec:
-  config: ""
+  config: '{"cniVersion":"0.3.1","type":"not-a-real-cni-plugin"}'
 `), 0o600)
 
 	// Non-NAD file (should be ignored)
@@ -148,9 +94,15 @@ metadata:
   name: app
 `), 0o600)
 
-	errs, _ := ValidateDir(tmp)
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error (bad NAD), got %d: %v", len(errs), errs)
+	errs, warns := ValidateDir(tmp)
+	if len(errs) != 0 {
+		t.Errorf("this layer no longer reports hard errors, got %d: %v", len(errs), errs)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("expected 1 advisory from the walked directory, got %d: %v", len(warns), warns)
+	}
+	if !strings.Contains(warns[0].Message, "unrecognized CNI type") {
+		t.Errorf("unexpected advisory: %s", warns[0].Message)
 	}
 }
 
@@ -276,38 +228,33 @@ spec:
 	return path
 }
 
-// --- JSON / structural gating (all CNI types) ---
+// --- Config parsing is the runtime check's, not this layer's ---
 
-func TestValidateFiles_MalformedJSONIsError(t *testing.T) {
-	path := writeNAD(t, `{"cniVersion":"0.3.1","type":"macvlan"`) // missing closing brace
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for malformed JSON, got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "not valid JSON") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
-	}
-}
-
-func TestValidateFiles_MissingTypeIsError(t *testing.T) {
-	path := writeNAD(t, `{"cniVersion":"0.3.1"}`)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for a config with no CNI type, got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, `missing a CNI "type"`) {
-		t.Errorf("unexpected message: %s", errs[0].Message)
-	}
-}
-
-func TestValidateFiles_ConflistPluginMissingTypeIsError(t *testing.T) {
-	path := writeNAD(t, `{"cniVersion":"0.3.1","name":"n","plugins":[{"master":"ens1"}]}`)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for a conflist plugin with no type, got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "plugins[0] is missing a CNI") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
+// These configs are all rejected, but by the runtime check
+// "k8scni/net-attach-def/config-invalid", which is where every one of these
+// cases is asserted (see pkg/validator/runtime/k8scni/config_test.go). This
+// layer used to reject them too, so one malformed config produced two
+// blocking findings in two sections describing the same defect.
+//
+// Asserting the silence here is the point: without it, re-adding a hard
+// failure to this layer would restore the duplicate reporting and no test
+// would notice, because the runtime check's own tests would still pass.
+func TestValidateFiles_ConfigParsingIsLeftToTheRuntimeCheck(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		config string
+	}{
+		{"malformed JSON", `{"cniVersion":"0.3.1","type":"macvlan"`},
+		{"missing a CNI type", `{"cniVersion":"0.3.1"}`},
+		{"conflist plugin missing a type", `{"cniVersion":"0.3.1","name":"n","plugins":[{"master":"ens1"}]}`},
+		{"not a CNI configuration", `[1,2,3]`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			errs, _ := ValidateFiles([]string{writeNAD(t, tt.config)})
+			if len(errs) != 0 {
+				t.Errorf("this layer reported %d error(s) for a config the runtime check already rejects, so the finding appears twice: %v", len(errs), errs)
+			}
+		})
 	}
 }
 
@@ -421,7 +368,8 @@ spec:
 	}
 }
 
-// --- OVN-aware validation (type ovn-k8s-cni-overlay) ---
+// --- OVN dispatch (structural gate only; OVN semantic rules now live in
+// pkg/validator/runtime/k8scni's "k8scni/net-attach-def/ovn-netconf-invalid" check) ---
 
 func TestValidateFiles_OVN_Valid(t *testing.T) {
 	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer2","netAttachDefName":"myns/my-network","subnets":"10.100.200.0/24","role":"secondary"}`
@@ -431,89 +379,15 @@ func TestValidateFiles_OVN_Valid(t *testing.T) {
 	}
 }
 
-func TestValidateFiles_OVN_PersistentIPsLayer3(t *testing.T) {
+// A NAD with valid structure but an OVN-semantic violation (e.g. an
+// inconsistent netAttachDefName, or persistent IPs on layer3) must pass this
+// package's structural gate - that violation is
+// k8scni/net-attach-def/ovn-netconf-invalid's concern now, not this package's.
+func TestValidateFiles_OVN_SemanticViolationPassesStructuralGate(t *testing.T) {
 	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"myns/my-network","allowPersistentIPs":true,"role":"secondary"}`
 	path := writeNAD(t, cfg)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
-	}
-	// The message is scoped to the NAD (namespace/name) so it stays unambiguous
-	// in a multi-NAD file.
-	if !strings.Contains(errs[0].Message, "layer3 topology does not allow persistent IPs") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
-	}
-	if !strings.Contains(errs[0].Message, "myns/my-network") {
-		t.Errorf("OVN error must be scoped to the NAD namespace/name, got: %s", errs[0].Message)
-	}
-}
-
-func TestValidateFiles_OVN_InfrastructureSubnetsNonLayer2(t *testing.T) {
-	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"myns/my-network","infrastructureSubnets":"10.1.130.0/30","role":"secondary"}`
-	path := writeNAD(t, cfg)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "infrastructureSubnets is only supported for layer2 topology") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
-	}
-	if !strings.Contains(errs[0].Message, "myns/my-network") {
-		t.Errorf("OVN error must be scoped to the NAD namespace/name, got: %s", errs[0].Message)
-	}
-}
-
-func TestValidateFiles_OVN_MalformedJSON(t *testing.T) {
-	path := writeNAD(t, `{not valid json`)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for malformed config, got %d: %v", len(errs), errs)
-	}
-}
-
-func TestValidateFiles_OVN_NameInconsistent(t *testing.T) {
-	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer2","netAttachDefName":"wrong/name","subnets":"10.100.200.0/24","role":"secondary"}`
-	path := writeNAD(t, cfg)
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for inconsistent name, got %d: %v", len(errs), errs)
-	}
-}
-
-// When a single rendered file carries multiple NAD documents (the common case
-// for overlay output), an OVN semantic error must identify the specific failing
-// NAD by namespace/name so it is not ambiguous.
-func TestValidateFiles_OVN_ErrorScopedInMultiNADFile(t *testing.T) {
-	tmp := t.TempDir()
-	path := filepath.Join(tmp, "nads.yaml")
-	content := `apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: good-net
-  namespace: ns-a
-spec:
-  config: '{"cniVersion":"0.3.1","name":"good","type":"ovn-k8s-cni-overlay","topology":"layer2","netAttachDefName":"ns-a/good-net","subnets":"10.0.0.0/24","role":"secondary"}'
----
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: bad-net
-  namespace: ns-b
-spec:
-  config: '{"cniVersion":"0.3.1","name":"bad","type":"ovn-k8s-cni-overlay","topology":"layer3","netAttachDefName":"ns-b/bad-net","allowPersistentIPs":true,"role":"secondary"}'
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected exactly 1 error (only bad-net), got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "ns-b/bad-net") {
-		t.Errorf("error must name the failing NAD (ns-b/bad-net), got: %s", errs[0].Message)
-	}
-	if strings.Contains(errs[0].Message, "ns-a/good-net") {
-		t.Errorf("error must not reference the passing NAD, got: %s", errs[0].Message)
+	if errs, _ := ValidateFiles([]string{path}); len(errs) != 0 {
+		t.Errorf("expected an OVN semantic violation to pass the structural gate, got %v", errs)
 	}
 }
 
@@ -565,29 +439,30 @@ spec:
 	}
 }
 
-// A NAD whose spec.config is authored as an object (rather than a stringified
-// netconf) is malformed and must be reported.
-func TestValidateFiles_ObjectConfigOnNAD(t *testing.T) {
-	tmp := t.TempDir()
-	path := filepath.Join(tmp, "nad.yaml")
-	content := `apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: my-network
-  namespace: myns
-spec:
-  config:
-    cniVersion: "0.3.1"
-    type: ovn-k8s-cni-overlay
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	errs, _ := ValidateFiles([]string{path})
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error for object spec.config on a NAD, got %d: %v", len(errs), errs)
-	}
-	if !strings.Contains(errs[0].Message, "spec.config must be a string") {
-		t.Errorf("unexpected message: %s", errs[0].Message)
+// The advisories share the runtime check's parser rather than re-implementing
+// it. With two parsers, one NAD could be read well enough here to call its
+// plugin type unrecognized while the runtime check could not read it at all -
+// so a config already reported as unparseable also collected an advisory
+// describing contents nothing had successfully parsed.
+//
+// Both configs below are rejected by k8scni/net-attach-def/config-invalid, so
+// this layer must stay silent about them.
+func TestValidateFiles_NoAdvisoryWhenTheConfigDoesNotParse(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		config string
+	}{
+		{"empty plugins list", `{"cniVersion":"0.3.1","type":"weird-plugin","plugins":[]}`},
+		{"conflist without a name", `{"cniVersion":"0.3.1","plugins":[{"type":"weird-plugin"}]}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			errs, warns := ValidateFiles([]string{writeNAD(t, tt.config)})
+			if len(errs) != 0 {
+				t.Errorf("expected no hard errors, got %v", errs)
+			}
+			if len(warns) != 0 {
+				t.Errorf("advised on a config the runtime check cannot parse, so one NAD is described by two tiers that disagree: %v", warns)
+			}
+		})
 	}
 }

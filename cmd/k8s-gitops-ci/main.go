@@ -24,7 +24,6 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/nad"
 )
 
 func main() {
@@ -65,8 +64,6 @@ func main() {
 		err = runSortConfigs(args)
 	case "yaml-syntax":
 		err = runYAMLSyntax(args)
-	case "validate-nad":
-		err = runValidateNAD(args)
 	case "ci-report":
 		err = runCIReport(args)
 	case "version", "--version", "-v":
@@ -515,49 +512,6 @@ func runYAMLSyntax(args []string) error {
 	return fmt.Errorf("yaml-syntax: %d error(s)", len(violations))
 }
 
-// ── validate-nad ──────────────────────────────────────────────────────────────
-
-// runValidateNAD validates NetworkAttachmentDefinition files directly (bypassing
-// the full pipeline) - either every YAML file under --dir or the explicit file
-// paths given as positional args. Validation dispatches on the CNI type declared
-// in each NAD's spec.config (OVN NADs get OVN-aware checks automatically); see
-// pkg/validator/nad's package doc comment.
-func runValidateNAD(args []string) error {
-	fs := flag.NewFlagSet("validate-nad", flag.ExitOnError)
-	dir := fs.String("dir", "", "directory to validate")
-	// Deprecated/no-op: NAD validation now dispatches on the CNI type declared
-	// in each NAD's spec.config, so this flag no longer affects it. Kept for
-	// back-compat with callers/scripts that still pass it.
-	assumeOpenshift := fs.Bool("assume-openshift", false, "deprecated/ignored: NAD validation now auto-detects OVN NADs by spec.config type")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	_ = *assumeOpenshift // accepted for back-compat; no longer consumed here
-
-	if *dir == "" && fs.NArg() == 0 {
-		return fmt.Errorf("validate-nad: usage: validate-nad --dir <path> or <file.yaml> [<file.yaml>...]")
-	}
-
-	var errs, warns []nad.ValidationError
-	if *dir != "" {
-		errs, warns = nad.ValidateDir(*dir)
-	} else {
-		errs, warns = nad.ValidateFiles(fs.Args())
-	}
-
-	for _, w := range warns {
-		fmt.Fprintf(os.Stderr, "warning: %s: %s\n", w.File, w.Message)
-	}
-	for _, e := range errs {
-		fmt.Fprintf(os.Stderr, "invalid NetworkAttachmentDefinition %s: %s\n", e.File, e.Message)
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("validate-nad: %d error(s)", len(errs))
-	}
-	fmt.Println("All NetworkAttachmentDefinition files are valid.")
-	return nil
-}
-
 // ── help ──────────────────────────────────────────────────────────────────────
 
 func printUsage() {
@@ -590,7 +544,6 @@ Static Checks:
   ghost-patches     Detect kustomize patches that match no resource
   sort-configs      Sort repo config files
   update-scaffold-status Update scaffold README status table
-  validate-nad      Validate NetworkAttachmentDefinition files (auto-dispatches on CNI type)
 
 CI Meta:
   ci-report         Post/update a self-CI status comment on this repo's own PR

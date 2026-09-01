@@ -218,12 +218,16 @@ the ID as exemptable (or rely on `check.Register` which does this
 automatically for `check.Check` implementations). Single-word IDs and
 acronyms are left unhyphenated.
 
-`pkg/validator/nad`'s NetworkAttachmentDefinition validation (see
-[CI.md](CI.md#networkattachmentdefinition-nad-validation)) is **not**
-part of the `check.Register` framework at all, so it has no check ID to
-exempt by either mode — a NAD hard-error finding always blocks regardless
-of `EXEMPTIONS=(...)` or annotations (its non-blocking advisory warnings
-never block in the first place).
+`pkg/validator/nad`'s advisories (see
+[CI.md](CI.md#networkattachmentdefinition-nad-validation)) are **not**
+part of the `check.Register` framework at all, so they have no check ID
+to exempt by either mode — and they never block in the first place, so
+there is nothing to exempt them from. That layer reports no hard failures.
+Everything blocking about a NAD is a registered runtime check —
+`k8scni/net-attach-def/config-invalid` for whether `spec.config` parses at
+all, `k8scni/net-attach-def/ovn-netconf-invalid` for OVN's own semantic
+rules — and both are covered by "Runtime-validation IDs are never
+exemptable" below instead.
 
 ### Runtime-validation IDs are never exemptable
 
@@ -231,20 +235,27 @@ Every check ID under the **runtime-validation** family — the
 `<family>/<category>/<rule>` IDs registered from
 `pkg/validator/runtime/<family>/`, e.g.
 `kubernetes/apps/daemonset-min-ready-seconds-invalid`,
-`kubernetes/batch/backoff-limit-invalid` and
-`kubernetes/container/duplicate-container-names` — is
+`kubernetes/batch/backoff-limit-invalid`,
+`kubernetes/container/duplicate-container-names` and
+`k8scni/net-attach-def/ovn-netconf-invalid` — is
 **not exemptable by either mode**. No `gitops-ci.k8s.io/exempt-<id>`
 annotation and no `check=<id>` selector will match one; a runtime finding
 always blocks. See
 [CI.md](CI.md#runtime-validation-checks-admission-rules) for the family
 itself.
 
-The rationale is that these checks are 1:1 ports of the Kubernetes API
-server's own validation logic — they only fire on a manifest the cluster
-itself would reject. Exempting one wouldn't make the manifest valid; it
+The rationale is that these checks are 1:1 ports of validation the cluster
+performs itself — they only fire on a manifest the cluster will not accept
+or cannot act on. Which component performs it, and when, varies by family:
+`kubernetes/*` rules are ported from the API server and reject at
+admission, while `k8scni/*` rules are enforced afterwards, when the network
+is attached, so a NAD is admitted and then fails to work. The consequence
+is the same either way. Exempting one wouldn't make the manifest valid; it
 would just move the failure from CI (where it's cheap and attributable to
-a PR) to apply/sync time (where it's a broken deployment). An exemption
-here can only ever defer a failure, never prevent one.
+a PR) to apply/sync time (where it's a broken deployment) — or, for a
+family enforced after admission, to something that merged, synced and only
+then failed. An exemption here can only ever defer a failure, never
+prevent one.
 
 This is enforced structurally rather than by an ID allowlist: the runtime
 adapter implements the `check.NonExemptable` interface

@@ -1,33 +1,39 @@
-// Package nad provides NetworkAttachmentDefinition (NAD) validation.
+// Package nad provides the CNI-neutral, always-on advisory tier of
+// NetworkAttachmentDefinition (NAD) validation: non-gating warnings for
+// likely authoring mistakes, applied uniformly to every NAD regardless of
+// which CNI plugin owns it (macvlan, bridge, ipvlan, host-device, SR-IOV,
+// ovn-k8s-cni-overlay, ...).
 //
-// Validation dispatches on the CNI plugin type declared in each NAD's
-// spec.config (a stringified CNI netconf), rather than on a global platform
-// assumption:
+// It reports no hard failures. Whether spec.config is a non-empty JSON
+// string that parses as a CNI configuration with a plugin "type" is decided
+// by pkg/validator/runtime/k8scni's config-invalid check, which is where
+// that shape requirement is both enforced and cited.
 //
-//   - Structural (always, org/CNI-neutral): spec.config must be a non-empty
-//     JSON string, must parse as valid JSON (a single CNI config object or a
-//     conflist), and must declare a non-empty plugin "type".
-//   - OVN-Kubernetes NADs (type "ovn-k8s-cni-overlay"): OVN's semantic rules
-//     (topology, role, subnet, and transport constraints) are additionally
-//     applied. These run wherever such a NAD is authored - the type field is
-//     self-describing, so no "assume OpenShift" flag is needed.
-//   - Non-OVN NADs (macvlan, bridge, ipvlan, host-device, SR-IOV, ...): their
-//     config is owned by the respective CNI plugin, so no hard semantic checks
-//     are applied. Only non-gating advisories are surfaced for likely
-//     authoring mistakes (unrecognized CNI/IPAM type, missing cniVersion).
+// Two further tiers exist but no longer live in this package:
 //
-// Dispatching on the type field fixes an earlier design that gated the OVN
-// tier behind an assumeOpenshift flag and treated every
-// non-ovn-k8s-cni-overlay NAD as invalid ("net-attach-def not managed by
-// OVN"). That false-failed valid secondary networks such as ODF's macvlan
-// NADs. Upstream ovn-kubernetes itself treats a non-OVN NAD as a skip, never a
-// failure (see pkg/util/multi_network.go's ParseNetConf and its callers) -
-// this package mirrors that by only applying OVN rules to OVN NADs.
+//   - OVN-Kubernetes NADs (type "ovn-k8s-cni-overlay") additionally get
+//     OVN's semantic rules (topology, role, subnet, and transport
+//     constraints), ported from ovn-kubernetes' util.ValidateNetConf. That
+//     tier moved to pkg/validator/runtime/k8scni (the
+//     "k8scni/net-attach-def/ovn-netconf-invalid" check) - it is a genuine, citable
+//     upstream rule the OVN-Kubernetes network controller enforces, so it
+//     belongs in the runtime-validation family (always-blocking,
+//     non-exemptable, with a verified UpstreamRef), not here.
+//   - Non-OVN NADs get non-gating advisories for likely authoring mistakes
+//     (unrecognized CNI/IPAM type, missing cniVersion). These have no
+//     citable upstream function - they are this tool's own heuristics, not
+//     a rule any upstream project's code enforces - so they stay here
+//     rather than in the runtime family, which requires one.
 //
-// The OVN tier imports only the lightweight ovn-kubernetes netconf parsing
-// packages (pkg/config, pkg/types); the semantic rule set is ported from
-// ovn-kubernetes' util.ValidateNetConf so the heavyweight pkg/util dependency
-// tree (netlink, nftables, frr-k8s, ...) is avoided.
+// Dispatching on the type field (rather than a global "assume OpenShift"
+// flag) fixes an earlier design that gated the OVN tier behind an
+// assumeOpenshift flag and treated every non-ovn-k8s-cni-overlay NAD as
+// invalid ("net-attach-def not managed by OVN"). That false-failed valid
+// secondary networks such as ODF's macvlan NADs. Upstream ovn-kubernetes
+// itself treats a non-OVN NAD as a skip, never a failure (see
+// pkg/util/multi_network.go's ParseNetConf and its callers) - the OVN check
+// in pkg/validator/runtime/k8scni mirrors that by only applying OVN rules to
+// OVN NADs, and this package never re-applies OVN-specific rules at all.
 package nad
 
 import (
@@ -41,14 +47,10 @@ import (
 	"regexp"
 	"strings"
 
-	ovnconfig "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/config"
-	ovntypes "github.com/ovn-kubernetes/ovn-kubernetes/go-controller/pkg/types"
 	kyaml "k8s.io/apimachinery/pkg/util/yaml"
-)
 
-// ovnCNIType is the CNI plugin type of an OVN-Kubernetes-managed NAD. Only
-// NADs declaring this type are subjected to OVN semantic validation.
-const ovnCNIType = "ovn-k8s-cni-overlay"
+	k8scni "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/k8scni"
+)
 
 // knownCNITypes are the CNI plugin types shipped/supported on OpenShift for
 // additional networks. An unrecognized type is surfaced as a non-gating
@@ -56,14 +58,14 @@ const ovnCNIType = "ovn-k8s-cni-overlay"
 // open-ended (any binary on the CNI path, including third-party plugins), so
 // hard-failing an unlisted type would reintroduce false positives.
 var knownCNITypes = map[string]bool{
-	ovnCNIType:    true,
-	"macvlan":     true,
-	"bridge":      true,
-	"ipvlan":      true,
-	"host-device": true,
-	"tap":         true,
-	"vlan":        true,
-	"sriov":       true,
+	"ovn-k8s-cni-overlay": true,
+	"macvlan":             true,
+	"bridge":              true,
+	"ipvlan":              true,
+	"host-device":         true,
+	"tap":                 true,
+	"vlan":                true,
+	"sriov":               true,
 }
 
 // knownIPAMTypes are the IPAM plugin types commonly used on OpenShift. As with
@@ -107,42 +109,6 @@ type nadDoc struct {
 	Spec struct {
 		Config json.RawMessage `json:"config"`
 	} `json:"spec"`
-}
-
-// ipamProbe extracts an IPAM plugin's type without asserting the rest of its
-// (plugin-specific) shape.
-type ipamProbe struct {
-	Type string `json:"type"`
-}
-
-// pluginProbe is one entry of a CNI conflist's plugins array. IPAM is kept raw
-// so a plugin-specific IPAM block never breaks decoding.
-type pluginProbe struct {
-	Type string          `json:"type"`
-	IPAM json.RawMessage `json:"ipam"`
-}
-
-// cniProbe is the subset of a (stringified) CNI netconf needed to dispatch
-// validation by plugin type. It accepts both a single plugin config (top-level
-// type/ipam) and a conflist (plugins[]).
-type cniProbe struct {
-	CNIVersion string          `json:"cniVersion"`
-	Type       string          `json:"type"`
-	IPAM       json.RawMessage `json:"ipam"`
-	Plugins    []pluginProbe   `json:"plugins"`
-}
-
-// ipamTypeOf best-effort extracts an ipam.type from a raw IPAM block. A
-// non-object or absent block yields "".
-func ipamTypeOf(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var i ipamProbe
-	if err := json.Unmarshal(raw, &i); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(i.Type)
 }
 
 // configString asserts that the NAD's spec.config is a JSON string and returns
@@ -248,76 +214,60 @@ func validateNADFile(path string) (errs, warns []ValidationError) {
 		if doc.Kind != "NetworkAttachmentDefinition" {
 			continue
 		}
-		e, w := validateNAD(path, doc)
-		errs = append(errs, e...)
-		warns = append(warns, w...)
+		warns = append(warns, validateNAD(path, doc)...)
 	}
 	return errs, warns
 }
 
-// validateNAD applies the structural gates common to every NAD and then
-// dispatches on the CNI plugin type: OVN NADs get OVN's semantic rules,
-// everything else gets advisory-only checks.
-func validateNAD(path string, doc nadDoc) (errs, warns []ValidationError) {
+// validateNAD produces this section's advisories for one NAD.
+//
+// It reports no hard failures. Whether spec.config parses at all is decided by
+// the runtime check "k8scni/net-attach-def/config-invalid", which covers every
+// case this gate used to reject - an unreadable or empty config, one that is
+// not valid JSON, one that is not a CNI configuration, and a missing plugin
+// "type" in either config shape. Reporting them here as well put one
+// malformed config in two sections as two blocking findings, leaving a reader
+// to work out that they were the same defect and which layer to act on.
+//
+// It still has to parse the config, because the advisories below are about its
+// contents. When that fails it returns nothing and lets the runtime check
+// report it, rather than describing a config it could not read.
+func validateNAD(path string, doc nadDoc) (warns []ValidationError) {
 	id := doc.Metadata.Namespace + "/" + doc.Metadata.Name
-	hardf := func(msg string) {
-		errs = append(errs, ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg)})
-	}
 	warnf := func(msg string) {
 		warns = append(warns, ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg), Warning: true})
 	}
 
 	cfg, err := configString(doc)
 	if err != nil {
-		hardf(err.Error())
-		return errs, warns
-	}
-	if strings.TrimSpace(cfg) == "" {
-		hardf("spec.config is empty")
-		return errs, warns
+		return warns
 	}
 
-	// spec.config must be valid JSON (a single CNI config object or a
-	// conflist). This org/CNI-neutral gate catches malformed configs for every
-	// plugin type, not just OVN - previously only OVN NADs were JSON-checked.
-	if !json.Valid([]byte(cfg)) {
-		hardf("spec.config is not valid JSON")
-		return errs, warns
+	// The same parser the config-invalid runtime check uses, rather than a
+	// second implementation of it. Re-parsing here meant the two tiers could
+	// judge a different value for one NAD: a config this package read well
+	// enough to call the plugin type unrecognized, while the runtime check
+	// could not read it at all, produced an advisory about a config that had
+	// already been reported as unparseable.
+	//
+	// Deferring to it also means an unreadable config yields nothing here.
+	// That is deliberate - describing the contents of a config that does not
+	// parse is guesswork, and the runtime check has already said so.
+	probe, err := k8scni.ProbeConfig(cfg)
+	if err != nil {
+		return warns
 	}
-	var probe cniProbe
-	if err := json.Unmarshal([]byte(cfg), &probe); err != nil {
-		hardf(fmt.Sprintf("spec.config is not a valid CNI configuration: %v", err))
-		return errs, warns
-	}
-
-	// Resolve the effective plugin type and ipam from either shape (a conflist
-	// dispatches on its first plugin, like ovn-kubernetes' own parser).
-	cniType := strings.TrimSpace(probe.Type)
-	ipam := ipamTypeOf(probe.IPAM)
-	if len(probe.Plugins) > 0 {
-		cniType = strings.TrimSpace(probe.Plugins[0].Type)
-		ipam = ipamTypeOf(probe.Plugins[0].IPAM)
-		for i, p := range probe.Plugins {
-			if strings.TrimSpace(p.Type) == "" {
-				hardf(fmt.Sprintf("spec.config plugins[%d] is missing a CNI \"type\"", i))
-				return errs, warns
-			}
-		}
-	}
+	cniType := strings.TrimSpace(probe.CNIType)
+	ipam := strings.TrimSpace(probe.IPAMType)
 	if cniType == "" {
-		hardf("spec.config is missing a CNI \"type\"")
-		return errs, warns
+		return warns
 	}
 
-	// OVN-Kubernetes NADs get OVN's semantic validation. Everything else is
-	// owned by its CNI plugin; only surface non-gating advisories.
-	if cniType == ovnCNIType {
-		if e := validateOVNNetConf(path, id, cfg); e != nil {
-			errs = append(errs, *e)
-		}
-		return errs, warns
-	}
-
+	// Non-gating advisories for likely authoring mistakes. OVN-Kubernetes
+	// NADs get these too - unlike the superseded design, they are no longer
+	// exempted from this tier by an early return, since these advisories
+	// have never depended on OVN's own hard semantic rules (which live in
+	// pkg/validator/runtime/k8scni's "k8scni/net-attach-def/ovn-netconf-invalid" check).
 	if !knownCNITypes[cniType] {
 		warnf(fmt.Sprintf("unrecognized CNI type %q (typo? not gating)", cniType))
 	}
@@ -327,90 +277,5 @@ func validateNAD(path string, doc nadDoc) (errs, warns []ValidationError) {
 	if strings.TrimSpace(probe.CNIVersion) == "" {
 		warnf("spec.config is missing the recommended \"cniVersion\" field (not gating)")
 	}
-	return errs, warns
-}
-
-// validateOVNNetConf parses an ovn-k8s-cni-overlay NAD's spec.config and
-// applies OVN-Kubernetes' semantic rules. The rule set is ported from
-// ovn-kubernetes/go-controller/pkg/util.ValidateNetConf (keep in sync when the
-// pinned ovn-kubernetes version changes). Runtime-only checks that depend on
-// live cluster state (uplink gateway mode, dynamic transit-subnet defaulting)
-// are intentionally omitted as they are not statically knowable.
-func validateOVNNetConf(path, id, cfg string) *ValidationError {
-	// Every failure is scoped to this NAD's namespace/name so a finding stays
-	// unambiguous when a rendered file carries multiple NAD documents (the
-	// common case). Individual messages therefore omit the id themselves.
-	fail := func(msg string) *ValidationError {
-		return &ValidationError{File: path, Message: fmt.Sprintf("NetworkAttachmentDefinition %s: %s", id, msg)}
-	}
-
-	netconf, err := ovnconfig.ParseNetConf([]byte(cfg))
-	if err != nil {
-		return fail(fmt.Sprintf("invalid OVN netconf: %v", err))
-	}
-
-	if netconf.Name != ovntypes.DefaultNetworkName && netconf.NADName != id {
-		return fail(fmt.Sprintf("netAttachDefName in config (%s) does not match the NAD's namespace/name", netconf.NADName))
-	}
-
-	if err := ovnconfig.ValidateNetConfNameFields(netconf); err != nil {
-		return fail(err.Error())
-	}
-
-	if netconf.AllowPersistentIPs && netconf.Topology == ovntypes.Layer3Topology {
-		return fail("layer3 topology does not allow persistent IPs")
-	}
-
-	if netconf.Role != "" && netconf.Role != ovntypes.NetworkRoleSecondary && netconf.Topology == ovntypes.LocalnetTopology {
-		return fail(fmt.Sprintf("unexpected network field \"role\" %s for \"localnet\" topology, "+
-			"localnet topology does not allow network roles to be set since its always a secondary network", netconf.Role))
-	}
-
-	if netconf.Role != "" && netconf.Role != ovntypes.NetworkRolePrimary && netconf.Role != ovntypes.NetworkRoleSecondary {
-		return fail(fmt.Sprintf("invalid network role value %s", netconf.Role))
-	}
-
-	if netconf.IPAM.Type != "" {
-		return fail("unsupported ipam key")
-	}
-
-	if netconf.Transport != "" &&
-		netconf.Transport != ovntypes.NetworkTransportNoOverlay &&
-		netconf.Transport != ovntypes.NetworkTransportEVPN {
-		return fail(fmt.Sprintf("invalid transport %q: must be one of %q", netconf.Transport,
-			[]string{ovntypes.NetworkTransportNoOverlay, ovntypes.NetworkTransportEVPN}))
-	}
-
-	if netconf.OutboundSNAT != "" {
-		if netconf.Transport != ovntypes.NetworkTransportNoOverlay {
-			return fail(fmt.Sprintf("outboundSNAT is only valid when transport is %q", ovntypes.NetworkTransportNoOverlay))
-		}
-		if netconf.OutboundSNAT != ovntypes.NoOverlaySNATEnabled &&
-			netconf.OutboundSNAT != ovntypes.NoOverlaySNATDisabled {
-			return fail(fmt.Sprintf("invalid outboundSNAT %q: must be one of %q", netconf.OutboundSNAT,
-				[]string{ovntypes.NoOverlaySNATEnabled, ovntypes.NoOverlaySNATDisabled}))
-		}
-	}
-
-	if netconf.JoinSubnet != "" && netconf.Topology == ovntypes.LocalnetTopology {
-		return fail("localnet topology does not allow specifying join-subnet as services are not supported")
-	}
-
-	if netconf.Role == ovntypes.NetworkRolePrimary && netconf.Subnets == "" && netconf.Topology == ovntypes.Layer2Topology {
-		return fail("the subnet attribute must be defined for layer2 primary user defined networks")
-	}
-
-	if netconf.InfrastructureSubnets != "" && netconf.Topology != ovntypes.Layer2Topology {
-		return fail("infrastructureSubnets is only supported for layer2 topology")
-	}
-
-	if netconf.ReservedSubnets != "" && netconf.Topology != ovntypes.Layer2Topology {
-		return fail("reservedSubnets is only supported for layer2 topology")
-	}
-
-	if netconf.DefaultGatewayIPs != "" && netconf.Topology != ovntypes.Layer2Topology {
-		return fail("defaultGatewayIPs is only supported for layer2 topology")
-	}
-
-	return nil
+	return warns
 }

@@ -65,16 +65,23 @@ Annotation-mode support is separate: a check only honors
 `kubernetes/storage-class/...`, `kubernetes/pod-spec/...`) comes from
 `pkg/validator/runtime/<family>/` and appears in the
 **"Runtime Validation"** report section, not "Resource Compliance". These
-are 1:1 ports of the Kubernetes API server's own validation, so they only
-fire on manifests the cluster itself would reject — an exemption would
-just defer the failure to apply time. The runtime adapter implements
+are 1:1 ports of validation the cluster performs itself, so they only fire
+on manifests it will not accept or cannot act on — an exemption would just
+defer the failure to apply time. `kubernetes/*` rules come from the API
+server and reject at admission; `k8scni/*` rules are enforced afterwards,
+when the network is attached. The runtime adapter implements
 `check.NonExemptable`, so `check.Register` never registers these IDs as
 exemptable; neither an annotation nor a `check=` selector can match one.
 **Fix the manifest.** Never write an `EXEMPTIONS` entry for a finding in
 the Runtime Validation section.
 
-**NAD validation** (`pkg/validator/nad`) is not part of the `check.Register`
-framework at all — hard-error NAD findings are never exemptable.
+**NAD validation's advisories** (`pkg/validator/nad`) are not part of the
+`check.Register` framework at all, and never block, so there is nothing to
+exempt. Everything blocking about a NAD is a registered runtime check
+(`k8scni/net-attach-def/config-invalid` for whether `spec.config` parses,
+`k8scni/net-attach-def/ovn-netconf-invalid` for OVN's semantic rules, both
+in `pkg/validator/runtime/k8scni`), part of the Runtime Validation family
+above — same never-exemptable rule, same reason.
 `cluster-identity` is a deliberately non-exemptable structural bucket;
 never attempt to exempt it.
 
@@ -262,7 +269,9 @@ shared directory, use a partial suffix (e.g. `cura/High_Speed.curaprofile`).
   section; IDs shaped `<family>/<category>/<rule>`) — deliberately non-exemptable
   via `check.NonExemptable`. The API server would reject the manifest, so
   an exemption only defers the failure to sync time. Fix the manifest.
-- **NAD hard errors** — outside the `check.Register` framework; never exemptable.
+- **NAD findings** — the advisories in `pkg/validator/nad` never block, so
+  there is nothing to exempt; the blocking `k8scni/*` checks are runtime
+  checks and never exemptable.
 - **`--disable-checks <id>`** — disables an entire check across the whole
   run. This is a different mechanism from exemptions. Use it when an
   environment genuinely can't provision a given tool (a missing lint tool
