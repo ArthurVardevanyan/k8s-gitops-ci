@@ -806,7 +806,10 @@ table above:
   usual `exempt.RegisterExemptable` call, so no annotation and no
   `EXEMPTIONS=(...)` selector can match one. `TestRuntimeChecksAreNonExemptable`
   enforces this for every registered runtime check. See
-  [EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids).
+  [EXEMPTIONS.md](EXEMPTIONS.md#exemptable-check-ids). This is about
+  exemptions specifically - `--disable-checks` is a separate mechanism
+  that can still remove a runtime check from the run entirely; see
+  [EXEMPTIONS.md](EXEMPTIONS.md#--disable-checks-is-a-different-and-separate-mechanism).
 
   This holds only while every family's rejection is **unconditional**,
   which is not the same as every family's rejection happening at the same
