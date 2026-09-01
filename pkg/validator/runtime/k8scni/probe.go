@@ -57,7 +57,7 @@ func configString(raw json.RawMessage) (string, error) {
 }
 
 // Probe is the subset of a parsed CNI netconf both checks in this package,
-// and pkg/validator/static/cni's advisory (unrecognized-type warnings),
+// and pkg/validator/static/nad's advisories (unrecognized-type warnings),
 // need: the effective plugin type and IPAM type - resolved from either a
 // single-plugin config or a conflist's first plugin, the same dispatch a
 // real CNI runtime performs - and the declared cniVersion.
