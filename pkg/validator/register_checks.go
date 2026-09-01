@@ -1,11 +1,11 @@
 package validator
 
 import (
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/k8scni"     // registers NetworkAttachmentDefinition runtime checks
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/runtime/kubernetes" // registers runtime validation checks
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/clusterid"
 )
 
 // ClusterIndexProvider is a seam allowing the engine to inject a ClusterIndex

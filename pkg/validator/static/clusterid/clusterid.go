@@ -144,7 +144,8 @@ func rawInvalidJSONFindings(overlayPath string, identity *OverlayIdentity) []Fin
 }
 
 // rawInfraIDFindings emits a non-exemptable structural finding for every
-// infraID that doesn't match the overlay's own folder name. Unlike
+// infraID that doesn't match the overlay's own cluster name - the folder
+// name with any prefix up to the last "_" stripped off. Unlike
 // project-ref/cluster-name findings, this uses exempt.IDClusterIdentity
 // (never exemptable) since a mismatched infraID indicates the overlay was
 // very likely copy/pasted wholesale from another cluster's folder - the
@@ -159,7 +160,13 @@ func rawInfraIDFindings(overlayPath string, identity *OverlayIdentity) []Finding
 		findings = append(findings, Finding{
 			CheckID: exempt.IDClusterIdentity, File: overlayPath,
 			Field: "infraID", Value: infraID,
-			Message: fmt.Sprintf("infraID %q does not match overlay folder name %q (likely a copy/paste error)", infraID, identity.ClusterName),
+			// The cluster name, not the folder name. selfClusterName strips
+			// everything up to the last "_", so for an overlay directory
+			// like "prod_us-east_cluster01" this value is "cluster01" -
+			// naming it the folder name sent a reader looking for a
+			// directory that does not exist. The overlay path is carried in
+			// File, so the folder is still one field away.
+			Message: fmt.Sprintf("infraID %q does not match this overlay's cluster %q (likely a copy/paste error)", infraID, identity.ClusterName),
 		})
 	}
 	return findings
