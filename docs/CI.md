@@ -356,6 +356,28 @@ is no rendered output to validate.
   manifest (or otherwise carries `kind`/`apiVersion`) but you deliberately
   want its schema check suppressed.
 
+#### `cel`
+
+CEL validation runs `x-kubernetes-validations` rules extracted from
+embedded CRD schemas (the same JSON schema archive `kubeconform` uses).
+Each rule is a CEL expression defined in the CRD's OpenAPI v3 schema
+(`spec.validation.openAPIV3Schema.x-kubernetes-validations`); these rules
+enforce business logic that JSON Schema alone cannot express (e.g.,
+"field A must be a valid IP address", "array size must be >= 1").
+
+CEL validation runs **only** in the Post-Build Validation phase, after
+overlays are rendered. It validates the same AVP/Helm-rendered overlay
+output that kubeconform validates, ensuring CEL rules are checked against
+the final manifests that will deploy — not raw source with unresolved
+placeholders.
+
+- **Package:** `pkg/validator/cel`
+- **Default:** on. **Disable:** `--disable-checks cel`
+- **Exemptions:** **None.** CEL rules are enforced by the Kubernetes API
+  server at admission time, so an exemption in CI would not prevent the
+  cluster from rejecting the manifest. This step is intentionally
+  non-exemptable.
+
 #### `shellcheck`
 
 Wraps the raw `shellcheck` CLI over changed `.sh`/`.bash` files (or any
