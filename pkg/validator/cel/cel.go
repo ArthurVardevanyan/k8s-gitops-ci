@@ -60,14 +60,15 @@ type Result struct {
 func (r *Result) Summary() string {
 	s := fmt.Sprintf("CEL Validation: Summary: %d valid, %d invalid, %d errors\n", r.Valid, r.Invalid, r.Errors)
 	for _, d := range r.Details {
-		if d.Failures > 0 {
+		switch {
+		case d.Failures > 0:
 			s += fmt.Sprintf("  - %s (%d failure(s)):\n", d.SchemaFile, d.Failures)
 			for _, v := range d.Rules {
 				s += fmt.Sprintf("    - %s: %q [%s] → %s\n", v.Resource, v.Message, v.Rule, v.Field)
 			}
-		} else if d.Errors > 0 {
+		case d.Errors > 0:
 			s += fmt.Sprintf("  - %s (%d error(s))\n", d.SchemaFile, d.Errors)
-		} else {
+		default:
 			s += fmt.Sprintf("  - %s (%d resources, 0 failures)\n", d.SchemaFile, d.Resources)
 		}
 	}
@@ -93,20 +94,22 @@ func CompileRules(schemaDir string) (*CompiledRules, error) {
 
 	for _, subdir := range subdirs {
 		dirPath := filepath.Join(schemaDir, subdir)
-		if _, err := os.Stat(dirPath); os.IsNotExist(err) {
+		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
 			continue
 		}
-		if err := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+		_ = filepath.WalkDir(dirPath, func(path string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.IsDir() {
 				return nil
 			}
 			if strings.HasSuffix(path, ".json") {
 				_ = parseSchemaFile(path, rules)
 			}
 			return nil
-		}); err != nil {
-			// Walk error - log but continue.
-		}
+		})
+		// Walk error - silently continue.
 	}
 
 	return rules, nil
@@ -167,7 +170,7 @@ func parseSchemaFile(schemaPath string, rules *CompiledRules) error {
 			Program: program,
 			Source:  source,
 			Message: message,
-			Path:    extractRulePath(schemaPath, schema),
+			Path:    extractRulePath(schemaPath),
 			RuleIdx: idx,
 		}
 
@@ -230,7 +233,7 @@ func extractKindFromSchema(schemaPath string, schema map[string]interface{}) (ki
 }
 
 // extractRulePath determines the JSON schema path for a rule.
-func extractRulePath(schemaPath string, schema map[string]interface{}) string {
+func extractRulePath(schemaPath string) string {
 	base := filepath.Base(schemaPath)
 	if strings.Contains(base, "-") {
 		ext := filepath.Ext(base)

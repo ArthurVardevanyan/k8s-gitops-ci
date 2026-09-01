@@ -1220,16 +1220,17 @@ func ComposeCELSection(r *cel.Result) ReportSection {
 	b.WriteString("Findings indicate manifests the API server would reject at admission.\n\n")
 
 	for _, d := range r.Details {
-		if d.Failures > 0 {
+		switch {
+		case d.Failures > 0:
 			fmt.Fprintf(&b, "### %s (%d failure(s))\n", d.SchemaFile, d.Failures)
 			for _, v := range d.Rules {
 				fmt.Fprintf(&b, "- `%s`: %q [%s] → `%s`\n", v.Resource, v.Message, v.Rule, v.Field)
 			}
 			b.WriteString("\n")
-		} else if d.Errors > 0 {
+		case d.Errors > 0:
 			fmt.Fprintf(&b, "### %s (%d error(s))\n", d.SchemaFile, d.Errors)
 			b.WriteString("\n")
-		} else {
+		default:
 			fmt.Fprintf(&b, "### %s (%d resources, 0 failures)\n", d.SchemaFile, d.Resources)
 			b.WriteString("\n")
 		}
