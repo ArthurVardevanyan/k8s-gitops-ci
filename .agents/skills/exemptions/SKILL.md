@@ -273,7 +273,13 @@ shared directory, use a partial suffix (e.g. `cura/High_Speed.curaprofile`).
   there is nothing to exempt; the blocking `k8scni/*` checks are runtime
   checks and never exemptable.
 - **`--disable-checks <id>`** — disables an entire check across the whole
-  run. This is a different mechanism from exemptions. Use it when an
+  run. This is a different mechanism from exemptions, and it applies to
+  never-exemptable checks too: `check.NonExemptable` only keeps a check's
+  ID out of the exemptable registry, it doesn't stop `--disable-checks`
+  from removing the check from the run entirely (including runtime IDs
+  like `kubernetes/*`/`k8scni/*`) - see EXEMPTIONS.md's
+  "`--disable-checks` is a different, and separate, mechanism" for why
+  that's deliberate scope, not a gap. Use it when an
   environment genuinely can't provision a given tool (a missing lint tool
   means the pipeline didn't actually check what it claims to have checked).
   Each check/step has a string ID for this mechanism (`DisabledChecks`/

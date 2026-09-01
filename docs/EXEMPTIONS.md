@@ -17,6 +17,7 @@ for the tradeoffs between them.
   - [Exemptable check IDs](#exemptable-check-ids)
     - [Check ID naming convention](#check-id-naming-convention)
     - [Runtime-validation IDs are never exemptable](#runtime-validation-ids-are-never-exemptable)
+    - [`--disable-checks` is a different, and separate, mechanism](#--disable-checks-is-a-different-and-separate-mechanism)
   - [Non-app `test.sh` scoping](#non-app-testsh-scoping)
   - [Value vs. Token](#value-vs-token)
   - [Adding exemption support to a new check](#adding-exemption-support-to-a-new-check)
@@ -240,9 +241,11 @@ Every check ID under the **runtime-validation** family — the
 `k8scni/net-attach-def/ovn-netconf-invalid` — is
 **not exemptable by either mode**. No `gitops-ci.k8s.io/exempt-<id>`
 annotation and no `check=<id>` selector will match one; a runtime finding
-always blocks. See
-[CI.md](CI.md#runtime-validation-checks-admission-rules) for the family
-itself.
+always blocks. See [CI.md](CI.md#runtime-validation-checks-admission-rules)
+for the family itself. (That guarantee is about exemptions specifically -
+`--disable-checks` is a different mechanism that can still turn a runtime
+check off entirely, so it never produces a finding to begin with; see
+[below](#--disable-checks-is-a-different-and-separate-mechanism).)
 
 The rationale is that these checks are 1:1 ports of validation the cluster
 performs itself — they only fire on a manifest the cluster will not accept
@@ -271,6 +274,55 @@ Note that `check.NonExemptable` is the _general_ opt-out mechanism — it's
 what any always-blocking check family should use, in preference to the
 older hardcoded special case used by `cluster-identity` (see the table
 above).
+
+### `--disable-checks` is a different, and separate, mechanism
+
+Everything above is about **exemptions** — the annotation and
+`EXEMPTIONS=(...)` selector modes, both scoped to a specific manifest or
+finding and set by whoever authors the manifest, reviewed in the same PR
+that adds it. `Options.DisabledChecks`/`Options.EnabledChecks`
+(`--disable-checks`/`--enable-checks` on the CLI) are neither: they are
+set by whoever invokes the pipeline, apply to the entire run rather than
+one manifest, and are not part of the exemption framework at all - see
+[`DEVELOPMENT.md`](DEVELOPMENT.md#generic-check-enablement-mechanism) for
+the shared enable/disable mechanism every gateable check and step
+participates in.
+
+**This is why "never exemptable" and "can be disabled" are not a
+contradiction.** `check.NonExemptable` only keeps a check's ID out of the
+_exemptable_ registry (`exempt.RegisterExemptable`); it says nothing about
+`filterDisabled`, which removes a check from the run entirely based on its
+ID, before it ever produces a finding. A runtime check's ID is a normal
+string like any other check's, and `--disable-checks
+kubernetes/batch/backoff-limit-invalid` disables it exactly as it would
+`namespace` or `psa` - `filterDisabled` has no special case for
+`check.NonExemptable` checks.
+
+That is deliberate scope, not an oversight to be closed. `DisabledChecks`
+is an operator-level kill switch for an environment that cannot run a
+given check at all (see the `kubeconform`/lint-tool cases in
+[`DEVELOPMENT.md`](DEVELOPMENT.md#generic-check-enablement-mechanism) for
+the existing precedent), not an author-level way to excuse one manifest
+from a rule - which is exactly what the exemption framework exists to
+prevent for this family. Closing it would mean adding a
+`check.NonExemptable` case to `filterDisabled`, which would also block the
+legitimate case (an environment genuinely missing a dependency a runtime
+check needs).
+
+Worth calling out because of what changed in this repository's own recent
+history: `k8scni/net-attach-def/config-invalid` (whether a
+NetworkAttachmentDefinition's `spec.config` parses at all) used to be
+enforced unconditionally by `pkg/validator/static/nad`, outside the
+`check.Register` framework entirely. Moving it into the runtime family put
+it inside this gateable surface for the first time - an environment can
+now disable NAD config-parsing enforcement by ID, which it could not do
+before. See [CI.md](CI.md#networkattachmentdefinition-nad-validation).
+
+An ID that matches nothing - a typo, or an ID whose shape changed, e.g. by
+the `<category>/<rule>` → `<family>/<category>/<rule>` rename this family
+went through - has no effect and is silently ignored by `filterDisabled`
+itself. `warnUnknownCheckIDs` logs a warning for exactly this case; see
+[`DEVELOPMENT.md`](DEVELOPMENT.md#generic-check-enablement-mechanism).
 
 ## Non-app `test.sh` scoping
 

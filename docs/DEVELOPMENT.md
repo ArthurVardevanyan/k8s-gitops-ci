@@ -281,6 +281,17 @@ per step:
   with nothing pointing at the stale configuration. It warns rather than
   fails, since one config may be shared across repos on different tool
   versions, where an ID unknown here is valid elsewhere.
+- This mechanism covers runtime-validation IDs too (`kubernetes/*`,
+  `k8scni/*`) - they are ordinary `check.Register`-driven checks like any
+  other, so `--disable-checks` removes one from the run exactly as it
+  would `namespace` or `psa`. That is a different axis from whether a
+  finding a check produces can be exempted: `check.NonExemptable` keeps
+  runtime IDs out of the exemptable registry, but says nothing about
+  `filterDisabled`, which can still stop the check from running - and a
+  check that never runs never produces a finding to exempt in the first
+  place. See
+  [`EXEMPTIONS.md`](EXEMPTIONS.md#--disable-checks-is-a-different-and-separate-mechanism)
+  for why that is deliberate scope, not a gap.
 
 Add a new ID to `defaultOffSteps` only when a feature has no sane generic
 default an arbitrary org could run out of the box — this is not a
