@@ -5,13 +5,12 @@
 // like OVN-Kubernetes - would reject).
 //
 // Membership in this package is not the same as being check.Register-driven:
-// nad (the NetworkAttachmentDefinition structural gate and non-blocking
-// advisories) lives here too, even though it is a separate always-on
-// validator over rendered overlay output, not part of the check.Register
-// registry - see docs/CI.md#networkattachmentdefinition-nad-validation for
-// why (neither tier corresponds to a specific upstream function, so neither
-// belongs in the citation-required runtime family, but both are still
-// static analysis).
+// nad (the NetworkAttachmentDefinition non-blocking advisories) lives here
+// too, even though it is a separate always-on validator over rendered
+// overlay output, not part of the check.Register registry - see
+// docs/CI.md#networkattachmentdefinition-nad-validation for why (they
+// correspond to no specific upstream function, so they do not belong in the
+// citation-required runtime family, but they are still static analysis).
 //
 // This file also provides the shared check-adapter registry and the
 // cluster-identity wiring seam so that other packages (e.g. the engine

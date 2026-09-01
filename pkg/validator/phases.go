@@ -813,11 +813,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		res.Sections = append(res.Sections, ComposeKubeconformRenderedSection(renderedKc))
 	}
 
-	// NetworkAttachmentDefinition validation over every successfully-rendered
-	// overlay. Validation dispatches on each NAD's declared CNI type: OVN
-	// NADs (type ovn-k8s-cni-overlay) get OVN-Kubernetes' semantic rules,
-	// non-OVN NADs (macvlan, bridge, SR-IOV, ...) get structural gates plus
-	// advisory-only warnings. This is independent of Options.AssumeOpenShift -
+	// NetworkAttachmentDefinition advisories over every successfully-rendered
+	// overlay. Every NAD gets the same advisory-only warnings regardless of
+	// which CNI plugin owns it; the rules that block - config parsing, and
+	// OVN-Kubernetes' semantic rules for OVN NADs - are registered runtime
+	// checks that run through the normal doc-check dispatch, not from here.
+	// This is independent of Options.AssumeOpenShift -
 	// the type field is self-describing, so no global OpenShift assumption is
 	// needed (that flag still governs the sync-options check). The section is
 	// only emitted when a NAD is actually present in the rendered chain (like

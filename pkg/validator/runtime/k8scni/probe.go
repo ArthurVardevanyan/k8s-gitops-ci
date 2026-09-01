@@ -19,7 +19,7 @@ var nadKinds = []string{"NetworkAttachmentDefinition"}
 // The dispatcher only invokes Run for documents whose kind is
 // NetworkAttachmentDefinition (see Check.Kinds/nadKinds), so decoding here
 // always targets a genuine NAD - unlike pkg/validator/static/nad (the
-// structural gate and advisories that stayed outside this framework), which
+// advisories that stayed outside this framework), which
 // walks every document in a rendered file by hand and has
 // to guard against a sibling document (e.g. an OLM Subscription) that
 // legitimately carries an object under spec.config.

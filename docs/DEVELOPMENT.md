@@ -70,9 +70,10 @@ pkg/
                        image, namedport, podspec, placeholder) with their
                        12 check adapters and the `RegisterAll`
                        registration layer, plus `nad/` - the
-                       NetworkAttachmentDefinition structural gate and
-                       advisories, a separate always-on validator over
-                       rendered overlay output, not check.Register-driven
+                       NetworkAttachmentDefinition advisories, a separate
+                       always-on validator over rendered overlay output
+                       that reports no hard failures, not
+                       check.Register-driven
                        (see docs/CI.md#networkattachmentdefinition-nad-validation);
                        `check/` (the registry engine) and `exempt/`
                        (unified exemption framework) sit at top level;

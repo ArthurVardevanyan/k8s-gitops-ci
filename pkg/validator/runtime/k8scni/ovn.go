@@ -49,15 +49,14 @@ func (c ovnNetConfInvalidCheck) Run(data []byte, _ string) []runtime.Finding {
 			return nil
 		}
 		if _, probeErr := ProbeConfig(cfg); probeErr != nil {
-			// The generic structural gate would also reject this config
+			// config-invalid would also reject this config
 			// (containernetworking/cni's own parser failed too, e.g. a
-			// malformed conflist or a missing "type"/"name") - that's
-			// k8scni/net-attach-def/config-invalid's concern; reporting it again here
-			// would double-report the same root cause under a second rule
-			// ID.
+			// malformed conflist or a missing "type"/"name"), and that
+			// check is where it belongs; reporting it again here would
+			// double-report the same root cause under a second rule ID.
 			return nil
 		}
-		// ParseNetConf rejected a config the generic structural gate
+		// ParseNetConf rejected a config config-invalid
 		// accepts - a genuinely OVN-specific parse failure (e.g. "CNI
 		// config cannot have both a plugin list and a single config", or
 		// a field whose type ovn-kubernetes's own typed NetConf requires
