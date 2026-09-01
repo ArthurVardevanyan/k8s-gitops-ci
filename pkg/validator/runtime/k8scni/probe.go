@@ -62,9 +62,9 @@ func configString(raw json.RawMessage) (string, error) {
 // single-plugin config or a conflist's first plugin, the same dispatch a
 // real CNI runtime performs - and the declared cniVersion.
 //
-// Exported so pkg/validator/nad's advisories share exactly this parsing rather
-// than re-implementing it. They did re-implement it once, and the two tiers
-// duly judged a different value for the same NAD: a config this parser
+// Exported so pkg/validator/static/nad's advisories share exactly this
+// parsing rather than re-implementing it. They did re-implement it once, and
+// the two tiers duly judged a different value for the same NAD: a config this parser
 // rejected outright was still advised on, by a second parser that had read it
 // well enough to call its plugin type unrecognized.
 type Probe struct {

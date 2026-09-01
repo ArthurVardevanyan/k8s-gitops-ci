@@ -518,3 +518,33 @@ func TestNADKindDetection(t *testing.T) {
 		})
 	}
 }
+
+// The kind-detection regex tolerates a trailing comment, and the separator
+// before "#" is horizontal whitespace so a comment on the following line
+// cannot be consumed as if it were on the kind line.
+//
+// The run after "kind:" is deliberately looser. A value on the next line is
+// legal YAML, and restricting that run the same way would stop detecting it -
+// which is why this case is pinned: it is the one a tidy-up of the whole
+// pattern would quietly break.
+func TestNADKindDetectionWhitespaceBoundaries(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{"trailing comment", "kind: NetworkAttachmentDefinition # why\n", true},
+		{"comment on the next line", "kind: NetworkAttachmentDefinition\n# why\n", true},
+		{"value on the next line is still YAML", "kind:\n  NetworkAttachmentDefinition\n", true},
+		{"value on the next line, blank line between", "kind:\n\n  NetworkAttachmentDefinition\n", true},
+		{"no space before the hash is one scalar", "kind: NetworkAttachmentDefinition#why\n", false},
+		{"a longer kind is a different kind", "kind: NetworkAttachmentDefinitionList\n", false},
+		{"trailing junk is not a comment", "kind: NetworkAttachmentDefinition extra\n", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ContainsNAD([]byte(tt.yaml)); got != tt.want {
+				t.Errorf("ContainsNAD(%q) = %v, want %v", tt.yaml, got, tt.want)
+			}
+		})
+	}
+}
