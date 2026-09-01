@@ -874,3 +874,58 @@ func TestRunAll_RuntimeFindingsAppearInStructuredResult(t *testing.T) {
 			sectionFound, found)
 	}
 }
+
+// TestRunAll_RuntimeConsoleCountMatchesTheSection pins the console line that
+// introduces the Runtime Validation section to the same deduped count the
+// section itself renders.
+//
+// Two overlays share the identical violation - same Kind/Name/Path/Message,
+// differing only in which overlay rendered it - so the dedupe this test
+// exists to catch is a real one: without it, one violation appears as two
+// findings and the console line would say "2 finding(s)" for something the
+// rendered section reports as one row.
+func TestRunAll_RuntimeConsoleCountMatchesTheSection(t *testing.T) {
+	d := t.TempDir()
+	app := filepath.Join(d, "myapp")
+	deployment := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: foo\nspec:\n  template:\n    spec:\n      containers:\n      - name: c\n        image: registry.example.com/app@sha256:" +
+		"0000000000000000000000000000000000000000000000000000000000000000\n        ports:\n        - containerPort: 70000\n"
+	mustWrite(t, filepath.Join(app, "base", "deployment.yaml"), deployment)
+	mustWrite(t, filepath.Join(app, "base", "kustomization.yaml"), "resources:\n  - deployment.yaml\n")
+	mustWrite(t, filepath.Join(app, "overlays", "a", "kustomization.yaml"), "resources:\n  - ../../base\n")
+	mustWrite(t, filepath.Join(app, "overlays", "b", "kustomization.yaml"), "resources:\n  - ../../base\n")
+
+	res, err := RunAll(Options{Dirs: []string{d}, HookSource: "local"})
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if !res.Blocking {
+		t.Fatal("expected the port-range violation to block")
+	}
+
+	var section ReportSection
+	for _, s := range res.Sections {
+		if strings.Contains(s.Name, "Runtime") {
+			section = s
+			break
+		}
+	}
+	if section.Name == "" {
+		t.Fatal("no Runtime Validation section rendered")
+	}
+	if !strings.Contains(section.Body, "(1 finding(s))") {
+		t.Fatalf("expected the section to report one deduped finding, got:\n%s", section.Body)
+	}
+
+	const want = "RuntimeValidation: 1 finding(s)"
+	var got string
+	for _, e := range res.Logger.Errors() {
+		if strings.HasPrefix(e, "RuntimeValidation:") {
+			got = e
+			break
+		}
+	}
+	if got != want {
+		t.Errorf("console line = %q, want %q - it must agree with the section's own deduped count, not report one finding per overlay",
+			got, want)
+	}
+}

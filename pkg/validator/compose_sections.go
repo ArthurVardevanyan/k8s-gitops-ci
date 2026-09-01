@@ -265,6 +265,51 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 	return composeParentFromChildren("Static Checks", children)
 }
 
+// groupRuntimeFindings buckets findings by family ("kubernetes", "k8scni",
+// ...), then by category ("core", "batch", ...) within it, not by CheckID.
+// CheckID is the rule ID, so grouping on it would render one <details> block
+// per rule - dozens of single-finding sub-sections. Category keeps the
+// section readable while CheckID remains the finding's true identity for
+// dispatch and registry lookups.
+//
+// Shared by ComposeRuntimeValidationSection and runtimeRowCount so both
+// compute a count over the same groups. Deduping across the whole finding set
+// at once, ignoring this grouping, would be wrong: findingDedupKey does not
+// include CheckID, family or category, so two findings from different rules
+// that happen to share a resource, path and message would collapse into one -
+// undercounting relative to what the section itself renders.
+func groupRuntimeFindings(findings []check.Finding) map[string]map[string][]check.Finding {
+	byFamily := map[string]map[string][]check.Finding{}
+	for _, f := range findings {
+		key := f.Extra["category"]
+		if key == "" {
+			key = f.CheckID
+		}
+		fam := f.Extra["family"]
+		if byFamily[fam] == nil {
+			byFamily[fam] = map[string][]check.Finding{}
+		}
+		byFamily[fam][key] = append(byFamily[fam][key], f)
+	}
+	return byFamily
+}
+
+// runtimeRowCount returns the deduped row count for a set of runtime
+// findings - the same number ComposeRuntimeValidationSection's family and
+// category headings render, so the console log line announcing this section
+// (RuntimeValidation: %d finding(s)) agrees with the report it introduces.
+// Mirrors complianceRowCount, which exists for the identical reason on the
+// resource-compliance side.
+func runtimeRowCount(findings []check.Finding) int {
+	total := 0
+	for _, byCheck := range groupRuntimeFindings(findings) {
+		for _, fs := range byCheck {
+			total += len(dedupFindingsForTable(fs))
+		}
+	}
+	return total
+}
+
 // ComposeRuntimeValidationSection renders runtime validation findings grouped
 // by family, then by category, into nested <details> sub-sections.
 //
@@ -280,23 +325,7 @@ func ComposeStaticChecksSection(outcomes []CheckOutcome, reports map[string]stri
 // present, so a single-family run renders exactly as it did before families
 // existed rather than growing a wrapper around one child.
 func ComposeRuntimeValidationSection(findings []check.Finding) ReportSection {
-	// Group by category ("core", "batch", ...), not CheckID. CheckID is the
-	// rule ID, so grouping on it would render one <details> block per rule -
-	// dozens of single-finding sub-sections. Category keeps the section
-	// readable while CheckID remains the finding's true identity for
-	// dispatch and registry lookups.
-	byFamily := map[string]map[string][]check.Finding{}
-	for _, f := range findings {
-		key := f.Extra["category"]
-		if key == "" {
-			key = f.CheckID
-		}
-		fam := f.Extra["family"]
-		if byFamily[fam] == nil {
-			byFamily[fam] = map[string][]check.Finding{}
-		}
-		byFamily[fam][key] = append(byFamily[fam][key], f)
-	}
+	byFamily := groupRuntimeFindings(findings)
 	if len(byFamily) == 0 {
 		return ReportSection{Name: "Runtime Validation", Status: StatusPassed, Body: "No runtime validation findings."}
 	}

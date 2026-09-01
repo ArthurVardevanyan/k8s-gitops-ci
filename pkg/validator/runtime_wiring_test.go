@@ -2,6 +2,7 @@ package validator
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -582,5 +583,92 @@ func TestRuntimeSectionIntroMatchesFamilies(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// runtimeRowCount is what phases.go logs on the console line that introduces
+// the Runtime Validation section ("RuntimeValidation: %d finding(s)"). It has
+// to agree with what the section itself renders, or the console
+// under/over-states the report right below it.
+func TestRuntimeRowCountMatchesTheRenderedSection(t *testing.T) {
+	mk := func(ruleID, kind, file string) check.Finding {
+		return runtimepkg.Finding{
+			RuleID: ruleID, RuleTitle: "Some Rule",
+			Finding: check.Finding{
+				File: file, Kind: kind, Name: "x",
+				Path: "spec", Message: "boom",
+			},
+		}.ToCheckFinding()
+	}
+
+	// familyTotals sums only the family-heading counts in a rendered body,
+	// identified structurally (the family wrapper renders "<details open>",
+	// every category renders plain "<details>") rather than by matching
+	// title text, which varies per family/category and would make this
+	// brittle for the wrong reason.
+	familyTotals := func(body string) int {
+		re := regexp.MustCompile(`<details open>\n<summary>[^\n]*\((\d+) finding\(s\)\)`)
+		total := 0
+		for _, m := range re.FindAllStringSubmatch(body, -1) {
+			n, err := strconv.Atoi(m[1])
+			if err != nil {
+				t.Fatalf("unparseable family count %q in body:\n%s", m[1], body)
+			}
+			total += n
+		}
+		return total
+	}
+
+	t.Run("dedupes across overlays like the section does", func(t *testing.T) {
+		// One logical finding from two overlays, single family - so this
+		// case has no family heading at all, only a category one. It has to
+		// exercise runtimeRowCount without leaning on the family total.
+		findings := []check.Finding{
+			mk("kubernetes/batch/schedule-invalid", "CronJob", "overlays/a/x.yaml"),
+			mk("kubernetes/batch/schedule-invalid", "CronJob", "overlays/b/x.yaml"),
+		}
+		if got := runtimeRowCount(findings); got != 1 {
+			t.Errorf("runtimeRowCount = %d, want 1 (one deduped row)", got)
+		}
+	})
+
+	t.Run("sums across categories and families like the section does", func(t *testing.T) {
+		// Two families, one category each, one deduped finding per category -
+		// exercises both grouping levels runtimeRowCount has to agree with.
+		findings := []check.Finding{
+			mk("kubernetes/batch/schedule-invalid", "CronJob", "overlays/a/x.yaml"),
+			mk("kubernetes/batch/schedule-invalid", "CronJob", "overlays/b/x.yaml"),
+			mk("example/net-attach-def/config-invalid", "NetworkAttachmentDefinition", "b.yaml"),
+		}
+		got := runtimeRowCount(findings)
+		if got != 2 {
+			t.Fatalf("runtimeRowCount = %d, want 2 (one deduped row per category)", got)
+		}
+
+		// Cross-check against the section's own rendered family totals rather
+		// than a second hand-computed expectation.
+		body := ComposeRuntimeValidationSection(findings).Body
+		if want := familyTotals(body); got != want {
+			t.Errorf("console count %d does not match the sum of the section's family headings (%d):\n%s", got, want, body)
+		}
+	})
+}
+
+// findingDedupKey (used by dedupFindingsForTable) is Kind/Name/Namespace/
+// Container/Path/Value/Message - it does not include CheckID, family or
+// category. So deduping across the whole finding set in one pass, ignoring
+// which category each finding belongs to, would collapse two findings from
+// different rules that happen to share everything findingDedupKey looks at
+// into one row - undercounting relative to what the section actually
+// renders, which dedupes within each category separately.
+func TestRuntimeRowCountDoesNotDedupeAcrossCategories(t *testing.T) {
+	// Two different rules, in two different categories, whose findings are
+	// otherwise identical in every field findingDedupKey compares.
+	shared := check.Finding{Kind: "CronJob", Name: "x", Path: "spec", Message: "boom"}
+	a := runtimepkg.Finding{RuleID: "kubernetes/batch/schedule-invalid", RuleTitle: "A", Finding: shared}.ToCheckFinding()
+	b := runtimepkg.Finding{RuleID: "kubernetes/core/some-other-rule", RuleTitle: "B", Finding: shared}.ToCheckFinding()
+
+	if got := runtimeRowCount([]check.Finding{a, b}); got != 2 {
+		t.Errorf("runtimeRowCount = %d, want 2 - a global dedupe across categories would collapse these two distinct rules' findings into 1", got)
 	}
 }

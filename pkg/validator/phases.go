@@ -841,7 +841,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 
 	if len(runtimeFindings) > 0 {
 		res.Blocking = true
-		log.Error("RuntimeValidation: %d finding(s)", len(runtimeFindings))
+		// Deduped, to agree with the section this line introduces - the same
+		// finding is reported once per overlay it was rendered from, and the
+		// section's own headings already count deduped rows (see
+		// runtimeRowCount). Reporting the raw count here would let the
+		// console line disagree with the rendered report right below it.
+		log.Error("RuntimeValidation: %d finding(s)", runtimeRowCount(runtimeFindings))
 		for _, f := range runtimeFindings {
 			log.ErrorInSection("RuntimeValidation", "%s (%s/%s): %s", complianceTitle(f.CheckID), f.Kind, f.Name, f.Message)
 		}
