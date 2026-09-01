@@ -6,8 +6,9 @@
 //
 // It reports no hard failures. Whether spec.config is a non-empty JSON
 // string that parses as a CNI configuration with a plugin "type" is decided
-// by pkg/validator/runtime/k8scni's config-invalid check, which is where
-// that shape requirement is both enforced and cited.
+// by the k8scni/net-attach-def/config-invalid check in
+// pkg/validator/runtime/k8scni, which is where that shape requirement is
+// both enforced and cited.
 //
 // Two further tiers exist but no longer live in this package:
 //
@@ -255,7 +256,7 @@ func validateNAD(path string, doc nadDoc) (warns []ValidationError) {
 		return warns
 	}
 
-	// The same parser the config-invalid runtime check uses, rather than a
+	// The same parser k8scni/net-attach-def/config-invalid uses, rather than a
 	// second implementation of it. Re-parsing here meant the two tiers could
 	// judge a different value for one NAD: a config this package read well
 	// enough to call the plugin type unrecognized, while the runtime check

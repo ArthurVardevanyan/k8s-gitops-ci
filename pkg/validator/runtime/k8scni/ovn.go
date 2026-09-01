@@ -49,18 +49,20 @@ func (c ovnNetConfInvalidCheck) Run(data []byte, _ string) []runtime.Finding {
 			return nil
 		}
 		if _, probeErr := ProbeConfig(cfg); probeErr != nil {
-			// config-invalid would also reject this config
-			// (containernetworking/cni's own parser failed too, e.g. a
-			// malformed conflist or a missing "type"/"name"), and that
-			// check is where it belongs; reporting it again here would
-			// double-report the same root cause under a second rule ID.
+			// k8scni/net-attach-def/config-invalid would also reject this
+			// config (containernetworking/cni's own parser failed too,
+			// e.g. a malformed conflist or a missing "type"/"name"), and
+			// that check is where it belongs; reporting it again here
+			// would double-report the same root cause under a second rule
+			// ID.
 			return nil
 		}
-		// ParseNetConf rejected a config config-invalid
-		// accepts - a genuinely OVN-specific parse failure (e.g. "CNI
-		// config cannot have both a plugin list and a single config", or
-		// a field whose type ovn-kubernetes's own typed NetConf requires
-		// but this one doesn't satisfy). That is this check's concern:
+		// ParseNetConf rejected a config that
+		// k8scni/net-attach-def/config-invalid accepts - a genuinely
+		// OVN-specific parse failure (e.g. "CNI config cannot have both a
+		// plugin list and a single config", or a field whose type
+		// ovn-kubernetes's own typed NetConf requires but this one
+		// doesn't satisfy). That is this check's concern:
 		// surfacing it, rather than silently passing, is the difference
 		// between an OVN-managed NAD that's actually rejected and one
 		// this check simply never looked at.
