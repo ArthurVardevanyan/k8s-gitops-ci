@@ -38,24 +38,25 @@ Annotation-mode support is separate: a check only honors
 `gitops-ci.k8s.io/exempt-<id>` if it sets both `Finding.Value` **and**
 `Finding.Annotations` on its findings (see [Value vs. Token](../../../docs/EXEMPTIONS.md#value-vs-token)).
 
-| ID                                                | Annotation mode? | What the annotation or `value=` must equal                                  |
-| ------------------------------------------------- | ---------------- | --------------------------------------------------------------------------- |
-| `image-checksum`                                  | yes              | The exact image reference (report's `Image` column)                         |
-| `cluster-name`                                    | yes              | The foreign cluster-name token (report's `Value` column)                    |
-| `project-ref`                                     | yes              | The foreign project number or project ID                                    |
-| `rbac-wildcards`                                  | yes              | One or more wildcarded rule fields, comma-separated (`verbs,resources`)     |
-| `named-ports`                                     | yes              | The numeric port as a string                                                |
-| `podspec-defaults`                                | yes              | The joined missing-fields list (e.g. `securityContext, resources.requests`) |
-| `namespace`                                       | no               | — (selector-only: `kind`/`name`/`file`)                                     |
-| `psa-labels`                                      | no               | — (selector-only)                                                           |
-| `rbac-readonly`                                   | no               | — (selector-only)                                                           |
-| `crb`                                             | no               | — (selector-only)                                                           |
-| `sync-options`                                    | no               | — (selector-only: `kind`/`name`/`file`)                                     |
-| `placeholder`                                     | no               | — (selector-only; `value=`/`match=` match the flagged token)                |
-| `kubeconform`                                     | no               | — (file-level only: `file=`)                                                |
-| `large-file`                                      | no               | — (file-level only: `file=`)                                                |
-| `cluster-identity`                                | **never**        | Deliberately non-exemptable (infraID mismatch, invalid JSON)                |
-| `<family>/<category>/<rule>` (runtime validation) | **never**        | Deliberately non-exemptable — see below                                     |
+| ID                                                | Annotation mode? | What the annotation or `value=` must equal                                                |
+| ------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| `image-checksum`                                  | yes              | The exact image reference (report's `Image` column)                                       |
+| `cluster-name`                                    | yes              | The foreign cluster-name token (report's `Value` column)                                  |
+| `project-ref`                                     | yes              | The foreign project number or project ID                                                  |
+| `rbac-wildcards`                                  | yes              | One or more wildcarded rule fields, comma-separated (`verbs,resources`)                   |
+| `named-ports`                                     | yes              | The numeric port as a string                                                              |
+| `podspec-defaults`                                | yes              | The joined missing-fields list (e.g. `securityContext, resources.requests`)               |
+| `namespace`                                       | no               | — (selector-only: `kind`/`name`/`file`)                                                   |
+| `psa-labels`                                      | no               | — (selector-only)                                                                         |
+| `rbac-readonly`                                   | no               | — (selector-only)                                                                         |
+| `crb`                                             | no               | — (selector-only)                                                                         |
+| `sync-options`                                    | no               | — (selector-only: `kind`/`name`/`file`)                                                   |
+| `placeholder`                                     | no               | — (selector-only; `value=`/`match=` match the flagged token)                              |
+| `kubeconform`                                     | no               | — (file-level only: `file=`)                                                              |
+| `large-file`                                      | no               | — (file-level only: `file=`)                                                              |
+| `cel`                                             | **never**        | Deliberately non-exemptable (API server enforces `x-kubernetes-validations` at admission) |
+| `cluster-identity`                                | **never**        | Deliberately non-exemptable (infraID mismatch, invalid JSON)                              |
+| `<family>/<category>/<rule>` (runtime validation) | **never**        | Deliberately non-exemptable — see below                                                   |
 
 **Runtime-validation check IDs are never exemptable.** Any ID of the form
 `<family>/<category>/<rule>` (e.g.
@@ -263,6 +264,7 @@ shared directory, use a partial suffix (e.g. `cura/High_Speed.curaprofile`).
 
 ## Things that can't be exempted / when exemptions are the wrong tool
 
+- **`cel`** — deliberately non-exemptable. CEL rules (`x-kubernetes-validations`) come from CRD schemas and are enforced by the API server at admission time; an exemption in CI would not prevent the cluster from rejecting the manifest.
 - **`cluster-identity`** — deliberately non-exemptable (infraID mismatch,
   invalid JSON). These are structural findings about malformed data.
 - **Runtime-validation findings** (the "Runtime Validation" report

@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/cel"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/nad"
@@ -1203,4 +1204,37 @@ func ComposeNADSection(nadErrors, nadWarnings []nad.ValidationError) ReportSecti
 		status = StatusError
 	}
 	return ReportSection{Name: name, Status: status, Body: b.String()}
+}
+
+// ComposeCELSection renders CEL validation results. CEL rules come from
+// embedded CRD schemas (x-kubernetes-validations) and indicate manifests
+// the API server would reject at admission. Non-exemptable.
+func ComposeCELSection(r *cel.Result) ReportSection {
+	const name = "CEL Schema Rules"
+	if r == nil || (r.Invalid == 0 && r.Errors == 0) {
+		return ReportSection{Name: name, Status: StatusPassed, Body: "No CEL schema rule violations."}
+	}
+
+	var b strings.Builder
+	b.WriteString("These are CRD-specific validation rules from embedded OpenAPI schemas.\n")
+	b.WriteString("Findings indicate manifests the API server would reject at admission.\n\n")
+
+	for _, d := range r.Details {
+		switch {
+		case d.Failures > 0:
+			fmt.Fprintf(&b, "### %s (%d failure(s))\n", d.SchemaFile, d.Failures)
+			for _, v := range d.Rules {
+				fmt.Fprintf(&b, "- `%s`: %q [%s] → `%s`\n", v.Resource, v.Message, v.Rule, v.Field)
+			}
+			b.WriteString("\n")
+		case d.Errors > 0:
+			fmt.Fprintf(&b, "### %s (%d error(s))\n", d.SchemaFile, d.Errors)
+			b.WriteString("\n")
+		default:
+			fmt.Fprintf(&b, "### %s (%d resources, 0 failures)\n", d.SchemaFile, d.Resources)
+			b.WriteString("\n")
+		}
+	}
+
+	return ReportSection{Name: name, Status: StatusError, Body: b.String()}
 }

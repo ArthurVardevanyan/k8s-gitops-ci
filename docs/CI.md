@@ -356,6 +356,39 @@ is no rendered output to validate.
   manifest (or otherwise carries `kind`/`apiVersion`) but you deliberately
   want its schema check suppressed.
 
+#### `cel`
+
+CEL validation runs `x-kubernetes-validations` rules extracted from
+embedded CRD schemas (the same JSON schema archive `kubeconform` uses).
+Each rule is a CEL expression defined in the CRD's OpenAPI v3 schema
+(`spec.validation.openAPIV3Schema.x-kubernetes-validations`); these rules
+enforce business logic that JSON Schema alone cannot express (e.g.,
+"field A must be a valid IP address", "array size must be >= 1").
+
+CEL validation runs in two passes:
+
+1. **Raw pass** (Linting phase): validates changed YAML files that aren't
+   covered by any Kustomize/Helm overlay (excluding scaffold templates,
+   known non-manifest files, and files in `testdata/invalid/`). In
+   `--lint-only` mode this is the only pass.
+2. **Rendered pass** (Post-Build Validation phase): validates the
+   AVP/Helm-rendered overlay output. This is the authoritative pass for
+   manifests inside overlays — raw source (with unresolved placeholders)
+   is not validated here.
+
+Files covered by a scoped overlay's build chain are validated only in the
+rendered pass (raw is skipped for them); in `--lint-only` mode every
+changed manifest is validated raw. CEL rules are checked against the
+final manifests that will deploy (rendered pass) as well as raw source
+for overlay-independent files (raw pass).
+
+- **Package:** `pkg/validator/cel`
+- **Default:** on. **Disable:** `--disable-checks cel`
+- **Exemptions:** **None.** CEL rules are enforced by the Kubernetes API
+  server at admission time, so an exemption in CI would not prevent the
+  cluster from rejecting the manifest. This step is intentionally
+  non-exemptable.
+
 #### `shellcheck`
 
 Wraps the raw `shellcheck` CLI over changed `.sh`/`.bash` files (or any

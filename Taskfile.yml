@@ -879,6 +879,11 @@ tasks:
     cmds:
       - scripts/verify-upstream-refs.sh {{.CLI_ARGS}}
 
+  cel:verify:
+    desc: Run CEL validation against test fixtures with x-kubernetes-validations
+    cmds:
+      - go test -v ./pkg/validator/cel/
+
   update:scoped-resources:
     desc: Regenerate resource scope maps from kubectl api-resources
     cmds:

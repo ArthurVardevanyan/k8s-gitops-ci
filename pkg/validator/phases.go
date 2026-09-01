@@ -28,6 +28,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/yamlsyntax"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/cel"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
@@ -41,6 +42,7 @@ const (
 	stepShellcheck     = "shellcheck"
 	stepGolangci       = "golangci"
 	stepKubeconform    = "kubeconform"
+	stepCEL            = "cel"
 	stepAVP            = "avp"
 	stepKyverno        = "kyverno"
 	stepScaffoldReadme = "scaffold-readme"
@@ -811,6 +813,86 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		// the raw kubeconform "passed" line is always shown.
 		log.Info("kubeconform (rendered): %s", renderedKc.Summary())
 		res.Sections = append(res.Sections, ComposeKubeconformRenderedSection(renderedKc))
+
+		// CEL validation over the same rendered overlay output. Compiles
+		// x-kubernetes-validations rules from the embedded CRD schemas
+		// (same schema archive kubeconform uses) and evaluates them
+		// against each rendered document. Non-exemptable: the API server
+		// enforces these rules at admission regardless of CI exemptions.
+		if stepEnabled(stepCEL, disabled, enabled) {
+			schemaDir := opts.SchemaDir
+			if schemaDir == "" {
+				// Extract schemas if not already prefetched.
+				extracted, c, err := kubeconform.ExtractSchemas()
+				if err == nil {
+					schemaDir = extracted
+					defer c()
+				}
+			}
+			if schemaDir != "" {
+				compiledRules, compileErr := cel.CompileRules(schemaDir)
+				if compileErr != nil {
+					log.Warn("cel: failed to compile rules: %v", compileErr)
+				}
+				if compiledRules != nil {
+					renderedCel := cel.ValidateRenderedOverlaysCEL(
+						toOverlayData(renderedOverlays),
+						compiledRules,
+						Workers(opts),
+					)
+					log.Info("cel (rendered): %d valid, %d invalid, %d errors",
+						renderedCel.Valid, renderedCel.Invalid, renderedCel.Errors)
+					if renderedCel.Invalid > 0 || renderedCel.Errors > 0 {
+						res.Sections = append(res.Sections, ComposeCELSection(renderedCel))
+					}
+				}
+			}
+		}
+	}
+
+	// CEL raw pass: validate changed YAML files that weren't covered by
+	// the rendered pass (e.g., files not in any overlay, or lint-only mode).
+	// Mirrors the kubeconform raw pass pattern: exclude scaffold artifacts,
+	// known non-manifest files, and files covered by scoped overlays.
+	if stepEnabled(stepCEL, disabled, enabled) {
+		// Determine schema directory (reuse from rendered pass if available).
+		schemaDir := opts.SchemaDir
+		if schemaDir == "" {
+			extracted, c, err := kubeconform.ExtractSchemas()
+			if err == nil {
+				schemaDir = extracted
+				defer c()
+			}
+		}
+		if schemaDir != "" {
+			// Compile CEL rules for raw pass (may already be compiled from
+			// rendered pass, but CompileRules is idempotent and cheap).
+			compiledRules, compileErr := cel.CompileRules(schemaDir)
+			if compileErr != nil {
+				log.Warn("cel: failed to compile rules: %v", compileErr)
+			}
+			if compiledRules != nil {
+				// Collect changed YAML files, mirroring kubeconform's raw pass.
+				yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
+				yamlFiles = excludeScaffoldArtifacts(yamlFiles)
+				yamlFiles = excludeInvalidTestdata(yamlFiles)
+				yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
+				// Exclude files covered by scoped overlays unless in lint-only
+				// mode (rendered pass is authoritative for those).
+				if !opts.LintOnly && len(renderedOverlays) > 0 {
+					scoped := detectOverlaysForChanges(changed)
+					yamlFiles = filesNotCovered(yamlFiles, coverByScopedOverlays(scoped, yamlFiles))
+				}
+				if len(yamlFiles) > 0 {
+					rawCel := cel.ValidateFiles(yamlFiles, compiledRules, Workers(opts))
+					log.Info("cel (raw): %d valid, %d invalid, %d errors",
+						rawCel.Valid, rawCel.Invalid, rawCel.Errors)
+					if rawCel.Invalid > 0 || rawCel.Errors > 0 {
+						res.Sections = append(res.Sections, ComposeCELSection(rawCel))
+					}
+				}
+			}
+		}
 	}
 
 	// NetworkAttachmentDefinition advisories over every successfully-rendered
@@ -967,6 +1049,7 @@ var knownStepIDs = map[string]bool{
 	stepShellcheck:     true,
 	stepGolangci:       true,
 	stepKubeconform:    true,
+	stepCEL:            true,
 	stepAVP:            true,
 	stepKyverno:        true,
 	stepScaffoldReadme: true,
@@ -1649,4 +1732,13 @@ func separateFindingsBySection(findings []check.Finding) (runtimeFindings, compl
 		}
 	}
 	return runtimeFindings, complianceFindings
+}
+
+// toOverlayData converts validator.renderedOverlay slices to cel.OverlayData.
+func toOverlayData(overlays []renderedOverlay) []cel.OverlayData {
+	out := make([]cel.OverlayData, len(overlays))
+	for i, o := range overlays {
+		out[i] = cel.OverlayData{Overlay: o.overlay, Data: o.data}
+	}
+	return out
 }
