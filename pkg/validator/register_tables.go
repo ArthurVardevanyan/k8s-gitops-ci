@@ -174,9 +174,10 @@ var checkTableSpecs = map[string]check.TableSpec{
 		Columns: []check.Column{
 			{Header: "Kind", Cell: func(f check.Finding) string { return f.Kind }},
 			{Header: "Name", Cell: func(f check.Finding) string { return f.Name }},
+			{Header: "Namespace", Cell: func(f check.Finding) string { return f.Namespace }},
 		},
 		SourceKey:   func(f check.Finding) (string, string) { return f.Kind, f.Name },
-		ResourceKey: kindNameKey,
+		ResourceKey: func(f check.Finding) string { return resourceKeyFor(f.Namespace, f.Kind, f.Name) },
 	},
 	"image-checksum": {
 		Title:    "Image Digest Pinning",

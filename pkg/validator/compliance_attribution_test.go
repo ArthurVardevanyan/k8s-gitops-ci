@@ -7,6 +7,142 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 )
 
+// TestResourceKeyFor_NamespaceAware proves two resources with the same Kind and
+// Name but different namespaces produce distinct attribution keys, while a
+// cluster-scoped (empty-namespace) resource collapses to the historical
+// Kind/Name form so the 9 namespace-blind checks are unaffected.
+func TestResourceKeyFor_NamespaceAware(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		namespace string
+		kind      string
+		resName   string
+		want      string
+	}{
+		{"namespaced", "stackrox", "Certificate", "central-default-tls-cert", "stackrox/Certificate/central-default-tls-cert"},
+		{"other ns", "stackrox-tekton", "Certificate", "central-default-tls-cert", "stackrox-tekton/Certificate/central-default-tls-cert"},
+		{"cluster-scoped degrades", "", "ClusterRole", "cr", "ClusterRole/cr"},
+	}
+	for _, c := range cases {
+		if got := resourceKeyFor(c.namespace, c.kind, c.resName); got != c.want {
+			t.Errorf("%s: resourceKeyFor(%q,%q,%q) = %q, want %q",
+				c.name, c.namespace, c.kind, c.resName, got, c.want)
+		}
+	}
+}
+
+// TestChangedResourceKeys_NamespaceAware reproduces the attribution bug where a
+// rendered finding missing the sync-options annotation was pointed at the wrong
+// source file: two manifests can declare the same Kind/Name but live in
+// different namespaces, and only one of them was changed in the PR. Namely,
+// changedResourceKeys must key each source file by its namespace-qualified
+// identity so that a finding for one namespace resolves to that namespace's
+// file - not an unrelated, co-named file that happens to have been touched.
+func TestChangedResourceKeys_NamespaceAware(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	app := "acs"
+	// Two source files, same Certificate name, different namespaces. Only the
+	// "stackrox" copy was changed in the PR (mimicking a PR that fixed that one
+	// but left the co-named "stackrox-tekton" copy outstanding).
+	stackroxFile := writeFile(t, d, app+"/components/a/certificate.yaml",
+		"kind: Certificate\nmetadata:\n  name: central-default-tls-cert\n  namespace: stackrox\n")
+	writeFile(t, d, app+"/components/b/certificate.yaml",
+		"kind: Certificate\nmetadata:\n  name: central-default-tls-cert\n  namespace: stackrox-tekton\n")
+
+	changed := []string{stackroxFile}
+	keys := changedResourceKeys(changed)
+
+	// The changed stackrox file must be reachable via its namespace-aware key so
+	// a sync-options finding (which populates Namespace) resolves to it.
+	if snap := keys["stackrox/Certificate/central-default-tls-cert"]; len(snap) != 1 || snap[0] != stackroxFile {
+		t.Errorf("expected changedResourceKeys to map the stackrox copy under the namespace key: got %v", snap)
+	}
+
+	// The untouched co-named file must NOT be registered under the unchanged
+	// namespace key, or a finding for "stackrox-tekton" would incorrectly pull
+	// in an unrelated, changed co-named file.
+	if files := keys["stackrox-tekton/Certificate/central-default-tls-cert"]; len(files) != 0 {
+		t.Errorf("expected no source file under the unchanged stackrox-tekton namespace key, got %v", files)
+	}
+
+	// The legacy namespace-blind key must also resolve to the changed stackrox
+	// file, so namespace-blind checks (those not populating Namespace) still
+	// classify their directly-changed resources as blocking.
+	if snap := keys["Certificate/central-default-tls-cert"]; len(snap) != 1 || snap[0] != stackroxFile {
+		t.Errorf("expected changedResourceKeys to map the stackrox copy under the legacy Kind/Name key: got %v", snap)
+	}
+}
+
+// TestChangedResourceKeys_ClusterScopedNoDuplicate is the regression for a bug
+// where the dual-write of a cluster-scoped source (empty namespace) collapsed
+// to the same Kind/Name key twice, duplicating the file in the slice under that
+// key. A cluster-scoped resource must be listed exactly once.
+func TestChangedResourceKeys_ClusterScopedNoDuplicate(t *testing.T) {
+	t.Parallel()
+	d := t.TempDir()
+	app := "myapp"
+	cr := writeFile(t, d, app+"/base/clusterrole.yaml",
+		"kind: ClusterRole\nmetadata:\n  name: cr\n") // no namespace → cluster-scoped
+
+	keys := changedResourceKeys([]string{cr})
+
+	if got := keys["ClusterRole/cr"]; len(got) != 1 || got[0] != cr {
+		t.Errorf("expected exactly one source entry under the legacy Kind/Name key for a cluster-scoped resource, got %v", got)
+	}
+}
+
+// TestClassifyResourceCompliance_NamespacedSourceStillBlockingForLegacyCheck is
+// the regression for a bug where indexing changed sources by namespace only
+// would silently downgrade direct findings for the namespace-blind checks
+// (those that don't populate Finding.Namespace) from blocking to non-blocking.
+// A changed source manifest that declares metadata.namespace must still be
+// reachable by the legacy Kind/Name ResourceKey those checks use.
+func TestClassifyResourceCompliance_NamespacedSourceStillBlockingForLegacyCheck(t *testing.T) {
+	d := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(d); err != nil {
+		t.Fatal(err)
+	}
+
+	app := "myapp"
+	// The directly-changed source manifest declares a namespace, as almost every
+	// real manifest does.
+	writeFile(t, d, app+"/base/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: api\n  namespace: team-a\n")
+	writeFile(t, d, app+"/base/kustomization.yaml", "resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/dev/kustomization.yaml", "resources:\n  - ../../base\n")
+
+	changed := []string{
+		app + "/base/deployment.yaml",
+		app + "/base/kustomization.yaml",
+		app + "/overlays/dev/kustomization.yaml",
+	}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	// A namespace-blind check (Namespace empty, e.g. image-checksum) finding the
+	// changed namespaced resource must still be blocking.
+	finding := check.Finding{
+		CheckID: "image-checksum",
+		Kind:    "Deployment",
+		Name:    "api",
+		// Namespace deliberately unset: namespace-blind legacy behavior.
+		Value: "registry.example.com/api:not_pinned",
+		File:  app + "/overlays/dev",
+	}
+
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	if len(blocking["image-checksum"]) != 1 || len(nonblocking["image-checksum"]) != 0 {
+		t.Errorf("expected the directly-changed namespaced resource to stay blocking for a namespace-blind check, got blocking=%d warning=%d",
+			len(blocking["image-checksum"]), len(nonblocking["image-checksum"]))
+	}
+}
+
 // TestAppRootOf covers the multi-segment app-root derivation: the app root is
 // the prefix before "/overlays/" (or before "/base/"|"/components/"), never a
 // hardcoded first path segment.

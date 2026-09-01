@@ -716,11 +716,14 @@ func renderResourceComplianceTable(spec check.TableSpec, rows []compRow, blockin
 			cells = append(cells, sanitizeCell(c.Cell(row.rep)))
 		}
 		if blocking {
-			kind, name := "", ""
-			if spec.SourceKey != nil {
-				kind, name = spec.SourceKey(row.rep)
+			key := ""
+			if spec.ResourceKey != nil {
+				key = spec.ResourceKey(row.rep)
+			} else if spec.SourceKey != nil {
+				kind, name := spec.SourceKey(row.rep)
+				key = kind + "/" + name
 			}
-			cells = append(cells, sanitizeCell(sourceInfo(sources, kind, name, len(row.files))))
+			cells = append(cells, sanitizeCell(sourceInfo(sources, key, len(row.files))))
 		}
 		cells = append(cells, overlaysCell(row, blocking))
 		fmt.Fprintf(&b, "| %s |\n", strings.Join(cells, " | "))
@@ -758,9 +761,11 @@ func builtFileLabel(overlayPath string) string {
 // sourceInfo renders the "Source File(s)" cell for a blocking row: the changed
 // source file(s) (from the PR's changedResourceKeys) that define the resource
 // and made this finding blocking. Falls back to an overlay count when no source
-// mapping is available.
-func sourceInfo(sources map[string][]string, kind, name string, count int) string {
-	files := sources[kind+"/"+name]
+// mapping is available. key is the resource-identity attribution key, computed
+// from the check's ResourceKey (or its SourceKey parts) so it matches the keys
+// in sources.
+func sourceInfo(sources map[string][]string, key string, count int) string {
+	files := sources[key]
 	if len(files) == 0 {
 		if count == 1 {
 			return "1 overlay"

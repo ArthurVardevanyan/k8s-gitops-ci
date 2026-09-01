@@ -159,7 +159,7 @@ func (SyncOptsCheck) CheckDoc(data []byte, source string) []check.Finding {
 	for _, e := range errs {
 		out = append(out, check.Finding{
 			CheckID: "sync-options", File: e.File,
-			Kind: e.Kind, Name: e.Name, Message: e.String(),
+			Kind: e.Kind, Name: e.Name, Namespace: e.Namespace, Message: e.String(),
 		})
 	}
 	return out
