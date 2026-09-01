@@ -882,7 +882,7 @@ tasks:
   cel:verify:
     desc: Run CEL validation against test fixtures with x-kubernetes-validations
     cmds:
-      - go test -v -run TestCompileCEL ./pkg/validator/cel/
+      - go test -v ./pkg/validator/cel/
 
   update:scoped-resources:
     desc: Regenerate resource scope maps from kubectl api-resources
