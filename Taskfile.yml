@@ -885,8 +885,8 @@ tasks:
       - scripts/pull-scoped-resources.sh
       - task: format
     generates:
-      - pkg/validator/namespace/resource_scope.go
-      - pkg/validator/namespace/extra_resource_scope.go
+      - pkg/validator/static/namespace/resource_scope.go
+      - pkg/validator/static/namespace/extra_resource_scope.go
 
   update:tools:
     desc: Bump the pinned Go tool versions (golangci-lint, govulncheck, gofumpt, goimports) to their latest tags

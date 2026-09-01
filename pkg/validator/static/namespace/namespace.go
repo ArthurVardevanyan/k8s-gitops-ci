@@ -191,7 +191,7 @@ func findKey(node *yaml.Node, key string) *yaml.Node {
 }
 
 func unknownResourceMsg(key string) string {
-	return fmt.Sprintf("unknown resource %q not in scope map; to fix: run 'task update:scoped-resources' against a cluster with this CRD installed, or manually add %q to pkg/validator/namespace/resource_scope.go (true=cluster-scoped, false=namespace-scoped)", key, key)
+	return fmt.Sprintf("unknown resource %q not in scope map; to fix: run 'task update:scoped-resources' against a cluster with this CRD installed, or manually add %q to pkg/validator/static/namespace/resource_scope.go (true=cluster-scoped, false=namespace-scoped)", key, key)
 }
 
 func bytesReader(b []byte) *bytes.Reader {

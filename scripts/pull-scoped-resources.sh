@@ -8,8 +8,8 @@ set -euo pipefail
 # generated map instead of grouping them at the top as expected.
 export LC_ALL=C
 
-: "${OUTPUT:=pkg/validator/namespace/resource_scope.go}"
-: "${EXTRA_OUTPUT:=pkg/validator/namespace/extra_resource_scope.go}"
+: "${OUTPUT:=pkg/validator/static/namespace/resource_scope.go}"
+: "${EXTRA_OUTPUT:=pkg/validator/static/namespace/extra_resource_scope.go}"
 
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "ERROR: kubectl is required to generate resource scopes" >&2
