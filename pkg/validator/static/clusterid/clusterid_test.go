@@ -306,3 +306,28 @@ func buildTestProjectIndex() cluster.ProjectIndex {
 	}
 	return idx
 }
+
+// The value in this message is the cluster name, which selfClusterName
+// derives by stripping everything up to the last "_". Calling it the overlay
+// folder name is wrong for any directory that carries a prefix, and wrong in
+// the way that costs a reader the most: it names a directory that does not
+// exist, so searching for it finds nothing.
+func TestInfraIDMismatchMessageNamesTheClusterNotTheFolder(t *testing.T) {
+	const folder = "prod_us-east_cluster01"
+	id := &OverlayIdentity{ClusterName: selfClusterName(folder), InfraIDs: []string{"othercluster"}}
+
+	findings := rawInfraIDFindings("overlays/"+folder, id)
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	msg := findings[0].Message
+
+	// The derived name is correct to report - it is what was compared.
+	if !strings.Contains(msg, `"cluster01"`) {
+		t.Errorf("message does not report the compared value:\n%s", msg)
+	}
+	// But it must not be introduced as the folder name, since it is not one.
+	if strings.Contains(msg, "folder name") {
+		t.Errorf("message calls %q the overlay folder name, but the folder is %q:\n%s", "cluster01", folder, msg)
+	}
+}
