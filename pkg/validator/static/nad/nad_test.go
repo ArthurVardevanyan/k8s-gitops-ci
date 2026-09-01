@@ -466,3 +466,85 @@ func TestValidateFiles_NoAdvisoryWhenTheConfigDoesNotParse(t *testing.T) {
 		})
 	}
 }
+
+// TestNADKindDetection pins which documents are recognised as NADs.
+//
+// This predicate gates ValidateFiles, so it decides what gets validated at
+// all - not just what appears in the report. Every false negative here is a
+// NAD silently skipped, and silently is the operative word: the file it
+// skips is the only thing that would have reported anything, so nothing
+// downstream can notice. That is why the negative cases are pinned as
+// carefully as the positive ones.
+func TestNADKindDetection(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{"plain", "kind: NetworkAttachmentDefinition", true},
+		{"trailing spaces", "kind: NetworkAttachmentDefinition   ", true},
+		{"no space after colon", "kind:NetworkAttachmentDefinition", true},
+		{"double quoted", `kind: "NetworkAttachmentDefinition"`, true},
+		{"single quoted", `kind: 'NetworkAttachmentDefinition'`, true},
+		{"indented", "  kind: NetworkAttachmentDefinition", true},
+		{"in a multi-doc file", "kind: ConfigMap\n---\nkind: NetworkAttachmentDefinition\n", true},
+
+		// Regression: a trailing comment previously made the whole file
+		// invisible to validation.
+		{"trailing comment", "kind: NetworkAttachmentDefinition # primary UDN", true},
+		{"quoted with comment", `kind: "NetworkAttachmentDefinition"  # why`, true},
+		{"tab before comment", "kind: NetworkAttachmentDefinition\t# why", true},
+
+		// A comment needs whitespace in front of it in YAML, so this is one
+		// scalar naming a different kind - matching it would validate a
+		// document that is not a NAD.
+		{"hash without space is part of the value", "kind: NetworkAttachmentDefinition#x", false},
+		{"longer kind sharing the prefix", "kind: NetworkAttachmentDefinitionList", false},
+		{"commented-out line", "# kind: NetworkAttachmentDefinition", false},
+		{"different kind", "kind: ConfigMap", false},
+
+		// Valid YAML: a plain scalar may sit on the following line, and it
+		// parses to the same kind, so this must match. Verified against the
+		// YAML parser rather than assumed - the "\s*" after the colon spans
+		// the newline, which reads like an accident but is correct here.
+		{"value on the next line", "kind:\n  NetworkAttachmentDefinition", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ContainsNAD([]byte(tt.yaml)); got != tt.want {
+				t.Errorf("ContainsNAD(%q) = %v, want %v", tt.yaml, got, tt.want)
+			}
+		})
+	}
+}
+
+// The kind-detection regex tolerates a trailing comment, and the separator
+// before "#" is horizontal whitespace so a comment on the following line
+// cannot be consumed as if it were on the kind line.
+//
+// The run after "kind:" is deliberately looser. A value on the next line is
+// legal YAML, and restricting that run the same way would stop detecting it -
+// which is why this case is pinned: it is the one a tidy-up of the whole
+// pattern would quietly break.
+func TestNADKindDetectionWhitespaceBoundaries(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{"trailing comment", "kind: NetworkAttachmentDefinition # why\n", true},
+		{"comment on the next line", "kind: NetworkAttachmentDefinition\n# why\n", true},
+		{"value on the next line is still YAML", "kind:\n  NetworkAttachmentDefinition\n", true},
+		{"value on the next line, blank line between", "kind:\n\n  NetworkAttachmentDefinition\n", true},
+		{"no space before the hash is one scalar", "kind: NetworkAttachmentDefinition#why\n", false},
+		{"a longer kind is a different kind", "kind: NetworkAttachmentDefinitionList\n", false},
+		{"trailing junk is not a comment", "kind: NetworkAttachmentDefinition extra\n", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ContainsNAD([]byte(tt.yaml)); got != tt.want {
+				t.Errorf("ContainsNAD(%q) = %v, want %v", tt.yaml, got, tt.want)
+			}
+		})
+	}
+}

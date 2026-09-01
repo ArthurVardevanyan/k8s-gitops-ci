@@ -1649,7 +1649,7 @@ hard CI dependency.
 NAD validation splits across two homes, by whether a rule has a citable
 upstream function:
 
-- **Advisories** (`pkg/validator/nad`): **non-blocking advisories** (⚠️)
+- **Advisories** (`pkg/validator/static/nad`): **non-blocking advisories** (⚠️)
   for likely authoring mistakes (unrecognized CNI/IPAM `type`, missing
   `cniVersion`) - applied uniformly to every NAD, OVN included. This tier
   reports **no hard failures**. Whether `spec.config` is a non-empty JSON

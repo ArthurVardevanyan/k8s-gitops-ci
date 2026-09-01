@@ -6,15 +6,22 @@ import (
 	"path/filepath"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/nad"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/nad"
 )
 
 // runNADValidation writes every successfully-rendered overlay's YAML to a
-// temp directory and runs NetworkAttachmentDefinition validation against the
-// batch. That validation is advisory-only - the rules that block, including
-// whether spec.config parses at all, are runtime checks in
-// pkg/validator/runtime/k8scni - see pkg/validator/nad's package doc
-// comment. This mirrors
+// temp directory and runs pkg/validator/static/nad's non-blocking advisories
+// against the batch - the CNI-neutral tier that applies uniformly to every
+// NAD regardless of which CNI plugin owns it (OVN included), covering likely
+// authoring mistakes (unrecognized CNI/IPAM type, missing cniVersion).
+//
+// Nothing that blocks runs from here. Whether spec.config parses at all
+// (k8scni/net-attach-def/config-invalid) and OVN-Kubernetes' own semantic
+// rules - topology/role/subnet/transport constraints
+// (k8scni/net-attach-def/ovn-netconf-invalid) - are both registered runtime
+// checks in pkg/validator/runtime/k8scni, dispatched through the normal
+// doc-check pipeline. See pkg/validator/static/nad's package doc comment for
+// why the tiers split this way. This mirrors
 // runKyvernoValidation's temp-file + remap pattern (kyverno_wiring.go) so a
 // finding's File points at the overlay a reviewer can act on instead of an
 // ephemeral temp path.

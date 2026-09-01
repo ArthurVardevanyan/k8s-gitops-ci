@@ -18,8 +18,9 @@ var nadKinds = []string{"NetworkAttachmentDefinition"}
 //
 // The dispatcher only invokes Run for documents whose kind is
 // NetworkAttachmentDefinition (see Check.Kinds/nadKinds), so decoding here
-// always targets a genuine NAD - unlike the superseded pkg/validator/nad
-// package, which walked every document in a rendered file by hand and had
+// always targets a genuine NAD - unlike pkg/validator/static/nad (the
+// advisories that stayed outside this framework), which
+// walks every document in a rendered file by hand and has
 // to guard against a sibling document (e.g. an OLM Subscription) that
 // legitimately carries an object under spec.config.
 type nadDoc struct {
@@ -56,14 +57,14 @@ func configString(raw json.RawMessage) (string, error) {
 }
 
 // Probe is the subset of a parsed CNI netconf both checks in this package,
-// and pkg/validator/static/cni's advisory (unrecognized-type warnings),
+// and pkg/validator/static/nad's advisories (unrecognized-type warnings),
 // need: the effective plugin type and IPAM type - resolved from either a
 // single-plugin config or a conflist's first plugin, the same dispatch a
 // real CNI runtime performs - and the declared cniVersion.
 //
-// Exported so pkg/validator/nad's advisories share exactly this parsing rather
-// than re-implementing it. They did re-implement it once, and the two tiers
-// duly judged a different value for the same NAD: a config this parser
+// Exported so pkg/validator/static/nad's advisories share exactly this
+// parsing rather than re-implementing it. They did re-implement it once, and
+// the two tiers duly judged a different value for the same NAD: a config this parser
 // rejected outright was still advised on, by a second parser that had read it
 // well enough to call its plugin type unrecognized.
 type Probe struct {

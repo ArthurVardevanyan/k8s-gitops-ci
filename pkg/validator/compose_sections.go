@@ -10,7 +10,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/nad"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/nad"
 )
 
 // titleCase uppercases the first letter of a string, safe for ASCII section names.

@@ -218,7 +218,7 @@ the ID as exemptable (or rely on `check.Register` which does this
 automatically for `check.Check` implementations). Single-word IDs and
 acronyms are left unhyphenated.
 
-`pkg/validator/nad`'s advisories (see
+`pkg/validator/static/nad`'s advisories (see
 [CI.md](CI.md#networkattachmentdefinition-nad-validation)) are **not**
 part of the `check.Register` framework at all, so they have no check ID
 to exempt by either mode — and they never block in the first place, so

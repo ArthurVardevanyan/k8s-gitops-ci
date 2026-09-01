@@ -6,8 +6,9 @@
 //
 // It reports no hard failures. Whether spec.config is a non-empty JSON
 // string that parses as a CNI configuration with a plugin "type" is decided
-// by pkg/validator/runtime/k8scni's config-invalid check, which is where
-// that shape requirement is both enforced and cited.
+// by the k8scni/net-attach-def/config-invalid check in
+// pkg/validator/runtime/k8scni, which is where that shape requirement is
+// both enforced and cited.
 //
 // Two further tiers exist but no longer live in this package:
 //
@@ -159,9 +160,36 @@ func ValidateDir(dir string) (errs, warns []ValidationError) {
 }
 
 // nadKindRE matches a YAML `kind: NetworkAttachmentDefinition` mapping entry,
-// tolerating arbitrary whitespace after the colon and optional quoting of the
-// value (e.g. `kind:NetworkAttachmentDefinition`, `kind: "NetworkAttachmentDefinition"`).
-var nadKindRE = regexp.MustCompile(`(?m)^\s*kind:\s*["']?NetworkAttachmentDefinition["']?\s*$`)
+// tolerating arbitrary whitespace after the colon, optional quoting of the
+// value (e.g. `kind:NetworkAttachmentDefinition`,
+// `kind: "NetworkAttachmentDefinition"`), and a trailing line comment.
+//
+// The comment case is load-bearing rather than cosmetic: this predicate gates
+// ValidateFiles, so a NAD whose kind line ends in a comment was not merely
+// absent from the report - it was never validated at all. A false negative
+// here is silent by construction, since the file it skips is the only thing
+// that would have reported anything.
+//
+// The space before "#" is required, because YAML only starts a comment after
+// whitespace: `kind: NetworkAttachmentDefinition#x` is the scalar
+// "NetworkAttachmentDefinition#x", which is a different kind and must not
+// match.
+//
+// The comment separator and the trailing run are horizontal whitespace only.
+// \s would include a newline, letting a comment on the *following* line be
+// consumed as if it were a trailing one - which is not what this claims to
+// support, even though it cannot change the answer here (a kind line that
+// needs the comment branch to match already matches without it).
+//
+// The run after "kind:" is deliberately not restricted the same way. A value
+// on the next line is legal YAML:
+//
+//	kind:
+//	  NetworkAttachmentDefinition
+//
+// and narrowing that one to [ \t] would stop detecting it - a real false
+// negative, traded for a cosmetic gain.
+var nadKindRE = regexp.MustCompile(`(?m)^[ \t]*kind:\s*["']?NetworkAttachmentDefinition["']?(?:[ \t]+#.*)?[ \t]*$`)
 
 // IsNADFile reports whether path is a YAML file whose content declares
 // `kind: NetworkAttachmentDefinition`. Unlike a bare extension check, this
@@ -243,7 +271,7 @@ func validateNAD(path string, doc nadDoc) (warns []ValidationError) {
 		return warns
 	}
 
-	// The same parser the config-invalid runtime check uses, rather than a
+	// The same parser k8scni/net-attach-def/config-invalid uses, rather than a
 	// second implementation of it. Re-parsing here meant the two tiers could
 	// judge a different value for one NAD: a config this package read well
 	// enough to call the plugin type unrecognized, while the runtime check

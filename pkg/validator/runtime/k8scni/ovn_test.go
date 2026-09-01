@@ -33,8 +33,9 @@ func TestOVNNetConfInvalidCheck_PersistentIPsLayer3(t *testing.T) {
 func TestOVNNetConfInvalidCheck_PersistentIPsRequiresSubnets(t *testing.T) {
 	// Current upstream ValidateNetConf also requires the subnets attribute
 	// whenever allowPersistentIPs is set (not just a non-layer3 topology) -
-	// a real divergence from what the superseded pkg/validator/nad package
-	// ported, caught by re-reading upstream's current source for this move.
+	// a real divergence from what the superseded OVN branch of
+	// pkg/validator/static/nad ported before this package existed,
+	// caught by re-reading upstream's current source for this move.
 	cfg := `{"cniVersion":"0.3.1","name":"mynet","type":"ovn-k8s-cni-overlay","topology":"layer2","netAttachDefName":"myns/my-network","allowPersistentIPs":true,"role":"secondary"}`
 	got := runOVNCheck(t, nadYAML("my-network", cfg))
 	if len(got) != 1 || !strings.Contains(got[0], "subnets attribute must be set") {
@@ -97,7 +98,8 @@ func TestOVNNetConfInvalidCheck_NonOVNTypeSkipped(t *testing.T) {
 }
 
 // Regression for the reported false positive this package's predecessor
-// (pkg/validator/nad) was rewritten to fix: ODF/OCS's openshift-storage/
+// (the OVN branch formerly in pkg/validator/static/nad, before this
+// package existed) was rewritten to fix: ODF/OCS's openshift-storage/
 // ocs-storagecluster Multus NAD uses macvlan, not OVN, and must never be
 // judged by this check.
 func TestOVNNetConfInvalidCheck_ODFStorageClusterMacvlanSkipped(t *testing.T) {
