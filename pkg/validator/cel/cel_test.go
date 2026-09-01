@@ -70,9 +70,9 @@ func TestExtractResourceMeta(t *testing.T) {
 		{
 			name: "complete",
 			input: map[string]interface{}{
-				"kind":         "Deployment",
-				"apiVersion":   "apps/v1",
-				"metadata":     map[string]interface{}{"name": "test"},
+				"kind":       "Deployment",
+				"apiVersion": "apps/v1",
+				"metadata":   map[string]interface{}{"name": "test"},
 			},
 			wantKind:   "Deployment",
 			wantAPIVer: "apps/v1",
@@ -80,7 +80,7 @@ func TestExtractResourceMeta(t *testing.T) {
 		{
 			name: "missing apiVersion",
 			input: map[string]interface{}{
-				"kind": "Service",
+				"kind":     "Service",
 				"metadata": map[string]interface{}{"name": "test"},
 			},
 			wantKind:   "Service",
@@ -149,16 +149,16 @@ func TestExtractName(t *testing.T) {
 
 func TestResultMerge(t *testing.T) {
 	r1 := &Result{
-		Valid:    5,
-		Invalid:  2,
-		Errors:   1,
-		Details:  []FileResult{{SchemaFile: "test.json", Resources: 5}},
+		Valid:   5,
+		Invalid: 2,
+		Errors:  1,
+		Details: []FileResult{{SchemaFile: "test.json", Resources: 5}},
 	}
 	r2 := &Result{
-		Valid:    3,
-		Invalid:  1,
-		Errors:   0,
-		Details:  []FileResult{{SchemaFile: "test2.json", Resources: 3}},
+		Valid:   3,
+		Invalid: 1,
+		Errors:  0,
+		Details: []FileResult{{SchemaFile: "test2.json", Resources: 3}},
 	}
 
 	r1.Merge(r2)
@@ -187,9 +187,9 @@ func TestResultMergeNil(t *testing.T) {
 
 func TestResultSummary(t *testing.T) {
 	r := &Result{
-		Valid:    5,
-		Invalid:  2,
-		Errors:   1,
+		Valid:   5,
+		Invalid: 2,
+		Errors:  1,
 		Details: []FileResult{
 			{SchemaFile: "test.json", Resources: 5, Failures: 0, Errors: 0},
 			{SchemaFile: "fail.json", Resources: 2, Failures: 3, Rules: []Violation{
