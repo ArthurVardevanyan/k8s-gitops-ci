@@ -92,24 +92,34 @@ func CompileRules(schemaDir string) (*CompiledRules, error) {
 		"custom-standalone-strict",
 	}
 
+	var errors []string
+
 	for _, subdir := range subdirs {
 		dirPath := filepath.Join(schemaDir, subdir)
 		if _, statErr := os.Stat(dirPath); os.IsNotExist(statErr) {
 			continue
 		}
-		_ = filepath.WalkDir(dirPath, func(path string, d os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
+		walkErr := filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
 			if d.IsDir() {
 				return nil
 			}
 			if strings.HasSuffix(path, ".json") {
-				_ = parseSchemaFile(path, rules)
+				if parseErr := parseSchemaFile(path, rules); parseErr != nil {
+					errors = append(errors, fmt.Sprintf("failed to parse %s: %v", path, parseErr))
+				}
 			}
 			return nil
 		})
-		// Walk error - silently continue.
+		if walkErr != nil {
+			errors = append(errors, fmt.Sprintf("walk error: %v", walkErr))
+		}
+	}
+
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("cel schema compilation encountered %d error(s)", len(errors))
 	}
 
 	return rules, nil

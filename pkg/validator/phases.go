@@ -1734,7 +1734,7 @@ func separateFindingsBySection(findings []check.Finding) (runtimeFindings, compl
 	return runtimeFindings, complianceFindings
 }
 
-// toOverlayData converts validator.renderedOverlay slices to cel.overlayData.
+// toOverlayData converts validator.renderedOverlay slices to cel.OverlayData.
 func toOverlayData(overlays []renderedOverlay) []cel.OverlayData {
 	out := make([]cel.OverlayData, len(overlays))
 	for i, o := range overlays {
