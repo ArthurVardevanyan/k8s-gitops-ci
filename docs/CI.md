@@ -365,11 +365,22 @@ Each rule is a CEL expression defined in the CRD's OpenAPI v3 schema
 enforce business logic that JSON Schema alone cannot express (e.g.,
 "field A must be a valid IP address", "array size must be >= 1").
 
-CEL validation runs **only** in the Post-Build Validation phase, after
-overlays are rendered. It validates the same AVP/Helm-rendered overlay
-output that kubeconform validates, ensuring CEL rules are checked against
-the final manifests that will deploy — not raw source with unresolved
-placeholders.
+CEL validation runs in two passes:
+
+1. **Raw pass** (Linting phase): validates changed YAML files that aren't
+   covered by any Kustomize/Helm overlay (excluding scaffold templates,
+   known non-manifest files, and files in `testdata/invalid/`). In
+   `--lint-only` mode this is the only pass.
+2. **Rendered pass** (Post-Build Validation phase): validates the
+   AVP/Helm-rendered overlay output. This is the authoritative pass for
+   manifests inside overlays — raw source (with unresolved placeholders)
+   is not validated here.
+
+Files covered by a scoped overlay's build chain are validated only in the
+rendered pass (raw is skipped for them); in `--lint-only` mode every
+changed manifest is validated raw. CEL rules are checked against the
+final manifests that will deploy (rendered pass) as well as raw source
+for overlay-independent files (raw pass).
 
 - **Package:** `pkg/validator/cel`
 - **Default:** on. **Disable:** `--disable-checks cel`
