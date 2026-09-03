@@ -93,8 +93,73 @@ func IsExcludedCluster(cluster string) bool {
 
 // runTimeout bounds a single scafctl invocation (the whole app's overlays,
 // generated in one shot into a temp dir - see Run) so a hung or slow
-// scaffold-tool invocation can't stall the pipeline indefinitely.
+// scaffold-tool invocation can't stall the pipeline indefinitely. Each retry
+// attempt gets its own fresh runTimeout budget (see retryExec).
 const runTimeout = 2 * time.Minute
+
+// RetryAttempts bounds how many total execution attempts are made per
+// scaffold-tool invocation when it fails with a transient error signature
+// (see IsTransientError). 1 disables retrying entirely. Generic default of 3;
+// an org layer may tune it via a Configure()-style package-var override.
+var RetryAttempts = 3
+
+// RetryBackoff is the initial sleep between transient-failure attempts; it
+// doubles after each failed attempt (attempts slept: base, 2x, 4x, ...).
+var RetryBackoff = 3 * time.Second
+
+// OnRetry, when set, is invoked after each transient failure that triggers a
+// further attempt, primarily for observability (logging/reporting). It is a
+// deliberate generic seam (nil by default) so callers can surface retry counts
+// without the core printing to stdout.
+var OnRetry func(attempt, maxAttempts int, err error)
+
+// IsTransientError decides whether a failed scaffold-tool invocation's
+// diagnostic text looks like a transient failure worth retrying (network
+// EOF/reset/timeout during an in-tool remote fetch) rather than a genuine,
+// non-transient error (bad config, real drift). Generic default matches the
+// common transient network signatures; an org layer may override it if its
+// tool emits a different signature. Implementations must NOT treat context
+// deadline-exceeded as transient - a genuinely hung tool should fail fast, not
+// extend CI wall-clock.
+var IsTransientError = defaultIsTransientError
+
+var transientErrorRe = regexp.MustCompile(`(?i)unexpected eof|connection reset|broken pipe|i/o timeout|no such host|connection refused|handshake timeout|temporary failure|temporarily unavailable`)
+
+// defaultIsTransientError is the generic default for IsTransientError: a
+// substring match against the common transient network signatures.
+func defaultIsTransientError(text string) bool {
+	return transientErrorRe.MatchString(text)
+}
+
+// retryExec runs fn (a single scaffold-tool execution attempt that returns its
+// diagnostic output on success and an error on failure) up to RetryAttempts
+// times, retrying only when the prior attempt failed and its diagnostic text
+// matches IsTransientError - so a genuine failure still fails fast on attempt
+// 1. OnRetry, if set, is called before each subsequent attempt.
+func retryExec(fn func() (string, error)) (string, error) {
+	if RetryAttempts < 1 {
+		RetryAttempts = 1
+	}
+	var (
+		output string
+		err    error
+	)
+	for attempt := 1; ; attempt++ {
+		output, err = fn()
+		// Classify against both the attempt's diagnostic output and the error
+		// text: for exec failures the interesting transient signature (a
+		// network EOF/reset from an in-tool remote fetch) typically appears in
+		// the tool's captured stdout/stderr, while err.Error() alone is often
+		// just "exit status N".
+		if err == nil || attempt >= RetryAttempts || !IsTransientError(output+"\n"+err.Error()) {
+			return output, err
+		}
+		if OnRetry != nil {
+			OnRetry(attempt, RetryAttempts, err)
+		}
+		time.Sleep(RetryBackoff * time.Duration(1<<uint(attempt-1)))
+	}
+}
 
 // RunOptions configures one app's scaffold-drift run.
 type RunOptions struct {
@@ -382,10 +447,16 @@ func runDiffDirs(opts RunOptions, configPath string, toRun []string, summary *Su
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
-	defer cancel()
-	if err := runScafctl(ctx, configPath, tmp); err != nil {
-		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", err))
+	out, err := retryExec(func() (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+		defer cancel()
+		if runErr := runScafctl(ctx, configPath, tmp); runErr != nil {
+			return runErr.Error(), runErr
+		}
+		return "", nil
+	})
+	if err != nil {
+		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", out))
 		summary.Failed += len(toRun)
 		return
 	}
@@ -491,13 +562,16 @@ func runDryRunParse(opts RunOptions, toRun []string, summary *Summary) {
 // mismatch (overlay exists / deleted by this PR) or a skip (new cluster not
 // yet rolled out). A tool execution failure fails every toRun overlay.
 func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
-	defer cancel()
 	args := ScaffoldArgs(opts.App, "", true)
-	cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
-	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
-	output := stripANSI(string(out))
+	out, err := retryExec(func() (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
+		cmd.Env = os.Environ()
+		b, cmdErr := cmd.CombinedOutput()
+		return string(b), cmdErr
+	})
+	output := stripANSI(out)
 	if err != nil {
 		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed for %s: %s", opts.App, output))
 		summary.Failed += len(toRun)
@@ -554,16 +628,23 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 // MismatchFiles and classified downstream (blocking vs. pre-existing);
 // "error" is a genuine tool/execution failure, always blocking.
 func dryRunOneCluster(app, cluster string, changedFiles []string) (status string, mismatchFiles []string, errMsg string) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
-	defer cancel()
 	args := ScaffoldArgs(app, cluster, false)
-	cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
-	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
-	output := stripANSI(string(out))
+	var timedOut bool
+	out, err := retryExec(func() (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
+		cmd.Env = os.Environ()
+		b, cmdErr := cmd.CombinedOutput()
+		if cmdErr != nil && ctx.Err() == context.DeadlineExceeded {
+			timedOut = true
+		}
+		return string(b), cmdErr
+	})
+	output := stripANSI(out)
 
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+		if timedOut {
 			return "error", nil, fmt.Sprintf("scaffold timed out for %s (%s)", cluster, runTimeout)
 		}
 		// If the overlay was deleted by this PR, a scaffold failure for it
