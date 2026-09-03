@@ -12,6 +12,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,8 +168,35 @@ func retryExec(fn func() (string, error)) (string, error) {
 		if onRetry != nil {
 			onRetry(attempt, retryAttempts, err)
 		}
-		time.Sleep(retryBackoff * time.Duration(1<<uint(attempt-1)))
+		time.Sleep(computeBackoff(retryBackoff, attempt))
 	}
+}
+
+// maxBackoffShift caps the exponential backoff doubling at 2^20 (≈ a million
+// times the base). Any larger shift means the sleep is already impractically
+// long, so capping avoids overflowing a time.Duration (a signed int64) when an
+// org overrides RetryAttempts to a very large value.
+const maxBackoffShift = 20
+
+// computeBackoff returns the sleep between retry attempts: base doubled
+// attempt-1 times. A non-positive base yields zero sleep (no backoff). Growth
+// is clamped at maxBackoffShift and the result is clamped to the max
+// time.Duration on overflow, so overridden settings can't produce a negative
+// or undefined sleep.
+func computeBackoff(base time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		return 0
+	}
+	shift := attempt - 1
+	if shift > maxBackoffShift {
+		shift = maxBackoffShift
+	}
+	factor := int64(1) << uint(shift)
+	d := base * time.Duration(factor)
+	if base != 0 && d/time.Duration(factor) != base {
+		return time.Duration(math.MaxInt64)
+	}
+	return d
 }
 
 // RunOptions configures one app's scaffold-drift run.

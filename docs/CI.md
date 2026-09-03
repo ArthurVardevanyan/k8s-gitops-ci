@@ -680,12 +680,17 @@ tested, cover every way a change can require this:
   vs. `clusterOverlays` (per-cluster, driven by `RunOptions.FullTest`) split.
 
 For each app, `pkg/scaffold.Run` regenerates its overlays via the scaffold
-tool (each invocation bounded by a 2-minute timeout) and diffs the result
-against every overlay actually being checked, **bounded-parallel** (up to
+tool and diffs the result against every overlay actually being checked,
+**bounded-parallel** (up to
 `runtime.NumCPU()*2` overlays at once - the per-app fan-out above is
-similarly bounded-parallel across apps). When an invocation fails with a
-**transient** signature (e.g. a network `unexpected EOF`/connection-reset/
-timeout from an in-tool remote fetch), it is retried up to a bounded number
+similarly bounded-parallel across apps). Each scaffold-tool invocation is
+bounded by a 2-minute timeout **per attempt** (see the retry behavior
+below), so when a transient failure is retried the worst-case wall-clock for
+one app's check can exceed 2 minutes - up to roughly `RetryAttempts × 2m`
+plus backoff, e.g. ~6 minutes with the default 3 attempts. When an
+invocation fails with a **transient** signature (e.g. a network
+`unexpected EOF`/connection-reset/timeout from an in-tool remote fetch), it
+is retried up to a bounded number
 of times (`scaffold.RetryAttempts`, default 3, exponential sleep from
 `scaffold.RetryBackoff`, default `3s`) before being treated as a genuine
 failure - so a transient network blip during an in-tool fetch doesn't fail

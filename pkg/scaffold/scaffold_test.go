@@ -3,12 +3,14 @@ package scaffold
 import (
 	"context"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHasScaffoldEnabled_Default(t *testing.T) {
@@ -593,13 +595,16 @@ func TestExtractCreatedFiles_CldctlMarkers(t *testing.T) {
 // ── Transient-failure retry ──────────────────────────────────────────────────
 
 // applyRetryDefaults sets RetryAttempts for a test, clears RetryBackoff (so
-// retry tests stay fast) and OnRetry (so a hook set by an earlier test can't
-// leak in), restoring all three on cleanup.
+// retry tests stay fast), OnRetry and IsTransientError (so hooks/matchers set
+// by an earlier test can't leak in; retryExec falls back to the default matcher
+// when IsTransientError is nil), restoring all four on cleanup.
 func applyRetryDefaults(t *testing.T, attempts int) func() {
 	t.Helper()
-	origAttempts, origBackoff, origOnRetry := RetryAttempts, RetryBackoff, OnRetry
-	RetryAttempts, RetryBackoff, OnRetry = attempts, 0, nil
-	return func() { RetryAttempts, RetryBackoff, OnRetry = origAttempts, origBackoff, origOnRetry }
+	origAttempts, origBackoff, origOnRetry, origIsTransient := RetryAttempts, RetryBackoff, OnRetry, IsTransientError
+	RetryAttempts, RetryBackoff, OnRetry, IsTransientError = attempts, 0, nil, nil
+	return func() {
+		RetryAttempts, RetryBackoff, OnRetry, IsTransientError = origAttempts, origBackoff, origOnRetry, origIsTransient
+	}
 }
 
 // fakeScaffoldToolCounting points Binary at a stateful fake that records the
@@ -705,6 +710,41 @@ func TestRetryExec_DoesNotMutatePackageVars(t *testing.T) {
 	}
 	if RetryAttempts != 0 {
 		t.Errorf("retryExec must not mutate the package var RetryAttempts, got %d", RetryAttempts)
+	}
+}
+
+func TestComputeBackoff(t *testing.T) {
+	base := 3 * time.Second
+	cases := []struct {
+		name     string
+		base     time.Duration
+		attempt  int
+		want     time.Duration
+		overflow bool
+	}{
+		{name: "non-positive base is zero", base: 0, attempt: 2, want: 0},
+		{name: "negative base is zero", base: -time.Second, attempt: 2, want: 0},
+		{name: "first attempt is base", base: base, attempt: 1, want: base},
+		{name: "second attempt doubles", base: base, attempt: 2, want: 2 * base},
+		{name: "third attempt quadruples", base: base, attempt: 3, want: 4 * base},
+		{name: "huge attempt clamps (no overflow)", base: time.Nanosecond, attempt: maxBackoffShift + 100, want: time.Duration(int64(1) << uint(maxBackoffShift))},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := computeBackoff(c.base, c.attempt)
+			if got < 0 {
+				t.Fatalf("computeBackoff returned a negative duration: %v (overflow)", got)
+			}
+			if c.overflow {
+				if got != time.Duration(math.MaxInt64) {
+					t.Errorf("expected max time.Duration clamp, got %v", got)
+				}
+				return
+			}
+			if got != c.want {
+				t.Errorf("computeBackoff(%v, %d) = %v, want %v", c.base, c.attempt, got, c.want)
+			}
+		})
 	}
 }
 
