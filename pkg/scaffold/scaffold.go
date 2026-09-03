@@ -145,6 +145,9 @@ func retryExec(fn func() (string, error)) (string, error) {
 	}
 	retryBackoff := RetryBackoff
 	isTransient := IsTransientError
+	if isTransient == nil {
+		isTransient = defaultIsTransientError
+	}
 	onRetry := OnRetry
 
 	var (
@@ -643,9 +646,7 @@ func dryRunOneCluster(app, cluster string, changedFiles []string) (status string
 		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
 		cmd.Env = os.Environ()
 		b, cmdErr := cmd.CombinedOutput()
-		if cmdErr != nil && ctx.Err() == context.DeadlineExceeded {
-			timedOut = true
-		}
+		timedOut = cmdErr != nil && ctx.Err() == context.DeadlineExceeded
 		return stripANSI(string(b)), cmdErr
 	})
 	output := out

@@ -603,10 +603,11 @@ func applyRetryDefaults(t *testing.T, attempts int) func() {
 }
 
 // fakeScaffoldToolCounting points Binary at a stateful fake that records the
-// invocation count in countFile and, on each call, runs flakyScript with the
-// 1-based invocation number substituted for %d. It omits the SCAFFOLD_OUTPUT
-// env var intent of fakeScaffoldTool, letting the script fully control output.
-// Callers must restore package vars via applyRetryDefaults.
+// invocation count in countFile and, on each call, runs flakyScript. flakyScript
+// can reference the shell variable $n (the 1-based invocation count) to vary
+// behavior per call, e.g. to fail once then succeed. It omits the
+// SCAFFOLD_OUTPUT env var intent of fakeScaffoldTool, letting the script fully
+// control output. Callers must restore package vars via applyRetryDefaults.
 func fakeScaffoldToolCounting(t *testing.T, countFile, flakyScript string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -652,7 +653,10 @@ func invocationCount(t *testing.T, countFile string) int {
 func setupRetryApp(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	origWD, _ := os.Getwd()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -782,5 +786,107 @@ func TestRun_DryRunParse_TransientRetryExhausted(t *testing.T) {
 		if !strings.Contains(summary.Errors[0], "unexpected EOF") {
 			t.Errorf("expected final error to surface the underlying failure, got %q", summary.Errors[0])
 		}
+	}
+}
+
+// ── DiffDirs retry path ──────────────────────────────────────────────────────
+
+// TestRun_DiffDirs_TransientRetrySucceeds verifies the DiffDirs execution path
+// (runScafctl) retries a transient failure and succeeds on retry.
+func TestRun_DiffDirs_TransientRetrySucceeds(t *testing.T) {
+	_ = setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	calls := 0
+	withFakeScafctl(t, func(_ context.Context, _, outputDir string) error {
+		calls++
+		if calls == 1 {
+			return errors.New("doWebCall - failed to read the response body (Status Code: 200): unexpected EOF")
+		}
+		// Generate matching content for the committed overlay so the diff passes.
+		mustWrite(t, filepath.Join(outputDir, "dev", "kustomization.yaml"), "resources: []\n")
+		return nil
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}}) // DriftMode defaults to DiffDirs
+	if summary.Failed != 0 || len(summary.Errors) != 0 {
+		t.Errorf("expected DiffDirs transient failure to be retried to success, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if summary.Passed != 1 {
+		t.Errorf("expected 1 pass after DiffDirs retry, got passed=%d", summary.Passed)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 scafctl invocations in DiffDirs (1 fail + 1 retry), got %d", calls)
+	}
+}
+
+// TestRun_DiffDirs_NonTransientNotRetried verifies DiffDirs fails fast (single
+// invocation) on a non-transient failure.
+func TestRun_DiffDirs_NonTransientNotRetried(t *testing.T) {
+	_ = setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	calls := 0
+	withFakeScafctl(t, func(_ context.Context, _, _ string) error {
+		calls++
+		return errors.New("config parse error")
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed == 0 || len(summary.Errors) == 0 {
+		t.Errorf("expected a DiffDirs execution failure, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if calls != 1 {
+		t.Errorf("expected no DiffDirs retry for a non-transient error, got %d invocations", calls)
+	}
+}
+
+// ── FullTest retry path ─────────────────────────────────────────────────────
+
+// TestRun_DryRunParse_FullTest_TransientRetrySucceeds verifies the FullTest
+// dry-run path uses the same retry-then-succeed semantics as the per-cluster
+// path.
+func TestRun_DryRunParse_FullTest_TransientRetrySucceeds(t *testing.T) {
+	countFile := setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	fakeScaffoldToolCounting(t, countFile,
+		"if [ \"$n\" -eq 1 ]; then\n"+
+			"  printf 'doWebCall - failed to read the response body (Status Code: 200): unexpected EOF'\n"+
+			"  exit 1\n"+
+			"fi\n"+
+			"exit 0\n",
+	)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}, FullTest: true})
+	if summary.Failed != 0 || len(summary.Errors) != 0 {
+		t.Errorf("expected FullTest transient failure to be retried to success, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if got := invocationCount(t, countFile); got != 2 {
+		t.Errorf("expected 2 FullTest invocations (1 fail + 1 retry), got %d", got)
+	}
+}
+
+// TestRun_DryRunParse_FullTest_TimeoutNotRetried verifies a context-deadline
+// timeout text is not treated as transient, so the FullTest path fails fast on
+// a single invocation.
+func TestRun_DryRunParse_FullTest_TimeoutNotRetried(t *testing.T) {
+	countFile := setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	fakeScaffoldToolCounting(t, countFile,
+		"printf 'scaffold timed out: context deadline exceeded'\nexit 1\n",
+	)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}, FullTest: true})
+	if summary.Failed == 0 || len(summary.Errors) == 0 {
+		t.Errorf("expected a FullTest execution failure, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if got := invocationCount(t, countFile); got != 1 {
+		t.Errorf("expected no retry for context deadline exceeded, got %d invocations", got)
 	}
 }
