@@ -79,8 +79,10 @@ func (r *Result) Summary() string {
 // kubernetesCELEnv builds a single CEL environment shared across all rule
 // compilations. Creating this env (which registers 7 k8s CEL libraries) is
 // expensive, so it is built once and reused rather than rebuilt per rule.
+// If creation fails, panic at init time — the CEL subsystem is unusable
+// without the environment and there is no meaningful runtime recovery path.
 var kubernetesCELEnv = func() *cel.Env {
-	env, _ := cel.NewEnv(
+	env, err := cel.NewEnv(
 		cel.Variable("self", cel.AnyType),
 		library.IP(),
 		library.Lists(),
@@ -90,6 +92,9 @@ var kubernetesCELEnv = func() *cel.Env {
 		library.URLs(),
 		library.Regex(),
 	)
+	if err != nil {
+		panic(fmt.Sprintf("cel: failed to create Kubernetes CEL environment: %v", err))
+	}
 	return env
 }()
 
@@ -318,35 +323,6 @@ func extractRulePath(schemaPath string) string {
 		return base[:len(base)-len(ext)]
 	}
 	return base
-}
-
-// compileCEL compiles a CEL expression string into a program using Kubernetes CEL libraries.
-func compileCEL(source string) (cel.Program, error) {
-	env, err := cel.NewEnv(
-		cel.Variable("self", cel.AnyType),
-		library.IP(),
-		library.Lists(),
-		library.Quantity(),
-		library.SemverLib(),
-		library.CIDR(),
-		library.URLs(),
-		library.Regex(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create CEL environment: %w", err)
-	}
-
-	ast, issues := env.Compile(source)
-	if issues != nil && issues.Err() != nil {
-		return nil, fmt.Errorf("failed to compile CEL expression: %w", issues.Err())
-	}
-
-	program, err := env.Program(ast)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create CEL program: %w", err)
-	}
-
-	return program, nil
 }
 
 // ValidateBytes evaluates all compiled CEL rules against rendered YAML bytes.
