@@ -686,7 +686,7 @@ tool and diffs the result against every overlay actually being checked,
 similarly bounded-parallel across apps). Each scaffold-tool invocation is
 bounded by a 2-minute timeout **per attempt** (see the retry behavior
 below), so when a transient failure is retried the worst-case wall-clock for
-one app's check can exceed 2 minutes - up to roughly `scaffold.RetryAttempts × 2m`
+one app's check can exceed 2 minutes - up to roughly `scaffold.RetryAttempts * 2m`
 plus backoff, e.g. ~6 minutes with the default 3 attempts. When an
 invocation fails with a **transient** signature (e.g. a network
 `unexpected EOF`/connection-reset/timeout from an in-tool remote fetch), it

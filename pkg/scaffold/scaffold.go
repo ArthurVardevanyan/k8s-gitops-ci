@@ -721,15 +721,13 @@ func dryRunOneCluster(app, cluster string, changedFiles []string) (status string
 	output := out
 
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return "error", nil, fmt.Sprintf("scaffold timed out for %s (%s)", cluster, runTimeout)
-		}
-		// If the overlay was deleted by this PR, a scaffold failure for it
-		// is the expected outcome of that removal, not real drift.
-		if !overlayExists(app, cluster) {
+		// If the overlay was deleted by this PR, a scaffold failure for it is
+		// the expected outcome of that removal, not real drift - unless it was
+		// a timeout, which is always reported.
+		if !errors.Is(err, context.DeadlineExceeded) && !overlayExists(app, cluster) {
 			return "passed", nil, ""
 		}
-		return "error", nil, fmt.Sprintf("scaffold command failed for %s: %s", cluster, output)
+		return "error", nil, scaffoldExecError(cluster, output, err)
 	}
 
 	created := ExtractCreatedFiles(output)
