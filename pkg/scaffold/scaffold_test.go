@@ -947,6 +947,8 @@ func TestScaffoldExecError(t *testing.T) {
 		{name: "timeout", err: timeout, output: "context deadline exceeded", want: fmt.Sprintf("scaffold timed out for myapp (%s)", runTimeout)},
 		{name: "transient network", err: errors.New("exit status 1"), output: "doWebCall - unexpected EOF", want: "scaffold command failed for myapp: doWebCall - unexpected EOF"},
 		{name: "config error", err: errors.New("exit status 2"), output: "config parse error", want: "scaffold command failed for myapp: config parse error"},
+		{name: "no output falls back to error", err: errors.New("exec: \"scafctl\": executable file not found in $PATH"), output: "", want: "scaffold command failed for myapp: exec: \"scafctl\": executable file not found in $PATH"},
+		{name: "whitespace-only output falls back to error", err: errors.New("exit status 1"), output: "   \n", want: "scaffold command failed for myapp: exit status 1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

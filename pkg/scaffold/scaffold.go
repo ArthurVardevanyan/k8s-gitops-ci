@@ -690,6 +690,12 @@ func scaffoldExecError(app, output string, err error) string {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Sprintf("scaffold timed out for %s (%s)", app, runTimeout)
 	}
+	// A tool that fails without emitting any output (e.g. the binary isn't
+	// found) would otherwise yield a useless '...: ' trailing colon; fall back
+	// to the underlying error so the failure stays actionable.
+	if strings.TrimSpace(output) == "" {
+		return fmt.Sprintf("scaffold command failed for %s: %s", app, err)
+	}
 	return fmt.Sprintf("scaffold command failed for %s: %s", app, output)
 }
 
