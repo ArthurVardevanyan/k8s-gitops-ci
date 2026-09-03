@@ -830,7 +830,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 				}
 			}
 			if schemaDir != "" {
-				compiledRules, compileErr := cel.CompileRules(schemaDir)
+				compiledRules, compileErr := cel.CompileRulesCached(schemaDir)
 				if compileErr != nil {
 					log.Warn("cel: failed to compile rules: %v", compileErr)
 				}
@@ -866,8 +866,9 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		}
 		if schemaDir != "" {
 			// Compile CEL rules for raw pass (may already be compiled from
-			// rendered pass, but CompileRules is idempotent and cheap).
-			compiledRules, compileErr := cel.CompileRules(schemaDir)
+			// the rendered pass; CompileRulesCached returns the cached result
+			// when the same schema directory was already compiled).
+			compiledRules, compileErr := cel.CompileRulesCached(schemaDir)
 			if compileErr != nil {
 				log.Warn("cel: failed to compile rules: %v", compileErr)
 			}

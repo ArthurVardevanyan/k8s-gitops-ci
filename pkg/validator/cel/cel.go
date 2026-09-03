@@ -1,6 +1,7 @@
 package cel
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -75,6 +76,23 @@ func (r *Result) Summary() string {
 	return s
 }
 
+// kubernetesCELEnv builds a single CEL environment shared across all rule
+// compilations. Creating this env (which registers 7 k8s CEL libraries) is
+// expensive, so it is built once and reused rather than rebuilt per rule.
+var kubernetesCELEnv = func() *cel.Env {
+	env, _ := cel.NewEnv(
+		cel.Variable("self", cel.AnyType),
+		library.IP(),
+		library.Lists(),
+		library.Quantity(),
+		library.SemverLib(),
+		library.CIDR(),
+		library.URLs(),
+		library.Regex(),
+	)
+	return env
+}()
+
 // CompileRules walks the extracted schema directory, extracts x-kubernetes-validations
 // from each JSON schema file, compiles CEL expressions with Kubernetes CEL libraries,
 // and builds the kind→apiVersion→rules index. Rules containing oldSelf are skipped
@@ -125,12 +143,45 @@ func CompileRules(schemaDir string) (*CompiledRules, error) {
 	return rules, nil
 }
 
+// compileCache holds CompiledRules keyed by schema directory path so that
+// repeated calls for the same directory return the same cached instance.
+// A package-level cache lets test binaries (which share one extraction dir
+// via TestMain) compile once across dozens of RunAll calls, and ensures
+// that the rendered + raw CEL passes in a single pipeline invocation share
+// one compile instead of two.
+var compileCache = struct {
+	sync.Mutex
+	m map[string]*CompiledRules
+}{m: make(map[string]*CompiledRules)}
+
+// CompileRulesCached is a memoized wrapper around CompileRules: calls for the
+// same schema directory return the previously-compiled result.
+func CompileRulesCached(schemaDir string) (*CompiledRules, error) {
+	compileCache.Lock()
+	defer compileCache.Unlock()
+	if cached, ok := compileCache.m[schemaDir]; ok {
+		return cached, nil
+	}
+	rules, err := CompileRules(schemaDir)
+	if err != nil {
+		return nil, err
+	}
+	compileCache.m[schemaDir] = rules
+	return rules, nil
+}
+
 // parseSchemaFile reads a JSON schema file, extracts x-kubernetes-validations,
 // compiles each CEL rule, and indexes it by kind/apiVersion.
 func parseSchemaFile(schemaPath string, rules *CompiledRules) error {
 	data, err := os.ReadFile(schemaPath)
 	if err != nil {
 		return err
+	}
+
+	// Pre-filter: most schema files (94%+) have no x-kubernetes-validations;
+	// skip the expensive JSON unmarshal if the key text isn't present.
+	if !bytes.Contains(data, []byte("x-kubernetes-validations")) {
+		return nil
 	}
 
 	var schema map[string]interface{}
@@ -170,7 +221,7 @@ func parseSchemaFile(schemaPath string, rules *CompiledRules) error {
 		}
 
 		// Compile the CEL program.
-		program, err := compileCEL(source)
+		program, err := compileCELWithEnv(source, kubernetesCELEnv)
 		if err != nil {
 			// Compilation failed - log and skip this rule.
 			continue
@@ -193,6 +244,23 @@ func parseSchemaFile(schemaPath string, rules *CompiledRules) error {
 	}
 
 	return nil
+}
+
+// compileCELWithEnv compiles a CEL expression using a pre-built environment,
+// avoiding the repeated cost of creating a new CEL env (with all 7 k8s
+// libraries) for every rule.
+func compileCELWithEnv(source string, env *cel.Env) (cel.Program, error) {
+	ast, issues := env.Compile(source)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("failed to compile CEL expression: %w", issues.Err())
+	}
+
+	program, err := env.Program(ast)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CEL program: %w", err)
+	}
+
+	return program, nil
 }
 
 // extractKindFromSchema extracts the resource kind and apiVersion from a schema file.
