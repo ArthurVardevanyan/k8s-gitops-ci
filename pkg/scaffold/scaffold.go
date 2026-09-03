@@ -135,11 +135,18 @@ func defaultIsTransientError(text string) bool {
 // diagnostic output on success and an error on failure) up to RetryAttempts
 // times, retrying only when the prior attempt failed and its diagnostic text
 // matches IsTransientError - so a genuine failure still fails fast on attempt
-// 1. OnRetry, if set, is called before each subsequent attempt.
+// 1. OnRetry, if set, is called before each subsequent attempt. The retry
+// configuration vars are snapshot into locals so concurrent invocations (the
+// parallel overlay worker pools) neither race on nor mutate package state.
 func retryExec(fn func() (string, error)) (string, error) {
-	if RetryAttempts < 1 {
-		RetryAttempts = 1
+	retryAttempts := RetryAttempts
+	if retryAttempts < 1 {
+		retryAttempts = 1
 	}
+	retryBackoff := RetryBackoff
+	isTransient := IsTransientError
+	onRetry := OnRetry
+
 	var (
 		output string
 		err    error
@@ -150,14 +157,14 @@ func retryExec(fn func() (string, error)) (string, error) {
 		// text: for exec failures the interesting transient signature (a
 		// network EOF/reset from an in-tool remote fetch) typically appears in
 		// the tool's captured stdout/stderr, while err.Error() alone is often
-		// just "exit status N".
-		if err == nil || attempt >= RetryAttempts || !IsTransientError(output+"\n"+err.Error()) {
+		// just "exit status N". The output is ANSI-stripped by the caller.
+		if err == nil || attempt >= retryAttempts || !isTransient(output+"\n"+err.Error()) {
 			return output, err
 		}
-		if OnRetry != nil {
-			OnRetry(attempt, RetryAttempts, err)
+		if onRetry != nil {
+			onRetry(attempt, retryAttempts, err)
 		}
-		time.Sleep(RetryBackoff * time.Duration(1<<uint(attempt-1)))
+		time.Sleep(retryBackoff * time.Duration(1<<uint(attempt-1)))
 	}
 }
 
@@ -451,7 +458,7 @@ func runDiffDirs(opts RunOptions, configPath string, toRun []string, summary *Su
 		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		defer cancel()
 		if runErr := runScafctl(ctx, configPath, tmp); runErr != nil {
-			return runErr.Error(), runErr
+			return stripANSI(runErr.Error()), runErr
 		}
 		return "", nil
 	})
@@ -569,9 +576,9 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
 		cmd.Env = os.Environ()
 		b, cmdErr := cmd.CombinedOutput()
-		return string(b), cmdErr
+		return stripANSI(string(b)), cmdErr
 	})
-	output := stripANSI(out)
+	output := out
 	if err != nil {
 		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed for %s: %s", opts.App, output))
 		summary.Failed += len(toRun)
@@ -639,9 +646,9 @@ func dryRunOneCluster(app, cluster string, changedFiles []string) (status string
 		if cmdErr != nil && ctx.Err() == context.DeadlineExceeded {
 			timedOut = true
 		}
-		return string(b), cmdErr
+		return stripANSI(string(b)), cmdErr
 	})
-	output := stripANSI(out)
+	output := out
 
 	if err != nil {
 		if timedOut {

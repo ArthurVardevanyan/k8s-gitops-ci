@@ -687,7 +687,7 @@ similarly bounded-parallel across apps). When an invocation fails with a
 **transient** signature (e.g. a network `unexpected EOF`/connection-reset/
 timeout from an in-tool remote fetch), it is retried up to a bounded number
 of times (`scaffold.RetryAttempts`, default 3, exponential sleep from
-`scaffold.RetryBackoff`, default 3 s) before being treated as a genuine
+`scaffold.RetryBackoff`, default `3s`) before being treated as a genuine
 failure - so a transient network blip during an in-tool fetch doesn't fail
 the whole pipeline. Only output that matches `scaffold.IsTransientError`
 (default: the common transient network signatures) is retried; a

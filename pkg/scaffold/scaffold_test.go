@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestHasScaffoldEnabled_Default(t *testing.T) {
@@ -593,12 +592,13 @@ func TestExtractCreatedFiles_CldctlMarkers(t *testing.T) {
 
 // ── Transient-failure retry ──────────────────────────────────────────────────
 
-// applyRetryDefaults sets RetryAttempts/RetryBackoff/OnRetry for a test,
-// restoring the originals on cleanup. backoff 0 keeps retry tests fast.
-func applyRetryDefaults(t *testing.T, attempts int, backoff time.Duration) func() {
+// applyRetryDefaults sets RetryAttempts for a test, clears RetryBackoff (so
+// retry tests stay fast) and OnRetry (so a hook set by an earlier test can't
+// leak in), restoring all three on cleanup.
+func applyRetryDefaults(t *testing.T, attempts int) func() {
 	t.Helper()
 	origAttempts, origBackoff, origOnRetry := RetryAttempts, RetryBackoff, OnRetry
-	RetryAttempts, RetryBackoff, OnRetry = attempts, backoff, origOnRetry
+	RetryAttempts, RetryBackoff, OnRetry = attempts, 0, nil
 	return func() { RetryAttempts, RetryBackoff, OnRetry = origAttempts, origBackoff, origOnRetry }
 }
 
@@ -688,9 +688,25 @@ func TestDefaultIsTransientError(t *testing.T) {
 	}
 }
 
+func TestRetryExec_DoesNotMutatePackageVars(t *testing.T) {
+	restore := applyRetryDefaults(t, 0) // 0 attempts clamped to 1 internally
+	defer restore()
+	var calls int
+	_, err := retryExec(func() (string, error) { calls++; return "", errors.New("exit status 1") })
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if calls != 1 {
+		t.Errorf("expected a single attempt (attempts<1 clamps to 1), got %d", calls)
+	}
+	if RetryAttempts != 0 {
+		t.Errorf("retryExec must not mutate the package var RetryAttempts, got %d", RetryAttempts)
+	}
+}
+
 func TestRun_DryRunParse_TransientRetrySucceeds(t *testing.T) {
 	countFile := setupRetryApp(t)
-	restore := applyRetryDefaults(t, 3, 0)
+	restore := applyRetryDefaults(t, 3)
 	defer restore()
 
 	var retries int
@@ -722,7 +738,7 @@ func TestRun_DryRunParse_TransientRetrySucceeds(t *testing.T) {
 
 func TestRun_DryRunParse_NonTransientErrorNotRetried(t *testing.T) {
 	countFile := setupRetryApp(t)
-	restore := applyRetryDefaults(t, 3, 0)
+	restore := applyRetryDefaults(t, 3)
 	defer restore()
 
 	var retries int
@@ -745,7 +761,7 @@ func TestRun_DryRunParse_NonTransientErrorNotRetried(t *testing.T) {
 
 func TestRun_DryRunParse_TransientRetryExhausted(t *testing.T) {
 	countFile := setupRetryApp(t)
-	restore := applyRetryDefaults(t, 3, 0)
+	restore := applyRetryDefaults(t, 3)
 	defer restore()
 
 	// Always fails transiently - after RetryAttempts it must still fail.
