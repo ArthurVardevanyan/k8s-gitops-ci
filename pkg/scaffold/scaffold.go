@@ -494,6 +494,12 @@ func runDiffDirs(opts RunOptions, configPath string, toRun []string, summary *Su
 	defer func() { _ = os.RemoveAll(tmp) }()
 
 	out, err := retryExec(func() (string, error) {
+		// Reset the output dir before every attempt (including the first) so a
+		// failed run's partial/extra files can never pollute a later attempt's
+		// diff, which could produce false drift or mask real drift.
+		if resetErr := resetDir(tmp); resetErr != nil {
+			return resetErr.Error(), resetErr
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		defer cancel()
 		if runErr := runScafctl(ctx, configPath, tmp); runErr != nil {
@@ -758,6 +764,16 @@ func diffDirs(generated, committed string) (string, error) {
 	cmd := exec.CommandContext(context.Background(), "diff", "-rq", generated, committed) //nolint:gosec // both paths are derived from this package's own temp dir + convention-based overlay layout, not user input
 	out, _ := cmd.Output()
 	return stripANSI(string(out)), nil
+}
+
+// resetDir removes dir and recreates it empty (mode 0700, matching
+// os.MkdirTemp's default), so each scaffold attempt runs against a clean
+// output tree even when reusing the same directory across retries.
+func resetDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0o700)
 }
 
 var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")

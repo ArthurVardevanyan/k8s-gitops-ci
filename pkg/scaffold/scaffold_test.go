@@ -887,6 +887,42 @@ func TestRun_DiffDirs_TransientRetrySucceeds(t *testing.T) {
 	}
 }
 
+// TestRun_DiffDirs_RetryResetsOutputDir guards against a failed attempt's
+// partial output polluting a later retry's diff: the output dir must be cleared
+// before every attempt, else stale files could produce false drift or mask real
+// drift. Attempt 1 writes a stray file then fails transiently; attempt 2
+// asserts the stray file is gone before writing matching content.
+func TestRun_DiffDirs_RetryResetsOutputDir(t *testing.T) {
+	_ = setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	calls := 0
+	withFakeScafctl(t, func(_ context.Context, _, outputDir string) error {
+		calls++
+		if calls == 1 {
+			// Attempt 1 partially writes into the output dir before failing.
+			mustWrite(t, filepath.Join(outputDir, "dev", "stale.yaml"), "stale\n")
+			return errors.New("doWebCall - failed to read the response body (Status Code: 200): unexpected EOF")
+		}
+		// Attempt 2 must run against a clean output tree: the stray file from
+		// attempt 1 must already be removed by the reset.
+		if _, err := os.Stat(filepath.Join(outputDir, "dev", "stale.yaml")); !os.IsNotExist(err) {
+			t.Errorf("expected attempt 2 to run against a reset (empty) output dir; stale file still present (err=%v)", err)
+		}
+		mustWrite(t, filepath.Join(outputDir, "dev", "kustomization.yaml"), "resources: []\n")
+		return nil
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed != 0 || len(summary.Errors) != 0 {
+		t.Errorf("expected DiffDirs retry (with output reset) to pass, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 scafctl invocations, got %d", calls)
+	}
+}
+
 // TestRun_DiffDirs_NonTransientNotRetried verifies DiffDirs fails fast (single
 // invocation) on a non-transient failure.
 func TestRun_DiffDirs_NonTransientNotRetried(t *testing.T) {
