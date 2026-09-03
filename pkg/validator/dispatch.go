@@ -61,6 +61,24 @@ func quickAPIVersion(data []byte) string {
 	return rootScalar(data, "apiVersion")
 }
 
+// quickNamespace extracts the document's metadata.namespace. It is used to
+// populate check.Finding.Namespace on resource-compliance findings so that
+// attribution keys (resourceKeyFor) stay namespace-aware. Without it, two
+// resources sharing a Kind and Name across different namespaces (e.g. a
+// workload sourced from a shared component and referenced by many overlays)
+// collapse onto one "Kind/Name" key, which misattributes unrelated findings
+// and can turn a pre-existing issue in an untouched namespace into a blocking
+// one when the PR only changed the other namespace's copy.
+func quickNamespace(data []byte) string {
+	var root map[string]interface{}
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return ""
+	}
+	meta, _ := root["metadata"].(map[string]interface{})
+	ns, _ := meta["namespace"].(string)
+	return ns
+}
+
 // rootScalar returns the value of a root-level string field.
 //
 // This drives dispatch, so an answer that is merely close is worse than no

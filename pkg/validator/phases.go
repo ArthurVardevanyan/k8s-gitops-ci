@@ -1571,6 +1571,7 @@ func splitDocuments(data []byte) [][]byte {
 func evaluateDoc(doc []byte, files []string, checks []check.Check, selectors []exempt.Selector) ([]check.Finding, []exempt.Applied) {
 	var findings []check.Finding
 	var exempted []exempt.Applied
+	ns := quickNamespace(doc)
 	var kind string
 	var kindLoaded bool
 	for _, c := range checks {
@@ -1588,6 +1589,7 @@ func evaluateDoc(doc []byte, files []string, checks []check.Check, selectors []e
 			}
 		}
 		res := dc.CheckDoc(doc, "")
+		applyNamespace(res, ns)
 		res, ex := fanOut(res, files, selectors)
 		findings = append(findings, res...)
 		exempted = append(exempted, ex...)
@@ -1605,6 +1607,7 @@ func evaluateDoc(doc []byte, files []string, checks []check.Check, selectors []e
 func evaluateRenderedDoc(doc []byte, overlay string, checks []check.Check, selectors []exempt.Selector) ([]check.Finding, []exempt.Applied) {
 	var findings []check.Finding
 	var exempted []exempt.Applied
+	ns := quickNamespace(doc)
 	var kind string
 	var kindLoaded bool
 	for _, c := range checks {
@@ -1627,11 +1630,27 @@ func evaluateRenderedDoc(doc []byte, overlay string, checks []check.Check, selec
 		} else {
 			res = dc.CheckDoc(doc, "")
 		}
+		applyNamespace(res, ns)
 		res, ex := fanOut(res, []string{overlay}, selectors)
 		findings = append(findings, res...)
 		exempted = append(exempted, ex...)
 	}
 	return findings, exempted
+}
+
+// applyNamespace stamps the document's metadata.namespace onto any
+// resource-compliance finding that doesn't already carry one, so attribution
+// keys (resourceKeyFor) stay namespace-aware. Checks like sync-options
+// populate Namespace themselves; leaving it alone keeps their values intact.
+func applyNamespace(findings []check.Finding, ns string) {
+	if ns == "" {
+		return
+	}
+	for i := range findings {
+		if findings[i].Namespace == "" {
+			findings[i].Namespace = ns
+		}
+	}
 }
 
 // exemptions per (finding, file) pair. It returns both the surviving

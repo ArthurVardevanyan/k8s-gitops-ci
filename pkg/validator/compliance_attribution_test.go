@@ -305,3 +305,86 @@ func TestIsFileInOverlay_MultiSegmentAndTemplates(t *testing.T) {
 		}
 	}
 }
+
+// TestClassifyResourceCompliance_SameKindNameDifferentNamespace reproduces the
+// attribution bug end-to-end: a PR changes a shared component that defines a
+// Job in namespace "team-b" (adding the required podspec fields), while an
+// older, unrelated component under the SAME overlay still defines a co-named
+// Job "init-bundle" in namespace "team-a" that legitimately lacks the fields.
+// Because kindNameKey keys on Kind/Name *and* namespace, the two must NOT
+// interfere: only the namespace actually touched by the PR may be blocking.
+// The broken team-a Job (pre-existing, unchanged) must stay a non-blocking
+// warning even though the shared changed component feeds the same overlay.
+func TestClassifyResourceCompliance_SameKindNameDifferentNamespace(t *testing.T) {
+	d := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(d); err != nil {
+		t.Fatal(err)
+	}
+
+	app := "myapp"
+	// Changed shared component: namespace team-b. It now declares the required
+	// pod-spec fields (so it produces NO finding, but it IS the change that
+	// registers the resource as touched for overlay-attribution).
+	writeFile(t, d, app+"/components/v2/central/init-bundle.yaml",
+		"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: init-bundle\n  namespace: team-b\n"+
+			"spec:\n  template:\n    spec:\n      enableServiceLinks: false\n      schedulerName: default-scheduler\n      automountServiceAccountToken: false\n")
+	writeFile(t, d, app+"/components/v2/central/kustomization.yaml",
+		"resources:\n  - init-bundle.yaml\n")
+	// Older, UNCHANGED component under the same overlay: co-named Job in a
+	// different namespace that really is missing the fields.
+	writeFile(t, d, app+"/components/v1/central/init-bundle.yaml",
+		"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: init-bundle\n  namespace: team-a\n"+
+			"spec:\n  template:\n    spec:\n      restartPolicy: Never\n      dnsPolicy: ClusterFirst\n")
+	writeFile(t, d, app+"/components/v1/central/kustomization.yaml",
+		"resources:\n  - init-bundle.yaml\n")
+	// The overlay refs BOTH components, so the broken team-a Job renders into
+	// the same overlay as the changed team-b component.
+	writeFile(t, d, app+"/overlays/prod/kustomization.yaml",
+		"components:\n  - ../../components/v2/central\n  - ../../components/v1/central\n")
+
+	// Only the v2 component (namespace team-b) was changed.
+	changed := []string{
+		app + "/components/v2/central/init-bundle.yaml",
+		app + "/components/v2/central/kustomization.yaml",
+		app + "/overlays/prod/kustomization.yaml",
+	}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	// The pre-existing broken Job lives in namespace team-a (untouched). The
+	// rendered pass stamps Namespace=team-a on its finding (see
+	// TestRenderedPodspecFindingCarriesNamespace).
+	broken := check.Finding{
+		CheckID:   "podspec-defaults",
+		Kind:      "Job",
+		Name:      "init-bundle",
+		Namespace: "team-a",
+		Message:   "enableServiceLinks, schedulerName, automountServiceAccountToken",
+		File:      app + "/overlays/prod",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{broken}, ctx)
+	if len(blocking["podspec-defaults"]) != 0 || len(nonblocking["podspec-defaults"]) != 1 {
+		t.Errorf("expected the unchanged co-named Job in namespace team-a to stay non-blocking, got blocking=%d warning=%d",
+			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
+	}
+
+	// The namespace actually touched by the PR (team-b) must still be blocking,
+	// so the fix does not accidentally downgrade genuine changes.
+	touched := check.Finding{
+		CheckID:   "podspec-defaults",
+		Kind:      "Job",
+		Name:      "init-bundle",
+		Namespace: "team-b",
+		Message:   "dnsPolicy",
+		File:      app + "/overlays/prod",
+	}
+	blocking, nonblocking = classifyResourceCompliance([]check.Finding{touched}, ctx)
+	if len(blocking["podspec-defaults"]) != 1 || len(nonblocking["podspec-defaults"]) != 0 {
+		t.Errorf("expected the touched namespace's Job to stay blocking, got blocking=%d warning=%d",
+			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
+	}
+}

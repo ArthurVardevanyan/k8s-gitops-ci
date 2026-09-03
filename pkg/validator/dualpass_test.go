@@ -33,6 +33,48 @@ func placeholderFindingsOf(findings []check.Finding) []check.Finding {
 	return out
 }
 
+// podspecFindingsOf returns the findings whose CheckID is "podspec-defaults".
+func podspecFindingsOf(findings []check.Finding) []check.Finding {
+	var out []check.Finding
+	for _, f := range findings {
+		if f.CheckID == "podspec-defaults" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// TestRenderedPodspecFindingCarriesNamespace is the regression for the
+// mis-attribution bug where a PodSpec Defaults finding was stamped against the
+// wrong co-named resource. Resource-compliance classification keys on
+// Kind/Name *and* namespace (kindNameKey → resourceKeyFor), but podspec
+// findings never populated Finding.Namespace, so two Jobs sharing a name but
+// living in different namespaces (e.g. a shared component vs. a co-named
+// pre-existing copy) collapsed onto one key and the pre-existing copy got
+// falsely marked blocking when the PR only changed the other namespace's file.
+// The rendered pass must stamp the document's metadata.namespace onto every
+// finding so classification stays namespace-accurate.
+func TestRenderedPodspecFindingCarriesNamespace(t *testing.T) {
+	// A Job missing the three pod-spec fields, rendered into an overlay that
+	// names a concrete namespace.
+	rendered := []renderedOverlay{{
+		overlay: "app/overlays/prod",
+		data: []byte("apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: init-bundle\n  namespace: team-a\n" +
+			"spec:\n  template:\n    spec:\n      restartPolicy: Never\n      dnsPolicy: ClusterFirst\n"),
+	}}
+	res := runDocChecksRendered(rendered, nil, 1, nil)
+	got := podspecFindingsOf(res.Findings)
+	if len(got) == 0 {
+		t.Fatal("expected a podspec-defaults finding for the rendered Job")
+	}
+	if got[0].Namespace != "team-a" {
+		t.Errorf("expected rendered podspec finding to carry Namespace=team-a, got %q", got[0].Namespace)
+	}
+	if got[0].Name != "init-bundle" {
+		t.Errorf("unexpected finding name: %q", got[0].Name)
+	}
+}
+
 // TestPlaceholderIsRenderSensitive proves the render-sensitive family opts
 // into rendered-output evaluation while a raw-only check (large-file/etc.
 // aren't registered ScopeDoc checks, so we assert on the registered set).
