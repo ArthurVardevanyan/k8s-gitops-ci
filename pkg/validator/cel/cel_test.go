@@ -353,9 +353,8 @@ func TestCompileRulesCached_NonExistentDir(t *testing.T) {
 }
 
 func TestClearCompileCache(t *testing.T) {
-	t.Parallel()
-
-	// Create a minimal schema directory.
+	// Not parallel: ClearCompileCache resets the package-level cache,
+	// which affects all other tests that rely on it.
 	dir := t.TempDir()
 	subdir := dir + "/master-standalone-strict"
 	if err := os.MkdirAll(subdir, 0o755); err != nil {

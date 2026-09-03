@@ -807,17 +807,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// Schema extraction for CEL validation: extract once (when opts.SchemaDir
 	// is not provided) so the rendered + raw CEL passes share the same
 	// directory key and CompileRulesCached actually deduplicates work.
-	var celSchemaDir string
-	var celSchemaCleanup func()
+	// We also set opts.SchemaDir so kubeconformSchemaOpts reuses the same
+	// extracted directory instead of extracting a second temp dir.
 	if opts.SchemaDir == "" {
 		extracted, c, err := kubeconform.ExtractSchemas()
 		if err == nil {
-			celSchemaDir = extracted
-			celSchemaCleanup = c
+			opts.SchemaDir = extracted
+			defer c()
 		}
-	}
-	if celSchemaCleanup != nil {
-		defer celSchemaCleanup()
 	}
 
 	if len(renderedOverlays) > 0 {
@@ -837,9 +834,6 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		// enforces these rules at admission regardless of CI exemptions.
 		if stepEnabled(stepCEL, disabled, enabled) {
 			schemaDir := opts.SchemaDir
-			if schemaDir == "" {
-				schemaDir = celSchemaDir
-			}
 			if schemaDir != "" {
 				compiledRules, compileErr := cel.CompileRulesCached(schemaDir)
 				if compileErr != nil {
@@ -867,9 +861,6 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// known non-manifest files, and files covered by scoped overlays.
 	if stepEnabled(stepCEL, disabled, enabled) {
 		schemaDir := opts.SchemaDir
-		if schemaDir == "" {
-			schemaDir = celSchemaDir
-		}
 		if schemaDir != "" {
 			compiledRules, compileErr := cel.CompileRulesCached(schemaDir)
 			if compileErr != nil {

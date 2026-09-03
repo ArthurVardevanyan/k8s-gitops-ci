@@ -78,9 +78,15 @@ func (r *Result) Summary() string {
 
 // kubernetesCELEnv builds a single CEL environment shared across all rule
 // compilations. Creating this env (which registers 7 k8s CEL libraries) is
-// expensive, so it is built once and reused rather than rebuilt per rule.
-// If creation fails, panic at init time — the CEL subsystem is unusable
-// without the environment and there is no meaningful runtime recovery path.
+// expensive, so it is built once at package init time and reused for every
+// rule compilation.
+//
+// Panicking at init time is the right failure mode: this package is used
+// only inside a short-lived CI tool process, not a long-lived server. If
+// the environment cannot be built (e.g. library registration failure),
+// the CEL subsystem is entirely broken and there is no meaningful recovery
+// path — the alternative (silently ignoring the error) would just cause a
+// nil-pointer dereference at runtime instead of a clear init-time failure.
 var kubernetesCELEnv = func() *cel.Env {
 	env, err := cel.NewEnv(
 		cel.Variable("self", cel.AnyType),
