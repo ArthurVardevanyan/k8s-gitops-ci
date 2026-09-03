@@ -753,6 +753,7 @@ func TestComputeBackoff(t *testing.T) {
 		{name: "second attempt doubles", base: base, attempt: 2, want: 2 * base},
 		{name: "third attempt quadruples", base: base, attempt: 3, want: 4 * base},
 		{name: "huge attempt clamps (no overflow)", base: time.Nanosecond, attempt: maxBackoffShift + 100, want: time.Duration(int64(1) << uint(maxBackoffShift))},
+		{name: "overflow clamps to max duration", base: time.Duration(math.MaxInt64 / 100), attempt: 25, want: 0, overflow: true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

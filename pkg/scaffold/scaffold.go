@@ -506,7 +506,13 @@ func runDiffDirs(opts RunOptions, configPath string, toRun []string, summary *Su
 		return "", nil
 	})
 	if err != nil {
-		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", out))
+		if errors.Is(err, context.DeadlineExceeded) {
+			// A hung tool is a timeout (intentionally not retried) - report it
+			// clearly so the user understands why it stopped.
+			summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold timed out for %s (%s)", opts.App, runTimeout))
+		} else {
+			summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", out))
+		}
 		summary.Failed += len(toRun)
 		return
 	}
