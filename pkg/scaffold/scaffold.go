@@ -11,6 +11,7 @@ package scaffold
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -137,8 +138,12 @@ func defaultIsTransientError(text string) bool {
 // times, retrying only when the prior attempt failed and its diagnostic text
 // matches IsTransientError - so a genuine failure still fails fast on attempt
 // 1. OnRetry, if set, is called before each subsequent attempt. The retry
-// configuration vars are snapshot into locals so concurrent invocations (the
-// parallel overlay worker pools) neither race on nor mutate package state.
+// configuration vars are snapshot into locals up front: this gives each call a
+// self-consistent view and guarantees retryExec never itself writes/mutates the
+// package vars. Callers must not concurrently reassign the package vars while
+// retries are in flight - snapshotting does not make that safe (concurrent
+// reads and writes of a variable are still a data race), it only means this
+// function won't be the one mutating shared state.
 func retryExec(fn func() (string, error)) (string, error) {
 	retryAttempts := RetryAttempts
 	if retryAttempts < 1 {
@@ -162,7 +167,10 @@ func retryExec(fn func() (string, error)) (string, error) {
 		// network EOF/reset from an in-tool remote fetch) typically appears in
 		// the tool's captured stdout/stderr, while err.Error() alone is often
 		// just "exit status N". The output is ANSI-stripped by the caller.
-		if err == nil || attempt >= retryAttempts || !isTransient(output+"\n"+err.Error()) {
+		// A context deadline (timeout) is never retried - even if partial
+		// output happens to match a transient signature - so a genuinely hung
+		// tool fails fast instead of silently extending wall-clock.
+		if err == nil || attempt >= retryAttempts || errors.Is(err, context.DeadlineExceeded) || !isTransient(output+"\n"+err.Error()) {
 			return output, err
 		}
 		if onRetry != nil {
@@ -184,7 +192,7 @@ const maxBackoffShift = 20
 // time.Duration on overflow, so overridden settings can't produce a negative
 // or undefined sleep.
 func computeBackoff(base time.Duration, attempt int) time.Duration {
-	if base <= 0 {
+	if base <= 0 || attempt <= 0 {
 		return 0
 	}
 	shift := attempt - 1
@@ -489,6 +497,10 @@ func runDiffDirs(opts RunOptions, configPath string, toRun []string, summary *Su
 		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		defer cancel()
 		if runErr := runScafctl(ctx, configPath, tmp); runErr != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				// A hung tool is a timeout, not a transient blip - never retry.
+				return stripANSI(runErr.Error()), fmt.Errorf("%w: %s", context.DeadlineExceeded, stripANSI(runErr.Error()))
+			}
 			return stripANSI(runErr.Error()), runErr
 		}
 		return "", nil
@@ -607,6 +619,10 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
 		cmd.Env = os.Environ()
 		b, cmdErr := cmd.CombinedOutput()
+		if cmdErr != nil && ctx.Err() == context.DeadlineExceeded {
+			// A hung tool is a timeout, not a transient blip - never retry.
+			cmdErr = fmt.Errorf("%w: %s", context.DeadlineExceeded, stripANSI(string(b)))
+		}
 		return stripANSI(string(b)), cmdErr
 	})
 	output := out
@@ -667,20 +683,22 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 // "error" is a genuine tool/execution failure, always blocking.
 func dryRunOneCluster(app, cluster string, changedFiles []string) (status string, mismatchFiles []string, errMsg string) {
 	args := ScaffoldArgs(app, cluster, false)
-	var timedOut bool
 	out, err := retryExec(func() (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
 		cmd.Env = os.Environ()
 		b, cmdErr := cmd.CombinedOutput()
-		timedOut = cmdErr != nil && ctx.Err() == context.DeadlineExceeded
+		if cmdErr != nil && ctx.Err() == context.DeadlineExceeded {
+			// A hung tool is a timeout, not a transient blip - never retry.
+			cmdErr = fmt.Errorf("%w: %s", context.DeadlineExceeded, stripANSI(string(b)))
+		}
 		return stripANSI(string(b)), cmdErr
 	})
 	output := out
 
 	if err != nil {
-		if timedOut {
+		if errors.Is(err, context.DeadlineExceeded) {
 			return "error", nil, fmt.Sprintf("scaffold timed out for %s (%s)", cluster, runTimeout)
 		}
 		// If the overlay was deleted by this PR, a scaffold failure for it

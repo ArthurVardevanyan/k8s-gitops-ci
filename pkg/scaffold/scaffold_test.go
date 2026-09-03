@@ -3,6 +3,7 @@ package scaffold
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -713,6 +714,28 @@ func TestRetryExec_DoesNotMutatePackageVars(t *testing.T) {
 	}
 }
 
+// TestRetryExec_DoesNotRetryTimeout guards the fail-fast contract: a context
+// deadline (timeout) is never retried even when the partial output happens to
+// match a transient signature, so a genuinely hung tool doesn't extend
+// wall-clock.
+func TestRetryExec_DoesNotRetryTimeout(t *testing.T) {
+	restore := applyRetryDefaults(t, 5)
+	defer restore()
+
+	var calls int
+	const transientOutput = "doWebCall - failed to read the response body (Status Code: 200): unexpected EOF"
+	_, err := retryExec(func() (string, error) {
+		calls++
+		return transientOutput, fmt.Errorf("%w: %s", context.DeadlineExceeded, transientOutput)
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected a context deadline error, got %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected a timeout to fail fast (single invocation), got %d", calls)
+	}
+}
+
 func TestComputeBackoff(t *testing.T) {
 	base := 3 * time.Second
 	cases := []struct {
@@ -724,6 +747,8 @@ func TestComputeBackoff(t *testing.T) {
 	}{
 		{name: "non-positive base is zero", base: 0, attempt: 2, want: 0},
 		{name: "negative base is zero", base: -time.Second, attempt: 2, want: 0},
+		{name: "attempt zero is zero", base: base, attempt: 0, want: 0},
+		{name: "attempt negative is zero", base: base, attempt: -1, want: 0},
 		{name: "first attempt is base", base: base, attempt: 1, want: base},
 		{name: "second attempt doubles", base: base, attempt: 2, want: 2 * base},
 		{name: "third attempt quadruples", base: base, attempt: 3, want: 4 * base},
