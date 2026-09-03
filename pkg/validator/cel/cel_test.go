@@ -1,6 +1,7 @@
 package cel
 
 import (
+	"os"
 	"testing"
 )
 
@@ -236,7 +237,7 @@ func TestCompileCEL(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := compileCEL(tc.source)
+			_, err := compileCELWithEnv(tc.source, kubernetesCELEnv)
 			if tc.wantErr && err == nil {
 				t.Error("expected error, got nil")
 			}
@@ -264,5 +265,191 @@ func TestValidateBytes(t *testing.T) {
 	t.Logf("result: Valid=%d, Invalid=%d, Errors=%d, Details=%d", result.Valid, result.Invalid, result.Errors, len(result.Details))
 	if result.Valid != 1 {
 		t.Errorf("Valid = %d, want 1", result.Valid)
+	}
+}
+
+func TestCompileRulesCached(t *testing.T) {
+	t.Parallel()
+
+	// Create a minimal schema directory with a file that has x-kubernetes-validations.
+	dir1 := t.TempDir()
+	subdir := dir1 + "/master-standalone-strict"
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a minimal schema file with a simple x-kubernetes-validations rule.
+	schemaFile := subdir + "/Deployment.json"
+	schemaJSON := `
+{
+  "x-kubernetes-validations": [
+    {
+      "rule": "size(self) > 0",
+      "message": "must be non-empty"
+    }
+  ]
+}
+`
+	if err := os.WriteFile(schemaFile, []byte(schemaJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// First call should compile and cache.
+	rules1, err := CompileRulesCached(dir1)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+
+	// Second call should return the exact same instance (cache hit).
+	rules2, err := CompileRulesCached(dir1)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if rules1 != rules2 {
+		t.Errorf("expected same instance from cache, got different pointers (%p vs %p)", rules1, rules2)
+	}
+
+	// Third call should also return the cached instance.
+	rules3, err := CompileRulesCached(dir1)
+	if err != nil {
+		t.Fatalf("third call: %v", err)
+	}
+	if rules1 != rules3 {
+		t.Errorf("expected same instance from cache, got different pointers (%p vs %p)", rules1, rules3)
+	}
+
+	// A different directory should produce a different instance.
+	dir2 := t.TempDir()
+	schemaFile2 := dir2 + "/master-standalone-strict/Service.json"
+	if err := os.MkdirAll(dir2+"/master-standalone-strict", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(schemaFile2, []byte(schemaJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rules4, err := CompileRulesCached(dir2)
+	if err != nil {
+		t.Fatalf("different dir: %v", err)
+	}
+	if rules1 == rules4 {
+		t.Errorf("different directories should produce different compiled results")
+	}
+}
+
+func TestCompileRulesCached_NonExistentDir(t *testing.T) {
+	t.Parallel()
+
+	// Calling with a nonexistent directory should cache the empty result.
+	rules1, err := CompileRulesCached("/nonexistent/path/xyz")
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	rules2, err := CompileRulesCached("/nonexistent/path/xyz")
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if rules1 != rules2 {
+		t.Errorf("expected same cached instance for nonexistent dir")
+	}
+}
+
+func TestClearCompileCache(t *testing.T) {
+	// Not parallel: ClearCompileCache resets the package-level cache,
+	// which affects all other tests that rely on it.
+	dir := t.TempDir()
+	subdir := dir + "/master-standalone-strict"
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	schemaFile := subdir + "/Deployment.json"
+	schemaJSON := `{
+  "x-kubernetes-validations": [
+    {
+      "rule": "size(self) > 0",
+      "message": "must be non-empty"
+    }
+  ]
+}`
+	if err := os.WriteFile(schemaFile, []byte(schemaJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compile and cache.
+	rules1, err := CompileRulesCached(dir)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+
+	// Cache hit returns same instance.
+	rules2, err := CompileRulesCached(dir)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if rules1 != rules2 {
+		t.Fatal("expected cache hit")
+	}
+
+	// Clear the cache.
+	ClearCompileCache()
+
+	// After clearing, a new compile should produce a different instance.
+	rules3, err := CompileRulesCached(dir)
+	if err != nil {
+		t.Fatalf("third call after clear: %v", err)
+	}
+	if rules1 == rules3 {
+		t.Fatal("expected different instance after cache clear")
+	}
+}
+
+func TestPreFilterSkipsFilesWithoutValidations(t *testing.T) {
+	t.Parallel()
+
+	// Verify that parseSchemaFile returns quickly for files without
+	// x-kubernetes-validations (the pre-filter skips the JSON unmarshal).
+	dir := t.TempDir()
+	subdir := dir + "/master-standalone-strict"
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a large schema file WITHOUT x-kubernetes-validations.
+	largeSchema := `{"type": "object", "properties": {"apiVersion": {"type": "string"}}}` +
+		`{"padding": "` + string(make([]byte, 10000)) + `"}`
+	if err := os.WriteFile(subdir+"/Pod.json", []byte(largeSchema), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rules, err := CompileRules(dir)
+	if err != nil {
+		t.Fatalf("CompileRules: %v", err)
+	}
+	// No rules should be compiled since the file lacks x-kubernetes-validations.
+	for _, versionRules := range rules.Rules {
+		for _, version := range versionRules {
+			if len(version) > 0 {
+				t.Errorf("expected no rules, got %d (pre-filter should have skipped the file)", len(version))
+			}
+		}
+	}
+}
+
+func TestCompileCELWithEnv(t *testing.T) {
+	t.Parallel()
+
+	// Test that compileCELWithEnv works with the shared env.
+	_, err := compileCELWithEnv("size(self) > 0", kubernetesCELEnv)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Reusing the same env for multiple compilations should work.
+	for i := 0; i < 5; i++ {
+		p, err := compileCELWithEnv("size(self) > 0", kubernetesCELEnv)
+		if err != nil {
+			t.Errorf("iteration %d: unexpected error: %v", i, err)
+		}
+		if p == nil {
+			t.Errorf("iteration %d: nil program", i)
+		}
 	}
 }
