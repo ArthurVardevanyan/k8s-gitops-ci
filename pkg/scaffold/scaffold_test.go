@@ -3,11 +3,15 @@ package scaffold
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestHasScaffoldEnabled_Default(t *testing.T) {
@@ -586,5 +590,428 @@ func TestExtractCreatedFiles_CldctlMarkers(t *testing.T) {
 	}
 	if got[0] != "a/overlays/dev/x.yaml" || got[1] != "a/overlays/prod/y.yaml" {
 		t.Errorf("unexpected parse: %v", got)
+	}
+}
+
+// ── Transient-failure retry ──────────────────────────────────────────────────
+
+// applyRetryDefaults sets RetryAttempts for a test, clears RetryBackoff (so
+// retry tests stay fast), OnRetry and IsTransientError (so hooks/matchers set
+// by an earlier test can't leak in; retryExec falls back to the default matcher
+// when IsTransientError is nil), restoring all four on cleanup.
+func applyRetryDefaults(t *testing.T, attempts int) func() {
+	t.Helper()
+	origAttempts, origBackoff, origOnRetry, origIsTransient := RetryAttempts, RetryBackoff, OnRetry, IsTransientError
+	RetryAttempts, RetryBackoff, OnRetry, IsTransientError = attempts, 0, nil, nil
+	return func() {
+		RetryAttempts, RetryBackoff, OnRetry, IsTransientError = origAttempts, origBackoff, origOnRetry, origIsTransient
+	}
+}
+
+// fakeScaffoldToolCounting points Binary at a stateful fake that records the
+// invocation count in countFile and, on each call, runs flakyScript. flakyScript
+// can reference the shell variable $n (the 1-based invocation count) to vary
+// behavior per call, e.g. to fail once then succeed. It omits the
+// SCAFFOLD_OUTPUT env var intent of fakeScaffoldTool, letting the script fully
+// control output. Callers must restore package vars via applyRetryDefaults.
+func fakeScaffoldToolCounting(t *testing.T, countFile, flakyScript string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("fake shell tool not supported on windows")
+	}
+	bin := filepath.Join(t.TempDir(), "faketool")
+	script := "#!/bin/sh\n" +
+		"n=$(cat \"$COUNT\" 2>/dev/null || echo 0)\n" +
+		"n=$((n+1))\n" +
+		"echo \"$n\" > \"$COUNT\"\n" +
+		flakyScript + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil { //nolint:gosec // test-only fake tool
+		t.Fatal(err)
+	}
+	t.Setenv("COUNT", countFile)
+
+	origBin, origMode, origArgs, origMarkers := Binary, DriftMode, ScaffoldArgs, CreatedFileMarkers
+	Binary = bin
+	DriftMode = DryRunParse
+	CreatedFileMarkers = []string{"Created File:"}
+	ScaffoldArgs = func(_, _ string, _ bool) []string { return []string{"scaffold"} }
+	t.Cleanup(func() {
+		Binary, DriftMode, ScaffoldArgs, CreatedFileMarkers = origBin, origMode, origArgs, origMarkers
+	})
+}
+
+// invocationCount reads countFile (1-based invocation count) or 0 if absent.
+func invocationCount(t *testing.T, countFile string) int {
+	t.Helper()
+	data, err := os.ReadFile(countFile)
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// setupRetryApp writes the app/overlay scaffolding needed for a DryRunParse
+// per-cluster run and returns the count file path.
+func setupRetryApp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"), "resources: []\n")
+	return filepath.Join(dir, "calls")
+}
+
+func TestDefaultIsTransientError(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "eof", in: "doWebCall - failed to read the response body (Status Code: 200): unexpected EOF", want: true},
+		{name: "connection reset", in: "read tcp: connection reset by peer", want: true},
+		{name: "broken pipe", in: "write tcp: broken pipe", want: true},
+		{name: "i/o timeout", in: "dial tcp: i/o timeout", want: true},
+		{name: "no such host", in: "lookup host.example: no such host", want: true},
+		{name: "connection refused", in: "connect: connection refused", want: true},
+		{name: "tls handshake timeout", in: "tls: handshake timeout", want: true},
+		{name: "context deadline exceeded is NOT transient", in: "context deadline exceeded", want: false},
+		{name: "plain drift text is not transient", in: "config parse error: unexpected token", want: false},
+		{name: "empty", in: "", want: false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := defaultIsTransientError(c.in); got != c.want {
+				t.Errorf("defaultIsTransientError(%q) = %v, want %v", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRetryExec_DoesNotMutatePackageVars(t *testing.T) {
+	restore := applyRetryDefaults(t, 0) // 0 attempts clamped to 1 internally
+	defer restore()
+	var calls int
+	_, err := retryExec(func() (string, error) { calls++; return "", errors.New("exit status 1") })
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if calls != 1 {
+		t.Errorf("expected a single attempt (attempts<1 clamps to 1), got %d", calls)
+	}
+	if RetryAttempts != 0 {
+		t.Errorf("retryExec must not mutate the package var RetryAttempts, got %d", RetryAttempts)
+	}
+}
+
+// TestRetryExec_DoesNotRetryTimeout guards the fail-fast contract: a context
+// deadline (timeout) is never retried even when the partial output happens to
+// match a transient signature, so a genuinely hung tool doesn't extend
+// wall-clock.
+func TestRetryExec_DoesNotRetryTimeout(t *testing.T) {
+	restore := applyRetryDefaults(t, 5)
+	defer restore()
+
+	var calls int
+	const transientOutput = "doWebCall - failed to read the response body (Status Code: 200): unexpected EOF"
+	_, err := retryExec(func() (string, error) {
+		calls++
+		return transientOutput, fmt.Errorf("%w: %s", context.DeadlineExceeded, transientOutput)
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected a context deadline error, got %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected a timeout to fail fast (single invocation), got %d", calls)
+	}
+}
+
+func TestComputeBackoff(t *testing.T) {
+	base := 3 * time.Second
+	cases := []struct {
+		name     string
+		base     time.Duration
+		attempt  int
+		want     time.Duration
+		overflow bool
+	}{
+		{name: "non-positive base is zero", base: 0, attempt: 2, want: 0},
+		{name: "negative base is zero", base: -time.Second, attempt: 2, want: 0},
+		{name: "attempt zero is zero", base: base, attempt: 0, want: 0},
+		{name: "attempt negative is zero", base: base, attempt: -1, want: 0},
+		{name: "first attempt is base", base: base, attempt: 1, want: base},
+		{name: "second attempt doubles", base: base, attempt: 2, want: 2 * base},
+		{name: "third attempt quadruples", base: base, attempt: 3, want: 4 * base},
+		{name: "huge attempt clamps (no overflow)", base: time.Nanosecond, attempt: maxBackoffShift + 100, want: time.Duration(int64(1) << uint(maxBackoffShift))},
+		{name: "overflow clamps to max duration", base: time.Duration(math.MaxInt64 / 100), attempt: 25, want: 0, overflow: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := computeBackoff(c.base, c.attempt)
+			if got < 0 {
+				t.Fatalf("computeBackoff returned a negative duration: %v (overflow)", got)
+			}
+			if c.overflow {
+				if got != time.Duration(math.MaxInt64) {
+					t.Errorf("expected max time.Duration clamp, got %v", got)
+				}
+				return
+			}
+			if got != c.want {
+				t.Errorf("computeBackoff(%v, %d) = %v, want %v", c.base, c.attempt, got, c.want)
+			}
+		})
+	}
+}
+
+func TestRun_DryRunParse_TransientRetrySucceeds(t *testing.T) {
+	countFile := setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	var retries int
+	OnRetry = func(_, _ int, _ error) { retries++ }
+
+	// First invocation fails with a transient network EOF; second succeeds.
+	fakeScaffoldToolCounting(t, countFile,
+		"if [ \"$n\" -eq 1 ]; then\n"+
+			"  printf 'doWebCall - failed to read the response body (Status Code: 200): unexpected EOF'\n"+
+			"  exit 1\n"+
+			"fi\n"+
+			"exit 0\n",
+	)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed != 0 || len(summary.Errors) != 0 {
+		t.Errorf("expected transient failure to be retried to success, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if summary.Passed != 1 {
+		t.Errorf("expected 1 pass after retry, got passed=%d", summary.Passed)
+	}
+	if got := invocationCount(t, countFile); got != 2 {
+		t.Errorf("expected 2 invocations (1 fail + 1 retry), got %d", got)
+	}
+	if retries != 1 {
+		t.Errorf("expected OnRetry called once, got %d", retries)
+	}
+}
+
+func TestRun_DryRunParse_NonTransientErrorNotRetried(t *testing.T) {
+	countFile := setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	var retries int
+	OnRetry = func(_, _ int, _ error) { retries++ }
+
+	// Always fails with a non-transient signature - must fail fast, once.
+	fakeScaffoldToolCounting(t, countFile, "printf 'config parse error: boom'\nexit 1\n")
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed == 0 || len(summary.Errors) == 0 {
+		t.Errorf("expected an execution failure, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if got := invocationCount(t, countFile); got != 1 {
+		t.Errorf("expected no retry for non-transient error, got %d invocations", got)
+	}
+	if retries != 0 {
+		t.Errorf("expected OnRetry not called for non-transient error, got %d", retries)
+	}
+}
+
+func TestRun_DryRunParse_TransientRetryExhausted(t *testing.T) {
+	countFile := setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	// Always fails transiently - after RetryAttempts it must still fail.
+	fakeScaffoldToolCounting(t, countFile,
+		"printf 'doWebCall - failed to read the response body (Status Code: 200): unexpected EOF'\nexit 1\n",
+	)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed == 0 || len(summary.Errors) == 0 {
+		t.Errorf("expected an execution failure after exhausting retries, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if got := invocationCount(t, countFile); got != 3 {
+		t.Errorf("expected %d invocations (attempts exhausted), got %d", RetryAttempts, got)
+	}
+	if fullErr := func() bool { return len(summary.Errors) > 0 }(); fullErr {
+		// The final error surfaced should still be the transient message (the
+		// build attempt's own output), not a "retries exhausted" wrapper.
+		if !strings.Contains(summary.Errors[0], "unexpected EOF") {
+			t.Errorf("expected final error to surface the underlying failure, got %q", summary.Errors[0])
+		}
+	}
+}
+
+// ── DiffDirs retry path ──────────────────────────────────────────────────────
+
+// TestRun_DiffDirs_TransientRetrySucceeds verifies the DiffDirs execution path
+// (runScafctl) retries a transient failure and succeeds on retry.
+func TestRun_DiffDirs_TransientRetrySucceeds(t *testing.T) {
+	_ = setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	calls := 0
+	withFakeScafctl(t, func(_ context.Context, _, outputDir string) error {
+		calls++
+		if calls == 1 {
+			return errors.New("doWebCall - failed to read the response body (Status Code: 200): unexpected EOF")
+		}
+		// Generate matching content for the committed overlay so the diff passes.
+		mustWrite(t, filepath.Join(outputDir, "dev", "kustomization.yaml"), "resources: []\n")
+		return nil
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}}) // DriftMode defaults to DiffDirs
+	if summary.Failed != 0 || len(summary.Errors) != 0 {
+		t.Errorf("expected DiffDirs transient failure to be retried to success, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if summary.Passed != 1 {
+		t.Errorf("expected 1 pass after DiffDirs retry, got passed=%d", summary.Passed)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 scafctl invocations in DiffDirs (1 fail + 1 retry), got %d", calls)
+	}
+}
+
+// TestRun_DiffDirs_RetryResetsOutputDir guards against a failed attempt's
+// partial output polluting a later retry's diff: the output dir must be cleared
+// before every attempt, else stale files could produce false drift or mask real
+// drift. Attempt 1 writes a stray file then fails transiently; attempt 2
+// asserts the stray file is gone before writing matching content.
+func TestRun_DiffDirs_RetryResetsOutputDir(t *testing.T) {
+	_ = setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	calls := 0
+	withFakeScafctl(t, func(_ context.Context, _, outputDir string) error {
+		calls++
+		if calls == 1 {
+			// Attempt 1 partially writes into the output dir before failing.
+			mustWrite(t, filepath.Join(outputDir, "dev", "stale.yaml"), "stale\n")
+			return errors.New("doWebCall - failed to read the response body (Status Code: 200): unexpected EOF")
+		}
+		// Attempt 2 must run against a clean output tree: the stray file from
+		// attempt 1 must already be removed by the reset.
+		if _, err := os.Stat(filepath.Join(outputDir, "dev", "stale.yaml")); !os.IsNotExist(err) {
+			t.Errorf("expected attempt 2 to run against a reset (empty) output dir; stale file still present (err=%v)", err)
+		}
+		mustWrite(t, filepath.Join(outputDir, "dev", "kustomization.yaml"), "resources: []\n")
+		return nil
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed != 0 || len(summary.Errors) != 0 {
+		t.Errorf("expected DiffDirs retry (with output reset) to pass, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 scafctl invocations, got %d", calls)
+	}
+}
+
+// TestRun_DiffDirs_NonTransientNotRetried verifies DiffDirs fails fast (single
+// invocation) on a non-transient failure.
+func TestRun_DiffDirs_NonTransientNotRetried(t *testing.T) {
+	_ = setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	calls := 0
+	withFakeScafctl(t, func(_ context.Context, _, _ string) error {
+		calls++
+		return errors.New("config parse error")
+	})
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}})
+	if summary.Failed == 0 || len(summary.Errors) == 0 {
+		t.Errorf("expected a DiffDirs execution failure, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if calls != 1 {
+		t.Errorf("expected no DiffDirs retry for a non-transient error, got %d invocations", calls)
+	}
+}
+
+// ── FullTest retry path ─────────────────────────────────────────────────────
+
+// TestRun_DryRunParse_FullTest_TransientRetrySucceeds verifies the FullTest
+// dry-run path uses the same retry-then-succeed semantics as the per-cluster
+// path.
+func TestRun_DryRunParse_FullTest_TransientRetrySucceeds(t *testing.T) {
+	countFile := setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	fakeScaffoldToolCounting(t, countFile,
+		"if [ \"$n\" -eq 1 ]; then\n"+
+			"  printf 'doWebCall - failed to read the response body (Status Code: 200): unexpected EOF'\n"+
+			"  exit 1\n"+
+			"fi\n"+
+			"exit 0\n",
+	)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}, FullTest: true})
+	if summary.Failed != 0 || len(summary.Errors) != 0 {
+		t.Errorf("expected FullTest transient failure to be retried to success, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if got := invocationCount(t, countFile); got != 2 {
+		t.Errorf("expected 2 FullTest invocations (1 fail + 1 retry), got %d", got)
+	}
+}
+
+func TestScaffoldExecError(t *testing.T) {
+	timeout := fmt.Errorf("%w: boom", context.DeadlineExceeded)
+	cases := []struct {
+		name   string
+		err    error
+		output string
+		want   string
+	}{
+		{name: "timeout", err: timeout, output: "context deadline exceeded", want: fmt.Sprintf("scaffold timed out for myapp (%s)", runTimeout)},
+		{name: "transient network", err: errors.New("exit status 1"), output: "doWebCall - unexpected EOF", want: "scaffold command failed for myapp: doWebCall - unexpected EOF"},
+		{name: "config error", err: errors.New("exit status 2"), output: "config parse error", want: "scaffold command failed for myapp: config parse error"},
+		{name: "no output falls back to error", err: errors.New("exec: \"scafctl\": executable file not found in $PATH"), output: "", want: "scaffold command failed for myapp: exec: \"scafctl\": executable file not found in $PATH"},
+		{name: "whitespace-only output falls back to error", err: errors.New("exit status 1"), output: "   \n", want: "scaffold command failed for myapp: exit status 1"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := scaffoldExecError("myapp", c.output, c.err); got != c.want {
+				t.Errorf("scaffoldExecError() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestRun_DryRunParse_FullTest_TimeoutNotRetried verifies a context-deadline
+// timeout text is not treated as transient, so the FullTest path fails fast on
+// a single invocation.
+func TestRun_DryRunParse_FullTest_TimeoutNotRetried(t *testing.T) {
+	countFile := setupRetryApp(t)
+	restore := applyRetryDefaults(t, 3)
+	defer restore()
+
+	fakeScaffoldToolCounting(t, countFile,
+		"printf 'scaffold timed out: context deadline exceeded'\nexit 1\n",
+	)
+
+	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}, FullTest: true})
+	if summary.Failed == 0 || len(summary.Errors) == 0 {
+		t.Errorf("expected a FullTest execution failure, got failed=%d errors=%v", summary.Failed, summary.Errors)
+	}
+	if got := invocationCount(t, countFile); got != 1 {
+		t.Errorf("expected no retry for context deadline exceeded, got %d invocations", got)
 	}
 }

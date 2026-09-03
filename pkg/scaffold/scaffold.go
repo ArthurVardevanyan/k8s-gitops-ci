@@ -11,7 +11,9 @@ package scaffold
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,8 +95,117 @@ func IsExcludedCluster(cluster string) bool {
 
 // runTimeout bounds a single scafctl invocation (the whole app's overlays,
 // generated in one shot into a temp dir - see Run) so a hung or slow
-// scaffold-tool invocation can't stall the pipeline indefinitely.
+// scaffold-tool invocation can't stall the pipeline indefinitely. Each retry
+// attempt gets its own fresh runTimeout budget (see retryExec).
 const runTimeout = 2 * time.Minute
+
+// RetryAttempts bounds how many total execution attempts are made per
+// scaffold-tool invocation when it fails with a transient error signature
+// (see IsTransientError). 1 disables retrying entirely. Generic default of 3;
+// an org layer may tune it via a Configure()-style package-var override.
+var RetryAttempts = 3
+
+// RetryBackoff is the initial sleep between transient-failure attempts; it
+// doubles after each failed attempt (attempts slept: base, 2x, 4x, ...).
+var RetryBackoff = 3 * time.Second
+
+// OnRetry, when set, is invoked after each transient failure that triggers a
+// further attempt, primarily for observability (logging/reporting). It is a
+// deliberate generic seam (nil by default) so callers can surface retry counts
+// without the core printing to stdout.
+var OnRetry func(attempt, maxAttempts int, err error)
+
+// IsTransientError decides whether a failed scaffold-tool invocation's
+// diagnostic text looks like a transient failure worth retrying (network
+// EOF/reset/timeout during an in-tool remote fetch) rather than a genuine,
+// non-transient error (bad config, real drift). Generic default matches the
+// common transient network signatures; an org layer may override it if its
+// tool emits a different signature. Implementations must NOT treat context
+// deadline-exceeded as transient - a genuinely hung tool should fail fast, not
+// extend CI wall-clock.
+var IsTransientError = defaultIsTransientError
+
+var transientErrorRe = regexp.MustCompile(`(?i)unexpected eof|connection reset|broken pipe|i/o timeout|no such host|connection refused|handshake timeout|temporary failure|temporarily unavailable`)
+
+// defaultIsTransientError is the generic default for IsTransientError: a
+// substring match against the common transient network signatures.
+func defaultIsTransientError(text string) bool {
+	return transientErrorRe.MatchString(text)
+}
+
+// retryExec runs fn (a single scaffold-tool execution attempt that returns its
+// diagnostic output on success and an error on failure) up to RetryAttempts
+// times, retrying only when the prior attempt failed and its diagnostic text
+// matches IsTransientError - so a genuine failure still fails fast on attempt
+// 1. OnRetry, if set, is called before each subsequent attempt. The retry
+// configuration vars are snapshot into locals up front: this gives each call a
+// self-consistent view and guarantees retryExec never itself writes/mutates the
+// package vars. Callers must not concurrently reassign the package vars while
+// retries are in flight - snapshotting does not make that safe (concurrent
+// reads and writes of a variable are still a data race), it only means this
+// function won't be the one mutating shared state.
+func retryExec(fn func() (string, error)) (string, error) {
+	retryAttempts := RetryAttempts
+	if retryAttempts < 1 {
+		retryAttempts = 1
+	}
+	retryBackoff := RetryBackoff
+	isTransient := IsTransientError
+	if isTransient == nil {
+		isTransient = defaultIsTransientError
+	}
+	onRetry := OnRetry
+
+	var (
+		output string
+		err    error
+	)
+	for attempt := 1; ; attempt++ {
+		output, err = fn()
+		// Classify against both the attempt's diagnostic output and the error
+		// text: for exec failures the interesting transient signature (a
+		// network EOF/reset from an in-tool remote fetch) typically appears in
+		// the tool's captured stdout/stderr, while err.Error() alone is often
+		// just "exit status N". The output is ANSI-stripped by the caller.
+		// A context deadline (timeout) is never retried - even if partial
+		// output happens to match a transient signature - so a genuinely hung
+		// tool fails fast instead of silently extending wall-clock.
+		if err == nil || attempt >= retryAttempts || errors.Is(err, context.DeadlineExceeded) || !isTransient(output+"\n"+err.Error()) {
+			return output, err
+		}
+		if onRetry != nil {
+			onRetry(attempt, retryAttempts, err)
+		}
+		time.Sleep(computeBackoff(retryBackoff, attempt))
+	}
+}
+
+// maxBackoffShift caps the exponential backoff doubling at 2^20 (≈ a million
+// times the base). Any larger shift means the sleep is already impractically
+// long, so capping avoids overflowing a time.Duration (a signed int64) when an
+// org overrides RetryAttempts to a very large value.
+const maxBackoffShift = 20
+
+// computeBackoff returns the sleep between retry attempts: base doubled
+// attempt-1 times. A non-positive base yields zero sleep (no backoff). Growth
+// is clamped at maxBackoffShift and the result is clamped to the max
+// time.Duration on overflow, so overridden settings can't produce a negative
+// or undefined sleep.
+func computeBackoff(base time.Duration, attempt int) time.Duration {
+	if base <= 0 || attempt <= 0 {
+		return 0
+	}
+	shift := attempt - 1
+	if shift > maxBackoffShift {
+		shift = maxBackoffShift
+	}
+	factor := int64(1) << uint(shift)
+	d := base * time.Duration(factor)
+	if base != 0 && d/time.Duration(factor) != base {
+		return time.Duration(math.MaxInt64)
+	}
+	return d
+}
 
 // RunOptions configures one app's scaffold-drift run.
 type RunOptions struct {
@@ -382,10 +493,32 @@ func runDiffDirs(opts RunOptions, configPath string, toRun []string, summary *Su
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
-	defer cancel()
-	if err := runScafctl(ctx, configPath, tmp); err != nil {
-		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", err))
+	out, err := retryExec(func() (string, error) {
+		// Reset the output dir before every attempt (including the first) so a
+		// failed run's partial/extra files can never pollute a later attempt's
+		// diff, which could produce false drift or mask real drift.
+		if resetErr := resetDir(tmp); resetErr != nil {
+			return resetErr.Error(), resetErr
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+		defer cancel()
+		if runErr := runScafctl(ctx, configPath, tmp); runErr != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				// A hung tool is a timeout, not a transient blip - never retry.
+				return stripANSI(runErr.Error()), fmt.Errorf("%w: %s", context.DeadlineExceeded, stripANSI(runErr.Error()))
+			}
+			return stripANSI(runErr.Error()), runErr
+		}
+		return "", nil
+	})
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			// A hung tool is a timeout (intentionally not retried) - report it
+			// clearly so the user understands why it stopped.
+			summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold timed out for %s (%s)", opts.App, runTimeout))
+		} else {
+			summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed: %s", out))
+		}
 		summary.Failed += len(toRun)
 		return
 	}
@@ -491,15 +624,22 @@ func runDryRunParse(opts RunOptions, toRun []string, summary *Summary) {
 // mismatch (overlay exists / deleted by this PR) or a skip (new cluster not
 // yet rolled out). A tool execution failure fails every toRun overlay.
 func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
-	defer cancel()
 	args := ScaffoldArgs(opts.App, "", true)
-	cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
-	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
-	output := stripANSI(string(out))
+	out, err := retryExec(func() (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
+		cmd.Env = os.Environ()
+		b, cmdErr := cmd.CombinedOutput()
+		if cmdErr != nil && ctx.Err() == context.DeadlineExceeded {
+			// A hung tool is a timeout, not a transient blip - never retry.
+			cmdErr = fmt.Errorf("%w: %s", context.DeadlineExceeded, stripANSI(string(b)))
+		}
+		return stripANSI(string(b)), cmdErr
+	})
+	output := out
 	if err != nil {
-		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed for %s: %s", opts.App, output))
+		summary.Errors = append(summary.Errors, scaffoldExecError(opts.App, output, err))
 		summary.Failed += len(toRun)
 		return
 	}
@@ -548,30 +688,52 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 	}
 }
 
+// scaffoldExecError returns a user-facing error string for a failed
+// scaffold-tool dry-run, special-casing timeouts so a hung tool is reported
+// clearly (and understood to be intentionally not retried) rather than as a
+// generic 'scaffold command failed' text.
+func scaffoldExecError(app, output string, err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("scaffold timed out for %s (%s)", app, runTimeout)
+	}
+	// A tool that fails without emitting any output (e.g. the binary isn't
+	// found) would otherwise yield a useless '...: ' trailing colon; fall back
+	// to the underlying error so the failure stays actionable.
+	if strings.TrimSpace(output) == "" {
+		return fmt.Sprintf("scaffold command failed for %s: %s", app, err)
+	}
+	return fmt.Sprintf("scaffold command failed for %s: %s", app, output)
+}
+
 // dryRunOneCluster runs a single-cluster dry-run and classifies the result.
 // Returns ("passed"|"skipped"|"mismatch"|"error", mismatchFiles, errMsg).
 // "mismatch" is drift (the overlay would be (re)created) - reported via
 // MismatchFiles and classified downstream (blocking vs. pre-existing);
 // "error" is a genuine tool/execution failure, always blocking.
 func dryRunOneCluster(app, cluster string, changedFiles []string) (status string, mismatchFiles []string, errMsg string) {
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
-	defer cancel()
 	args := ScaffoldArgs(app, cluster, false)
-	cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
-	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
-	output := stripANSI(string(out))
+	out, err := retryExec(func() (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, Binary, args...) //nolint:gosec // Binary/ScaffoldArgs are operator-controlled package-level overrides, not user input
+		cmd.Env = os.Environ()
+		b, cmdErr := cmd.CombinedOutput()
+		if cmdErr != nil && ctx.Err() == context.DeadlineExceeded {
+			// A hung tool is a timeout, not a transient blip - never retry.
+			cmdErr = fmt.Errorf("%w: %s", context.DeadlineExceeded, stripANSI(string(b)))
+		}
+		return stripANSI(string(b)), cmdErr
+	})
+	output := out
 
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return "error", nil, fmt.Sprintf("scaffold timed out for %s (%s)", cluster, runTimeout)
-		}
-		// If the overlay was deleted by this PR, a scaffold failure for it
-		// is the expected outcome of that removal, not real drift.
-		if !overlayExists(app, cluster) {
+		// If the overlay was deleted by this PR, a scaffold failure for it is
+		// the expected outcome of that removal, not real drift - unless it was
+		// a timeout, which is always reported.
+		if !errors.Is(err, context.DeadlineExceeded) && !overlayExists(app, cluster) {
 			return "passed", nil, ""
 		}
-		return "error", nil, fmt.Sprintf("scaffold command failed for %s: %s", cluster, output)
+		return "error", nil, scaffoldExecError(cluster, output, err)
 	}
 
 	created := ExtractCreatedFiles(output)
@@ -602,6 +764,16 @@ func diffDirs(generated, committed string) (string, error) {
 	cmd := exec.CommandContext(context.Background(), "diff", "-rq", generated, committed) //nolint:gosec // both paths are derived from this package's own temp dir + convention-based overlay layout, not user input
 	out, _ := cmd.Output()
 	return stripANSI(string(out)), nil
+}
+
+// resetDir removes dir and recreates it empty (mode 0700, matching
+// os.MkdirTemp's default), so each scaffold attempt runs against a clean
+// output tree even when reusing the same directory across retries.
+func resetDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0o700)
 }
 
 var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
