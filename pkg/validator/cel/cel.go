@@ -154,6 +154,11 @@ func CompileRules(schemaDir string) (*CompiledRules, error) {
 // via TestMain) compile once across dozens of RunAll calls, and ensures
 // that the rendered + raw CEL passes in a single pipeline invocation share
 // one compile instead of two.
+//
+// CompileRulesCached is the public API. ClearCompileCache is exported so
+// consumers and tests can reclaim the memory when the cache is no longer
+// needed (it is not garbage-collected until the map is cleared or the
+// process exits).
 var compileCache = struct {
 	sync.Mutex
 	m map[string]*CompiledRules
@@ -173,6 +178,15 @@ func CompileRulesCached(schemaDir string) (*CompiledRules, error) {
 	}
 	compileCache.m[schemaDir] = rules
 	return rules, nil
+}
+
+// ClearCompileCache resets the compiled-rules cache. It is intended for use
+// by tests and long-lived library consumers that need to reclaim the memory
+// retained by the per-directory CompiledRules instances.
+func ClearCompileCache() {
+	compileCache.Lock()
+	defer compileCache.Unlock()
+	compileCache.m = make(map[string]*CompiledRules)
 }
 
 // parseSchemaFile reads a JSON schema file, extracts x-kubernetes-validations,

@@ -352,6 +352,56 @@ func TestCompileRulesCached_NonExistentDir(t *testing.T) {
 	}
 }
 
+func TestClearCompileCache(t *testing.T) {
+	t.Parallel()
+
+	// Create a minimal schema directory.
+	dir := t.TempDir()
+	subdir := dir + "/master-standalone-strict"
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	schemaFile := subdir + "/Deployment.json"
+	schemaJSON := `{
+  "x-kubernetes-validations": [
+    {
+      "rule": "size(self) > 0",
+      "message": "must be non-empty"
+    }
+  ]
+}`
+	if err := os.WriteFile(schemaFile, []byte(schemaJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Compile and cache.
+	rules1, err := CompileRulesCached(dir)
+	if err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+
+	// Cache hit returns same instance.
+	rules2, err := CompileRulesCached(dir)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if rules1 != rules2 {
+		t.Fatal("expected cache hit")
+	}
+
+	// Clear the cache.
+	ClearCompileCache()
+
+	// After clearing, a new compile should produce a different instance.
+	rules3, err := CompileRulesCached(dir)
+	if err != nil {
+		t.Fatalf("third call after clear: %v", err)
+	}
+	if rules1 == rules3 {
+		t.Fatal("expected different instance after cache clear")
+	}
+}
+
 func TestPreFilterSkipsFilesWithoutValidations(t *testing.T) {
 	t.Parallel()
 

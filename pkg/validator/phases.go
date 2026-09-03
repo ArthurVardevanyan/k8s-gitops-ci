@@ -804,6 +804,22 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// so each manifest is schema-validated exactly once, and here we validate
 	// what actually deploys (AVP placeholders resolved, Helm charts rendered)
 	// rather than raw source. Only emitted when at least one overlay rendered.
+	// Schema extraction for CEL validation: extract once (when opts.SchemaDir
+	// is not provided) so the rendered + raw CEL passes share the same
+	// directory key and CompileRulesCached actually deduplicates work.
+	var celSchemaDir string
+	var celSchemaCleanup func()
+	if opts.SchemaDir == "" {
+		extracted, c, err := kubeconform.ExtractSchemas()
+		if err == nil {
+			celSchemaDir = extracted
+			celSchemaCleanup = c
+		}
+	}
+	if celSchemaCleanup != nil {
+		defer celSchemaCleanup()
+	}
+
 	if len(renderedOverlays) > 0 {
 		kcOpts, kcCleanup := kubeconformSchemaOpts(opts)
 		renderedKc := validateRenderedOverlays(renderedOverlays, kcOpts, Workers(opts))
@@ -822,12 +838,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		if stepEnabled(stepCEL, disabled, enabled) {
 			schemaDir := opts.SchemaDir
 			if schemaDir == "" {
-				// Extract schemas if not already prefetched.
-				extracted, c, err := kubeconform.ExtractSchemas()
-				if err == nil {
-					schemaDir = extracted
-					defer c()
-				}
+				schemaDir = celSchemaDir
 			}
 			if schemaDir != "" {
 				compiledRules, compileErr := cel.CompileRulesCached(schemaDir)
@@ -855,19 +866,11 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// Mirrors the kubeconform raw pass pattern: exclude scaffold artifacts,
 	// known non-manifest files, and files covered by scoped overlays.
 	if stepEnabled(stepCEL, disabled, enabled) {
-		// Determine schema directory (reuse from rendered pass if available).
 		schemaDir := opts.SchemaDir
 		if schemaDir == "" {
-			extracted, c, err := kubeconform.ExtractSchemas()
-			if err == nil {
-				schemaDir = extracted
-				defer c()
-			}
+			schemaDir = celSchemaDir
 		}
 		if schemaDir != "" {
-			// Compile CEL rules for raw pass (may already be compiled from
-			// the rendered pass; CompileRulesCached returns the cached result
-			// when the same schema directory was already compiled).
 			compiledRules, compileErr := cel.CompileRulesCached(schemaDir)
 			if compileErr != nil {
 				log.Warn("cel: failed to compile rules: %v", compileErr)
