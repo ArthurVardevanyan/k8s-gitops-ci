@@ -1524,11 +1524,6 @@ No `"*"` in `verbs`/`resources`/`apiGroups` on `Role`/`ClusterRole`.
 Non-builtin API-group resources carry the ArgoCD
 `SkipDryRunOnMissingResource=true` sync-options annotation.
 
-Findings are attributed per-namespace: a rendered resource is matched back
-to its originating source file using `Namespace/Kind/Name`, so two
-resources with the same kind and name but different namespaces resolve to
-their own source file rather than a co-named one.
-
 - **Package:** `pkg/validator/static/syncopts`
 - **Scope:** Doc
 - **Exemptions:** builtin/core groups and OpenShift/OKD-exclusive API
@@ -1760,7 +1755,13 @@ changeset directly modified that specific resource (`Namespace/Kind/Name`,
 with the namespace omitted for cluster-scoped resources) via a
 source file feeding the affected overlay
 (`changedResourceKeys`/`isResourceAffected`,
-`pkg/validator/compliance_attribution.go`). A PR that only touches an
+`pkg/validator/compliance_attribution.go`). The rendered pass stamps each
+document's `metadata.namespace` onto its findings
+(`applyNamespace` in `pkg/validator/phases.go`), so every namespaced
+resource-compliance check — not just `sync-options` — keys namespace-aware;
+two resources that share a `Kind` and `Name` but live in different
+namespaces resolve to their own source file and never bleed attribution
+onto each other. A PR that only touches an
 overlay's `kustomization.yaml` therefore surfaces the base-derived
 findings for its resources as ⚠️ warnings, not blocking errors, unless it
 also changed those resource definitions themselves.
