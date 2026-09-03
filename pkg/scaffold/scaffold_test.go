@@ -936,6 +936,27 @@ func TestRun_DryRunParse_FullTest_TransientRetrySucceeds(t *testing.T) {
 	}
 }
 
+func TestScaffoldExecError(t *testing.T) {
+	timeout := fmt.Errorf("%w: boom", context.DeadlineExceeded)
+	cases := []struct {
+		name   string
+		err    error
+		output string
+		want   string
+	}{
+		{name: "timeout", err: timeout, output: "context deadline exceeded", want: fmt.Sprintf("scaffold timed out for myapp (%s)", runTimeout)},
+		{name: "transient network", err: errors.New("exit status 1"), output: "doWebCall - unexpected EOF", want: "scaffold command failed for myapp: doWebCall - unexpected EOF"},
+		{name: "config error", err: errors.New("exit status 2"), output: "config parse error", want: "scaffold command failed for myapp: config parse error"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := scaffoldExecError("myapp", c.output, c.err); got != c.want {
+				t.Errorf("scaffoldExecError() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // TestRun_DryRunParse_FullTest_TimeoutNotRetried verifies a context-deadline
 // timeout text is not treated as transient, so the FullTest path fails fast on
 // a single invocation.

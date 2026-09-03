@@ -633,7 +633,7 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 	})
 	output := out
 	if err != nil {
-		summary.Errors = append(summary.Errors, fmt.Sprintf("scaffold command failed for %s: %s", opts.App, output))
+		summary.Errors = append(summary.Errors, scaffoldExecError(opts.App, output, err))
 		summary.Failed += len(toRun)
 		return
 	}
@@ -680,6 +680,17 @@ func runDryRunFull(opts RunOptions, toRun []string, summary *Summary) {
 	} else {
 		summary.Passed += len(toRun)
 	}
+}
+
+// scaffoldExecError returns a user-facing error string for a failed
+// scaffold-tool dry-run, special-casing timeouts so a hung tool is reported
+// clearly (and understood to be intentionally not retried) rather than as a
+// generic 'scaffold command failed' text.
+func scaffoldExecError(app, output string, err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("scaffold timed out for %s (%s)", app, runTimeout)
+	}
+	return fmt.Sprintf("scaffold command failed for %s: %s", app, output)
 }
 
 // dryRunOneCluster runs a single-cluster dry-run and classifies the result.
