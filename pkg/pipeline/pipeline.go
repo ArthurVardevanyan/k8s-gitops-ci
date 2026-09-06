@@ -622,7 +622,7 @@ func validatorSection(vr *validator.Result, name string) (validator.ReportSectio
 }
 
 func composeSections(res *Result, opts Options) []validator.ReportSection {
-	sections := make([]validator.ReportSection, 0, 7)
+	sections := make([]validator.ReportSection, 0, 10)
 
 	// 1. PR Checks
 	sections = append(sections, validator.ComposePRChecksSection(res.TitleErr, res.UnsignedErr, res.ChecklistErr, res.TitleSuggestion))
@@ -637,20 +637,19 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 		sections = append(sections, validatorSectionOrFallback(res.ValidatorResult, name))
 	}
 
-	// 4–9. Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
-	// Resource Compliance, NetworkAttachmentDefinition Validation, and
-	// Kyverno Policies are all omit-when-absent: phases.go only produces
-	// these from runBuildAndPostBuild, which --lint-only skips entirely (it
-	// runs only runLintAndStaticChecks - see validator.RunAll) - and NAD/
-	// Kyverno are additionally opt-in/conditional even when that phase does
-	// run (see below). A "No results." stub for any of these under
-	// --lint-only would misleadingly read as "checked this PR's build
-	// output, found nothing" rather than "this phase never ran for this
-	// request" - so each is appended only when actually present in
-	// res.ValidatorResult.Sections.
+	// 4–10. Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
+	// Resource Compliance, Runtime Validation, NetworkAttachmentDefinition
+	// Validation, and Kyverno Policies are all omit-when-absent: phases.go
+	// only produces these from runBuildAndPostBuild, which --lint-only skips
+	// entirely (it runs only runLintAndStaticChecks - see validator.RunAll) -
+	// and NAD/Kyverno are additionally opt-in/conditional even when that
+	// phase does run (see below). A "No results." stub for any of these under
+	// --lint-only would misleadingly read as "checked this PR's build output,
+	// found nothing" rather than "this phase never ran for this request" - so
+	// each is appended only when actually present in res.ValidatorResult.Sections.
 	for _, name := range []string{
 		"Kustomize Build", "Scaffold Validation", "Scaffold Drift Protection",
-		"Resource Compliance", "NetworkAttachmentDefinition Validation", "Kyverno Policies",
+		"Resource Compliance", "Runtime Validation", "NetworkAttachmentDefinition Validation", "Kyverno Policies",
 	} {
 		if s, ok := validatorSection(res.ValidatorResult, name); ok {
 			sections = append(sections, s)
