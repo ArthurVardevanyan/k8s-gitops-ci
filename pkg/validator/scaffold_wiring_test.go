@@ -329,6 +329,44 @@ func TestIsOverlayRelatedToChangedFiles(t *testing.T) {
 	}
 }
 
+func TestIsOverlayScaffoldRelated(t *testing.T) {
+	// Unlike isOverlayRelatedToChangedFiles, scaffold relatedness is a
+	// pure path-prefix check over genuine scaffold inputs - it needs no
+	// on-disk kustomization refs. Only the overlay's own files, the app's
+	// scaffold template, and the app's scaffold config count; a base/ or
+	// components/ edit (even one an overlay's kustomization chain reaches,
+	// transitively through a version-variant component) is never
+	// scaffold-related.
+	chdirTemp(t)
+
+	cases := []struct {
+		name    string
+		cluster string
+		changed []string
+		want    bool
+	}{
+		{"overlay itself changed", "c1", []string{"myapp/overlays/c1/kustomization.yaml"}, true},
+		{"overlay own patch changed", "c1", []string{"myapp/overlays/c1/patch.yaml"}, true},
+		{"template changed", "c1", []string{".scafctl/templates/myapp/overlays/kustomization.yaml"}, true},
+		{"config yaml changed", "c1", []string{".scafctl/configs/myapp.yaml"}, true},
+		{"config yml changed", "c1", []string{".scafctl/configs/myapp.yml"}, true},
+		{"base changed is NOT scaffold-related", "c1", []string{"myapp/base/deployment.yaml"}, false},
+		{"directly referenced component changed is NOT scaffold-related", "c1", []string{"myapp/components/foo/v1/x.yaml"}, false},
+		{"transitively referenced version-variant component changed is NOT scaffold-related", "c1", []string{"myapp/components/foo/v1-variant/x.yaml"}, false},
+		{"different app template does not relate", "c1", []string{".scafctl/templates/otherapp/overlays/kustomization.yaml"}, false},
+		{"a different overlay changed", "c1", []string{"myapp/overlays/c2/kustomization.yaml"}, false},
+		{"an unrelated app changed", "c1", []string{"otherapp/overlays/c1/kustomization.yaml"}, false},
+		{"nothing changed", "c1", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isOverlayScaffoldRelated("myapp", c.cluster, c.changed); got != c.want {
+				t.Errorf("isOverlayScaffoldRelated(%q, %v) = %v, want %v", c.cluster, c.changed, got, c.want)
+			}
+		})
+	}
+}
+
 func TestComputeBaselineMismatches_EmptyBaseRefSkipsEntirely(t *testing.T) {
 	// A local test run against a live working tree always has an
 	// empty BaseRef (see gitDiff's own doc comment) - this must be an
