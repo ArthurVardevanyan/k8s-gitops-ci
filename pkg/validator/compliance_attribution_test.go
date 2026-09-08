@@ -541,3 +541,38 @@ func TestClassifyResourceCompliance_FileBasedClusterIdentityDirectIsBlocking(t *
 			len(blocking["cluster-identity"]), len(nonblocking["cluster-identity"]))
 	}
 }
+
+// TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths guards the
+// path-normalization in buildAttributionCtx: changed file paths arriving with a
+// redundant prefix (e.g. "./") must be filepath.Clean-ed into the single slice
+// that feeds BOTH ctx.changedFiles and overlayDirsByChangedPaths. Without it, a
+// "./"-prefixed directly-changed component would appear in ctx.changedFiles but
+// miss the overlaysByDir key (keyed by filepath.Dir of the raw path), silently
+// downgrading the file-based finding to a pre-existing warning.
+func TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths(t *testing.T) {
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	// The PR reports the changed component with a redundant "./" prefix - a
+	// form buildAttributionCtx must normalize into both attribution views.
+	changed := []string{"./" + app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	finding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "PLACEHOLDER",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
+		t.Errorf("expected the normalized directly-changed component to stay blocking despite the ./ prefix, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}

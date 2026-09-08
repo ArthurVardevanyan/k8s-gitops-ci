@@ -280,18 +280,31 @@ func isResourceAffected(resourceKey string, ctx *complianceAttributionCtx, overl
 // changed files and the overlays detected for them. Reuses the existing
 // overlay.RefsChangedDir and overlay.FilterOverlaysByRefs for kustomization
 // ref-chain scoping. Called once in runBuildAndPostBuild.
+//
+// changedFiles is normalized (filepath.Clean) into a single slice used by every
+// downstream attribution helper - changedResourceKeys, directlyChangedOverlays,
+// appsWithBaseChanges, overlayDirsByChangedPaths, and ctx.changedFiles - so
+// their path-derived keys (overlaysByDir uses filepath.Dir of the changed
+// source) agree byte-for-byte with the file-level lookups overlayFileFeedsOverlay
+// performs against ctx.changedFiles. Mixing cleaned and raw paths here would
+// let a redundant-slash/./../-bearing path fall out of the overlaysByDir key
+// set while still appearing in ctx.changedFiles, silently downgrading a
+// directly-changed file to a pre-existing warning.
 func buildAttributionCtx(changedFiles, apps []string) *complianceAttributionCtx {
-	baseApps := appsWithBaseChanges(changedFiles)
+	cleanedFiles := make([]string, 0, len(changedFiles))
 	changed := make(map[string]bool, len(changedFiles))
 	for _, f := range changedFiles {
-		changed[filepath.Clean(f)] = true
+		cleaned := filepath.Clean(f)
+		cleanedFiles = append(cleanedFiles, cleaned)
+		changed[cleaned] = true
 	}
+	baseApps := appsWithBaseChanges(cleanedFiles)
 	ctx := &complianceAttributionCtx{
-		changedKeys:    changedResourceKeys(changedFiles),
-		directOverlays: directlyChangedOverlays(changedFiles),
+		changedKeys:    changedResourceKeys(cleanedFiles),
+		directOverlays: directlyChangedOverlays(cleanedFiles),
 		changedFiles:   changed,
 		baseApps:       baseApps,
-		overlaysByDir:  overlayDirsByChangedPaths(changedFiles, baseApps, apps),
+		overlaysByDir:  overlayDirsByChangedPaths(cleanedFiles, baseApps, apps),
 	}
 	return ctx
 }
