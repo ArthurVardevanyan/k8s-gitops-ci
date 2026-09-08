@@ -96,7 +96,20 @@ func classifyResourceCompliance(findings []check.Finding, ctx *complianceAttribu
 		if spec.ResourceKey != nil {
 			resourceKey = spec.ResourceKey(f)
 		}
-		if resourceKey != "" && ctx.changedKeys != nil && ctx.changedKeys[resourceKey] != nil && isResourceAffected(resourceKey, ctx, f.File) {
+		if resourceKey == "" {
+			// File-based checks (placeholder, cluster-identity) don't key on a
+			// specific resource - the finding's File is an overlay dir (from the
+			// rendered pass) or a raw source file. They become blocking when any
+			// source file feeding that path was directly changed in this PR;
+			// otherwise the finding is a non-blocking pre-existing warning.
+			if ctx != nil && overlayHasDirectSourceChange(f.File, ctx) {
+				blockingByCheck[id] = append(blockingByCheck[id], f)
+			} else {
+				nonblockingByCheck[id] = append(nonblockingByCheck[id], f)
+			}
+			continue
+		}
+		if ctx.changedKeys != nil && ctx.changedKeys[resourceKey] != nil && isResourceAffected(resourceKey, ctx, f.File) {
 			blockingByCheck[id] = append(blockingByCheck[id], f)
 		} else {
 			nonblockingByCheck[id] = append(nonblockingByCheck[id], f)

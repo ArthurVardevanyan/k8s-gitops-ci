@@ -1780,6 +1780,24 @@ overlay's `kustomization.yaml` therefore surfaces the base-derived
 findings for its resources as ⚠️ warnings, not blocking errors, unless it
 also changed those resource definitions themselves.
 
+The **file-based** compliance checks (`placeholder`, `cluster-identity`) —
+those with a `TableSpec` that has no `ResourceKey`, so classification can't
+key on a specific resource — use a file-granularity version of the same
+rule (`overlayHasDirectSourceChange`/
+`overlayFileFeedsOverlay`, `pkg/validator/compliance_attribution.go`). A
+rendered-pass finding from such a check is attributed to its overlay dir,
+and is **direct** (blocking) when the changeset directly changed any
+source file feeding that overlay — a component/base resource definition it
+pulls in, or a file under the overlay's own `overlays/<cluster>` dir.
+It stays a ⚠️ warning when the PR only touched the overlay's
+`kustomization.yaml` (plumbing, not a resource-defining change) or changed
+entirely unrelated apps. In short: a PR that modifies a source file
+carrying a sentinel/placeholder token (or feeding an overlay-scoped check)
+is held accountable for it; a token pre-existing in an untouched source is
+surfaced as visibility only. This is file-granularity by design — an
+unchanged line in an otherwise-touched file still blocks, matching the raw
+pass and `finalizeCompliance`'s treatment of directly-changed files.
+
 ## Concurrency
 
 `Workers(opts)` returns `opts.Concurrency` if set (`--concurrency`), else

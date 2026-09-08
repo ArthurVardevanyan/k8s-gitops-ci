@@ -19,8 +19,64 @@ import (
 type complianceAttributionCtx struct {
 	changedKeys    map[string][]string        // "Kind/Name" → source files that define it
 	directOverlays map[string]bool            // "app/cluster" of overlays with directly-modified files
+	changedFiles   map[string]bool            // every directly-changed file (cleaned path)
 	baseApps       map[string]bool            // apps whose base/component dir was changed
 	overlaysByDir  map[string]map[string]bool // changed dir → set of overlay keys it feeds
+}
+
+// overlayFileFeedsOverlay reports whether a directly-changed file feeds the
+// given overlay's build chain - either it lives under overlays/<cluster> (a
+// direct overlay change) or under a base/component dir that the overlay's
+// kustomization ref chain reaches. This is the file-level sibling of
+// isResourceAffected's resource lookup, for checks that don't key on a
+// specific resource (placeholder, cluster-identity). A file-based finding
+// attributed to overlayPath is blocking when the PR directly changed a source
+// file feeding that overlay.
+func overlayFileFeedsOverlay(filePath, overlayPath string, ctx *complianceAttributionCtx) bool {
+	if ctx == nil {
+		return false
+	}
+	// kustomization.yaml plumbing alone is never a resource-defining change: a
+	// PR that only touches an overlay's (or component's) kustomization.yaml must
+	// not silently promote every pre-existing token found in that overlay's
+	// rendered output to a blocking, author-owned finding. Mirrors how
+	// changedResourceKeys skips kustomization manifests for resource attribution.
+	if base := filepath.Base(filePath); base == "kustomization.yaml" || base == "kustomization.yml" {
+		return false
+	}
+	app := appFromOverlayPath(overlayPath)
+	cluster := filepath.Base(overlayPath)
+	key := filepath.ToSlash(app) + "/" + cluster
+
+	// Direct overlay change: the changed file lives under this overlay's dir.
+	if ctx.directOverlays[key] && isFileInOverlay(filePath, app, cluster) {
+		return true
+	}
+
+	// Base/component change: the changed file's dir feeds this overlay via
+	// its kustomization ref chain.
+	dir := filepath.ToSlash(filepath.Dir(filePath))
+	if overlays, ok := ctx.overlaysByDir[dir]; ok && overlays[key] {
+		return true
+	}
+	return false
+}
+
+// overlayHasDirectSourceChange reports whether the overlay at overlayPath has
+// at least one directly-changed source file feeding it (overlayFileFeedsOverlay
+// over every changed file). File-based compliance findings attributed to an
+// overlay (File = <overlay dir>) become blocking when this is true; otherwise
+// they are surfaced as non-blocking pre-existing warnings.
+func overlayHasDirectSourceChange(overlayPath string, ctx *complianceAttributionCtx) bool {
+	if ctx == nil || len(ctx.changedFiles) == 0 {
+		return false
+	}
+	for f := range ctx.changedFiles {
+		if overlayFileFeedsOverlay(f, overlayPath, ctx) {
+			return true
+		}
+	}
+	return false
 }
 
 // kindNameKey is the standard resource identity key for a finding. It becomes
@@ -226,9 +282,14 @@ func isResourceAffected(resourceKey string, ctx *complianceAttributionCtx, overl
 // ref-chain scoping. Called once in runBuildAndPostBuild.
 func buildAttributionCtx(changedFiles, apps []string) *complianceAttributionCtx {
 	baseApps := appsWithBaseChanges(changedFiles)
+	changed := make(map[string]bool, len(changedFiles))
+	for _, f := range changedFiles {
+		changed[filepath.Clean(f)] = true
+	}
 	ctx := &complianceAttributionCtx{
 		changedKeys:    changedResourceKeys(changedFiles),
 		directOverlays: directlyChangedOverlays(changedFiles),
+		changedFiles:   changed,
 		baseApps:       baseApps,
 		overlaysByDir:  overlayDirsByChangedPaths(changedFiles, baseApps, apps),
 	}
