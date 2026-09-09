@@ -160,8 +160,13 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 			continue
 		}
 		seen[f] = true
+		absF := filepath.Join(rootDir, f)
 		for _, dir := range dirs {
-			if hasDirPrefix(f, dir) {
+			absDir, err := filepath.Abs(dir)
+			if err != nil {
+				continue
+			}
+			if hasDirPrefix(absF, absDir) {
 				result = append(result, f)
 				break
 			}
