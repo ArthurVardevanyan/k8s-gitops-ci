@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Options configures changed-file resolution.
@@ -135,10 +136,12 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 
 	if isGitRepo {
 		// Collect git-tracked files from the repo root.
-		cmd := exec.Command("git", "-C", rootDir, "ls-files")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", "-C", rootDir, "ls-files")
 		trackedOut, trackedErr = cmd.Output()
 		// Collect untracked files that are not .gitignore-d.
-		cmd = exec.Command("git", "-C", rootDir, "ls-files", "--others", "--exclude-standard")
+		cmd = exec.CommandContext(ctx, "git", "-C", rootDir, "ls-files", "--others", "--exclude-standard")
 		untrackedOut, untrackedErr = cmd.Output()
 	} else {
 		// Fall back to a plain directory walk when git is unavailable or dirs are in different repos.
@@ -185,9 +188,12 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 // It handles both exact matches (e.g. "base" matches "base/kustomization.yaml")
 // and subdirectory paths (e.g. "./base" matches "base/kustomization.yaml").
 func hasDirPrefix(file, dir string) bool {
-	// Normalize both paths: trim leading "./" if present.
+	// Normalize both paths: trim leading "./" and convert to forward slashes
+	// for cross-platform compatibility (git always uses forward slashes).
 	file = strings.TrimPrefix(file, "./")
 	dir = strings.TrimPrefix(dir, "./")
+	file = filepath.ToSlash(file)
+	dir = filepath.ToSlash(dir)
 
 	if strings.HasPrefix(file, dir+"/") {
 		return true
@@ -238,45 +244,45 @@ func findGitRoot(dirs []string) (string, bool) {
 		}
 	}
 
-	// Start with the first directory as the candidate root.
-	candidate := absDirs[0]
-	for {
-		// Check if candidate is a git repo root (or inside one).
-		cmd := exec.CommandContext(context.Background(), "git", "-C", candidate, "rev-parse", "--show-toplevel")
-		out, err := cmd.Output()
-		if err == nil {
-			// Found a git repo.
-			repoRoot := strings.TrimSpace(string(out))
-			repoRoot = filepath.Clean(repoRoot)
-			// Verify all dirs are under this repo root.
-			allUnder := true
-			for _, dir := range absDirs {
-				if !strings.HasPrefix(dir, repoRoot+"/") && dir != repoRoot {
-					allUnder = false
-					break
+	// Find the common git root by checking each directory's nearest repo.
+	var commonRoot string
+	for _, dir := range absDirs {
+		candidate := dir
+		for {
+			cmd := exec.CommandContext(context.Background(), "git", "-C", candidate, "rev-parse", "--show-toplevel")
+			out, err := cmd.Output()
+			if err == nil {
+				repoRoot := strings.TrimSpace(string(out))
+				repoRoot = filepath.Clean(repoRoot)
+				if commonRoot == "" {
+					commonRoot = repoRoot
+				} else if repoRoot != commonRoot {
+					// Different repos, no common root.
+					return "", false
 				}
+				break
 			}
-			if allUnder {
-				return repoRoot, true
-			}
-			// Not all dirs are under this repo, try parent.
+			// Not a git repo or not inside one, try parent.
 			parent := filepath.Dir(candidate)
 			if parent == candidate {
 				break
 			}
 			candidate = parent
-			continue
 		}
-
-		// candidate is not a git repo, try parent.
-		parent := filepath.Dir(candidate)
-		if parent == candidate {
-			break
-		}
-		candidate = parent
 	}
 
-	return "", false
+	if commonRoot == "" {
+		return "", false
+	}
+
+	// Verify all dirs are under this common repo root.
+	for _, dir := range absDirs {
+		if !strings.HasPrefix(filepath.ToSlash(dir), filepath.ToSlash(commonRoot)+"/") && dir != commonRoot {
+			return "", false
+		}
+	}
+
+	return commonRoot, true
 }
 
 // FilterByExtension keeps files ending with any of the given extensions.
