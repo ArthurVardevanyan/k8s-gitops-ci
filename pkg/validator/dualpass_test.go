@@ -195,7 +195,7 @@ func TestClassifyResourceCompliance_ResourceLevelSplit(t *testing.T) {
 
 	// Resource NOT changed (empty changedKeys) -> non-blocking warning.
 	warnCtx := &complianceAttributionCtx{changedKeys: map[string][]string{}}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, warnCtx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, warnCtx, true)
 	if len(blocking["podspec-defaults"]) != 0 || len(nonblocking["podspec-defaults"]) != 1 {
 		t.Errorf("expected the finding to be non-blocking when its resource was not changed, got blocking=%d warning=%d",
 			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
@@ -206,7 +206,7 @@ func TestClassifyResourceCompliance_ResourceLevelSplit(t *testing.T) {
 		changedKeys:    map[string][]string{"Job/j": {"app/overlays/pd1010/job.yaml"}},
 		directOverlays: map[string]bool{"app/pd1010": true},
 	}
-	blocking, nonblocking = classifyResourceCompliance([]check.Finding{finding}, blockCtx)
+	blocking, nonblocking = classifyResourceCompliance([]check.Finding{finding}, blockCtx, true)
 	if len(blocking["podspec-defaults"]) != 1 || len(nonblocking["podspec-defaults"]) != 0 {
 		t.Errorf("expected the finding to be blocking when its resource was directly changed, got blocking=%d warning=%d",
 			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))

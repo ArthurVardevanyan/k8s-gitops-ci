@@ -936,7 +936,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// source file that feeds this overlay - not when an entirely unrelated
 	// overlay kustomization.yaml was touched (see compliance_attribution.go).
 	attrCtx := buildAttributionCtx(changed, apps)
-	blockingByCheck, nonblockingByCheck := classifyResourceCompliance(complianceFindings, attrCtx)
+	blockingByCheck, nonblockingByCheck := classifyResourceCompliance(complianceFindings, attrCtx, avpEnabled)
 
 	var directTotal, indirectTotal int
 	combinedBlocking := make([]check.Finding, 0, len(allFindings))

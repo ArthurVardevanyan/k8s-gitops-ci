@@ -70,7 +70,12 @@ func indexOfComplianceCheck(id string) int {
 // affected resource is being modified in this PR, these issues must be
 // corrected. Otherwise, these are non-blocking warnings for pre-existing
 // issues."
-func classifyResourceCompliance(findings []check.Finding, ctx *complianceAttributionCtx) (blockingByCheck, nonblockingByCheck map[string][]check.Finding) {
+//
+// When avpEnabled is false, findings whose AVP field is non-empty (i.e.
+// AVP-style placeholders like <path:...>) are downgraded to non-blocking:
+// unresolved AVP tokens in rendered output are expected when the AVP step
+// is disabled, so they should not block the build.
+func classifyResourceCompliance(findings []check.Finding, ctx *complianceAttributionCtx, avpEnabled bool) (blockingByCheck, nonblockingByCheck map[string][]check.Finding) {
 	blockingByCheck = make(map[string][]check.Finding)
 	nonblockingByCheck = make(map[string][]check.Finding)
 
@@ -79,6 +84,14 @@ func classifyResourceCompliance(findings []check.Finding, ctx *complianceAttribu
 		// resource-level model, or from the raw fallback pass) stay blocking.
 		if f.ForcedDirect {
 			blockingByCheck[f.CheckID] = append(blockingByCheck[f.CheckID], f)
+			continue
+		}
+
+		// AVP findings (e.g. <path:...>) are downgraded to non-blocking when
+		// the AVP step is disabled: unresolved AVP tokens in rendered output
+		// are expected in that case since no secret resolution ran.
+		if !avpEnabled && f.AVP != "" {
+			nonblockingByCheck[f.CheckID] = append(nonblockingByCheck[f.CheckID], f)
 			continue
 		}
 

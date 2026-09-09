@@ -136,7 +136,7 @@ func TestClassifyResourceCompliance_NamespacedSourceStillBlockingForLegacyCheck(
 		File:  app + "/overlays/dev",
 	}
 
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["image-checksum"]) != 1 || len(nonblocking["image-checksum"]) != 0 {
 		t.Errorf("expected the directly-changed namespaced resource to stay blocking for a namespace-blind check, got blocking=%d warning=%d",
 			len(blocking["image-checksum"]), len(nonblocking["image-checksum"]))
@@ -208,7 +208,7 @@ func TestClassifyResourceCompliance_MultiSegmentAppIsBlocking(t *testing.T) {
 		directOverlays: directlyChangedOverlays([]string{src}),
 	}
 
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["image-checksum"]) != 1 || len(nonblocking["image-checksum"]) != 0 {
 		t.Errorf("expected the new multi-segment-app resource to be blocking, got blocking=%d warning=%d",
 			len(blocking["image-checksum"]), len(nonblocking["image-checksum"]))
@@ -230,7 +230,7 @@ func TestClassifyResourceCompliance_MultiSegmentBaseUnchangedResourceIsWarning(t
 	}
 	ctx := &complianceAttributionCtx{changedKeys: map[string][]string{}}
 
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["image-checksum"]) != 0 || len(nonblocking["image-checksum"]) != 1 {
 		t.Errorf("expected an unchanged resource to be a non-blocking warning, got blocking=%d warning=%d",
 			len(blocking["image-checksum"]), len(nonblocking["image-checksum"]))
@@ -366,7 +366,7 @@ func TestClassifyResourceCompliance_SameKindNameDifferentNamespace(t *testing.T)
 		Message:   "enableServiceLinks, schedulerName, automountServiceAccountToken",
 		File:      app + "/overlays/prod",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{broken}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{broken}, ctx, true)
 	if len(blocking["podspec-defaults"]) != 0 || len(nonblocking["podspec-defaults"]) != 1 {
 		t.Errorf("expected the unchanged co-named Job in namespace team-a to stay non-blocking, got blocking=%d warning=%d",
 			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
@@ -382,7 +382,7 @@ func TestClassifyResourceCompliance_SameKindNameDifferentNamespace(t *testing.T)
 		Message:   "dnsPolicy",
 		File:      app + "/overlays/prod",
 	}
-	blocking, nonblocking = classifyResourceCompliance([]check.Finding{touched}, ctx)
+	blocking, nonblocking = classifyResourceCompliance([]check.Finding{touched}, ctx, true)
 	if len(blocking["podspec-defaults"]) != 1 || len(nonblocking["podspec-defaults"]) != 0 {
 		t.Errorf("expected the touched namespace's Job to stay blocking, got blocking=%d warning=%d",
 			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
@@ -439,7 +439,7 @@ func TestClassifyResourceCompliance_FileBasedDirectComponentIsBlocking(t *testin
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
 		t.Errorf("expected the file-based placeholder finding on a directly-changed component to be blocking, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
@@ -473,7 +473,7 @@ func TestClassifyResourceCompliance_FileBasedOnlyOverlayKustomizationChangedStay
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
 		t.Errorf("expected a kustomization-only change to keep the file-based finding non-blocking, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
@@ -505,7 +505,7 @@ func TestClassifyResourceCompliance_FileBasedUnrelatedAppChangeStaysWarning(t *t
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
 		t.Errorf("expected an unrelated-app change to keep the file-based finding non-blocking, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
@@ -535,7 +535,7 @@ func TestClassifyResourceCompliance_FileBasedClusterIdentityDirectIsBlocking(t *
 		Value:   "project-123/zxcvb",
 		Message: app + "/overlays/okd/kustomization.yaml: cross-cluster project ref",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["cluster-identity"]) != 1 || len(nonblocking["cluster-identity"]) != 0 {
 		t.Errorf("expected the file-based cluster-identity finding on a directly-changed component to be blocking, got blocking=%d warning=%d",
 			len(blocking["cluster-identity"]), len(nonblocking["cluster-identity"]))
@@ -570,9 +570,103 @@ func TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths(t *testing.T
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
 		t.Errorf("expected the normalized directly-changed component to stay blocking despite the ./ prefix, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEmabled proves AVP
+// findings (e.g. <path:...>) are blocking when AVP is enabled and the overlay
+// has direct source changes.
+func TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEmabled(t *testing.T) {
+	t.Parallel()
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	finding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "<path:secret/data/okd#cluster_id>",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"<path:secret/data/okd#cluster_id>\"",
+		AVP:     "<path:secret/data/okd#cluster_id>",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
+	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
+		t.Errorf("expected the AVP finding to be blocking when AVP is enabled, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_AVPIsWarningWhenAVPDisabled proves AVP
+// findings are downgraded to warnings when the AVP step is disabled, even if
+// the overlay has direct source changes - unresolved AVP tokens in rendered
+// output are expected when no secret resolution ran.
+func TestClassifyResourceCompliance_AVPIsWarningWhenAVPDisabled(t *testing.T) {
+	t.Parallel()
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	avpFinding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "<path:secret/data/okd#cluster_id>",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"<path:secret/data/okd#cluster_id>\"",
+		AVP:     "<path:secret/data/okd#cluster_id>",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{avpFinding}, ctx, false)
+	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
+		t.Errorf("expected the AVP finding to be downgraded to warning when AVP is disabled, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_NonAVPIsStillBlockingWhenAVPDisabled proves
+// non-AVP findings (e.g. PLACEHOLDER, <REGISTRY>) remain blocking even when
+// AVP is disabled - only AVP findings should be downgraded.
+func TestClassifyResourceCompliance_NonAVPIsStillBlockingWhenAVPDisabled(t *testing.T) {
+	t.Parallel()
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	nonAVPFinding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "PLACEHOLDER",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
+		AVP:     "",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{nonAVPFinding}, ctx, false)
+	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
+		t.Errorf("expected the non-AVP finding to remain blocking when AVP is disabled, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
 	}
 }
