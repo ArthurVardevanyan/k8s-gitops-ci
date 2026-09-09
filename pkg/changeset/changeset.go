@@ -127,8 +127,7 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 
 	// Determine the root directory to run git commands in.
 	// If all dirs share a common parent that is a git repo root, use that.
-	// Otherwise, run git commands from each dir individually and combine results.
-	// For simplicity, find the common parent of all dirs and check if it's a git repo.
+	// Otherwise, fall back to a plain directory walk (walkDirUnder) which does not respect .gitignore.
 	rootDir, isGitRepo := findGitRoot(dirs)
 
 	var trackedOut, untrackedOut []byte
@@ -136,10 +135,10 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 
 	if isGitRepo {
 		// Collect git-tracked files from the repo root.
-		cmd := exec.CommandContext(context.Background(), "git", "-C", rootDir, "ls-files")
+		cmd := exec.Command("git", "-C", rootDir, "ls-files")
 		trackedOut, trackedErr = cmd.Output()
 		// Collect untracked files that are not .gitignore-d.
-		cmd = exec.CommandContext(context.Background(), "git", "-C", rootDir, "ls-files", "--others", "--exclude-standard")
+		cmd = exec.Command("git", "-C", rootDir, "ls-files", "--others", "--exclude-standard")
 		untrackedOut, untrackedErr = cmd.Output()
 	} else {
 		// Fall back to a plain directory walk when git is unavailable or dirs are in different repos.
@@ -151,7 +150,16 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 		return walkDirUnder(dirs)
 	}
 
-	allLines := append(splitLines(trackedOut), splitLines(untrackedOut)...)
+	allLines := splitLines(trackedOut)
+	if untrackedErr == nil {
+		allLines = append(allLines, splitLines(untrackedOut)...)
+	}
+
+	// Precompute absolute directory paths to avoid repeated calls in the file loop.
+	absDirs := make([]string, len(dirs))
+	for i, dir := range dirs {
+		absDirs[i] = filepath.Join(rootDir, dir)
+	}
 
 	seen := make(map[string]bool, len(allLines))
 	var result []string
@@ -161,11 +169,7 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 		}
 		seen[f] = true
 		absF := filepath.Join(rootDir, f)
-		for _, dir := range dirs {
-			absDir, err := filepath.Abs(dir)
-			if err != nil {
-				continue
-			}
+		for _, absDir := range absDirs {
 			if hasDirPrefix(absF, absDir) {
 				result = append(result, f)
 				break
