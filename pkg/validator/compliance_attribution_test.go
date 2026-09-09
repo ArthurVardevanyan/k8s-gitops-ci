@@ -388,3 +388,191 @@ func TestClassifyResourceCompliance_SameKindNameDifferentNamespace(t *testing.T)
 			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
 	}
 }
+
+// chdirToTemp changes into a fresh temp dir for the duration of the test and
+// returns its absolute path, so filesystem-backed attribution tests can write
+// app trees under CWD (appRootOf / RefsChangedDir resolve relatively, matching
+// a real pipeline run's repo-root CWD). Mirrors the manual chdir pattern the
+// other filesystem-backed tests here use.
+func chdirToTemp(t *testing.T) string {
+	t.Helper()
+	d := t.TempDir()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(d); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// TestClassifyResourceCompliance_FileBasedDirectComponentIsBlocking is the
+// regression for the case verified against a real downstream consumer PR: a
+// sentinel placeholder token (`@PLACEHOLDER`) in a DIRECTLY-changed component
+// file (e.g. components/llama-swap/deployment.yaml feeding the okd overlay)
+// must classify as BLOCKING, not a non-blocking pre-existing warning.
+// Previously file-based checks (placeholder, cluster-identity) had no
+// ResourceKey, so every rendered-pass finding attributed to an overlay dir fell
+// into the non-blocking bucket regardless of whether the PR actually touched a
+// source file feeding that overlay.
+func TestClassifyResourceCompliance_FileBasedDirectComponentIsBlocking(t *testing.T) {
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	// The directly-changed component file carries the sentinel.
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	// PR only changed the component's deployment.yaml (not the overlay
+	// kustomization) - the downstream consumer's changeset shape.
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	finding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "PLACEHOLDER",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
+		t.Errorf("expected the file-based placeholder finding on a directly-changed component to be blocking, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_FileBasedOnlyOverlayKustomizationChangedStaysWarning
+// guards against over-blocking: a PR that only touches an overlay's
+// kustomization.yaml (plumbing, not a resource-defining source) must NOT
+// promote every pre-existing placeholder token found in that overlay's rendered
+// output to a blocking, author-owned finding. The token's source component was
+// not modified, so the finding stays a non-blocking warning.
+func TestClassifyResourceCompliance_FileBasedOnlyOverlayKustomizationChangedStaysWarning(t *testing.T) {
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	// The component with the pre-existing sentinel is NOT part of this PR.
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	// Only the overlay's kustomization.yaml was touched.
+	changed := []string{app + "/overlays/okd/kustomization.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	finding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "PLACEHOLDER",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
+		t.Errorf("expected a kustomization-only change to keep the file-based finding non-blocking, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_FileBasedUnrelatedAppChangeStaysWarning guards
+// that a file-based finding on one overlay is NOT promoted to blocking by a
+// change to an entirely different app that doesn't feed that overlay.
+func TestClassifyResourceCompliance_FileBasedUnrelatedAppChangeStaysWarning(t *testing.T) {
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+	// A wholly unrelated app is the only thing changed.
+	writeFile(t, d, "kubernetes/other/base/x.yaml", "kind: ConfigMap\nmetadata:\n  name: x\n")
+	writeFile(t, d, "kubernetes/other/base/kustomization.yaml", "resources:\n  - x.yaml\n")
+
+	changed := []string{"kubernetes/other/base/x.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app, "kubernetes/other"})
+
+	finding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "PLACEHOLDER",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
+		t.Errorf("expected an unrelated-app change to keep the file-based finding non-blocking, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_FileBasedClusterIdentityDirectIsBlocking proves
+// the file-based classification applies to every file-based compliance check,
+// not just placeholder: an overlay-scope cluster-identity finding attributed to
+// an overlay whose contributor file was directly changed must be blocking.
+func TestClassifyResourceCompliance_FileBasedClusterIdentityDirectIsBlocking(t *testing.T) {
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	finding := check.Finding{
+		CheckID: "cluster-identity",
+		File:    app + "/overlays/okd",
+		Value:   "project-123/zxcvb",
+		Message: app + "/overlays/okd/kustomization.yaml: cross-cluster project ref",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	if len(blocking["cluster-identity"]) != 1 || len(nonblocking["cluster-identity"]) != 0 {
+		t.Errorf("expected the file-based cluster-identity finding on a directly-changed component to be blocking, got blocking=%d warning=%d",
+			len(blocking["cluster-identity"]), len(nonblocking["cluster-identity"]))
+	}
+}
+
+// TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths guards the
+// path-normalization in buildAttributionCtx: changed file paths arriving with a
+// redundant prefix (e.g. "./") must be filepath.Clean-ed into the single slice
+// that feeds BOTH ctx.changedFiles and overlayDirsByChangedPaths. Without it, a
+// "./"-prefixed directly-changed component would appear in ctx.changedFiles but
+// miss the overlaysByDir key (keyed by filepath.Dir of the raw path), silently
+// downgrading the file-based finding to a pre-existing warning.
+func TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths(t *testing.T) {
+	d := chdirToTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	// The PR reports the changed component with a redundant "./" prefix - a
+	// form buildAttributionCtx must normalize into both attribution views.
+	changed := []string{"./" + app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	finding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "PLACEHOLDER",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
+		t.Errorf("expected the normalized directly-changed component to stay blocking despite the ./ prefix, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
