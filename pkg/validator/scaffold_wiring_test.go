@@ -56,18 +56,9 @@ func TestRunAll_ScaffoldSkippedWithoutConfig(t *testing.T) {
 // chdirs into the temp repo root rather than using an absolute app path
 // like the other end-to-end tests in this package.
 func TestRunAll_ScaffoldExecutionFailureBlocks(t *testing.T) {
-	d := t.TempDir()
-	mustWrite(t, filepath.Join(d, ".scafctl", "configs", "myapp.yaml"), "{}\n")
-	mustWrite(t, filepath.Join(d, "myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
-
-	origWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origWD) }()
+	chdirTemp(t)
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "{}\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
 
 	res, err := RunAll(Options{Dirs: []string{"myapp"}})
 	if err != nil {
@@ -95,21 +86,12 @@ func TestRunAll_ScaffoldExecutionFailureBlocks(t *testing.T) {
 // table with a stale/missing row must NOT be reported unless the step is
 // explicitly enabled - see docs/CI.md#scaffold-validation for why.
 func TestRunAll_ScaffoldReadmeCheckDisabledByDefault(t *testing.T) {
-	d := t.TempDir()
+	chdirTemp(t)
 	// A stale row ("removed" has no on-disk overlay) would fail
 	// CheckReadmeStatus if it ran.
 	table := scaffold.GenerateScaffoldTable([]scaffold.StatusRow{{App: "myapp", Overlay: "removed", Status: "✅ ok"}})
-	mustWrite(t, filepath.Join(d, "README.md"), "# Readme\n\n"+table)
-	mustWrite(t, filepath.Join(d, "myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
-
-	origWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, "README.md", "# Readme\n\n"+table)
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
 
 	// kustomize-fix is unrelated to what this test exercises, and this
 	// minimal fixture isn't in kustomize's real canonical form, which
@@ -134,19 +116,10 @@ func TestRunAll_ScaffoldReadmeCheckDisabledByDefault(t *testing.T) {
 // TestRunAll_ScaffoldReadmeCheckEnabledViaEnabledChecks is the positive
 // counterpart: once explicitly enabled, the same stale row must surface.
 func TestRunAll_ScaffoldReadmeCheckEnabledViaEnabledChecks(t *testing.T) {
-	d := t.TempDir()
+	chdirTemp(t)
 	table := scaffold.GenerateScaffoldTable([]scaffold.StatusRow{{App: "myapp", Overlay: "removed", Status: "✅ ok"}})
-	mustWrite(t, filepath.Join(d, "README.md"), "# Readme\n\n"+table)
-	mustWrite(t, filepath.Join(d, "myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
-
-	origWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origWD) }()
+	mustWrite(t, "README.md", "# Readme\n\n"+table)
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"), "resources: []\n")
 
 	res, err := RunAll(Options{Dirs: []string{"myapp"}, EnabledChecks: []string{"scaffold-readme"}})
 	if err != nil {
@@ -171,18 +144,6 @@ func TestRunAll_ScaffoldReadmeCheckEnabledViaEnabledChecks(t *testing.T) {
 // HasScaffoldEnabled/HasScaffoldConfig) resolves app/.scafctl paths
 // relative to the process CWD, matching a real pipeline run's repo-root
 // CWD.
-func chdirTemp(t *testing.T) {
-	t.Helper()
-	d := t.TempDir()
-	origWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origWD) })
-}
 
 // TestFindUnprotectedApps_NoTemplateIsNeverUnprotected guards that an app
 // with overlay changes but no scaffold template at all (scaffold-drift
@@ -382,10 +343,10 @@ func TestComputeBaselineMismatches_EmptyBaseRefSkipsEntirely(t *testing.T) {
 // runGitForTest runs a git command in dir, failing the test on error - used
 // to build a small real repo so computeBaselineMismatches's merge-base +
 // backup/restore machinery can be exercised end to end.
-func runGitForTest(t *testing.T, dir string, args ...string) {
+func runGitForTest(t *testing.T, args ...string) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "git", args...)
-	cmd.Dir = dir
+	cmd.Dir = "."
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -400,33 +361,25 @@ func runGitForTest(t *testing.T, dir string, args ...string) {
 // content, never left sitting at the merge-base content it temporarily
 // swapped in.
 func TestComputeBaselineMismatches_RestoresFilesRegardlessOfOutcome(t *testing.T) {
-	dir := t.TempDir()
-	origWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origWD) }()
+	chdirTemp(t)
 
-	runGitForTest(t, dir, "init", "-q")
-	runGitForTest(t, dir, "config", "user.email", "test@example.com")
-	runGitForTest(t, dir, "config", "user.name", "Test")
+	runGitForTest(t, "init", "-q")
+	runGitForTest(t, "config", "user.email", "test@example.com")
+	runGitForTest(t, "config", "user.name", "Test")
 
 	configPath := filepath.Join(".scafctl", "configs", "myapp.yaml")
 	templatePath := filepath.Join(".scafctl", "templates", "myapp", "template.yaml")
 	mustWrite(t, configPath, "v1\n")
 	mustWrite(t, templatePath, "v1\n")
-	runGitForTest(t, dir, "add", "-A")
-	runGitForTest(t, dir, "commit", "-q", "-m", "base")
-	runGitForTest(t, dir, "branch", "old-main") // simulates the PR's target branch
+	runGitForTest(t, "add", "-A")
+	runGitForTest(t, "commit", "-q", "-m", "base")
+	runGitForTest(t, "branch", "old-main") // simulates the PR's target branch
 
 	// The "PR's own commit": bump both files past the merge-base content.
 	mustWrite(t, configPath, "v2 (PR content)\n")
 	mustWrite(t, templatePath, "v2 (PR content)\n")
-	runGitForTest(t, dir, "add", "-A")
-	runGitForTest(t, dir, "commit", "-q", "-m", "pr change")
+	runGitForTest(t, "add", "-A")
+	runGitForTest(t, "commit", "-q", "-m", "pr change")
 
 	log := logger.NewLogger(false, "")
 	// Does not assert on the returned set's contents - scafctl isn't
@@ -461,24 +414,16 @@ func TestComputeBaselineMismatches_RestoresFilesRegardlessOfOutcome(t *testing.T
 // template file added only in the PR's own commit must still exist,
 // untouched, after the call.
 func TestComputeBaselineMismatches_NewFileNotAtBaselineIsRemovedAfterRestore(t *testing.T) {
-	dir := t.TempDir()
-	origWD, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origWD) }()
+	chdirTemp(t)
 
-	runGitForTest(t, dir, "init", "-q")
-	runGitForTest(t, dir, "config", "user.email", "test@example.com")
-	runGitForTest(t, dir, "config", "user.name", "Test")
+	runGitForTest(t, "init", "-q")
+	runGitForTest(t, "config", "user.email", "test@example.com")
+	runGitForTest(t, "config", "user.name", "Test")
 
 	mustWrite(t, "README.md", "placeholder\n")
-	runGitForTest(t, dir, "add", "-A")
-	runGitForTest(t, dir, "commit", "-q", "-m", "base")
-	runGitForTest(t, dir, "branch", "old-main")
+	runGitForTest(t, "add", "-A")
+	runGitForTest(t, "commit", "-q", "-m", "base")
+	runGitForTest(t, "branch", "old-main")
 
 	// The app (config + template) is introduced entirely in the PR - it
 	// doesn't exist at all at the merge-base.
@@ -486,8 +431,8 @@ func TestComputeBaselineMismatches_NewFileNotAtBaselineIsRemovedAfterRestore(t *
 	templatePath := filepath.Join(".scafctl", "templates", "myapp", "template.yaml")
 	mustWrite(t, configPath, "new app\n")
 	mustWrite(t, templatePath, "new app\n")
-	runGitForTest(t, dir, "add", "-A")
-	runGitForTest(t, dir, "commit", "-q", "-m", "add myapp")
+	runGitForTest(t, "add", "-A")
+	runGitForTest(t, "commit", "-q", "-m", "add myapp")
 
 	log := logger.NewLogger(false, "")
 	_ = computeBaselineMismatches(Options{BaseRef: "old-main"}, "myapp", log)
