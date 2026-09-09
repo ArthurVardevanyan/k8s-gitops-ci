@@ -330,6 +330,129 @@ func TestGetAllFiles_ExcludesIgnoredFiles(t *testing.T) {
 	assertFiles(t, got, []string{".gitignore", "committed.txt", "kept.txt", "second.txt"})
 }
 
+func TestGetFilesUnderDirs_IncludesUntrackedNonIgnored(t *testing.T) {
+	dir := newGitFixture(t)
+	writeFile(dir, "second.txt", "v1\n")
+	runGit(t, dir, "add", "second.txt")
+	runGit(t, dir, "commit", "-q", "-m", "add second")
+
+	// Create a subdirectory with untracked files.
+	writeFile(dir, "myapp/base/kustomization.yaml", "apiVersion: kustomize.config.k8s.io/v1beta1\n")
+	writeFile(dir, "myapp/overlays/prod/kustomization.yaml", "apiVersion: kustomize.config.k8s.io/v1beta1\n")
+
+	t.Chdir(dir)
+	got, err := GetFilesUnderDirs([]string{"myapp/base", "myapp/overlays/prod"})
+	if err != nil {
+		t.Fatalf("GetFilesUnderDirs: %v", err)
+	}
+	assertFiles(t, got, []string{"myapp/base/kustomization.yaml", "myapp/overlays/prod/kustomization.yaml"})
+}
+
+func TestGetFilesUnderDirs_ExcludesIgnoredFiles(t *testing.T) {
+	dir := newGitFixture(t)
+	writeFile(dir, "second.txt", "v1\n")
+	runGit(t, dir, "add", "second.txt")
+	runGit(t, dir, "commit", "-q", "-m", "add second")
+
+	// Create a .gitignore that ignores build artifacts and .log files.
+	writeFile(dir, ".gitignore", "build/\n*.log\n")
+	runGit(t, dir, "add", ".gitignore")
+	runGit(t, dir, "commit", "-q", "-m", "add gitignore")
+
+	// Create a subdirectory with mixed files.
+	writeFile(dir, "myapp/base/kustomization.yaml", "apiVersion: kustomize.config.k8s.io/v1beta1\n")
+	writeFile(dir, "myapp/base/build/output.txt", "secret\n")  // ignored by build/
+	writeFile(dir, "myapp/overlays/prod/debug.log", "trace\n") // ignored by *.log
+
+	t.Chdir(dir)
+	got, err := GetFilesUnderDirs([]string{"myapp/base", "myapp/overlays/prod"})
+	if err != nil {
+		t.Fatalf("GetFilesUnderDirs: %v", err)
+	}
+	// Should include tracked + non-ignored untracked, but not ignored files.
+	assertFiles(t, got, []string{"myapp/base/kustomization.yaml"})
+}
+
+func TestGetFilesUnderDirs_DeduplicatesAcrossDirs(t *testing.T) {
+	dir := newGitFixture(t)
+	writeFile(dir, "second.txt", "v1\n")
+	runGit(t, dir, "add", "second.txt")
+	runGit(t, dir, "commit", "-q", "-m", "add second")
+
+	// Create files under a shared directory.
+	writeFile(dir, "shared/file.txt", "data\n")
+	writeFile(dir, "shared/nested/file2.txt", "data2\n")
+
+	t.Chdir(dir)
+	got, err := GetFilesUnderDirs([]string{"shared", "shared/nested"})
+	if err != nil {
+		t.Fatalf("GetFilesUnderDirs: %v", err)
+	}
+	// shared/nested/file2.txt appears under both dirs, should be deduplicated.
+	assertFiles(t, got, []string{"shared/file.txt", "shared/nested/file2.txt"})
+	if len(got) != 2 {
+		t.Errorf("expected 2 files after deduplication, got %d: %v", len(got), got)
+	}
+}
+
+func TestGetFilesUnderDirs_EmptyDirs(t *testing.T) {
+	t.Chdir(t.TempDir())
+	got, err := GetFilesUnderDirs([]string{})
+	if err != nil {
+		t.Fatalf("GetFilesUnderDirs: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected empty slice, got nil")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty slice, got %v", got)
+	}
+}
+
+func TestGetFilesUnderDirs_GitFallback(t *testing.T) {
+	// Create a temp directory that is NOT a git repo.
+	dir := t.TempDir()
+	writeFile(dir, "file.txt", "data\n")
+	writeFile(dir, "subdir/file2.txt", "data2\n")
+
+	// Change to the non-git directory.
+	t.Chdir(dir)
+
+	// GetFilesUnderDirs should fall back to walkDir when git is unavailable.
+	got, err := GetFilesUnderDirs([]string{"."})
+	if err != nil {
+		t.Fatalf("GetFilesUnderDirs: %v", err)
+	}
+	// Should contain both files.
+	if len(got) != 2 {
+		t.Errorf("expected 2 files, got %d: %v", len(got), got)
+	}
+}
+
+func TestHasDirPrefix(t *testing.T) {
+	tests := []struct {
+		file, dir string
+		want      bool
+	}{
+		{"base/kustomization.yaml", "base", true},
+		{"base/overlay.yaml", "base", true},
+		{"overlays/prod/kustomization.yaml", "overlays/prod", true},
+		{"other/file.txt", "base", false},
+		{"basement/file.txt", "base", false},
+		{"base", "base", true},
+		{"./base/file.txt", "base", true},
+		{"base/file.txt", "./base", true},
+		{"./base/file.txt", "./base", true},
+	}
+
+	for _, tt := range tests {
+		got := hasDirPrefix(tt.file, tt.dir)
+		if got != tt.want {
+			t.Errorf("hasDirPrefix(%q, %q) = %v, want %v", tt.file, tt.dir, got, tt.want)
+		}
+	}
+}
+
 func TestGhResponseHint(t *testing.T) {
 	if hint := ghResponseHint([]byte(`{"filename":"a"}`)); hint != "" {
 		t.Errorf("expected no hint for JSON object, got %q", hint)
