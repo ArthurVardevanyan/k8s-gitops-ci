@@ -577,10 +577,10 @@ func TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths(t *testing.T
 	}
 }
 
-// TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEmabled proves AVP
+// TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEnabled proves AVP
 // findings (e.g. <path:...>) are blocking when AVP is enabled and the overlay
 // has direct source changes.
-func TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEmabled(t *testing.T) {
+func TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEnabled(t *testing.T) {
 	t.Parallel()
 	d := chdirToTemp(t)
 	app := "kubernetes/llm"
