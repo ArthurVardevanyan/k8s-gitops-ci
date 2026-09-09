@@ -1,7 +1,6 @@
 package validator
 
 import (
-	"os"
 	"testing"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -12,7 +11,6 @@ import (
 // cluster-scoped (empty-namespace) resource collapses to the historical
 // Kind/Name form so the 9 namespace-blind checks are unaffected.
 func TestResourceKeyFor_NamespaceAware(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name      string
 		namespace string
@@ -40,7 +38,6 @@ func TestResourceKeyFor_NamespaceAware(t *testing.T) {
 // identity so that a finding for one namespace resolves to that namespace's
 // file - not an unrelated, co-named file that happens to have been touched.
 func TestChangedResourceKeys_NamespaceAware(t *testing.T) {
-	t.Parallel()
 	d := t.TempDir()
 	app := "acs"
 	// Two source files, same Certificate name, different namespaces. Only the
@@ -80,7 +77,6 @@ func TestChangedResourceKeys_NamespaceAware(t *testing.T) {
 // to the same Kind/Name key twice, duplicating the file in the slice under that
 // key. A cluster-scoped resource must be listed exactly once.
 func TestChangedResourceKeys_ClusterScopedNoDuplicate(t *testing.T) {
-	t.Parallel()
 	d := t.TempDir()
 	app := "myapp"
 	cr := writeFile(t, d, app+"/base/clusterrole.yaml",
@@ -100,23 +96,15 @@ func TestChangedResourceKeys_ClusterScopedNoDuplicate(t *testing.T) {
 // A changed source manifest that declares metadata.namespace must still be
 // reachable by the legacy Kind/Name ResourceKey those checks use.
 func TestClassifyResourceCompliance_NamespacedSourceStillBlockingForLegacyCheck(t *testing.T) {
-	d := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
+	chdirTemp(t)
 
 	app := "myapp"
 	// The directly-changed source manifest declares a namespace, as almost every
 	// real manifest does.
-	writeFile(t, d, app+"/base/deployment.yaml",
+	writeFile(t, ".", app+"/base/deployment.yaml",
 		"kind: Deployment\nmetadata:\n  name: api\n  namespace: team-a\n")
-	writeFile(t, d, app+"/base/kustomization.yaml", "resources:\n  - deployment.yaml\n")
-	writeFile(t, d, app+"/overlays/dev/kustomization.yaml", "resources:\n  - ../../base\n")
+	writeFile(t, ".", app+"/base/kustomization.yaml", "resources:\n  - deployment.yaml\n")
+	writeFile(t, ".", app+"/overlays/dev/kustomization.yaml", "resources:\n  - ../../base\n")
 
 	changed := []string{
 		app + "/base/deployment.yaml",
@@ -136,7 +124,7 @@ func TestClassifyResourceCompliance_NamespacedSourceStillBlockingForLegacyCheck(
 		File:  app + "/overlays/dev",
 	}
 
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["image-checksum"]) != 1 || len(nonblocking["image-checksum"]) != 0 {
 		t.Errorf("expected the directly-changed namespaced resource to stay blocking for a namespace-blind check, got blocking=%d warning=%d",
 			len(blocking["image-checksum"]), len(nonblocking["image-checksum"]))
@@ -147,7 +135,6 @@ func TestClassifyResourceCompliance_NamespacedSourceStillBlockingForLegacyCheck(
 // the prefix before "/overlays/" (or before "/base/"|"/components/"), never a
 // hardcoded first path segment.
 func TestAppRootOf(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		file        string
 		wantApp     string
@@ -176,7 +163,6 @@ func TestAppRootOf(t *testing.T) {
 // and lines up with the key isResourceAffected constructs. Regression for the
 // bug where parts[0] ("kubernetes") was hardcoded as the app.
 func TestDirectlyChangedOverlays_MultiSegmentApp(t *testing.T) {
-	t.Parallel()
 	got := directlyChangedOverlays([]string{
 		"kubernetes/intel-gpu-monitor/overlays/okd/deployment.yaml",
 		"kubernetes/intel-gpu-monitor/base/kustomization.yaml", // base, not an overlay change
@@ -194,7 +180,6 @@ func TestDirectlyChangedOverlays_MultiSegmentApp(t *testing.T) {
 // multi-segment overlay dir must classify as BLOCKING, not a pre-existing
 // warning.
 func TestClassifyResourceCompliance_MultiSegmentAppIsBlocking(t *testing.T) {
-	t.Parallel()
 	finding := check.Finding{
 		CheckID: "image-checksum",
 		Kind:    "Deployment",
@@ -208,7 +193,7 @@ func TestClassifyResourceCompliance_MultiSegmentAppIsBlocking(t *testing.T) {
 		directOverlays: directlyChangedOverlays([]string{src}),
 	}
 
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["image-checksum"]) != 1 || len(nonblocking["image-checksum"]) != 0 {
 		t.Errorf("expected the new multi-segment-app resource to be blocking, got blocking=%d warning=%d",
 			len(blocking["image-checksum"]), len(nonblocking["image-checksum"]))
@@ -220,7 +205,6 @@ func TestClassifyResourceCompliance_MultiSegmentAppIsBlocking(t *testing.T) {
 // Kind/Name isn't in changedKeys) stays a non-blocking pre-existing warning,
 // even for a multi-segment app.
 func TestClassifyResourceCompliance_MultiSegmentBaseUnchangedResourceIsWarning(t *testing.T) {
-	t.Parallel()
 	finding := check.Finding{
 		CheckID: "image-checksum",
 		Kind:    "Deployment",
@@ -230,7 +214,7 @@ func TestClassifyResourceCompliance_MultiSegmentBaseUnchangedResourceIsWarning(t
 	}
 	ctx := &complianceAttributionCtx{changedKeys: map[string][]string{}}
 
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["image-checksum"]) != 0 || len(nonblocking["image-checksum"]) != 1 {
 		t.Errorf("expected an unchanged resource to be a non-blocking warning, got blocking=%d warning=%d",
 			len(blocking["image-checksum"]), len(nonblocking["image-checksum"]))
@@ -244,22 +228,14 @@ func TestClassifyResourceCompliance_MultiSegmentBaseUnchangedResourceIsWarning(t
 // NOT short-circuit - the resource must still be reached via the base/component
 // branch (overlaysByDir), so the finding is blocking, not pre-existing.
 func TestIsResourceAffected_BaseResourceViaDirectlyChangedOverlay(t *testing.T) {
-	d := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
+	chdirTemp(t)
 
 	app := "kubernetes/app"
-	writeFile(t, d, app+"/base/deployment.yaml",
+	writeFile(t, ".", app+"/base/deployment.yaml",
 		"kind: Deployment\nmetadata:\n  name: app\n")
-	writeFile(t, d, app+"/base/kustomization.yaml",
+	writeFile(t, ".", app+"/base/kustomization.yaml",
 		"resources:\n  - deployment.yaml\n")
-	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+	writeFile(t, ".", app+"/overlays/okd/kustomization.yaml",
 		"resources:\n  - ../../base\n")
 
 	changed := []string{
@@ -284,7 +260,6 @@ func TestIsResourceAffected_BaseResourceViaDirectlyChangedOverlay(t *testing.T) 
 // TestIsFileInOverlay_MultiSegmentAndTemplates covers isFileInOverlay for both
 // the multi-segment app case and the scaffold-template (templates/<app>) case.
 func TestIsFileInOverlay_MultiSegmentAndTemplates(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name    string
 		file    string
@@ -316,35 +291,27 @@ func TestIsFileInOverlay_MultiSegmentAndTemplates(t *testing.T) {
 // The broken team-a Job (pre-existing, unchanged) must stay a non-blocking
 // warning even though the shared changed component feeds the same overlay.
 func TestClassifyResourceCompliance_SameKindNameDifferentNamespace(t *testing.T) {
-	d := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
+	chdirTemp(t)
 
 	app := "myapp"
 	// Changed shared component: namespace team-b. It now declares the required
 	// pod-spec fields (so it produces NO finding, but it IS the change that
 	// registers the resource as touched for overlay-attribution).
-	writeFile(t, d, app+"/components/v2/central/init-bundle.yaml",
+	writeFile(t, ".", app+"/components/v2/central/init-bundle.yaml",
 		"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: init-bundle\n  namespace: team-b\n"+
 			"spec:\n  template:\n    spec:\n      enableServiceLinks: false\n      schedulerName: default-scheduler\n      automountServiceAccountToken: false\n")
-	writeFile(t, d, app+"/components/v2/central/kustomization.yaml",
+	writeFile(t, ".", app+"/components/v2/central/kustomization.yaml",
 		"resources:\n  - init-bundle.yaml\n")
 	// Older, UNCHANGED component under the same overlay: co-named Job in a
 	// different namespace that really is missing the fields.
-	writeFile(t, d, app+"/components/v1/central/init-bundle.yaml",
+	writeFile(t, ".", app+"/components/v1/central/init-bundle.yaml",
 		"apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: init-bundle\n  namespace: team-a\n"+
 			"spec:\n  template:\n    spec:\n      restartPolicy: Never\n      dnsPolicy: ClusterFirst\n")
-	writeFile(t, d, app+"/components/v1/central/kustomization.yaml",
+	writeFile(t, ".", app+"/components/v1/central/kustomization.yaml",
 		"resources:\n  - init-bundle.yaml\n")
 	// The overlay refs BOTH components, so the broken team-a Job renders into
 	// the same overlay as the changed team-b component.
-	writeFile(t, d, app+"/overlays/prod/kustomization.yaml",
+	writeFile(t, ".", app+"/overlays/prod/kustomization.yaml",
 		"components:\n  - ../../components/v2/central\n  - ../../components/v1/central\n")
 
 	// Only the v2 component (namespace team-b) was changed.
@@ -366,7 +333,7 @@ func TestClassifyResourceCompliance_SameKindNameDifferentNamespace(t *testing.T)
 		Message:   "enableServiceLinks, schedulerName, automountServiceAccountToken",
 		File:      app + "/overlays/prod",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{broken}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{broken}, ctx, true)
 	if len(blocking["podspec-defaults"]) != 0 || len(nonblocking["podspec-defaults"]) != 1 {
 		t.Errorf("expected the unchanged co-named Job in namespace team-a to stay non-blocking, got blocking=%d warning=%d",
 			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
@@ -382,32 +349,16 @@ func TestClassifyResourceCompliance_SameKindNameDifferentNamespace(t *testing.T)
 		Message:   "dnsPolicy",
 		File:      app + "/overlays/prod",
 	}
-	blocking, nonblocking = classifyResourceCompliance([]check.Finding{touched}, ctx)
+	blocking, nonblocking = classifyResourceCompliance([]check.Finding{touched}, ctx, true)
 	if len(blocking["podspec-defaults"]) != 1 || len(nonblocking["podspec-defaults"]) != 0 {
 		t.Errorf("expected the touched namespace's Job to stay blocking, got blocking=%d warning=%d",
 			len(blocking["podspec-defaults"]), len(nonblocking["podspec-defaults"]))
 	}
 }
 
-// chdirToTemp changes into a fresh temp dir for the duration of the test and
+// chdirTemp changes into a fresh temp dir for the duration of the test and
 // returns its absolute path, so filesystem-backed attribution tests can write
 // app trees under CWD (appRootOf / RefsChangedDir resolve relatively, matching
-// a real pipeline run's repo-root CWD). Mirrors the manual chdir pattern the
-// other filesystem-backed tests here use.
-func chdirToTemp(t *testing.T) string {
-	t.Helper()
-	d := t.TempDir()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
-	if err := os.Chdir(d); err != nil {
-		t.Fatal(err)
-	}
-	return d
-}
-
 // TestClassifyResourceCompliance_FileBasedDirectComponentIsBlocking is the
 // regression for the case verified against a real downstream consumer PR: a
 // sentinel placeholder token (`@PLACEHOLDER`) in a DIRECTLY-changed component
@@ -418,7 +369,7 @@ func chdirToTemp(t *testing.T) string {
 // into the non-blocking bucket regardless of whether the PR actually touched a
 // source file feeding that overlay.
 func TestClassifyResourceCompliance_FileBasedDirectComponentIsBlocking(t *testing.T) {
-	d := chdirToTemp(t)
+	d := chdirTemp(t)
 	app := "kubernetes/llm"
 	// The directly-changed component file carries the sentinel.
 	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
@@ -439,7 +390,7 @@ func TestClassifyResourceCompliance_FileBasedDirectComponentIsBlocking(t *testin
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
 		t.Errorf("expected the file-based placeholder finding on a directly-changed component to be blocking, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
@@ -453,7 +404,7 @@ func TestClassifyResourceCompliance_FileBasedDirectComponentIsBlocking(t *testin
 // output to a blocking, author-owned finding. The token's source component was
 // not modified, so the finding stays a non-blocking warning.
 func TestClassifyResourceCompliance_FileBasedOnlyOverlayKustomizationChangedStaysWarning(t *testing.T) {
-	d := chdirToTemp(t)
+	d := chdirTemp(t)
 	app := "kubernetes/llm"
 	// The component with the pre-existing sentinel is NOT part of this PR.
 	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
@@ -473,7 +424,7 @@ func TestClassifyResourceCompliance_FileBasedOnlyOverlayKustomizationChangedStay
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
 		t.Errorf("expected a kustomization-only change to keep the file-based finding non-blocking, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
@@ -484,7 +435,7 @@ func TestClassifyResourceCompliance_FileBasedOnlyOverlayKustomizationChangedStay
 // that a file-based finding on one overlay is NOT promoted to blocking by a
 // change to an entirely different app that doesn't feed that overlay.
 func TestClassifyResourceCompliance_FileBasedUnrelatedAppChangeStaysWarning(t *testing.T) {
-	d := chdirToTemp(t)
+	d := chdirTemp(t)
 	app := "kubernetes/llm"
 	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
 		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
@@ -505,7 +456,7 @@ func TestClassifyResourceCompliance_FileBasedUnrelatedAppChangeStaysWarning(t *t
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
 		t.Errorf("expected an unrelated-app change to keep the file-based finding non-blocking, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
@@ -517,7 +468,7 @@ func TestClassifyResourceCompliance_FileBasedUnrelatedAppChangeStaysWarning(t *t
 // not just placeholder: an overlay-scope cluster-identity finding attributed to
 // an overlay whose contributor file was directly changed must be blocking.
 func TestClassifyResourceCompliance_FileBasedClusterIdentityDirectIsBlocking(t *testing.T) {
-	d := chdirToTemp(t)
+	d := chdirTemp(t)
 	app := "kubernetes/llm"
 	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
 		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\n")
@@ -535,7 +486,7 @@ func TestClassifyResourceCompliance_FileBasedClusterIdentityDirectIsBlocking(t *
 		Value:   "project-123/zxcvb",
 		Message: app + "/overlays/okd/kustomization.yaml: cross-cluster project ref",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["cluster-identity"]) != 1 || len(nonblocking["cluster-identity"]) != 0 {
 		t.Errorf("expected the file-based cluster-identity finding on a directly-changed component to be blocking, got blocking=%d warning=%d",
 			len(blocking["cluster-identity"]), len(nonblocking["cluster-identity"]))
@@ -550,7 +501,7 @@ func TestClassifyResourceCompliance_FileBasedClusterIdentityDirectIsBlocking(t *
 // miss the overlaysByDir key (keyed by filepath.Dir of the raw path), silently
 // downgrading the file-based finding to a pre-existing warning.
 func TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths(t *testing.T) {
-	d := chdirToTemp(t)
+	d := chdirTemp(t)
 	app := "kubernetes/llm"
 	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
 		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
@@ -570,9 +521,100 @@ func TestClassifyResourceCompliance_FileBasedNormalizedChangedPaths(t *testing.T
 		Value:   "PLACEHOLDER",
 		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
 	}
-	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx)
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
 	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
 		t.Errorf("expected the normalized directly-changed component to stay blocking despite the ./ prefix, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEnabled proves AVP
+// findings (e.g. <path:...>) are blocking when AVP is enabled and the overlay
+// has direct source changes.
+func TestClassifyResourceCompliance_AVPIsBlockingWhenAVPEnabled(t *testing.T) {
+	d := chdirTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	finding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "<path:secret/data/okd#cluster_id>",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"<path:secret/data/okd#cluster_id>\"",
+		AVP:     "<path:secret/data/okd#cluster_id>",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{finding}, ctx, true)
+	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
+		t.Errorf("expected the AVP finding to be blocking when AVP is enabled, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_AVPIsWarningWhenAVPDisabled proves AVP
+// findings are downgraded to warnings when the AVP step is disabled, even if
+// the overlay has direct source changes - unresolved AVP tokens in rendered
+// output are expected when no secret resolution ran.
+func TestClassifyResourceCompliance_AVPIsWarningWhenAVPDisabled(t *testing.T) {
+	d := chdirTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	avpFinding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "<path:secret/data/okd#cluster_id>",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"<path:secret/data/okd#cluster_id>\"",
+		AVP:     "<path:secret/data/okd#cluster_id>",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{avpFinding}, ctx, false)
+	if len(blocking["placeholder"]) != 0 || len(nonblocking["placeholder"]) != 1 {
+		t.Errorf("expected the AVP finding to be downgraded to warning when AVP is disabled, got blocking=%d warning=%d",
+			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
+	}
+}
+
+// TestClassifyResourceCompliance_NonAVPIsStillBlockingWhenAVPDisabled proves
+// non-AVP findings (e.g. PLACEHOLDER, <REGISTRY>) remain blocking even when
+// AVP is disabled - only AVP findings should be downgraded.
+func TestClassifyResourceCompliance_NonAVPIsStillBlockingWhenAVPDisabled(t *testing.T) {
+	d := chdirTemp(t)
+	app := "kubernetes/llm"
+	writeFile(t, d, app+"/components/llama-swap/deployment.yaml",
+		"kind: Deployment\nmetadata:\n  name: llama-swap\n  namespace: llm\nspec:\n  template:\n    spec:\n      containers:\n        - image: registry.example.com/llama-swap:v251@PLACEHOLDER\n")
+	writeFile(t, d, app+"/components/llama-swap/kustomization.yaml",
+		"resources:\n  - deployment.yaml\n")
+	writeFile(t, d, app+"/overlays/okd/kustomization.yaml",
+		"resources:\n  - ../../components/llama-swap\n")
+
+	changed := []string{app + "/components/llama-swap/deployment.yaml"}
+	ctx := buildAttributionCtx(changed, []string{app})
+
+	nonAVPFinding := check.Finding{
+		CheckID: IDPlaceholder,
+		File:    app + "/overlays/okd",
+		Value:   "PLACEHOLDER",
+		Message: app + "/overlays/okd:50: unresolved placeholder \"PLACEHOLDER\"",
+		AVP:     "",
+	}
+	blocking, nonblocking := classifyResourceCompliance([]check.Finding{nonAVPFinding}, ctx, false)
+	if len(blocking["placeholder"]) != 1 || len(nonblocking["placeholder"]) != 0 {
+		t.Errorf("expected the non-AVP finding to remain blocking when AVP is disabled, got blocking=%d warning=%d",
 			len(blocking["placeholder"]), len(nonblocking["placeholder"]))
 	}
 }

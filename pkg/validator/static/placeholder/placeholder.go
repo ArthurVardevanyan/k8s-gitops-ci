@@ -83,6 +83,13 @@ func init() {
 	}
 }
 
+// IsAVP reports whether match is an AVP-style placeholder (e.g.
+// <path:...>, <vault:...>, <aws:...>, <gcp:...>). Exported so the
+// check-engine adapter can mark findings with the AVP field when the
+// AVP step is disabled, allowing classifyResourceCompliance to downgrade
+// AVP findings to non-blocking (they are expected unresolved in that case).
+func IsAVP(match string) bool { return avpRe.MatchString(match) }
+
 // ValidateFile validates placeholders in a file with default options.
 func ValidateFile(path string) []ValidationError {
 	return ValidateFileWithOptions(path, Options{CheckAVP: true})

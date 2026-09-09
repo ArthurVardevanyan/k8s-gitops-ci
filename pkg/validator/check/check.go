@@ -35,6 +35,12 @@ type Finding struct {
 	Extra                                                    map[string]string
 	ForcedDirect                                             bool
 
+	// AVP holds the matched AVP pattern (e.g. "<path:...>") for findings
+	// where this is applicable (placeholder check). Non-empty AVP values
+	// are downgraded to warnings when the AVP step is disabled, since
+	// unresolved AVP tokens in rendered output are expected in that case.
+	AVP string
+
 	// MatchAliases holds additional stable values that should also count
 	// as an exemption match for this finding, alongside its Value/Token
 	// (see exempt.Scalar.MatchAliases). Purely additive.

@@ -1635,6 +1635,8 @@ holding `image: <PATCHED_BY_KUSTOMIZE>` that every overlay replaces via
 an `images:`/JSON-patch transformer) never produces a raw-source false
 positive.
 
+When the `avp` step is disabled (`--disable-checks avp`), AVP-scheme findings (`<path:...>`, `<vault:...>`, `<aws:...>`, `<gcp:...>`) are downgraded from blocking to non-blocking warnings: unresolved AVP tokens in rendered output are expected when no secret resolution ran, so they should not block the build. Non-AVP findings (e.g. `<REGISTRY>`, `CHANGEME`) remain blocking as usual.
+
 #### `cluster-identity`
 
 No copy/paste of another cluster's identity (cluster name, project ref)

@@ -50,7 +50,6 @@ func TestResolveChangeset_NoDirs(t *testing.T) {
 // TestResolveChangeset_FullScan guards that Options.FullScan returns all
 // files on disk (via getAllRepoFiles), not just changed ones.
 func TestResolveChangeset_FullScan(t *testing.T) {
-	t.Parallel()
 	got, err := resolveChangeset(Options{FullScan: true})
 	if err != nil {
 		t.Fatalf("resolveChangeset(FullScan): %v", err)
@@ -69,7 +68,6 @@ func TestResolveChangeset_FullScan(t *testing.T) {
 // switch-case ordering (FullScan wins over Dirs) - when both are set,
 // FullScan walks the entire repo and Dirs is completely ignored.
 func TestResolveChangeset_FullScanTakesPriorityOverDirs(t *testing.T) {
-	t.Parallel()
 	// FullScan walks from CWD, so it will always return many files.
 	// Even when Dirs is set to a non-existent path, FullScan should
 	// still return repo-wide files (not be restricted by Dirs).

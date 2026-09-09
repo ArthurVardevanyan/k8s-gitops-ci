@@ -297,11 +297,15 @@ func (PlaceholderCheck) CheckRenderedDoc(data []byte, source string) []check.Fin
 func placeholderFindings(errs []placeholder.ValidationError) []check.Finding {
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
-		out = append(out, check.Finding{
+		f := check.Finding{
 			CheckID: "placeholder", File: e.File,
 			Message: e.String(),
 			Value:   e.Match,
-		})
+		}
+		if placeholder.IsAVP(e.Match) {
+			f.AVP = e.Match
+		}
+		out = append(out, f)
 	}
 	return out
 }
