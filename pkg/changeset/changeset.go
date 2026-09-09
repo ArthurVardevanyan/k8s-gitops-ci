@@ -115,10 +115,82 @@ func GetAllFiles() ([]string, error) {
 	return deduped, nil
 }
 
-// GetFilesUnderDirs walks each of the given directories and returns all files
-// found within them, deduplicated. Use this instead of GetAllFiles when only
-// specific subdirectories need to be processed.
+// GetFilesUnderDirs returns all git-tracked files plus untracked files that are
+// not ignored by .gitignore (via `git ls-files` + `git ls-files
+// --others --exclude-standard`) that fall under any of the given directories,
+// deduplicated. Use this instead of GetAllFiles when only specific
+// subdirectories need to be processed.
 func GetFilesUnderDirs(dirs []string) ([]string, error) {
+	if len(dirs) == 0 {
+		return []string{}, nil
+	}
+
+	// Determine the root directory to run git commands in.
+	// If all dirs share a common parent that is a git repo root, use that.
+	// Otherwise, run git commands from each dir individually and combine results.
+	// For simplicity, find the common parent of all dirs and check if it's a git repo.
+	rootDir, isGitRepo := findGitRoot(dirs)
+
+	var trackedOut, untrackedOut []byte
+	var trackedErr, untrackedErr error
+
+	if isGitRepo {
+		// Collect git-tracked files from the repo root.
+		cmd := exec.CommandContext(context.Background(), "git", "-C", rootDir, "ls-files")
+		trackedOut, trackedErr = cmd.Output()
+		// Collect untracked files that are not .gitignore-d.
+		cmd = exec.CommandContext(context.Background(), "git", "-C", rootDir, "ls-files", "--others", "--exclude-standard")
+		untrackedOut, untrackedErr = cmd.Output()
+	} else {
+		// Fall back to a plain directory walk when git is unavailable or dirs are in different repos.
+		return walkDirUnder(dirs)
+	}
+
+	if trackedErr != nil && untrackedErr != nil {
+		// If both git commands failed, fall back to a plain directory walk.
+		return walkDirUnder(dirs)
+	}
+
+	allLines := append(splitLines(trackedOut), splitLines(untrackedOut)...)
+
+	seen := make(map[string]bool, len(allLines))
+	var result []string
+	for _, f := range allLines {
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		for _, dir := range dirs {
+			if hasDirPrefix(f, dir) {
+				result = append(result, f)
+				break
+			}
+		}
+	}
+
+	sort.Strings(result)
+	return result, nil
+}
+
+// hasDirPrefix returns true if the file path is under the given directory.
+// It handles both exact matches (e.g. "base" matches "base/kustomization.yaml")
+// and subdirectory paths (e.g. "./base" matches "base/kustomization.yaml").
+func hasDirPrefix(file, dir string) bool {
+	// Normalize both paths: trim leading "./" if present.
+	file = strings.TrimPrefix(file, "./")
+	dir = strings.TrimPrefix(dir, "./")
+
+	if strings.HasPrefix(file, dir+"/") {
+		return true
+	}
+	// Also check if the file is exactly the directory (for cases where dir
+	// itself is a file, though that shouldn't happen in practice).
+	return file == dir
+}
+
+// walkDirUnder is a fallback for when git is unavailable. It walks each
+// directory using filepath.Walk (which does not respect .gitignore).
+func walkDirUnder(dirs []string) ([]string, error) {
 	seen := make(map[string]bool)
 	var all []string
 	for _, dir := range dirs {
@@ -133,7 +205,69 @@ func GetFilesUnderDirs(dirs []string) ([]string, error) {
 			}
 		}
 	}
+	sort.Strings(all)
 	return all, nil
+}
+
+// findGitRoot checks if all the given directories are under a common git repo root.
+// It returns the repo root directory and true if found, or empty string and false otherwise.
+func findGitRoot(dirs []string) (string, bool) {
+	if len(dirs) == 0 {
+		return "", false
+	}
+
+	// Normalize all dirs to absolute paths.
+	absDirs := make([]string, len(dirs))
+	for i, dir := range dirs {
+		absDirs[i] = filepath.Clean(dir)
+		if !filepath.IsAbs(absDirs[i]) {
+			// Make absolute using CWD.
+			abs, err := filepath.Abs(absDirs[i])
+			if err == nil {
+				absDirs[i] = abs
+			}
+		}
+	}
+
+	// Start with the first directory as the candidate root.
+	candidate := absDirs[0]
+	for {
+		// Check if candidate is a git repo root (or inside one).
+		cmd := exec.CommandContext(context.Background(), "git", "-C", candidate, "rev-parse", "--show-toplevel")
+		out, err := cmd.Output()
+		if err == nil {
+			// Found a git repo.
+			repoRoot := strings.TrimSpace(string(out))
+			repoRoot = filepath.Clean(repoRoot)
+			// Verify all dirs are under this repo root.
+			allUnder := true
+			for _, dir := range absDirs {
+				if !strings.HasPrefix(dir, repoRoot+"/") && dir != repoRoot {
+					allUnder = false
+					break
+				}
+			}
+			if allUnder {
+				return repoRoot, true
+			}
+			// Not all dirs are under this repo, try parent.
+			parent := filepath.Dir(candidate)
+			if parent == candidate {
+				break
+			}
+			candidate = parent
+			continue
+		}
+
+		// candidate is not a git repo, try parent.
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			break
+		}
+		candidate = parent
+	}
+
+	return "", false
 }
 
 // FilterByExtension keeps files ending with any of the given extensions.
