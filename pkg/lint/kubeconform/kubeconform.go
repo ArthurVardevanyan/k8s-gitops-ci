@@ -48,7 +48,7 @@ func DefaultOptions() Options {
 			"default",
 			"https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
 		},
-		SkipKinds:         []string{"ExternalSecret", "AnalysisTemplate", "Rollout"},
+		SkipKinds:         nil,
 		Strict:            true,
 		KubernetesVersion: "1.29.0",
 		UseSchemas:        true,
