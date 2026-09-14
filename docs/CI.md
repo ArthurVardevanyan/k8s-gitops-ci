@@ -351,6 +351,10 @@ is no rendered output to validate.
   "this changeset/repo can contain non-Kubernetes YAML the step can't
   meaningfully validate at all", e.g. a `--lint-only` run over a repo root
   that includes `Taskfile.yml`/`.golangci.yml`/etc.).
+- **Upstream schema remotes** (kubernetes-json-schema CDN + datree CRDs
+  catalog) are **off by default** — a CRD not in the pinned archive is a
+  hard error. Pass `--upstream-schemas` to re-enable the legacy additive
+  "fill-in from upstream" behaviour (see [SCHEMAS.md](SCHEMAS.md#upstream-schemas-opt-in)).
 - **Exemptions:** for finer granularity than disabling the whole step,
   individual files can be skipped via
   `check=kubeconform,file=...`/`check=kubeconform,dir=...` selectors in a

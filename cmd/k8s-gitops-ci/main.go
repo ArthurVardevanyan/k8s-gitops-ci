@@ -106,6 +106,7 @@ func parsePipelineOptions(args []string) (pipeline.Options, error) {
 	fs.BoolVar(&opts.PostComment, "comment", false, "post PR comment (default: off)")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
+	fs.BoolVar(&opts.UpstreamSchemas, "upstream-schemas", false, "also validate against upstream (datree/yannh) schema remotes; off by default so that a CRD absent from the pinned archive is a hard error")
 	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
 	fs.StringVar(&enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
 	fs.IntVar(&opts.Concurrency, "concurrency", 0, "worker concurrency (0=auto)")
@@ -173,16 +174,17 @@ func (s *stringSliceFlag) Set(v string) error {
 func runBuildYAML(args []string) error {
 	fs := flag.NewFlagSet("build-yaml", flag.ExitOnError)
 	var app, cluster string
-	var verbose bool
+	var verbose, upstreamSchemas bool
 	fs.StringVar(&app, "app", "", "app name")
 	fs.StringVar(&cluster, "cluster", "", "cluster name")
+	fs.BoolVar(&upstreamSchemas, "upstream-schemas", false, "also validate against upstream (datree/yannh) schema remotes; off by default so that a CRD absent from the pinned archive is a hard error")
 	fs.BoolVar(&verbose, "verbose", false, "verbose output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	start := time.Now()
 	fmt.Println(version.String())
-	opts := validator.Options{Apps: []string{app}, Clusters: []string{cluster}, Verbose: verbose}
+	opts := validator.Options{Apps: []string{app}, Clusters: []string{cluster}, Verbose: verbose, UpstreamSchemas: upstreamSchemas}
 	res, err := validator.RunAll(opts)
 	if err != nil {
 		return err
@@ -203,7 +205,7 @@ type validatorFlagSet struct {
 	dirs, disableChecks, enableChecks  string
 	concurrency                        int
 	assumeOpenshift, verbose, lintOnly bool
-	quiet, all                         bool
+	quiet, all, upstreamSchemas        bool
 	apps, clusters                     []string
 }
 
@@ -220,6 +222,7 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.StringVar(&v.enableChecks, "enable-checks", "", "comma-separated IDs to explicitly enable; only affects checks/steps that default to disabled (e.g. kyverno)")
 	fs.IntVar(&v.concurrency, "concurrency", 0, "worker concurrency (0=auto)")
 	fs.BoolVar(&v.assumeOpenshift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
+	fs.BoolVar(&v.upstreamSchemas, "upstream-schemas", false, "also validate against upstream (datree/yannh) schema remotes; off by default so that a CRD absent from the pinned archive is a hard error")
 	fs.BoolVar(&v.verbose, "verbose", false, "verbose output")
 	fs.BoolVar(&v.lintOnly, "lint-only", false, "lint only, skip build checks")
 	fs.BoolVar(&v.quiet, "quiet", false, "quiet: only print failed/warned sections, exit 0")
@@ -244,6 +247,7 @@ func (v *validatorFlagSet) applyTo(opts *validator.Options) {
 	opts.EnabledChecks = splitCommaList(v.enableChecks)
 	opts.Concurrency = v.concurrency
 	opts.AssumeOpenShift = v.assumeOpenshift
+	opts.UpstreamSchemas = v.upstreamSchemas
 	opts.LintOnly = v.lintOnly
 	opts.Verbose = v.verbose
 	opts.FullScan = v.all
@@ -374,6 +378,7 @@ func runKubeconform(args []string) error {
 	var version string
 	fs.StringVar(&version, "kubernetes-version", opts.KubernetesVersion, "Kubernetes version")
 	fs.BoolVar(&opts.Strict, "strict", opts.Strict, "strict mode")
+	fs.BoolVar(&opts.UpstreamSchemas, "upstream-schemas", opts.UpstreamSchemas, "also validate against upstream (datree/yannh) schema remotes; off by default so that a CRD absent from the pinned archive is a hard error")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

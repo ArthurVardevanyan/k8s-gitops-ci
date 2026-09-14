@@ -87,6 +87,13 @@ type Options struct {
 	// which case the kubeconform step falls back to its own lazy extraction
 	// exactly as before this field existed.
 	SchemaDir string
+	// UpstreamSchemas controls whether the two upstream schema-remote
+	// locations (kubernetes-json-schema CDN and the datree CRDs catalog)
+	// are consulted in addition to the local SchemaDir. Off by default
+	// so that a CRD absent from the pinned archive is a hard error;
+	// enable this flag to restore the legacy additive "fill-in from
+	// upstream" behaviour.
+	UpstreamSchemas bool
 	// PolicyPath, when set, is a pre-prepared Kyverno policy file/dir path
 	// (see kyverno.PreparePolicies) that runKyvernoValidation reuses instead
 	// of preparing its own copy - same prefetch rationale as SchemaDir, but
