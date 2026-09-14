@@ -657,7 +657,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// not just path-related - so files in a referenced component whose
 	// resources never appear in the render fall back to the raw pass and are
 	// not silently skipped.
-	res.RenderedOverlayCovered = filesCoveredByRenderedContent(overlays, renderedOverlays, changed)
+	res.RenderedOverlayCovered = filesCoveredByRenderedContent(renderedOverlays, changed)
 
 	for _, err := range runAppPostValidateHooks(apps, hookCfgs, hookResults, log) {
 		buildErrs = append(buildErrs, err)
@@ -803,7 +803,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// rendered overlay (a brand-new component whose resources are absent from
 	// the render, or a component not yet wired into any kustomization.yaml),
 	// so nothing is silently skipped.
-	renderedFiles := filesCoveredByRenderedContent(overlays, renderedOverlays, yamlFiles)
+	renderedFiles := filesCoveredByRenderedContent(renderedOverlays, yamlFiles)
 	docResult := runDocChecks(yamlFiles, renderedFiles, selectors, w, disabled)
 	renderedResult := runDocChecksRendered(renderedOverlays, selectors, w, disabled)
 	docResult.Findings = append(docResult.Findings, renderedResult.Findings...)

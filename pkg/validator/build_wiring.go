@@ -8,10 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/ghostpatch"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
-	"gopkg.in/yaml.v3"
 )
 
 // detectOverlaysForChanges maps a PR's changed files to the overlays that
@@ -87,41 +88,6 @@ func appFromOverlayPath(ovPath string) string {
 		return filepath.FromSlash(slash[:idx])
 	}
 	return ovPath
-}
-
-// filesCoveredByRenderedOverlays returns the subset of files (cleaned) that
-// are path-related to at least one successfully-rendered overlay. This
-// function uses a path-based proxy (a file is covered when it lives under
-// an overlay's overlays/<cluster> dir, its app's base/, or a component
-// that the overlay's kustomization chain references) rather than checking
-// whether the file's documents actually appear in the render.
-//
-// Deprecated: prefer filesCoveredByRenderedContent for content-aware
-// coverage (the raw pass uses this as a fallback when the Build phase
-// hasn't computed content-aware coverage, e.g. in --lint-only mode).
-// A file is covered when it lives under an overlay's own overlays/<cluster>
-// dir, its app's base/, or a component that overlay's kustomization chain
-// references (the same app-aware relatedness the scaffold-drift scoping
-// uses). Files not covered here (e.g. a brand-new component not yet wired
-// into any kustomization.yaml) still get their render-sensitive checks via
-// the raw fallback, so nothing is skipped.
-func filesCoveredByRenderedOverlays(outputs []renderedOverlay, files []string) map[string]bool {
-	if len(outputs) == 0 || len(files) == 0 {
-		return nil
-	}
-	covered := make(map[string]bool, len(files))
-	for _, f := range files {
-		clean := filepath.Clean(f)
-		for _, o := range outputs {
-			app := appFromOverlayPath(o.overlay)
-			cluster := filepath.Base(o.overlay)
-			if isOverlayRelatedToChangedFiles(app, cluster, []string{f}) {
-				covered[clean] = true
-				break
-			}
-		}
-	}
-	return covered
 }
 
 // uniqueApps returns the deduplicated, sorted set of app roots referenced by
@@ -322,14 +288,13 @@ func resourceIdentityFromFile(path string) (resourceIdentitySet, bool) {
 // whose kustomization chain includes the file via a component/base
 // reference).
 //
-// This is stricter than the path-based proxy used by
-// coverByScopedOverlays and filesCoveredByRenderedOverlays, which exclude
-// a file from the raw pass just because its path is related to an
-// overlay - if the overlay's render does not actually contain the file's
-// resources (e.g., a brand-new component whose resources are absent from
-// the render), the file falls back to the raw pass so nothing is silently
-// skipped.
-func filesCoveredByRenderedContent(overlays []overlayRef, renderedOverlays []renderedOverlay, files []string) map[string]bool {
+// This is stricter than the path-based proxy used by coverByScopedOverlays,
+// which exclude a file from the raw pass just because its path is related
+// to an overlay - if the overlay's render does not actually contain the
+// file's resources (e.g., a brand-new component whose resources are absent
+// from the render), the file falls back to the raw pass so nothing is
+// silently skipped.
+func filesCoveredByRenderedContent(renderedOverlays []renderedOverlay, files []string) map[string]bool {
 	if len(renderedOverlays) == 0 {
 		return nil
 	}
@@ -362,8 +327,8 @@ func filesCoveredByRenderedContent(overlays []overlayRef, renderedOverlays []ren
 					app := appFromOverlayPath(ro.overlay)
 					cluster := filepath.Base(ro.overlay)
 					if isOverlayRelatedToChangedFiles(app, cluster, []string{job.filePath}) {
-						renderedIds, ok := parseDocuments([]byte(ro.data))
-						if ok && identitiesMatch(job.identities, renderedIds) {
+						renderedIDs, ok := parseDocuments([]byte(ro.data))
+						if ok && identitiesMatch(job.identities, renderedIDs) {
 							results <- jobResult{job.cleanPath, true}
 							break
 						}

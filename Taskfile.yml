@@ -421,7 +421,7 @@ tasks:
           -not -path './.task/*' \
           -not -path './.tool/*' \
           -not -path './vendor/*' \
-          -print0 | xargs -0 goimports -w
+          -print0 | xargs -0 goimports -w -local github.com/ArthurVardevanyan/k8s-gitops-ci
         find . \
           -type d \( -name .cache -o -name .task -o -name .tool -o -name vendor \) -prune -false \
           -o -type f -name '*.go' -print \
@@ -445,7 +445,7 @@ tasks:
         UNFORMATTED=$(find . \
           -type d \( -name .cache -o -name .task -o -name .tool -o -name vendor \) -prune -false \
           -o -type f -name '*.go' -print0 \
-          | xargs -0 goimports -l 2>/dev/null || true)
+          | xargs -0 goimports -l -local github.com/ArthurVardevanyan/k8s-gitops-ci 2>/dev/null || true)
         if [ -n "$UNFORMATTED" ]; then
           echo "❌ goimports issues:"
           echo "$UNFORMATTED"
