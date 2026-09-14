@@ -283,11 +283,16 @@ Checks Go file formatting and runs golangci-lint.
 Schema-validation runs in two complementary passes:
 
 - **Raw (Linting → Kubeconform):** changed YAML files that are **not** part of a
-  scoped overlay's build chain are validated from source. Files inside an
+  scoped overlay's build chain **and whose documents don't appear in the
+  overlay's rendered output** are validated from source. Files inside an
   affected overlay (its overlay dir, its app `base/`, referenced components)
-  are **excluded here** — they're schema-checked by the rendered pass below, so
-  each changed manifest is validated by exactly one pass and a raw pass never
-  trips over unresolved AVP placeholders.
+  are **excluded here** only when their YAML documents (matched on kind+name)
+  actually appear in the rendered output of the affected overlay — if a
+  file is path-related but absent from the render (e.g. a new component whose
+  resources are not included in the render), it falls back to the raw pass so
+  nothing is silently skipped. Excluding files whose docs are present in the
+  render keeps each changed manifest validated by exactly one pass and avoids
+  a raw pass tripping over unresolved AVP placeholders.
 - **Kubeconform (Rendered):** a post-build pass validates the overlays a PR
   actually affects — the change-scoped set the Build YAML phase resolves
   (`detectOverlaysForChanges`, so a base/component change resolves to just the

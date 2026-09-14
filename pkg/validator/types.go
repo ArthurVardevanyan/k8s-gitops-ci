@@ -105,6 +105,13 @@ type Result struct {
 	ReportBody string
 	Logger     *logger.Logger
 	Timing     *TimingCollector
+	// RenderedOverlayCovered holds, for non-app YAML files whose changed paths
+	// are related to a scoped overlay, the content-aware coverage result
+	// computed by the Build phase: a file is marked true only if at least one
+	// of its documents (kind+name) is actually present in that overlay's
+	// successfully rendered output. When nil, the Linting phase falls back
+	// to the path-based coverByScopedOverlays result.
+	RenderedOverlayCovered map[string]bool
 }
 
 // HasErrorSection reports whether any error-status section exists. Only

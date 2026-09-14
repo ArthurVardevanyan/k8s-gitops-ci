@@ -66,8 +66,8 @@ func RunAll(opts Options) (*Result, error) {
 		return res, nil
 	}
 
-	runLintAndStaticChecks(changed, opts, res, log, tc, earlySelectors)
 	runBuildAndPostBuild(changed, opts, res, log, tc, earlySelectors)
+	runLintAndStaticChecks(changed, opts, res, log, tc, earlySelectors)
 
 	res.Status = "ok"
 	if res.Blocking {

@@ -91,7 +91,8 @@ func TestValidateFiles_SkipsNonManifest(t *testing.T) {
 	mustWriteFile(t, nms, nmstateConfig)
 	mustWriteFile(t, es, "apiVersion: external-secrets.io/v1beta1\nkind: ExternalSecret\nmetadata:\n  name: s\n")
 
-	opts := Options{SchemaLocations: nil}
+	opts := DefaultOptions()
+	opts.SchemaLocations = nil
 	res, err := ValidateFiles([]string{inv, nms, es}, opts)
 	if err != nil {
 		t.Fatalf("ValidateFiles: %v", err)
