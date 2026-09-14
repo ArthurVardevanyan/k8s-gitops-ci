@@ -27,6 +27,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/shellcheck"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/yamlsyntax"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/cel"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -376,6 +377,16 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			yamlFiles = excludeInvalidTestdata(yamlFiles)
 			yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
 			yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
+			// configMapGenerator / secretGenerator inputs are data payloads
+			// embedded into generated ConfigMaps/Secrets (which are
+			// validated in the rendered pass). They never appear as
+			// standalone resources in the render and should not surface as
+			// "non-manifest YAML" noise in the raw pass - exclude them
+			// silently, matching the existing scaffold/known-non-manifest
+			// exclusions.
+			if genInputs := generatorInputsForChangedFiles(changed); genInputs != nil {
+				yamlFiles = excludeGeneratorInputs(yamlFiles, genInputs)
+			}
 			kcOpts, cleanup := kubeconformSchemaOpts(opts)
 			defer cleanup()
 			// Changed files that participate in a scoped overlay's build chain
@@ -1204,6 +1215,50 @@ func formatSkippedNonManifest(files []string) string {
 		listed = listed[:maxSkippedNonManifestListed]
 	}
 	return fmt.Sprintf("Skipped %d non-manifest YAML file(s) (no apiVersion/kind): %s%s", len(files), strings.Join(listed, ", "), extra)
+}
+
+// generatorInputsForChangedFiles returns a map of generator-input file paths
+// (referenced by any configMapGenerator/secretGenerator in the app roots
+// that the changed files map to). The returned map is keyed by
+// filepath.ToSlash(filepath.Clean(f)) for matching against yamlFiles that
+// may be repo-relative or absolute. Returns nil when no app roots are
+// detected (meaning no generator inputs to exclude).
+func generatorInputsForChangedFiles(changed []string) map[string]bool {
+	if len(changed) == 0 {
+		return nil
+	}
+	// Collect app roots for the changed files.
+	roots := detectAppRoots(changed)
+	if len(roots) == 0 {
+		return nil
+	}
+	var allInputs []string
+	for _, root := range roots {
+		allInputs = append(allInputs, overlay.GeneratorInputFiles(root)...)
+	}
+	// Convert to a set for O(1) matching against yamlFiles.
+	inputSet := make(map[string]bool, len(allInputs))
+	for _, f := range allInputs {
+		inputSet[filepath.ToSlash(filepath.Clean(f))] = true
+	}
+	return inputSet
+}
+
+// excludeGeneratorInputs drops files from the slice that appear in the
+// generator-input set (keys are filepath.ToSlash(filepath.Clean(...))).
+// Generator inputs are data payloads embedded into generated ConfigMaps/
+// Secrets (which are validated in the rendered pass). They are excluded
+// silently from the raw pass so they don't surface as "non-manifest YAML"
+// noise - the generated ConfigMap/Secret is already fully validated.
+func excludeGeneratorInputs(files []string, genInputs map[string]bool) []string {
+	var out []string
+	for _, f := range files {
+		if genInputs[filepath.ToSlash(filepath.Clean(f))] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 func filterYAML(files []string) []string {

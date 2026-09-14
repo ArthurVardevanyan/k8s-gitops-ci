@@ -345,6 +345,16 @@ is no rendered output to validate.
   human to catch. This is the content-aware complement to the
   unconditional `convention.KnownNonManifestFiles` basename fast-path (`Taskfile.yml`,
   `.golangci.yml`, …).
+
+  Generator inputs (`configMapGenerator`/`secretGenerator`
+  `files:`/`envs:` entries from any `kustomization.yaml` in the affected
+  app root) are **silently excluded** from this non-manifest surfacing
+  — they are data payloads embedded into a generated `ConfigMap`/`Secret`
+  (which is fully validated in the rendered pass), so flagging them as
+  "non-manifest YAML" would be pure noise. This exclusion matches the
+  existing silent-exclusion pattern for scaffold artifacts and
+  `KnownNonManifestFiles`.
+
 - **Default:** on. **Disable:** `--disable-checks kubeconform` — a genuine
   wholesale opt-out (unlike the CLI-wrapper checks above, there's no
   "binary not installed" reason to disable it; the reason here is usually
