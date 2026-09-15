@@ -112,11 +112,18 @@ require (
 	k8s.io/client-go v0.37.0 // indirect
 	k8s.io/component-base v0.37.0 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260911184034-7970a1e230da // indirect
+	// Pin to the last commit that uses structured-merge-diff/v6.
+	// Master branch (post-2026-09-04) upgraded to v7, which breaks
+	// k8s v0.37.x (v6.4.2 expected, v7 incompatible).
+	// See: https://github.com/kubernetes/kubernetes/issues/141582
+	//
+	// When k8s releases a version that uses v7, bump to that commit or
+	// remove this pin entirely if v7 becomes the standard. Do NOT let
+	// go get -u bump to master — it will pick up v7 and break the build.
+	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 // indirect
 	sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5 // indirect
 	sigs.k8s.io/knftables v0.0.22 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
-	sigs.k8s.io/structured-merge-diff/v7 v7.0.0 // indirect
 )

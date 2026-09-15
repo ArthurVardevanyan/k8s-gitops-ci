@@ -759,6 +759,14 @@ tasks:
         echo "🔍 Updating Go dependencies..."
         go get -u ./...
         go mod tidy
+        # kube-openapi master uses structured-merge-diff/v7 which is
+        # incompatible with k8s v0.37.x (expects v6). Re-pin to the
+        # last v6 commit whenever go get -u bumps it.
+        if go list -m k8s.io/kube-openapi 2>/dev/null | grep -qE '/v7\b|2026090[4-9]|2026091[0-5]|2026092|20261|2027'; then
+          echo "⚠️  kube-openapi bumped to v7 — re-pinning to last v6 commit"
+          go get k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad
+          go mod tidy
+        fi
         echo "✅ Dependencies updated — run 'task test' to verify"
 
   update:
