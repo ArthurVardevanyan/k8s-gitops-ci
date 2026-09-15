@@ -314,6 +314,32 @@ func filesCoveredByRenderedContent(renderedOverlays []renderedOverlay, files []s
 	}
 	results := make(chan jobResult, len(files))
 	var wg sync.WaitGroup
+
+	// Memoize parseDocuments per overlay: many changed files can relate to
+	// the same overlay, and re-parsing an identical rendered manifest per
+	// file is redundant work. parseDocuments is pure w.r.t. ro.data, so a
+	// shared read-mostly cache is safe; guard with RWMutex since the worker
+	// pool below reads/writes it concurrently.
+	type parsedRender struct {
+		ids resourceIdentitySet
+		ok  bool
+	}
+	var renderCacheMu sync.RWMutex
+	renderCache := make(map[string]parsedRender, len(renderedOverlays))
+	renderedIDsFor := func(ro renderedOverlay) (resourceIdentitySet, bool) {
+		renderCacheMu.RLock()
+		if v, ok := renderCache[ro.overlay]; ok {
+			renderCacheMu.RUnlock()
+			return v.ids, v.ok
+		}
+		renderCacheMu.RUnlock()
+		ids, ok := parseDocuments(ro.data)
+		renderCacheMu.Lock()
+		renderCache[ro.overlay] = parsedRender{ids: ids, ok: ok}
+		renderCacheMu.Unlock()
+		return ids, ok
+	}
+
 	for i := 0; i < 16 && i <= len(files); i++ {
 		wg.Add(1)
 		go func() {
@@ -327,7 +353,7 @@ func filesCoveredByRenderedContent(renderedOverlays []renderedOverlay, files []s
 					app := appFromOverlayPath(ro.overlay)
 					cluster := filepath.Base(ro.overlay)
 					if isOverlayRelatedToChangedFiles(app, cluster, []string{job.filePath}) {
-						renderedIDs, ok := parseDocuments([]byte(ro.data))
+						renderedIDs, ok := renderedIDsFor(ro)
 						if ok && identitiesMatch(job.identities, renderedIDs) {
 							results <- jobResult{job.cleanPath, true}
 							break
