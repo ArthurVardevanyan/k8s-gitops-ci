@@ -137,6 +137,7 @@ var resourceScope = map[string]bool{
 	"ceph.rook.io/CephNVMeOFGateway":                                          false,
 	"ceph.rook.io/CephObjectRealm":                                            false,
 	"ceph.rook.io/CephObjectStore":                                            false,
+	"ceph.rook.io/CephObjectStoreAccount":                                     false,
 	"ceph.rook.io/CephObjectStoreUser":                                        false,
 	"ceph.rook.io/CephObjectZone":                                             false,
 	"ceph.rook.io/CephObjectZoneGroup":                                        false,
