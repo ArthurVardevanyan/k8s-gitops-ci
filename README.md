@@ -85,6 +85,11 @@ Run `k8s-gitops-ci <command> --help` for per-command flags.
 error=N` line and per-phase timing, instead of only the aggregated
   pass/fail result at the end. Also available on `test`,
   `build-yaml`.
+- `--forge` — explicitly select the forge implementation (e.g. `"github"`,
+  `"gitlab"`) instead of relying on URL-based auto-detection. When set,
+  `forge.Detect()` bypasses affinity heuristics and matches the explicit
+  name. When omitted (default), detection falls back to URL affinity
+  as before.
 - `--dirs`, `--disable-checks`, `--enable-checks`, `--hook-source`,
   `--concurrency`, `--assume-openshift`, `--app`, `--cluster` — every
   changeset-scoping and check-enablement flag `pipeline` accepts is also

@@ -93,7 +93,7 @@ func parsePipelineOptions(args []string) (pipeline.Options, error) {
 	opts := pipeline.EnvOptions()
 	opts.Providers = provider.Providers{}
 
-	var dirs, disableChecks, enableChecks, hookSource string
+	var dirs, disableChecks, enableChecks, hookSource, forge string
 	fs.StringVar(&opts.URL, "url", opts.URL, "repository URL (e.g. https://github.com/org/repo — NOT a PR URL; pass the PR number via --pr)")
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
@@ -105,6 +105,7 @@ func parsePipelineOptions(args []string) (pipeline.Options, error) {
 	fs.BoolVar(&opts.Quiet, "quiet", false, "quiet mode: skip comment when all checks pass, show only non-passing sections in PR comments")
 	fs.BoolVar(&opts.PostComment, "comment", false, "post PR comment (default: off)")
 	fs.BoolVar(&opts.Verbose, "verbose", false, "verbose output")
+	fs.StringVar(&forge, "forge", "", "forge name (e.g. \"github\", \"gitlab\"); empty means auto-detect from URL")
 	fs.BoolVar(&opts.AssumeOpenShift, "assume-openshift", false, "treat OpenShift/OKD-default-but-portable API groups (OLM, Prometheus Operator, Gateway API, SR-IOV/Multus/OVN-Kubernetes CNI, Metal3) as exempt from the sync-options check, in addition to the always-exempt OpenShift-exclusive groups (route.openshift.io, config.openshift.io, ...); only enable if ALL target clusters are OpenShift/OKD")
 	fs.BoolVar(&opts.UpstreamSchemas, "upstream-schemas", false, "also validate against upstream (datree/yannh) schema remotes; off by default so that a CRD absent from the pinned archive is a hard error")
 	fs.StringVar(&disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
@@ -119,6 +120,7 @@ func parsePipelineOptions(args []string) (pipeline.Options, error) {
 	opts.HookSource = hook.Source(hookSource)
 	opts.DisabledChecks = splitCommaList(disableChecks)
 	opts.EnabledChecks = splitCommaList(enableChecks)
+	opts.Forge = forge
 	return opts, nil
 }
 
@@ -201,12 +203,12 @@ func runBuildYAML(args []string) error {
 // failing pipeline run can be reproduced with "test" using an equivalent
 // flag set.
 type validatorFlagSet struct {
-	url, pr, targetBranch, hookSource  string
-	dirs, disableChecks, enableChecks  string
-	concurrency                        int
-	assumeOpenshift, verbose, lintOnly bool
-	quiet, all, upstreamSchemas        bool
-	apps, clusters                     []string
+	url, pr, targetBranch, hookSource, forge string
+	dirs, disableChecks, enableChecks        string
+	concurrency                              int
+	assumeOpenshift, verbose, lintOnly, quiet bool
+	all, upstreamSchemas                     bool
+	apps, clusters                           []string
 }
 
 // bindValidatorFlags registers the shared flags on fs and returns the
@@ -229,6 +231,7 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.BoolVar(&v.all, "all", false, "full repository scan: lint all files on disk and build all overlays (takes priority over --dirs)")
 	fs.Var(newStringSliceFlag(&v.apps), "app", "app name to scope validation to (repeatable: --app a --app b)")
 	fs.Var(newStringSliceFlag(&v.clusters), "cluster", "cluster name to scope validation to (repeatable: --cluster a --cluster b)")
+	fs.StringVar(&v.forge, "forge", "", "forge name (e.g. \"github\", \"gitlab\"); empty means auto-detect from URL")
 	return v
 }
 
@@ -254,6 +257,7 @@ func (v *validatorFlagSet) applyTo(opts *validator.Options) {
 	opts.Quiet = v.quiet
 	opts.Apps = v.apps
 	opts.Clusters = v.clusters
+	opts.Forge = v.forge
 }
 
 // parseTestOptions parses test's flags (same scoping/check-enablement

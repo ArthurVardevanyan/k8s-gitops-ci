@@ -1,0 +1,265 @@
+package github
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge"
+)
+
+// TestGhStdin_InheritsParentEnv guards against a regression where ghStdin
+// built cmd.Env by appending onto a nil slice (cmd.Env = append(cmd.Env,
+// "GH_REPO=...")), which per os/exec semantics replaces rather than extends
+// the child's environment - stripping PATH/HOME/GH_TOKEN/etc. from the gh
+// subprocess and causing spurious "not authenticated" (exit status 4)
+// failures even when gh itself is correctly authenticated in the parent
+// shell. This installs a fake `gh` on PATH that echoes the env vars it saw,
+// so we can assert the child process still sees the parent's environment
+// (not just GH_REPO) alongside the injected GH_REPO override.
+func TestGhStdin_InheritsParentEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake gh shell script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGh := filepath.Join(dir, "gh")
+	script := "#!/bin/sh\necho \"MARKER=$GITOPS_CI_TEST_MARKER\"\necho \"REPO=$GH_REPO\"\n"
+	if err := os.WriteFile(fakeGh, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake gh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GITOPS_CI_TEST_MARKER", "inherited")
+
+	c := &Client{repo: "org/repo", pr: "1", env: func(k string) string {
+		if k == "GH_REPO" {
+			return "org/repo"
+		}
+		return ""
+	}}
+	out, err := c.gh("pr", "view")
+	if err != nil {
+		t.Fatalf("gh() error: %v", err)
+	}
+	want := "MARKER=inherited\nREPO=org/repo"
+	if out != want {
+		t.Errorf("gh() output = %q, want %q (parent env not inherited alongside GH_REPO)", out, want)
+	}
+}
+
+func TestClient_Repo(t *testing.T) {
+	c := NewClient("https://github.com/oakwood-commons/scafctl", "3")
+	if c.Repo() != "oakwood-commons/scafctl" {
+		t.Errorf("Repo() = %q", c.Repo())
+	}
+}
+
+func TestClient_RepoEdgeCases(t *testing.T) {
+	cases := map[string]string{
+		"":                                "",
+		"https://github.com/org/repo.git": "org/repo",
+		"git@github.com:org/repo.git":     "", // unsupported
+		"github.com/org/repo":             "org/repo",
+	}
+	for in, want := range cases {
+		if got := NewClient(in, "1").Repo(); got != want {
+			t.Errorf("NewClient(%q).Repo() = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestClient_IsAvailable_MissingInfo(t *testing.T) {
+	if NewDisabledClient().IsAvailable() {
+		t.Error("disabled client should be unavailable")
+	}
+	if NewClient("", "1").IsAvailable() {
+		t.Error("empty repo should be unavailable")
+	}
+}
+
+func TestValidatePRTitle_Patterns(t *testing.T) {
+	ok := []string{
+		"feat: add thing",
+		"fix(scope): bug",
+		"docs: update",
+		"revert: let us never again speak of the noodle incident",
+		"feat(api)!: send an email",
+		"Fix: case-insensitive type per spec §15",
+	}
+	bad := []string{"adding thing", "", "WIP: foo"}
+	for _, s := range ok {
+		if err := ValidatePRTitleString(s); err != nil {
+			t.Errorf("%q should be valid: %v", s, err)
+		}
+	}
+	for _, s := range bad {
+		if err := ValidatePRTitleString(s); err == nil {
+			t.Errorf("%q should be invalid", s)
+		}
+	}
+}
+
+// TestPRTitleSuggestion covers the non-blocking TitleSuggestion hook:
+// disabled by default (nil hook), only consulted once the required
+// Conventional-Commits prefix already passes, and never triggered for an
+// unavailable client.
+func TestPRTitleSuggestion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake gh shell script assumes a POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGh := filepath.Join(dir, "gh")
+	script := "#!/bin/sh\necho \"$FAKE_GH_TITLE\"\n"
+	if err := os.WriteFile(fakeGh, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake gh: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	c := NewClient("https://github.com/org/repo", "1")
+
+	suggestUnlessJira := func(title string) string {
+		if !strings.Contains(title, "JIRA") {
+			return "consider referencing a ticket"
+		}
+		return ""
+	}
+
+	t.Run("nil hook disables suggestions", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = nil
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "feat: add thing")
+		if got := PRTitleSuggestion(c); got != "" {
+			t.Errorf("expected no suggestion when TitleSuggestion is nil, got %q", got)
+		}
+	})
+
+	t.Run("passing title with nothing to suggest", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "feat: add JIRA-123 support")
+		if got := PRTitleSuggestion(c); got != "" {
+			t.Errorf("expected no suggestion, got %q", got)
+		}
+	})
+
+	t.Run("passing title with a suggestion", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "feat: add thing")
+		if got := PRTitleSuggestion(c); got != "consider referencing a ticket" {
+			t.Errorf("PRTitleSuggestion = %q, want suggestion", got)
+		}
+	})
+
+	t.Run("failing required prefix suppresses suggestion", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		t.Setenv("FAKE_GH_TITLE", "not conventional")
+		if got := PRTitleSuggestion(c); got != "" {
+			t.Errorf("expected no suggestion when the required prefix fails, got %q", got)
+		}
+	})
+
+	t.Run("unavailable client", func(t *testing.T) {
+		orig := TitleSuggestion
+		TitleSuggestion = suggestUnlessJira
+		t.Cleanup(func() { TitleSuggestion = orig })
+		if got := PRTitleSuggestion(NewDisabledClient()); got != "" {
+			t.Errorf("expected no suggestion for an unavailable client, got %q", got)
+		}
+	})
+}
+
+func TestValidatePRChecklist_Logic(t *testing.T) {
+	body := `- [x] a
+- [ ] b
+- [x] c
+- [ ] d
+`
+	spec := forge.ChecklistSpec{
+		Items: []forge.ChecklistItem{
+			{ID: "a", LabelPattern: "a"},
+			{ID: "b", LabelPattern: "b"},
+			{ID: "c", LabelPattern: "c"},
+			{ID: "d", LabelPattern: "d"},
+		},
+		Required:  []string{"d"}, // d is unchecked → error
+		SelectOne: []forge.SelectOneGroup{{Name: "group", Options: []string{"a", "c"}}},
+	}
+	if err := ValidatePRChecklistString(body, spec); err == nil {
+		t.Error("expected error for unchecked required and multiple one-of")
+	}
+}
+
+func TestGetUnsignedCommits_NoGH(t *testing.T) {
+	_, err := GetUnsignedCommits(NewDisabledClient())
+	if err != nil {
+		t.Error("disabled client should not error")
+	}
+}
+
+func TestParseUnsignedCommits_AllVerified(t *testing.T) {
+	data := `[
+		{"sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "commit": {"message": "feat: a", "verification": {"verified": true}}},
+		{"sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "commit": {"message": "fix: b", "verification": {"verified": true}}}
+	]`
+	got, err := parseUnsignedCommits([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no unsigned commits, got %v", got)
+	}
+}
+
+func TestParseUnsignedCommits_MixedVerification(t *testing.T) {
+	data := `[
+		{"sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "commit": {"message": "feat: a", "verification": {"verified": true}}},
+		{"sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "commit": {"message": "fix: b\n\nlonger body text", "verification": {"verified": false}}}
+	]`
+	got, err := parseUnsignedCommits([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 unsigned commit, got %v", got)
+	}
+	if got[0] != "bbbbbbb fix: b" {
+		t.Errorf("got %q, want %q", got[0], "bbbbbbb fix: b")
+	}
+}
+
+func TestParseUnsignedCommits_Empty(t *testing.T) {
+	got, err := parseUnsignedCommits([]byte(`[]`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no unsigned commits, got %v", got)
+	}
+}
+
+func TestParseUnsignedCommits_MalformedJSON(t *testing.T) {
+	if _, err := parseUnsignedCommits([]byte(`not json`)); err == nil {
+		t.Error("expected error for malformed JSON")
+	}
+}
+
+func TestParseUnsignedCommits_UnverifiedTreatedAsUnsigned(t *testing.T) {
+	// verification.verified defaults to false (Go zero value) when the
+	// verification object is entirely absent - GitHub omits it for some
+	// commit types. Absence must be treated as unsigned, not skipped.
+	data := `[{"sha": "cccccccccccccccccccccccccccccccccccccccc", "commit": {"message": "chore: c"}}]`
+	got, err := parseUnsignedCommits([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 unsigned commit, got %v", got)
+	}
+}

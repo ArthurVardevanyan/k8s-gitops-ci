@@ -101,7 +101,12 @@ See `docs/DEVELOPMENT.md`'s [Repository Structure](DEVELOPMENT.md#repository-str
 for the authoritative directory tree with one-line descriptions. In terms
 of the flow above:
 
-- **Changeset resolution:** `pkg/changeset`, `pkg/git`, `pkg/github`.
+- **Forge integration (GitHub, GitLab, future):** `pkg/forge` (pluggable
+  `Forge` interface, affinity-based detection, null forge) and
+  `pkg/forge/github` (GitHub-specific implementation). `pkg/changeset`
+  routes file fetching through `forge.Detect()` so a new forge only
+  requires a new `pkg/forge/<name>` package.
+- **Changeset resolution:** `pkg/changeset`, `pkg/git`.
 - **Linting/Static Checks:** `pkg/lint/*` (one package per external tool)
   plus a few in-repo checks (`pkg/largefile`, `pkg/lint/yamlsyntax`,
   `pkg/config`, `pkg/csv`) driven from `pkg/validator/phases.go`.

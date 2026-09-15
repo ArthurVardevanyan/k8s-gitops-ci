@@ -16,7 +16,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge"
 )
 
 // Marker is the stable HTML-comment marker identifying the single self-CI
@@ -48,6 +48,11 @@ type Options struct {
 	// DocsURL, when set, is linked from the replay section for the full
 	// rationale/limitations. Optional.
 	DocsURL string
+	// Forge is an explicitly selected forge name (e.g. "github", "gitlab");
+	// when non-empty it overrides URL-based auto-detection in
+	// forge.Detect(), allowing assertion of a specific forge implementation
+	// regardless of URL heuristics.
+	Forge string
 }
 
 // Run builds the comment body and upserts it on the PR. It NEVER returns an
@@ -61,12 +66,12 @@ type Options struct {
 // cmd/ shim), so the package emits nothing to stdout/stderr itself — the upsert
 // error, when present, is returned for the caller to log or ignore.
 func Run(o Options) (posted bool, err error) {
-	client := github.NewClient(o.URL, o.PR)
-	if !client.IsAvailable() {
+	eng := forge.Detect(o.URL, o.Forge)
+	if !eng.IsAvailable(o.URL, o.PR) {
 		return false, nil
 	}
 	body := Build(o)
-	if uerr := github.UpsertComment(client, Marker, body); uerr != nil {
+	if uerr := eng.UpsertComment(o.URL, o.PR, Marker, body); uerr != nil {
 		return false, uerr
 	}
 	return true, nil

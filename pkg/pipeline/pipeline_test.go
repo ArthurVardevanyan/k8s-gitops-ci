@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge" // registers github forge via init()
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/github"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"

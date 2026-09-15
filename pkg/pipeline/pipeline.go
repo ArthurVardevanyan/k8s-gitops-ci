@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kyverno"
@@ -44,6 +44,7 @@ type Options struct {
 	// regardless of this flag.
 	PostComment     bool
 	Verbose         bool
+	Forge           string // explicit forge name (e.g. "github", "gitlab"); empty means auto-detect
 	AssumeOpenShift bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check
 	DisabledChecks  []string // IDs to disable entirely (e.g. "sync-options", "golangci", "avp"); only affects steps that default to enabled
 	EnabledChecks   []string // IDs to explicitly enable; only affects steps that default to disabled (e.g. "kyverno")
@@ -144,28 +145,28 @@ func Run(opts Options) error {
 	if shouldRunPRChecks(opts) {
 		prStart := time.Now()
 		log.Header("PR Validation")
-		client := github.NewClient(opts.URL, opts.PR)
-		res.TitleErr = github.ValidatePRTitle(client)
+		eng := forge.Detect(opts.URL, opts.Forge)
+		res.TitleErr = eng.ValidateTitle(opts.URL, opts.PR)
 		if res.TitleErr != nil {
 			log.Error("PR title: %v", res.TitleErr)
 		} else {
 			log.Info("PR title: passed")
-			// Only consulted once the required prefix has already passed -
-			// see github.PRTitleSuggestion and ComposePRChecksSection/
-			// prTitleChild's non-blocking rendering of this.
-			res.TitleSuggestion = github.PRTitleSuggestion(client)
+			// Non-blocking suggestion: consult the engine only after the
+			// required prefix has already passed - see
+			// forge.Forge.TitleSuggestion.
+			res.TitleSuggestion = eng.TitleSuggestion(opts.URL, opts.PR)
 			if res.TitleSuggestion != "" {
 				log.Warn("PR title suggestion: %s", res.TitleSuggestion)
 			}
 		}
-		res.UnsignedErr = runUnsignedCheck(client)
+		res.UnsignedErr = runUnsignedCheck(eng, opts.URL, opts.PR)
 		if res.UnsignedErr != nil {
 			log.Error("unsigned commits: %v", res.UnsignedErr)
 		} else {
 			log.Info("unsigned commits check: passed")
 		}
 		if shouldRunChecklistCheck(opts) {
-			res.ChecklistErr = github.ValidatePRChecklist(client)
+			res.ChecklistErr = eng.ValidateChecklist(opts.URL, opts.PR)
 			if res.ChecklistErr != nil {
 				log.Error("PR checklist: %v", res.ChecklistErr)
 			} else {
@@ -426,6 +427,7 @@ func toValidatorOptions(opts Options) validator.Options {
 		Dirs:            opts.Dirs,
 		Providers:       opts.Providers,
 		UpstreamSchemas: opts.UpstreamSchemas,
+		Forge:           opts.Forge,
 	}
 }
 
@@ -442,8 +444,8 @@ func resolveBaseRef(targetBranch string) string {
 	return "origin/main"
 }
 
-func runUnsignedCheck(c *github.Client) error {
-	commits, err := github.GetUnsignedCommits(c)
+func runUnsignedCheck(eng forge.Forge, url, pr string) error {
+	commits, err := eng.GetUnsignedCommits(url, pr)
 	if err != nil {
 		return err
 	}
@@ -456,13 +458,14 @@ func runUnsignedCheck(c *github.Client) error {
 // commentSkipReason reports whether posting a PR comment should be skipped,
 // and if so, why. Comment posting requires both an explicit opt-in
 // (opts.PostComment, set from the CLI's --comment flag - off by default)
-// and repo/PR context being available (github.Client.IsAvailable()); a
+// and repo/PR context being available (forge.Forge.IsAvailable()); a
 // local/no-PR run skips commenting regardless of the flag.
 func commentSkipReason(opts Options) (reason string, skip bool) {
 	if !opts.PostComment {
 		return "--comment not passed", true
 	}
-	if !github.NewClient(opts.URL, opts.PR).IsAvailable() {
+	eng := forge.Detect(opts.URL, opts.Forge)
+	if !eng.IsAvailable(opts.URL, opts.PR) {
 		return "no repo/PR context available", true
 	}
 	return "", false
@@ -564,8 +567,8 @@ func isRenderedOnly(s string) bool {
 }
 
 func postComment(res *Result, opts Options) error {
-	client := github.NewClient(opts.URL, opts.PR)
-	if !client.IsAvailable() {
+	eng := forge.Detect(opts.URL, opts.Forge)
+	if !eng.IsAvailable(opts.URL, opts.PR) {
 		return nil
 	}
 	sections := composeSections(res, opts)
@@ -574,25 +577,25 @@ func postComment(res *Result, opts Options) error {
 		// delete any existing report comment + legacy markers so a
 		// prior run's comment (which may have had findings) gets
 		// cleaned up when those issues are resolved.
-		if err := github.DeleteComments(client, "<!-- gitops-ci-report -->"); err != nil {
+		if err := eng.DeleteComments(opts.URL, opts.PR, "<!-- gitops-ci-report -->"); err != nil {
 			return err
 		}
-		if err := github.DeleteComments(client, validator.LegacyMarkers()...); err != nil {
+		if err := eng.DeleteComments(opts.URL, opts.PR, validator.LegacyMarkers()...); err != nil {
 			return err
 		}
-		return github.DeleteComments(client, opts.Providers.ForeignMarkers()...)
+		return eng.DeleteComments(opts.URL, opts.PR, opts.Providers.ForeignMarkers()...)
 	}
 	report := buildReport(res, opts)
-	if err := github.UpsertComment(client, report.Marker, report.Render()); err != nil {
+	if err := eng.UpsertComment(opts.URL, opts.PR, report.Marker, report.Render()); err != nil {
 		return err
 	}
-	if err := github.DeleteComments(client, validator.LegacyMarkers()...); err != nil {
+	if err := eng.DeleteComments(opts.URL, opts.PR, validator.LegacyMarkers()...); err != nil {
 		return err
 	}
 	// Prune unwanted third-party bot comments as configured by the
 	// CommentPolicy provider (e.g. an org-specific bot comment). No-op when
 	// no provider is wired, since ForeignMarkers() returns nil by default.
-	return github.DeleteComments(client, opts.Providers.ForeignMarkers()...)
+	return eng.DeleteComments(opts.URL, opts.PR, opts.Providers.ForeignMarkers()...)
 }
 
 // validatorSectionOrFallback looks up a named section in vr.Sections (the
