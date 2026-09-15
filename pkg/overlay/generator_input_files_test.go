@@ -173,3 +173,44 @@ configMapGenerator:
 		t.Errorf("expected nested.conf, got %s", base)
 	}
 }
+
+// TestGeneratorInputFiles_NonAdjacentDuplicate verifies that files
+// referenced by two different generator blocks in the same
+// kustomization.yaml are deduplicated even when they appear at
+// non-adjacent positions in the raw traversal order. This is a
+// regression guard against the dedupSorted order-dependency:
+// without sorting the input, non-adjacent duplicates survive.
+func TestGeneratorInputFiles_NonAdjacentDuplicate(t *testing.T) {
+	t.Parallel()
+
+	d := t.TempDir()
+	baseDir := filepath.Join(d, "base")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two generator blocks; "dup.conf" appears in both but
+	// separated by "keep.conf" → non-adjacent in raw results.
+	if err := os.WriteFile(filepath.Join(baseDir, "kustomization.yaml"), []byte(`
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+- name: a
+  files:
+  - dup.conf
+  - keep.conf
+- name: b
+  files:
+  - dup.conf
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	inputs := GeneratorInputFiles(d)
+	if len(inputs) != 2 {
+		t.Fatalf("expected 2 unique inputs, got %d: %v", len(inputs), inputs)
+	}
+	if base := filepath.Base(inputs[0]); base != "dup.conf" {
+		t.Errorf("expected dup.conf first, got %s", base)
+	}
+}

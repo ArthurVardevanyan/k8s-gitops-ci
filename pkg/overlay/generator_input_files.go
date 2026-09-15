@@ -3,6 +3,7 @@ package overlay
 import (
 	"os"
 	"path/filepath"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -40,8 +41,8 @@ type k8sYAMLGenerator struct {
 // GeneratorInputFiles returns the set of files referenced by any
 // configMapGenerator or secretGenerator in the base, components, and
 // overlays under appRoot. Each entry is resolved relative to its
-// declaring kustomization.yaml's directory, then returned as a set
-// (deduped). Files that can't be parsed or are absent are silently
+// declaring kustomization.yaml's directory, then returned as a sorted,
+// deduplicated set. Files that can't be parsed or are absent are silently
 // skipped so a malformed kustomization never breaks the caller.
 //
 // Only non-manifest inputs (files and env entries) that kustomize
@@ -66,6 +67,7 @@ func GeneratorInputFiles(appRoot string) []string {
 			}
 		}
 	}
+	sort.Strings(results)
 	return dedupSorted(results)
 }
 
@@ -93,7 +95,7 @@ func walkKustomizationFiles(root string) []string {
 		if e.IsDir() {
 			switch e.Name() {
 			case "base", "overlays", "components":
-				result = append(result, walkDir(fullPath, nil)...)
+				result = append(result, walkDir(fullPath)...)
 			}
 		} else if k8sYAMLFile(e.Name()) {
 			result = append(result, fullPath)
@@ -104,7 +106,7 @@ func walkKustomizationFiles(root string) []string {
 
 // walkDir recursively walks a directory, collecting kustomization root
 // files and descending into subdirectories.
-func walkDir(dir string, _ map[string]bool) []string {
+func walkDir(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
@@ -113,7 +115,7 @@ func walkDir(dir string, _ map[string]bool) []string {
 	for _, e := range entries {
 		fullPath := filepath.Join(dir, e.Name())
 		if e.IsDir() {
-			result = append(result, walkDir(fullPath, nil)...)
+			result = append(result, walkDir(fullPath)...)
 		} else if k8sYAMLFile(e.Name()) {
 			result = append(result, fullPath)
 		}
