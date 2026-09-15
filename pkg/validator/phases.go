@@ -27,6 +27,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/shellcheck"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/yamlsyntax"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/scaffold"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/cel"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -376,23 +377,44 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			yamlFiles = excludeInvalidTestdata(yamlFiles)
 			yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
 			yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
+			// configMapGenerator / secretGenerator inputs are data payloads
+			// embedded into generated ConfigMaps/Secrets (which are
+			// validated in the rendered pass). They never appear as
+			// standalone resources in the render and should not surface as
+			// "non-manifest YAML" noise in the raw pass - exclude them
+			// silently, matching the existing scaffold/known-non-manifest
+			// exclusions.
+			if genInputs := generatorInputsForChangedFiles(changed); genInputs != nil {
+				yamlFiles = excludeGeneratorInputs(yamlFiles, genInputs)
+			}
 			kcOpts, cleanup := kubeconformSchemaOpts(opts)
 			defer cleanup()
 			// Changed files that participate in a scoped overlay's build chain
-			// are schema-validated from the authoritative rendered output in the
-			// post-build "Kubeconform (Rendered)" pass (see
-			// runBuildAndPostBuild). Excluding them here keeps each changed
-			// manifest validated by exactly one pass, and avoids a misleading
-			// raw pass tripping over unresolved AVP placeholders that the
-			// rendered output resolves. This exclusion only applies when the
-			// rendered pass will actually run: under --lint-only the Build/
-			// Post-Build phase (and therefore the rendered pass) is skipped, so
-			// removing these files here would drop their kubeconform coverage
+			// and whose documents are actually present in the overlay's
+			// rendered output are schema-validated from the authoritative
+			// rendered pass (see runBuildAndPostBuild). Excluding them here
+			// keeps each changed manifest validated by exactly one pass and
+			// avoids a misleading raw pass tripping over unresolved AVP
+			// placeholders. A file is covered only when its documents
+			// (matched on kind+name) appear in the render of a relevant
+			// overlay; files that are path-related but absent from the render
+			// (e.g. a brand-new component whose resources don't reach the
+			// render) fall back to the raw pass so nothing is silently
+			// skipped. This exclusion only applies when the rendered pass
+			// will actually run: under --lint-only the Build/Post-Build phase
+			// (and therefore the rendered pass) is skipped, so removing
+			// these files here would drop their kubeconform coverage
 			// entirely. In lint-only mode every changed manifest file is
 			// validated raw instead.
 			if !opts.LintOnly {
-				scoped := detectOverlaysForChanges(changed)
-				yamlFiles = filesNotCovered(yamlFiles, coverByScopedOverlays(scoped, yamlFiles))
+				// Use content-aware coverage from the Build phase if
+				// available; fall back to the path-based proxy for
+				// --lint-only runs (the Build phase was skipped).
+				covered := res.RenderedOverlayCovered
+				if covered == nil {
+					covered = coverByScopedOverlays(detectOverlaysForChanges(changed), yamlFiles)
+				}
+				yamlFiles = filesNotCovered(yamlFiles, covered)
 			}
 			if kcRes, err := kubeconform.ValidateFiles(yamlFiles, kcOpts); err == nil && kcRes != nil {
 				if kcRes.Invalid > 0 || kcRes.Errors > 0 {
@@ -640,6 +662,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		overlayWg.Wait()
 	}
 
+	// Content-aware coverage: compute for both the Linting phase (kubeconform
+	// raw pass) and the doc-checks pass below. A file is covered only when
+	// its YAML documents are actually present in a rendered overlay's output -
+	// not just path-related - so files in a referenced component whose
+	// resources never appear in the render fall back to the raw pass and are
+	// not silently skipped.
+	res.RenderedOverlayCovered = filesCoveredByRenderedContent(renderedOverlays, changed)
+
 	for _, err := range runAppPostValidateHooks(apps, hookCfgs, hookResults, log) {
 		buildErrs = append(buildErrs, err)
 		log.ErrorInSection("Hooks", "%s", err)
@@ -777,12 +807,14 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// merge (e.g. `image: <PATCHED_BY_KUSTOMIZE>` replaced by an overlay
 	// `images:`/JSON-patch) is judged on its final rendered result rather
 	// than the intermediate raw fragment. renderedFiles is the set of raw
-	// source files that participate in at least one successfully-rendered
-	// overlay: runDocChecks skips render-sensitive checks for those (they're
-	// covered by the rendered pass) but still runs them over any file NOT in
-	// a rendered overlay (a brand-new component not yet wired into any
-	// kustomization.yaml), so nothing is silently skipped.
-	renderedFiles := filesCoveredByRenderedOverlays(renderedOverlays, yamlFiles)
+	// source files that actually appear in at least one successfully-rendered
+	// overlay (matched on document kind+name, not just path-related):
+	// runDocChecks skips render-sensitive checks for those (they're covered
+	// by the rendered pass) but still runs them over any file NOT in a
+	// rendered overlay (a brand-new component whose resources are absent from
+	// the render, or a component not yet wired into any kustomization.yaml),
+	// so nothing is silently skipped.
+	renderedFiles := filesCoveredByRenderedContent(renderedOverlays, yamlFiles)
 	docResult := runDocChecks(yamlFiles, renderedFiles, selectors, w, disabled)
 	renderedResult := runDocChecksRendered(renderedOverlays, selectors, w, disabled)
 	docResult.Findings = append(docResult.Findings, renderedResult.Findings...)
@@ -1183,6 +1215,50 @@ func formatSkippedNonManifest(files []string) string {
 		listed = listed[:maxSkippedNonManifestListed]
 	}
 	return fmt.Sprintf("Skipped %d non-manifest YAML file(s) (no apiVersion/kind): %s%s", len(files), strings.Join(listed, ", "), extra)
+}
+
+// generatorInputsForChangedFiles returns a map of generator-input file paths
+// (referenced by any configMapGenerator/secretGenerator in the app roots
+// that the changed files map to). The returned map is keyed by
+// filepath.ToSlash(filepath.Clean(f)) for matching against yamlFiles that
+// may be repo-relative or absolute. Returns nil when no app roots are
+// detected (meaning no generator inputs to exclude).
+func generatorInputsForChangedFiles(changed []string) map[string]bool {
+	if len(changed) == 0 {
+		return nil
+	}
+	// Collect app roots for the changed files.
+	roots := detectAppRoots(changed)
+	if len(roots) == 0 {
+		return nil
+	}
+	var allInputs []string
+	for _, root := range roots {
+		allInputs = append(allInputs, overlay.GeneratorInputFiles(root)...)
+	}
+	// Convert to a set for O(1) matching against yamlFiles.
+	inputSet := make(map[string]bool, len(allInputs))
+	for _, f := range allInputs {
+		inputSet[filepath.ToSlash(filepath.Clean(f))] = true
+	}
+	return inputSet
+}
+
+// excludeGeneratorInputs drops files from the slice that appear in the
+// generator-input set (keys are filepath.ToSlash(filepath.Clean(...))).
+// Generator inputs are data payloads embedded into generated ConfigMaps/
+// Secrets (which are validated in the rendered pass). They are excluded
+// silently from the raw pass so they don't surface as "non-manifest YAML"
+// noise - the generated ConfigMap/Secret is already fully validated.
+func excludeGeneratorInputs(files []string, genInputs map[string]bool) []string {
+	var out []string
+	for _, f := range files {
+		if genInputs[filepath.ToSlash(filepath.Clean(f))] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 func filterYAML(files []string) []string {

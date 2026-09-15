@@ -52,6 +52,13 @@ type Options struct {
 	Clusters        []string
 	Dirs            []string // restrict the changeset to files under these path prefixes (e.g. "kubernetes/", "tekton/"); empty means no restriction
 	Providers       provider.Providers
+	// UpstreamSchemas controls whether the upstream schema remotes
+	// (kubernetes-json-schema CDN and datree CRDs catalog) are
+	// consulted in addition to the local schema directory. Off by
+	// default so that a CRD absent from the pinned archive is a hard
+	// error; set this to re-enable the legacy additive "fill-in from
+	// upstream" behaviour.
+	UpstreamSchemas bool
 }
 
 // Result captures the pipeline outcome.
@@ -418,6 +425,7 @@ func toValidatorOptions(opts Options) validator.Options {
 		Clusters:        opts.Clusters,
 		Dirs:            opts.Dirs,
 		Providers:       opts.Providers,
+		UpstreamSchemas: opts.UpstreamSchemas,
 	}
 }
 

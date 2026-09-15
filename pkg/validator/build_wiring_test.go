@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -274,5 +275,50 @@ func TestBuildGhostTable_OnlyIncludesRenderedOverlays(t *testing.T) {
 	}
 	if strings.Contains(got, notRendered) {
 		t.Errorf("expected the non-rendered overlay to be absent from the table, got:\n%s", got)
+	}
+}
+
+func TestFilesCoveredByRenderedContent_MemoizedPerOverlay(t *testing.T) {
+	t.Parallel()
+
+	d := t.TempDir()
+	baseDir := filepath.Join(d, "apps", "demo", "base")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// app-config.yaml: ConfigMap "app-config" — should be covered
+	// (present in the rendered overlay).
+	mustWrite(t, filepath.Join(baseDir, "app-config.yaml"),
+		"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\n")
+
+	// orphan-cm.yaml: ConfigMap "orphan" — NOT in the render,
+	// should not be covered.
+	mustWrite(t, filepath.Join(baseDir, "orphan-cm.yaml"),
+		"apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: orphan\n")
+
+	ovPath := filepath.Join(d, "apps", "demo", "overlays", "prod")
+	rendered := []renderedOverlay{
+		{
+			overlay: ovPath,
+			data:    []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\n"),
+		},
+	}
+
+	files := []string{
+		filepath.Join(baseDir, "app-config.yaml"),
+		filepath.Join(baseDir, "orphan-cm.yaml"),
+	}
+
+	got := filesCoveredByRenderedContent(rendered, files)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 covered file, got %d: %v", len(got), got)
+	}
+	if !got[filepath.Clean(filepath.Join(baseDir, "app-config.yaml"))] {
+		t.Errorf("expected app-config.yaml to be covered")
+	}
+	absOrphan := filepath.Clean(filepath.Join(baseDir, "orphan-cm.yaml"))
+	if got[absOrphan] {
+		t.Errorf("expected orphan-cm.yaml to NOT be covered, but it was: %v", got)
 	}
 }

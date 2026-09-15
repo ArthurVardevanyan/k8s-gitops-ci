@@ -82,20 +82,20 @@ func TestValidateFiles_SkipsNonManifest(t *testing.T) {
 	d := t.TempDir()
 	inv := filepath.Join(d, "inventory.yml")
 	nms := filepath.Join(d, "node-0.example.com.yaml")
-	// A real manifest whose kind is in DefaultOptions.SkipKinds, so it is
-	// routed to kubeconform (proving it was NOT treated as non-manifest) but
-	// resolves to Skipped without needing an on-disk schema in the test.
+	// A real manifest that is NOT in SkipKinds (default options have an empty
+	// SkipKinds slice), so it is routed to kubeconform (proving it was NOT
+	// treated as non-manifest) and produces a missing-schema error because
+	// the test uses SchemaLocations=nil so no schemas are available.
 	es := filepath.Join(d, "secret.yaml")
 	mustWriteFile(t, inv, ansibleInventory)
 	mustWriteFile(t, nms, nmstateConfig)
 	mustWriteFile(t, es, "apiVersion: external-secrets.io/v1beta1\nkind: ExternalSecret\nmetadata:\n  name: s\n")
 
-	res, err := ValidateFiles([]string{inv, nms, es}, DefaultOptions())
+	opts := DefaultOptions()
+	opts.SchemaLocations = nil
+	res, err := ValidateFiles([]string{inv, nms, es}, opts)
 	if err != nil {
 		t.Fatalf("ValidateFiles: %v", err)
-	}
-	if res.Errors != 0 || res.Invalid != 0 {
-		t.Errorf("expected no errors/invalid for non-manifest skips, got %d errors, %d invalid:\n%s", res.Errors, res.Invalid, res.Summary())
 	}
 	if len(res.SkippedNonManifest) != 2 {
 		t.Fatalf("expected 2 skipped non-manifest files, got %d: %v", len(res.SkippedNonManifest), res.SkippedNonManifest)
@@ -107,8 +107,11 @@ func TestValidateFiles_SkipsNonManifest(t *testing.T) {
 	if strings.Contains(got, "secret.yaml") {
 		t.Errorf("a real manifest (ExternalSecret) must not be classified non-manifest: %v", res.SkippedNonManifest)
 	}
-	if res.Skipped != 1 {
-		t.Errorf("expected the ExternalSecret to be SkipKinds-skipped by kubeconform (Skipped=1), got %d", res.Skipped)
+	if res.Skipped != 0 {
+		t.Errorf("expected no SkipKinds-skipped resources (SkipKinds is empty by default), got %d", res.Skipped)
+	}
+	if res.Errors != 1 {
+		t.Errorf("expected exactly 1 missing-schema error for ExternalSecret, got %d errors, %d invalid:\n%s", res.Errors, res.Invalid, res.Summary())
 	}
 }
 

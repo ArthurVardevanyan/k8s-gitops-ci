@@ -39,6 +39,13 @@ type Options struct {
 	IgnoreMissingSchemas bool
 	UseSchemas           bool
 	SchemaDir            string
+	// UpstreamSchemas controls whether the two upstream schema-remote
+	// locations (the default kubernetes-json-schema CDN and the datree
+	// CRDs catalog) are consulted in addition to the local SchemaDir.
+	// Off by default so that a CRD absent from the pinned archive is a
+	// hard error; enable this flag to restore the legacy additive
+	// "fill-in from upstream" behaviour.
+	UpstreamSchemas bool
 }
 
 // DefaultOptions returns sensible defaults.
@@ -48,10 +55,11 @@ func DefaultOptions() Options {
 			"default",
 			"https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
 		},
-		SkipKinds:         []string{"ExternalSecret", "AnalysisTemplate", "Rollout"},
+		SkipKinds:         nil,
 		Strict:            true,
 		KubernetesVersion: "1.29.0",
 		UseSchemas:        true,
+		UpstreamSchemas:   false,
 	}
 }
 
@@ -238,9 +246,18 @@ func SchemaLocations(schemaBase string) []string {
 
 // NewValidator creates a kubeconform validator.
 func NewValidator(opts Options) (kfv.Validator, error) {
-	sl := opts.SchemaLocations
+	// Compose the schema-location list: start from the local (embedded)
+	// schema directory, then append the two upstream remotes only when
+	// UpstreamSchemas is true.  This makes the pinned archive
+	// authoritative by default — a CRD not present in the archive is a
+	// hard error.  Opt into the legacy additive "fill-in from upstream"
+	// behaviour with the UpstreamSchemas flag.
+	sl := []string(nil)
 	if opts.SchemaDir != "" {
-		sl = append(SchemaLocations(opts.SchemaDir), sl...)
+		sl = append(sl, SchemaLocations(opts.SchemaDir)...)
+	}
+	if opts.UpstreamSchemas {
+		sl = append(sl, opts.SchemaLocations...)
 	}
 	skipKinds := make(map[string]struct{})
 	for _, k := range opts.SkipKinds {

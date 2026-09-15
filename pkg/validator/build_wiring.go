@@ -2,9 +2,13 @@ package validator
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/ghostpatch"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
@@ -84,35 +88,6 @@ func appFromOverlayPath(ovPath string) string {
 		return filepath.FromSlash(slash[:idx])
 	}
 	return ovPath
-}
-
-// filesCoveredByRenderedOverlays returns the subset of files (cleaned) that
-// participate in the build chain of at least one successfully-rendered
-// overlay - i.e. files whose render-sensitive verdict is decided by the
-// rendered pass (runDocChecksRendered) and should therefore be skipped by
-// the raw pass's render-sensitive tier. A file is covered when it lives
-// under an overlay's own overlays/<cluster> dir, its app's base/, or a
-// component that overlay's kustomization chain references (the same app-aware
-// relatedness the scaffold-drift scoping uses). Files not covered here (e.g.
-// a brand-new component not yet wired into any kustomization.yaml) still get
-// their render-sensitive checks via the raw fallback, so nothing is skipped.
-func filesCoveredByRenderedOverlays(outputs []renderedOverlay, files []string) map[string]bool {
-	if len(outputs) == 0 || len(files) == 0 {
-		return nil
-	}
-	covered := make(map[string]bool, len(files))
-	for _, f := range files {
-		clean := filepath.Clean(f)
-		for _, o := range outputs {
-			app := appFromOverlayPath(o.overlay)
-			cluster := filepath.Base(o.overlay)
-			if isOverlayRelatedToChangedFiles(app, cluster, []string{f}) {
-				covered[clean] = true
-				break
-			}
-		}
-	}
-	return covered
 }
 
 // uniqueApps returns the deduplicated, sorted set of app roots referenced by
@@ -243,4 +218,180 @@ func buildGhostTable(renderedOverlays []renderedOverlay, changed, addedFiles []s
 	}
 	header := "| Overlay | Target |\n| --- | --- |"
 	return header + "\n" + strings.Join(rows, "\n") + "\n", blockingCount
+}
+
+// resourceIdentity identifies a single YAML document by its kind and
+// resource name. It is used for matching changed files against the
+// rendered output of a kustomize overlay: a changed file is considered
+// "covered" by a rendered overlay only when every document in the file
+// has an identity match (kind+name) in at least one of the overlay's
+// successfully-rendered output documents. Namespace is not compared
+// because overlay namespace transforms would break a naive match.
+type resourceIdentity struct {
+	Kind string
+	Name string
+}
+
+// resourceIdentitySet is a helper type for fast membership testing.
+type resourceIdentitySet map[resourceIdentity]bool
+
+// documentIdentity extracts the kind+name identity from a single YAML
+// document, returning the identity and true when the document has a
+// recognized apiVersion/kind pair; (zero, false) otherwise.
+func documentIdentity(doc []byte) (resourceIdentity, bool) {
+	var root map[string]interface{}
+	if err := yaml.Unmarshal(doc, &root); err != nil {
+		return resourceIdentity{}, false
+	}
+	kind, _ := root["kind"].(string)
+	if kind == "" {
+		return resourceIdentity{}, false
+	}
+	meta, _ := root["metadata"].(map[string]interface{})
+	name, _ := meta["name"].(string)
+	if name == "" {
+		return resourceIdentity{}, false
+	}
+	return resourceIdentity{Kind: kind, Name: name}, true
+}
+
+// splitDocuments splits data into YAML documents (same logic as
+// phases.go:splitDocuments to stay in sync).
+func parseDocuments(data []byte) (resourceIdentitySet, bool) {
+	ids := make(resourceIdentitySet)
+	for _, doc := range splitDocuments(data) {
+		ident, ok := documentIdentity(doc)
+		if ok {
+			ids[ident] = true
+		}
+	}
+	return ids, len(ids) > 0
+}
+
+// resourceIdentityFromFile extracts the resource identities (kind+name)
+// from a YAML file on disk. It reads the file, splits it into documents,
+// and returns the set of identities found. Returns false when the file
+// is empty or contains no recognized Kubernetes documents.
+func resourceIdentityFromFile(path string) (resourceIdentitySet, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	return parseDocuments(data)
+}
+
+// filesCoveredByRenderedContent returns the set of files (cleaned) whose
+// documents are actually present in the successfully rendered output of
+// at least one overlay their changed paths are related to. A file is
+// covered only if ALL of its YAML documents (matched on kind+name) appear
+// in the rendered output of at least one relevant overlay (an overlay
+// whose kustomization chain includes the file via a component/base
+// reference).
+//
+// This is stricter than the path-based proxy used by coverByScopedOverlays,
+// which exclude a file from the raw pass just because its path is related
+// to an overlay - if the overlay's render does not actually contain the
+// file's resources (e.g., a brand-new component whose resources are absent
+// from the render), the file falls back to the raw pass so nothing is
+// silently skipped.
+func filesCoveredByRenderedContent(renderedOverlays []renderedOverlay, files []string) map[string]bool {
+	if len(renderedOverlays) == 0 {
+		return nil
+	}
+	covered := make(map[string]bool)
+	// For each changed file: parse its identities, find relevant rendered
+	// overlays, check if all its identities appear in any relevant render.
+	// Use a goroutine pool to avoid unbounded fan-out.
+	type work struct {
+		filePath   string
+		cleanPath  string
+		identities resourceIdentitySet
+	}
+	jobs := make(chan work, len(files))
+	type jobResult struct {
+		cleanPath string
+		covered   bool
+	}
+	results := make(chan jobResult, len(files))
+	var wg sync.WaitGroup
+
+	// Memoize parseDocuments per overlay: many changed files can relate to
+	// the same overlay, and re-parsing an identical rendered manifest per
+	// file is redundant work. parseDocuments is pure w.r.t. ro.data, so a
+	// shared read-mostly cache is safe; guard with RWMutex since the worker
+	// pool below reads/writes it concurrently.
+	type parsedRender struct {
+		ids resourceIdentitySet
+		ok  bool
+	}
+	var renderCacheMu sync.RWMutex
+	renderCache := make(map[string]parsedRender, len(renderedOverlays))
+	renderedIDsFor := func(ro renderedOverlay) (resourceIdentitySet, bool) {
+		renderCacheMu.RLock()
+		if v, ok := renderCache[ro.overlay]; ok {
+			renderCacheMu.RUnlock()
+			return v.ids, v.ok
+		}
+		renderCacheMu.RUnlock()
+		ids, ok := parseDocuments(ro.data)
+		renderCacheMu.Lock()
+		renderCache[ro.overlay] = parsedRender{ids: ids, ok: ok}
+		renderCacheMu.Unlock()
+		return ids, ok
+	}
+
+	for i := 0; i < 16 && i <= len(files); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				// Find relevant rendered overlays (those that the file is
+				// related to via the overlay's kustomization chain).
+				// We only check overlays where this file's identities
+				// could plausibly appear (same app+cluster prefix).
+				for _, ro := range renderedOverlays {
+					app := appFromOverlayPath(ro.overlay)
+					cluster := filepath.Base(ro.overlay)
+					if isOverlayRelatedToChangedFiles(app, cluster, []string{job.filePath}) {
+						renderedIDs, ok := renderedIDsFor(ro)
+						if ok && identitiesMatch(job.identities, renderedIDs) {
+							results <- jobResult{job.cleanPath, true}
+							break
+						}
+					}
+				}
+			}
+		}()
+	}
+	for _, f := range files {
+		ids, ok := resourceIdentityFromFile(f)
+		if !ok {
+			continue
+		}
+		clean := filepath.Clean(f)
+		jobs <- work{filePath: f, cleanPath: clean, identities: ids}
+	}
+	close(jobs)
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	for r := range results {
+		if r.covered {
+			covered[r.cleanPath] = true
+		}
+	}
+	return covered
+}
+
+// identitiesMatch returns true when every identity in want is present in
+// have (a superset check). This is used to verify that all documents from
+// a changed file are represented in an overlay's rendered output.
+func identitiesMatch(want, have resourceIdentitySet) bool {
+	for id := range want {
+		if !have[id] {
+			return false
+		}
+	}
+	return true
 }

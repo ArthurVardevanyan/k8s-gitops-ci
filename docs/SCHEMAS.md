@@ -252,6 +252,35 @@ of `generateName` and `metadata.namespace`. All object-name validation
 therefore has to live in the runtime family — see
 `kubernetes/core/object-meta-name-invalid` and `kubernetes/core/object-meta-namespace-invalid`.
 
+### Upstream schema remotes (opt-in)
+
+By default the tool **does not** consult the upstream schema remotes
+(kubernetes-json-schema CDN and the datree CRDs catalog). A CRD absent
+from the pinned (embedded) archive is reported as a **hard missing-schema
+error**. This is intentional: it makes the schema source fully
+deterministic and version-controlled — the only thing that decides
+whether a resource is "valid" is the committed archive.
+
+To re-enable the legacy additive behaviour ("fill in from upstream"),
+pass `--upstream-schemas` on any command that supports it:
+
+```bash
+k8s-gitops-ci pipeline --url <repo> --pr 123 --upstream-schemas
+k8s-gitops-ci test --dirs kubernetes/ --upstream-schemas
+./bin/k8s-gitops-ci kubeconform --upstream-schemas manifests/*.yaml
+```
+
+When `--upstream-schemas` is set, the lookup order becomes:
+
+1. Embedded archive (local schema dir — always consulted first).
+2. Kubernetes-json-schema CDN (default).
+3. Datree CRDs catalog.
+
+A schema found in any upstream location is accepted as "valid"; a
+resource that has no schema anywhere is reported as a missing-schema
+error. This is the same behaviour that was active before this change,
+minus the fact that the default is now **off**.
+
 ### When a runtime check _is_ duplicative
 
 The boundary cuts the other way too. A check that only re-detects a

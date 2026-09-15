@@ -10,6 +10,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
@@ -770,5 +771,132 @@ func TestFilterLargeFileExemptions_PathSuffix(t *testing.T) {
 	got := filterLargeFileExemptions(files, selectors)
 	if len(got) != 1 || got[0] != "other/b.db" {
 		t.Fatalf("expected suffix match to work, got: %v", got)
+	}
+}
+
+// TestGeneratorInputFiles_RawPassExclusion verifies that a non-manifest YAML
+// file referenced by a configMapGenerator/secretGenerator in an app root's
+// kustomization.yaml is excluded from the raw pass's non-manifest surfacing.
+// This is a regression guard: generator inputs are data payloads embedded
+// into a generated ConfigMap/Secret (validated in the rendered pass) and
+// should never appear as "non-manifest YAML" noise.
+func TestGeneratorInputFiles_RawPassExclusion(t *testing.T) {
+	t.Parallel()
+
+	d := t.TempDir()
+	// Create a base kustomization.yaml with a configMapGenerator
+	// that references a non-manifest file (a config, not a k8s manifest).
+	baseDir := filepath.Join(d, "base")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseK := filepath.Join(baseDir, "kustomization.yaml")
+	if err := os.WriteFile(baseK, []byte(`
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+- name: app-config
+  files:
+  - litellm.conf
+secretGenerator:
+- name: app-secret
+  envs:
+  - .env
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The generator inputs resolve relative to the kustomization.yaml's
+	// directory, so they are at baseDir/litellm.conf and baseDir/.env.
+	appRoot := d
+	gotInputs := overlay.GeneratorInputFiles(appRoot)
+	if len(gotInputs) != 2 {
+		t.Fatalf("expected 2 generator inputs (litellm.conf + .env), got %d: %v", len(gotInputs), gotInputs)
+	}
+
+	// Build a set like the raw pass does.
+	inputSet := make(map[string]bool, len(gotInputs))
+	for _, f := range gotInputs {
+		inputSet[filepath.ToSlash(filepath.Clean(f))] = true
+	}
+
+	// Simulate the raw-pass file list: generator inputs (at the
+	// resolved paths matching the kustomization.yaml's base/) + a
+	// genuinely non-manifest file (e.g. an Ansible inventory that
+	// should still show up as non-manifest).
+	nonManifestFiles := []string{
+		filepath.Join(baseDir, "litellm.conf"),
+		filepath.Join(baseDir, ".env"),
+		filepath.Join(appRoot, "ansible-inventory.yml"),
+	}
+	excluded := excludeGeneratorInputs(nonManifestFiles, inputSet)
+	if len(excluded) != 1 || excluded[0] != filepath.Join(appRoot, "ansible-inventory.yml") {
+		t.Fatalf("expected only ansible-inventory.yml in excluded list, got: %v", excluded)
+	}
+}
+
+// TestExcludeGeneratorInputs_NoAppRoots verifies that when there are no
+// app roots (changed files outside any app), generatorInputsForChangedFiles
+// returns nil so nothing is excluded.
+func TestExcludeGeneratorInputs_NoAppRoots(t *testing.T) {
+	t.Parallel()
+	changed := []string{"random/file.yaml", "random/other.conf"}
+	got := generatorInputsForChangedFiles(changed)
+	if got != nil {
+		t.Errorf("expected nil for non-app-root files, got: %v", got)
+	}
+}
+
+// TestGeneratorInputFiles_MixedManifestAndNonManifest verifies that files
+// with a root kind/apiVersion (true manifests) that happen to be referenced
+// as generator input files are still excluded from non-manifest surfacing
+// (they were classified as non-manifest by the content gate before reaching
+// this exclusion). The generator-input set only affects SkippedNonManifest
+// so it is harmless whether a file is a real manifest or not.
+func TestGeneratorInputFiles_TrueManifestPreserved(t *testing.T) {
+	t.Parallel()
+
+	d := t.TempDir()
+	baseDir := filepath.Join(d, "base")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A file that IS a manifest (kind: ConfigMap) but is also referenced
+	// by a generator (unusual, but possible).
+	litellmConf := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: litellm-conf\n"
+	if err := os.WriteFile(filepath.Join(baseDir, "litellm.conf"), []byte(litellmConf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "kustomization.yaml"), []byte(`
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+- name: app-config
+  files:
+  - litellm.conf
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	gotInputs := overlay.GeneratorInputFiles(d)
+	if len(gotInputs) != 1 {
+		t.Fatalf("expected 1 input, got %d: %v", len(gotInputs), gotInputs)
+	}
+
+	inputSet := make(map[string]bool, len(gotInputs))
+	for _, f := range gotInputs {
+		inputSet[filepath.ToSlash(filepath.Clean(f))] = true
+	}
+
+	// The file is at baseDir/litellm.conf, matching the generator input.
+	files := []string{
+		filepath.Join(baseDir, "litellm.conf"),
+	}
+	excluded := excludeGeneratorInputs(files, inputSet)
+	// The file matches a generator input, so it is excluded (zero files
+	// returned). This is the expected behavior: generator inputs are
+	// silently excluded regardless of whether they are true manifests.
+	if len(excluded) != 0 {
+		t.Errorf("expected 0 files (generator input excluded), got: %v", excluded)
 	}
 }

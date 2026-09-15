@@ -283,11 +283,16 @@ Checks Go file formatting and runs golangci-lint.
 Schema-validation runs in two complementary passes:
 
 - **Raw (Linting → Kubeconform):** changed YAML files that are **not** part of a
-  scoped overlay's build chain are validated from source. Files inside an
+  scoped overlay's build chain **and whose documents don't appear in the
+  overlay's rendered output** are validated from source. Files inside an
   affected overlay (its overlay dir, its app `base/`, referenced components)
-  are **excluded here** — they're schema-checked by the rendered pass below, so
-  each changed manifest is validated by exactly one pass and a raw pass never
-  trips over unresolved AVP placeholders.
+  are **excluded here** only when their YAML documents (matched on kind+name)
+  actually appear in the rendered output of the affected overlay — if a
+  file is path-related but absent from the render (e.g. a new component whose
+  resources are not included in the render), it falls back to the raw pass so
+  nothing is silently skipped. Excluding files whose docs are present in the
+  render keeps each changed manifest validated by exactly one pass and avoids
+  a raw pass tripping over unresolved AVP placeholders.
 - **Kubeconform (Rendered):** a post-build pass validates the overlays a PR
   actually affects — the change-scoped set the Build YAML phase resolves
   (`detectOverlaysForChanges`, so a base/component change resolves to just the
@@ -340,12 +345,26 @@ is no rendered output to validate.
   human to catch. This is the content-aware complement to the
   unconditional `convention.KnownNonManifestFiles` basename fast-path (`Taskfile.yml`,
   `.golangci.yml`, …).
+
+  Generator inputs (`configMapGenerator`/`secretGenerator`
+  `files:`/`envs:` entries from any `kustomization.yaml` in the affected
+  app root) are **silently excluded** from this non-manifest surfacing
+  — they are data payloads embedded into a generated `ConfigMap`/`Secret`
+  (which is fully validated in the rendered pass), so flagging them as
+  "non-manifest YAML" would be pure noise. This exclusion matches the
+  existing silent-exclusion pattern for scaffold artifacts and
+  `KnownNonManifestFiles`.
+
 - **Default:** on. **Disable:** `--disable-checks kubeconform` — a genuine
   wholesale opt-out (unlike the CLI-wrapper checks above, there's no
   "binary not installed" reason to disable it; the reason here is usually
   "this changeset/repo can contain non-Kubernetes YAML the step can't
   meaningfully validate at all", e.g. a `--lint-only` run over a repo root
   that includes `Taskfile.yml`/`.golangci.yml`/etc.).
+- **Upstream schema remotes** (kubernetes-json-schema CDN + datree CRDs
+  catalog) are **off by default** — a CRD not in the pinned archive is a
+  hard error. Pass `--upstream-schemas` to re-enable the legacy additive
+  "fill-in from upstream" behaviour (see [SCHEMAS.md](SCHEMAS.md#upstream-schemas-opt-in)).
 - **Exemptions:** for finer granularity than disabling the whole step,
   individual files can be skipped via
   `check=kubeconform,file=...`/`check=kubeconform,dir=...` selectors in a

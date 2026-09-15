@@ -17,6 +17,7 @@ import (
 func kubeconformSchemaOpts(opts Options) (kcOpts kubeconform.Options, cleanup func()) {
 	kcOpts = kubeconform.DefaultOptions()
 	cleanup = func() {}
+	kcOpts.UpstreamSchemas = opts.UpstreamSchemas
 	if opts.SchemaDir != "" {
 		kcOpts.SchemaDir = opts.SchemaDir
 		return kcOpts, cleanup
