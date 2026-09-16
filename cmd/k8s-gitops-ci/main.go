@@ -10,7 +10,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/config"
-	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/github" // registers github forge via init()
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/all" // registers all built-in forges via init()
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/csv"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/ghostpatch"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"

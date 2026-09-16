@@ -102,10 +102,12 @@ for the authoritative directory tree with one-line descriptions. In terms
 of the flow above:
 
 - **Forge integration (GitHub, GitLab, future):** `pkg/forge` (pluggable
-  `Forge` interface, affinity-based detection, null forge) and
-  `pkg/forge/github` (GitHub-specific implementation). `pkg/changeset`
-  routes file fetching through `forge.Detect()` so a new forge only
-  requires a new `pkg/forge/<name>` package.
+  `Forge` interface, affinity-based detection, null forge). Built-in forges
+  are registered by `pkg/forge/all`, which imports each concrete
+  `pkg/forge/<name>` package — adding a new forge requires creating the
+  implementation and one blank import in `pkg/forge/all`. `pkg/changeset`
+  routes file fetching through `forge.Detect()` so application code never
+  depends on concrete implementations.
 - **Changeset resolution:** `pkg/changeset`, `pkg/git`.
 - **Linting/Static Checks:** `pkg/lint/*` (one package per external tool)
   plus a few in-repo checks (`pkg/largefile`, `pkg/lint/yamlsyntax`,
