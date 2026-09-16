@@ -10,19 +10,21 @@ import (
 const AnnotationPrefix = "gitops-ci.k8s.io/"
 
 // Check identifiers used by the shared engine. Most are exemptable (see
-// the exemptable map below); a couple are deliberately not:
+// the exemptable map below); two are deliberately not:
 // IDImageFQDN (an unqualified image reference is almost always a mistake,
 // and the framework's own escape hatches - annotation exact-value and
 // EXEMPTIONS selectors - don't fit it well; a genuine structural exception,
 // e.g. an OpenShift ImageStream-triggered bare reference, should get a
-// targeted skip in the check itself instead) and IDClusterIdentity (a
-// non-exemptable structural bucket, see Exemptable).
+// targeted skip in the check itself instead) and IDInvalidJSON (a
+// syntactically-broken file is a hard error, not something an exemption
+// should be able to paper over).
 const (
 	IDImageChecksum   = "image-checksum"
 	IDImageFQDN       = "image-fqdn"
 	IDClusterName     = "cluster-name"
 	IDProjectRef      = "project-ref"
-	IDClusterIdentity = "cluster-identity" // non-exemptable structural bucket
+	IDClusterIdentity = "cluster-identity"
+	IDInvalidJSON     = "invalid-json" // non-exemptable structural bucket
 	IDLargeFile       = "large-file"
 )
 
@@ -73,32 +75,34 @@ type Applied struct {
 }
 
 var exemptable = map[string]bool{
-	IDImageChecksum: true,
-	IDClusterName:   true,
-	IDProjectRef:    true,
-	IDLargeFile:     true,
+	IDImageChecksum:   true,
+	IDClusterName:     true,
+	IDProjectRef:      true,
+	IDClusterIdentity: true,
+	IDLargeFile:       true,
 }
 
 // Exemptable reports whether a check id supports exemptions.
 //
 // IDImageFQDN is deliberately hardcoded to false here, the same way
-// IDClusterIdentity is: check.Register unconditionally calls
+// IDInvalidJSON is: check.Register unconditionally calls
 // RegisterExemptable(c.ID()) for every registered check (so that, absent
 // this guard, image-fqdn would still end up selector-exemptable purely by
 // virtue of being registered) - see the doc comment on the ID constants
-// above for why image-fqdn is meant to stay non-exemptable.
+// above for why image-fqdn and invalid-json are meant to stay
+// non-exemptable.
 func Exemptable(id string) bool {
-	if id == IDClusterIdentity || id == IDImageFQDN {
+	if id == IDInvalidJSON || id == IDImageFQDN {
 		return false
 	}
 	return exemptable[id]
 }
 
 // RegisterExemptable marks a check id as exemptable. A no-op for
-// IDClusterIdentity/IDImageFQDN even if called, since Exemptable hardcodes
+// IDInvalidJSON/IDImageFQDN even if called, since Exemptable hardcodes
 // both to false regardless of this map.
 func RegisterExemptable(id string) {
-	if id == "" || id == IDClusterIdentity || id == IDImageFQDN {
+	if id == "" || id == IDInvalidJSON || id == IDImageFQDN {
 		return
 	}
 	exemptable[id] = true
@@ -106,7 +110,7 @@ func RegisterExemptable(id string) {
 
 // Known reports whether the id has been registered.
 func Known(id string) bool {
-	return exemptable[id] || id == IDClusterIdentity || id == IDImageFQDN
+	return exemptable[id] || id == IDInvalidJSON || id == IDImageFQDN
 }
 
 // Key returns the annotation key for an exemption id.

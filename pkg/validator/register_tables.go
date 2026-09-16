@@ -47,6 +47,7 @@ var complianceCheckOrder = []string{
 	// live per-check log agree, and surfaces the per-finding table.
 	IDPlaceholder,
 	exempt.IDClusterIdentity,
+	exempt.IDInvalidJSON,
 }
 
 // indexOfComplianceCheck returns the sort key for id within
@@ -262,11 +263,19 @@ var checkTableSpecs = map[string]check.TableSpec{
 	},
 	"cluster-identity": {
 		Title:    "Cluster Identity",
-		Preamble: "Overlay files referencing project IDs or cluster tokens from another cluster.",
+		Preamble: "Overlay files declaring a cluster identity that doesn't match the overlay's own cluster folder (e.g. copy/paste from another cluster, or a stale non-placeholder value).",
 		Columns: []check.Column{
 			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Field", Cell: func(f check.Finding) string { return f.Path }},
 			{Header: "Value", Cell: func(f check.Finding) string { return f.Value }},
+			{Header: "Issue", Cell: func(f check.Finding) string { return f.Message }},
+		},
+	},
+	"invalid-json": {
+		Title:    "Invalid JSON",
+		Preamble: "Files under the overlay ending in .json that failed to parse.",
+		Columns: []check.Column{
+			{Header: "File", Cell: func(f check.Finding) string { return f.File }},
 			{Header: "Issue", Cell: func(f check.Finding) string { return f.Message }},
 		},
 	},

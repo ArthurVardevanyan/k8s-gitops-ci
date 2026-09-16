@@ -309,9 +309,9 @@ time.
    `pkg/validator/register_checks.go`'s adapter wiring — registering
    auto-marks the check's ID as exemptable (see
    `check.Register`/`exempt.RegisterExemptable`) unless it's explicitly
-   guarded against exemption (the only current example is
-   `exempt.IDClusterIdentity`, a deliberately non-exemptable structural
-   bucket — see [`EXEMPTIONS.md`](EXEMPTIONS.md)).
+   guarded against exemption (the current examples are
+   `exempt.IDImageFQDN` and `exempt.IDInvalidJSON`, deliberately
+   non-exemptable structural buckets — see [`EXEMPTIONS.md`](EXEMPTIONS.md)).
 3. Add `testdata/` fixtures under your package (`testdata/` for
    fixtures expected to pass or produce specific findings,
    `testdata/invalid/` for deliberately-malformed inputs) — this repo's
