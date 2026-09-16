@@ -817,7 +817,7 @@ automatically exemptable via its own check ID (see
 | `named-ports`      | `pkg/validator/static/namedport`   | Doc     | Container/Service ports are named, not numeric, everywhere they're referenced                                                                                                                                                                                                                                                                                                                                                                         |
 | `podspec-defaults` | `pkg/validator/static/podspec`     | Doc     | Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...) and container `securityContext`/`resources.requests`/`resources.limits` are all set                                                                                                                                                                                                                                                                                            |
 | `placeholder`      | `pkg/validator/static/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML (AVP-scheme secret-reference tokens like `<path:...>` are deliberately not flagged — see below)                                                                                                                                                                                                                                 |
-| `cluster-identity` | `pkg/validator/static/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef` (exemptable) vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable structural bucket for findings that don't set a more specific ID)                                                                                                                                                                    |
+| `cluster-identity` | `pkg/validator/static/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef`/`IDClusterIdentity` (all exemptable) vs. `exempt.IDInvalidJSON` (a deliberately non-exemptable structural bucket for malformed `.json` files)                                                                                                                                                                   |
 
 #### Runtime validation checks (admission rules)
 
@@ -1663,9 +1663,9 @@ into this overlay.
 
 - **Package:** `pkg/validator/static/clusterid`
 - **Scope:** Overlay
-- **Exemptions:** see `exempt.IDClusterName`/`IDProjectRef` (exemptable)
-  vs. `exempt.IDClusterIdentity` (a deliberately non-exemptable
-  structural bucket for findings that don't set a more specific ID).
+- **Exemptions:** see `exempt.IDClusterName`/`IDProjectRef`/`IDClusterIdentity`
+  (all exemptable) vs. `exempt.IDInvalidJSON` (a deliberately
+  non-exemptable structural bucket for malformed `.json` files).
 
 `cluster-identity` is disabled entirely (produces no findings at all,
 including its infraID-mismatch/invalid-JSON structural findings, which

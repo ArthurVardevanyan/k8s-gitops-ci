@@ -6,8 +6,11 @@ func TestExemptable(t *testing.T) {
 	if !Exemptable(IDImageChecksum) {
 		t.Error("image-checksum should be exemptable")
 	}
-	if Exemptable(IDClusterIdentity) {
-		t.Error("cluster-identity should never be exemptable")
+	if !Exemptable(IDClusterIdentity) {
+		t.Error("cluster-identity should be exemptable")
+	}
+	if Exemptable(IDInvalidJSON) {
+		t.Error("invalid-json should never be exemptable")
 	}
 }
 
@@ -27,9 +30,9 @@ func TestRegisterExemptable(t *testing.T) {
 	if !Exemptable("custom") {
 		t.Error("custom should be exemptable after registration")
 	}
-	RegisterExemptable(IDClusterIdentity)
-	if Exemptable(IDClusterIdentity) {
-		t.Error("register should ignore cluster-identity")
+	RegisterExemptable(IDInvalidJSON)
+	if Exemptable(IDInvalidJSON) {
+		t.Error("register should ignore invalid-json")
 	}
 }
 
@@ -108,6 +111,44 @@ func TestEvaluate(t *testing.T) {
 	ok, applied := Evaluate(IDImageChecksum, s, ann, selectors)
 	if !ok || applied.Value != "img@sha256:abc" {
 		t.Errorf("expected exemption: %v %+v", ok, applied)
+	}
+}
+
+// TestEvaluate_ClusterIdentityInfraIDExemptable exercises the placeholder
+// infraID use case: a value substituted at sync time by a GitOps controller
+// (e.g. "INFRA_ID" checked into every overlay of an app) doesn't match the
+// overlay's own cluster name, but is legitimate and shouldn't block CI - a
+// selector naming the placeholder exempts it.
+func TestEvaluate_ClusterIdentityInfraIDExemptable(t *testing.T) {
+	s := Scalar{Value: "INFRA_ID", Path: "infraID", File: "overlays/pd1700"}
+	selectors := []Selector{{Check: IDClusterIdentity, Path: "infraID", Value: "INFRA_ID"}}
+	ok, applied := Evaluate(IDClusterIdentity, s, nil, selectors)
+	if !ok || applied.Value != "INFRA_ID" {
+		t.Errorf("expected placeholder infraID to be exemptable: %v %+v", ok, applied)
+	}
+
+	// A real foreign infraID with no matching selector must still block.
+	foreign := Scalar{Value: "othercluster-ab12c", Path: "infraID", File: "overlays/pd1700"}
+	if ok, _ := Evaluate(IDClusterIdentity, foreign, nil, selectors); ok {
+		t.Error("unrelated infraID must not be exempted by an unrelated selector")
+	}
+}
+
+// TestEvaluate_InvalidJSONNeverExemptable proves invalid-json stays a hard
+// error regardless of selector or annotation - including a selector or
+// annotation that names the now-exemptable cluster-identity id, which must
+// not leak into invalid-json's own bucket.
+func TestEvaluate_InvalidJSONNeverExemptable(t *testing.T) {
+	s := Scalar{Value: "credentials.json", File: "overlays/pd1700/credentials.json"}
+	selectors := []Selector{
+		{Check: IDInvalidJSON, File: "credentials.json"},
+		{Check: IDClusterIdentity, File: "credentials.json"},
+	}
+	ann := map[string]string{
+		Key(IDInvalidJSON): "credentials.json",
+	}
+	if ok, _ := Evaluate(IDInvalidJSON, s, ann, selectors); ok {
+		t.Error("invalid-json must never be exemptable, selector or annotation")
 	}
 }
 

@@ -151,7 +151,7 @@ func TestRawFindings_InfraIDMismatch(t *testing.T) {
 		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
 	}
 	if findings[0].CheckID != exempt.IDClusterIdentity {
-		t.Errorf("CheckID = %q, want %q (infraID mismatches must be non-exemptable)", findings[0].CheckID, exempt.IDClusterIdentity)
+		t.Errorf("CheckID = %q, want %q (infraID mismatches are exemptable)", findings[0].CheckID, exempt.IDClusterIdentity)
 	}
 	if findings[0].Value != "othercluster-ab12c" {
 		t.Errorf("unexpected value: %q", findings[0].Value)
@@ -221,8 +221,8 @@ func TestRawFindings_InvalidJSON(t *testing.T) {
 	if len(findings) != 1 {
 		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
 	}
-	if findings[0].CheckID != exempt.IDClusterIdentity {
-		t.Errorf("CheckID = %q, want %q (invalid JSON must be non-exemptable)", findings[0].CheckID, exempt.IDClusterIdentity)
+	if findings[0].CheckID != exempt.IDInvalidJSON {
+		t.Errorf("CheckID = %q, want %q (invalid JSON must be non-exemptable)", findings[0].CheckID, exempt.IDInvalidJSON)
 	}
 	if !strings.Contains(findings[0].Message, "invalid JSON") {
 		t.Errorf("unexpected message: %q", findings[0].Message)

@@ -128,29 +128,30 @@ func RawFindings(overlayPath, clusterName string, index ClusterIndex) []Finding 
 }
 
 // rawInvalidJSONFindings emits a non-exemptable structural finding for every
-// *.json file under the overlay that failed to parse as valid JSON. Like
-// infraID mismatches, this uses exempt.IDClusterIdentity (never exemptable)
-// since a syntactically-broken JSON file is a hard error, not something an
-// EXEMPTIONS selector or annotation should be able to paper over.
+// *.json file under the overlay that failed to parse as valid JSON. This
+// uses exempt.IDInvalidJSON (never exemptable) since a syntactically-broken
+// JSON file is a hard error, not something an EXEMPTIONS selector or
+// annotation should be able to paper over.
 func rawInvalidJSONFindings(overlayPath string, identity *OverlayIdentity) []Finding {
 	findings := make([]Finding, 0, len(identity.InvalidJSONFiles))
 	for _, invalid := range identity.InvalidJSONFiles {
 		findings = append(findings, Finding{
-			CheckID: exempt.IDClusterIdentity, File: filepath.Join(overlayPath, invalid.File),
+			CheckID: exempt.IDInvalidJSON, File: filepath.Join(overlayPath, invalid.File),
 			Message: fmt.Sprintf("invalid JSON: %s", invalid.Message),
 		})
 	}
 	return findings
 }
 
-// rawInfraIDFindings emits a non-exemptable structural finding for every
+// rawInfraIDFindings emits an exempt.IDClusterIdentity finding for every
 // infraID that doesn't match the overlay's own cluster name - the folder
-// name with any prefix up to the last "_" stripped off. Unlike
-// project-ref/cluster-name findings, this uses exempt.IDClusterIdentity
-// (never exemptable) since a mismatched infraID indicates the overlay was
-// very likely copy/pasted wholesale from another cluster's folder - the
-// kind of error EXEMPTIONS selectors and annotations aren't meant to paper
-// over.
+// name with any prefix up to the last "_" stripped off. Most commonly this
+// flags a copy/paste error (an overlay lifted wholesale from another
+// cluster's folder), but it can also flag a legitimate placeholder that a
+// GitOps controller substitutes at sync time (e.g. an app that checks the
+// same literal token, such as "INFRA_ID", into every overlay); unlike an
+// invalid JSON file, that ambiguity is exactly what EXEMPTIONS selectors and
+// annotations are for, so this id is exemptable.
 func rawInfraIDFindings(overlayPath string, identity *OverlayIdentity) []Finding {
 	findings := make([]Finding, 0, len(identity.InfraIDs))
 	for _, infraID := range identity.InfraIDs {
