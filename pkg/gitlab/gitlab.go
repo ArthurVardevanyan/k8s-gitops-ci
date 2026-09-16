@@ -12,11 +12,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
 )
 
 // ErrCLINotFound is returned when the glab binary is not found in PATH.
 var ErrCLINotFound = errors.New("glab CLI not found in PATH")
+
+// AuthHint returns guidance when GitLab authentication is required or fails.
+func AuthHint() string {
+	return "Set GITLAB_TOKEN (or CI_JOB_TOKEN) or run 'glab auth login'."
+}
 
 // SignedCommitsHelpLinks defaults to GitLab commit signing docs. Orgs may override.
 var SignedCommitsHelpLinks = "See https://docs.gitlab.com/user/project/repository/signed_commits/"
@@ -182,16 +188,25 @@ func GetUnsignedCommits(c *Client) ([]string, error) {
 		return nil, nil
 	}
 	encodedProject := EncodeProject(c.repo)
-	out, err := c.glab("api", fmt.Sprintf("projects/%s/merge_requests/%s/commits", encodedProject, c.mr))
+	out, err := c.glab("api", "--paginate", fmt.Sprintf("projects/%s/merge_requests/%s/commits", encodedProject, c.mr))
 	if err != nil {
 		return nil, fmt.Errorf("could not fetch MR commits: %w", err)
 	}
 	var commits []mrCommit
-	if err := json.Unmarshal([]byte(out), &commits); err != nil {
-		if apiErr := checkAPIError([]byte(out)); apiErr != nil {
-			return nil, apiErr
+	dec := json.NewDecoder(strings.NewReader(out))
+	for dec.More() {
+		var page []mrCommit
+		if err := dec.Decode(&page); err != nil {
+			if apiErr := checkAPIError([]byte(out)); apiErr != nil {
+				return nil, apiErr
+			}
+			return nil, fmt.Errorf("parsing MR commits: %w", err)
 		}
-		return nil, fmt.Errorf("parsing MR commits: %w", err)
+		commits = append(commits, page...)
+	}
+
+	if len(commits) == 0 {
+		return nil, nil
 	}
 
 	type commitVerdict struct {
@@ -205,9 +220,6 @@ func GetUnsignedCommits(c *Client) ([]string, error) {
 	if len(commits) < concurrency {
 		concurrency = len(commits)
 	}
-	if concurrency == 0 {
-		return nil, nil
-	}
 
 	ch := make(chan int, len(commits))
 	for i := range commits {
@@ -215,38 +227,56 @@ func GetUnsignedCommits(c *Client) ([]string, error) {
 	}
 	close(ch)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var wg sync.WaitGroup
 	wg.Add(concurrency)
 	for w := 0; w < concurrency; w++ {
 		go func() {
 			defer wg.Done()
-			for i := range ch {
-				cmt := commits[i]
-				desc := formatCommitDesc(cmt)
-				sigOut, err := c.glab("api", fmt.Sprintf("projects/%s/repository/commits/%s/signature", encodedProject, cmt.ID))
-				if err != nil {
-					errStr := err.Error()
-					if strings.Contains(errStr, "404") || strings.Contains(errStr, "Not Found") {
-						verdicts[i] = commitVerdict{desc: desc, unsigned: true}
-						continue
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case i, ok := <-ch:
+					if !ok {
+						return
 					}
-					verdicts[i] = commitVerdict{desc: desc, err: fmt.Errorf("fetch signature for %s: %w", cmt.ID, err)}
-					continue
-				}
-				var sig commitSignature
-				if err := json.Unmarshal([]byte(sigOut), &sig); err != nil || sig.VerificationStatus != "verified" {
-					verdicts[i] = commitVerdict{desc: desc, unsigned: true}
+					cmt := commits[i]
+					desc := formatCommitDesc(cmt)
+					sigOut, err := c.glabContext(ctx, "", "api", fmt.Sprintf("projects/%s/repository/commits/%s/signature", encodedProject, cmt.ID))
+					if err != nil {
+						if errors.Is(ctx.Err(), context.Canceled) {
+							return
+						}
+						errStr := err.Error()
+						if strings.Contains(errStr, "404") || strings.Contains(errStr, "Not Found") {
+							verdicts[i] = commitVerdict{desc: desc, unsigned: true}
+							continue
+						}
+						verdicts[i] = commitVerdict{desc: desc, err: fmt.Errorf("fetch signature for %s: %w", cmt.ID, err)}
+						cancel()
+						return
+					}
+					var sig commitSignature
+					if err := json.Unmarshal([]byte(sigOut), &sig); err != nil || sig.VerificationStatus != "verified" {
+						verdicts[i] = commitVerdict{desc: desc, unsigned: true}
+					}
 				}
 			}
 		}()
 	}
 	wg.Wait()
 
-	var unsigned []string
 	for _, v := range verdicts {
 		if v.err != nil {
 			return nil, v.err
 		}
+	}
+
+	var unsigned []string
+	for _, v := range verdicts {
 		if v.unsigned {
 			unsigned = append(unsigned, v.desc)
 		}
@@ -279,24 +309,60 @@ func CommentOnUnsignedCommits(c *Client) error {
 }
 
 func (c *Client) glab(args ...string) (string, error) {
-	return c.glabStdin("", args...)
+	return c.glabContext(context.Background(), "", args...)
 }
 
 func (c *Client) glabStdin(stdin string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return c.glabContext(context.Background(), stdin, args...)
+}
+
+func (c *Client) glabContext(parentCtx context.Context, stdin string, args ...string) (string, error) {
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parentCtx, 30*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "glab", args...)
-	if c.host != "" {
-		env := make([]string, 0, len(os.Environ())+1)
-		for _, e := range os.Environ() {
-			if !strings.HasPrefix(e, "GITLAB_HOST=") {
+	env := make([]string, 0, len(os.Environ())+2)
+	hasToken := false
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "GITLAB_HOST=") {
+			continue
+		}
+		if strings.HasPrefix(e, "GITLAB_TOKEN=") {
+			if strings.TrimPrefix(e, "GITLAB_TOKEN=") != "" {
+				hasToken = true
 				env = append(env, e)
 			}
+			continue
 		}
-		env = append(env, "GITLAB_HOST="+c.host)
-		cmd.Env = env
+		if strings.HasPrefix(e, "GLAB_TOKEN=") {
+			if strings.TrimPrefix(e, "GLAB_TOKEN=") != "" {
+				hasToken = true
+				env = append(env, e)
+			}
+			continue
+		}
+		if strings.HasPrefix(e, "GITLAB_ACCESS_TOKEN=") {
+			if strings.TrimPrefix(e, "GITLAB_ACCESS_TOKEN=") != "" {
+				hasToken = true
+				env = append(env, e)
+			}
+			continue
+		}
+		env = append(env, e)
 	}
+	if c.host != "" {
+		env = append(env, "GITLAB_HOST="+c.host)
+	}
+	if !hasToken {
+		if jobToken := os.Getenv("CI_JOB_TOKEN"); jobToken != "" {
+			env = append(env, "GITLAB_TOKEN="+jobToken)
+		}
+	}
+	cmd.Env = env
+
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -307,7 +373,8 @@ func (c *Client) glabStdin(stdin string, args ...string) (string, error) {
 		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+			sanitizedStderr := git.SanitizeURL(strings.TrimSpace(string(exitErr.Stderr)))
+			return "", fmt.Errorf("%w: %s", err, sanitizedStderr)
 		}
 		return "", err
 	}
@@ -368,8 +435,17 @@ func ExtractProject(raw string) (host, project string) {
 }
 
 func cleanProjectPath(p string) string {
-	p = strings.Trim(p, "/")
-	p = strings.TrimSuffix(p, ".git")
+	p = strings.TrimSpace(p)
+	for strings.HasPrefix(p, "/") {
+		p = strings.TrimPrefix(p, "/")
+	}
+	for strings.HasSuffix(p, "/") || strings.HasSuffix(p, ".git") {
+		p = strings.TrimSuffix(p, "/")
+		p = strings.TrimSuffix(p, ".git")
+	}
+	for strings.Contains(p, "//") {
+		p = strings.ReplaceAll(p, "//", "/")
+	}
 	return p
 }
 

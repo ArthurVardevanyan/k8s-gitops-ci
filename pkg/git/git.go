@@ -10,14 +10,19 @@ import (
 	"strings"
 )
 
-// SanitizeURL strips userinfo (tokens, passwords) from a repository URL for display and logging.
+var urlCredentialsPattern = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)([^/@\s]+)@`)
+
+// SanitizeURL strips userinfo (tokens, passwords) from a repository URL or error string for display and logging.
 func SanitizeURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
+	if !strings.Contains(raw, "@") || !strings.Contains(raw, "://") {
 		return raw
 	}
-	u.User = nil
-	return u.String()
+	u, err := url.Parse(raw)
+	if err == nil && u.User != nil {
+		u.User = nil
+		return u.String()
+	}
+	return urlCredentialsPattern.ReplaceAllString(raw, "${1}")
 }
 
 // CloneOptions configures a repository clone.

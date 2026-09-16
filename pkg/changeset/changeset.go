@@ -476,7 +476,7 @@ func fetchPRFiles(opts Options) ([]PRFile, error) {
 
 func fetchMRFiles(opts Options) ([]PRFile, error) {
 	if !gitlab.HasGLab() {
-		return nil, fmt.Errorf("glab command not available; check `glab auth status`: %w", gitlab.ErrCLINotFound)
+		return nil, fmt.Errorf("glab command not available; %s: %w", gitlab.AuthHint(), gitlab.ErrCLINotFound)
 	}
 	host, repo := gitlab.ExtractProject(opts.RepoURL)
 	if repo == "" {
@@ -490,21 +490,50 @@ func fetchMRFiles(opts Options) ([]PRFile, error) {
 		ctx, "glab", "api", "--paginate",
 		fmt.Sprintf("projects/%s/merge_requests/%s/diffs", encoded, opts.PR),
 	)
-	if host != "" {
-		env := make([]string, 0, len(os.Environ())+1)
-		for _, e := range os.Environ() {
-			if !strings.HasPrefix(e, "GITLAB_HOST=") {
+	env := make([]string, 0, len(os.Environ())+2)
+	hasToken := false
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "GITLAB_HOST=") {
+			continue
+		}
+		if strings.HasPrefix(e, "GITLAB_TOKEN=") {
+			if strings.TrimPrefix(e, "GITLAB_TOKEN=") != "" {
+				hasToken = true
 				env = append(env, e)
 			}
+			continue
 		}
-		env = append(env, "GITLAB_HOST="+host)
-		cmd.Env = env
+		if strings.HasPrefix(e, "GLAB_TOKEN=") {
+			if strings.TrimPrefix(e, "GLAB_TOKEN=") != "" {
+				hasToken = true
+				env = append(env, e)
+			}
+			continue
+		}
+		if strings.HasPrefix(e, "GITLAB_ACCESS_TOKEN=") {
+			if strings.TrimPrefix(e, "GITLAB_ACCESS_TOKEN=") != "" {
+				hasToken = true
+				env = append(env, e)
+			}
+			continue
+		}
+		env = append(env, e)
 	}
+	if host != "" {
+		env = append(env, "GITLAB_HOST="+host)
+	}
+	if !hasToken {
+		if jobToken := os.Getenv("CI_JOB_TOKEN"); jobToken != "" {
+			env = append(env, "GITLAB_TOKEN="+jobToken)
+		}
+	}
+	cmd.Env = env
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			return nil, fmt.Errorf("glab api diffs: %w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+			sanitizedStderr := git.SanitizeURL(strings.TrimSpace(string(exitErr.Stderr)))
+			return nil, fmt.Errorf("glab api diffs: %w: %s", err, sanitizedStderr)
 		}
 		return nil, fmt.Errorf("glab api diffs: %w", err)
 	}

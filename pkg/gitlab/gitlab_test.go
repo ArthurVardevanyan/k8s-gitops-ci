@@ -16,12 +16,16 @@ func TestExtractProject(t *testing.T) {
 	}{
 		{"", "", ""},
 		{"https://gitlab.com/org/repo.git", "gitlab.com", "org/repo"},
+		{"https://gitlab.com/org/repo.git/", "gitlab.com", "org/repo"},
+		{"https://gitlab.com/org//subgroup///repo.git", "gitlab.com", "org/subgroup/repo"},
 		{"https://gitlab.example.com/org/group/subgroup/repo", "gitlab.example.com", "org/group/subgroup/repo"},
 		{"git@gitlab.com:org/repo.git", "gitlab.com", "org/repo"},
 		{"git@gitlab.example.com:group/subgroup/repo.git", "gitlab.example.com", "group/subgroup/repo"},
+		{"ssh://git@gitlab.com:2222/org/repo.git", "gitlab.com", "org/repo"},
 		{"gitlab.example.com/org/repo", "gitlab.example.com", "org/repo"},
 		{"org/repo", "", "org/repo"},
 		{"group/subgroup/repo", "", "group/subgroup/repo"},
+		{"/org/subgroup/repo.git/", "", "org/subgroup/repo"},
 	}
 
 	for _, tc := range cases {
@@ -235,5 +239,103 @@ fi
 	_, err := GetUnsignedCommits(c)
 	if err == nil {
 		t.Fatal("expected error on 500 server error, got nil")
+	}
+}
+
+func TestAuthHint(t *testing.T) {
+	hint := AuthHint()
+	if !strings.Contains(hint, "GITLAB_TOKEN") {
+		t.Errorf("AuthHint() = %q, want GITLAB_TOKEN mentioned", hint)
+	}
+}
+
+func TestGetUnsignedCommits_Paginated(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake glab shell script assumes POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGlab := filepath.Join(dir, "glab")
+	script := `#!/bin/sh
+if echo "$@" | grep -q "commits$"; then
+  # Emit two concatenated JSON arrays to simulate multi-page --paginate output
+  cat <<EOF
+[{"id":"page1commit12345","short_id":"page1c1","title":"page 1 commit"}]
+[{"id":"page2commit67890","short_id":"page2c2","title":"page 2 commit"}]
+EOF
+elif echo "$@" | grep -q "page1commit12345/signature"; then
+  cat <<EOF
+{"verification_status":"verified"}
+EOF
+elif echo "$@" | grep -q "page2commit67890/signature"; then
+  cat <<EOF
+{"verification_status":"unverified"}
+EOF
+else
+  exit 1
+fi
+`
+	if err := os.WriteFile(fakeGlab, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake glab: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	c := NewClient("https://gitlab.com/org/repo", "1")
+	unsigned, err := GetUnsignedCommits(c)
+	if err != nil {
+		t.Fatalf("GetUnsignedCommits() error: %v", err)
+	}
+	if len(unsigned) != 1 || !strings.HasPrefix(unsigned[0], "page2c2") {
+		t.Errorf("GetUnsignedCommits() = %v, want [page2c2 page 2 commit]", unsigned)
+	}
+}
+
+func TestClient_GlabStdin_CIJobTokenFallback(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake glab shell script assumes POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGlab := filepath.Join(dir, "glab")
+	script := "#!/bin/sh\necho \"TOKEN=$GITLAB_TOKEN\"\n"
+	if err := os.WriteFile(fakeGlab, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake glab: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GITLAB_TOKEN", "")
+	t.Setenv("GLAB_TOKEN", "")
+	t.Setenv("GITLAB_ACCESS_TOKEN", "")
+	t.Setenv("CI_JOB_TOKEN", "ci-token-xyz")
+
+	c := NewClient("https://gitlab.com/org/repo", "1")
+	out, err := c.glab("version")
+	if err != nil {
+		t.Fatalf("glab() error: %v", err)
+	}
+	if out != "TOKEN=ci-token-xyz" {
+		t.Errorf("glab() output = %q, want TOKEN=ci-token-xyz", out)
+	}
+}
+
+func TestClient_GlabStdin_SanitizesStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake glab shell script assumes POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGlab := filepath.Join(dir, "glab")
+	script := "#!/bin/sh\necho \"fatal: unable to access 'https://token:secret@gitlab.example.com/repo': 403\" >&2\nexit 1\n"
+	if err := os.WriteFile(fakeGlab, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake glab: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	c := NewClient("https://gitlab.example.com/org/repo", "1")
+	_, err := c.glab("api", "test")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if strings.Contains(err.Error(), "token:secret") {
+		t.Errorf("error contains unredacted credentials: %v", err)
+	}
+	if !strings.Contains(err.Error(), "https://gitlab.example.com/repo") {
+		t.Errorf("error should contain sanitized URL: %v", err)
 	}
 }
