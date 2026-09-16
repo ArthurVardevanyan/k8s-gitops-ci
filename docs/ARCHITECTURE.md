@@ -31,8 +31,8 @@ flowchart LR
     E --> F[Unified Report]
 ```
 
-- **Clone / Resolve Changeset** — `pkg/git`/`pkg/github` clone the repo
-  and resolve the PR's changed-file list (or, for `test`/`--dirs`,
+- **Clone / Resolve Changeset** — `pkg/git`/`pkg/github`/`pkg/gitlab` clone the repo
+  and resolve the PR/MR's changed-file list (or, for `test`/`--dirs`,
   every file under the given directories, replacing the diff entirely;
   or, for `test` with no arguments, the current working tree's uncommitted git diff —
   see [CI.md](CI.md)'s Modes table for the exact, non-obvious semantics
@@ -101,7 +101,7 @@ See `docs/DEVELOPMENT.md`'s [Repository Structure](DEVELOPMENT.md#repository-str
 for the authoritative directory tree with one-line descriptions. In terms
 of the flow above:
 
-- **Changeset resolution:** `pkg/changeset`, `pkg/git`, `pkg/github`.
+- **Changeset resolution:** `pkg/changeset`, `pkg/git`, `pkg/github`, `pkg/gitlab`.
 - **Linting/Static Checks:** `pkg/lint/*` (one package per external tool)
   plus a few in-repo checks (`pkg/largefile`, `pkg/lint/yamlsyntax`,
   `pkg/config`, `pkg/csv`) driven from `pkg/validator/phases.go`.

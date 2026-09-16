@@ -73,6 +73,7 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 		"--url=https://example.com/org/repo",
 		"--pr=42",
 		"--target-branch=origin/main",
+		"--forge=gitlab",
 		"--hook-source=pr",
 		"--dirs=kubernetes/,tekton/",
 		"--disable-checks=sync-options,golangci",
@@ -101,6 +102,8 @@ func TestBindValidatorFlags_ParsesAndApplies(t *testing.T) {
 		t.Errorf("PR = %q", opts.PR)
 	case opts.BaseRef != "origin/main":
 		t.Errorf("BaseRef = %q", opts.BaseRef)
+	case opts.Forge != "gitlab":
+		t.Errorf("Forge = %q", opts.Forge)
 	case opts.HookSource != "pr":
 		t.Errorf("HookSource = %q", opts.HookSource)
 	case len(opts.Dirs) != 2 || opts.Dirs[0] != "kubernetes/" || opts.Dirs[1] != "tekton/":
@@ -363,6 +366,7 @@ func TestParsePipelineOptions_AllFlags(t *testing.T) {
 		"--pr=42",
 		"--revision=abc123",
 		"--target-branch=main",
+		"--forge=gitlab",
 		"--hook-source=pr",
 		"--trigger-comment=/hook-pipeline",
 		"--dirs=kubernetes/,tekton/",
@@ -392,6 +396,9 @@ func TestParsePipelineOptions_AllFlags(t *testing.T) {
 	}
 	if opts.TargetBranch != "main" {
 		t.Errorf("TargetBranch = %q, want %q", opts.TargetBranch, "main")
+	}
+	if opts.Forge != "gitlab" {
+		t.Errorf("Forge = %q, want %q", opts.Forge, "gitlab")
 	}
 	if opts.HookSource != "pr" {
 		t.Errorf("HookSource = %q, want %q", opts.HookSource, "pr")

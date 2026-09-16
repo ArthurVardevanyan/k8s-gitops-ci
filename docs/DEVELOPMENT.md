@@ -110,8 +110,8 @@ pkg/
   ghostpatch/        detects kustomize patches that target nothing
   scaffold/          scafctl CLI wrapper for scaffold-drift checking
   configdiff/        detects which apps/clusters a repo-config change affects
-  changeset/         changed-file resolution (git diff / gh PR files)
-  github/, git/      thin wrappers around the gh/git CLIs
+  changeset/         changed-file resolution (git diff / gh PR files / glab MR files)
+  github/, gitlab/, git/  thin wrappers around the gh/glab/git CLIs
   cluster/           cluster/project-identity indexing
   provider/          org-injectable interfaces (see Design Conventions)
   csv/, largefile/, config/, convention/, logger/, hook/  smaller,
