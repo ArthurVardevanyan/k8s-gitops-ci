@@ -245,7 +245,24 @@ func GetUnsignedCommits(c *Client) ([]string, error) {
 					}
 					cmt := commits[i]
 					desc := formatCommitDesc(cmt)
-					sigOut, err := c.glabContext(ctx, "", "api", fmt.Sprintf("projects/%s/repository/commits/%s/signature", encodedProject, cmt.ID))
+					var sigOut string
+					var err error
+					for attempt := 0; attempt < 3; attempt++ {
+						sigOut, err = c.glabContext(ctx, "", "api", fmt.Sprintf("projects/%s/repository/commits/%s/signature", encodedProject, cmt.ID))
+						if err == nil {
+							break
+						}
+						errStr := err.Error()
+						if strings.Contains(errStr, "429") || strings.Contains(errStr, "Too Many Requests") {
+							select {
+							case <-ctx.Done():
+								return
+							case <-time.After(time.Duration(150*(attempt+1)) * time.Millisecond):
+								continue
+							}
+						}
+						break
+					}
 					if err != nil {
 						if errors.Is(ctx.Err(), context.Canceled) {
 							return
@@ -363,9 +380,8 @@ func (c *Client) glabContext(parentCtx context.Context, stdin string, args ...st
 	}
 	cmd.Env = env
 
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	}
+	// Always set cmd.Stdin so child processes never hang on inherited terminal stdin
+	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.Output()
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {

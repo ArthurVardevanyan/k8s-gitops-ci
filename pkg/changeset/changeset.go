@@ -546,7 +546,7 @@ func fetchMRFiles(opts Options) ([]PRFile, error) {
 		DeletedFile bool   `json:"deleted_file"`
 	}
 
-	var allDiffs []diffEntry
+	var files []PRFile
 	dec := json.NewDecoder(strings.NewReader(string(out)))
 	for dec.More() {
 		var page []diffEntry
@@ -565,26 +565,23 @@ func fetchMRFiles(opts Options) ([]PRFile, error) {
 			}
 			return nil, fmt.Errorf("parsing MR diffs response: %w", err)
 		}
-		allDiffs = append(allDiffs, page...)
-	}
-
-	files := make([]PRFile, 0, len(allDiffs))
-	for _, c := range allDiffs {
-		status := "modified"
-		filename := c.NewPath
-		switch {
-		case c.DeletedFile:
-			status = "removed"
-			filename = c.OldPath
-		case c.NewFile:
-			status = "added"
-		case c.RenamedFile:
-			status = "renamed"
+		for _, c := range page {
+			status := "modified"
+			filename := c.NewPath
+			switch {
+			case c.DeletedFile:
+				status = "removed"
+				filename = c.OldPath
+			case c.NewFile:
+				status = "added"
+			case c.RenamedFile:
+				status = "renamed"
+			}
+			files = append(files, PRFile{
+				Filename: filename,
+				Status:   status,
+			})
 		}
-		files = append(files, PRFile{
-			Filename: filename,
-			Status:   status,
-		})
 	}
 	return files, nil
 }
@@ -636,7 +633,12 @@ func gitDiffBaseRef(baseRef, diffFilter string) ([]string, error) {
 	}
 	out, err := exec.CommandContext(context.Background(), "git", args...).CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("git diff %s...HEAD: %w\n%s", baseRef, err, strings.TrimSpace(string(out)))
+		outStr := strings.TrimSpace(string(out))
+		hint := ""
+		if strings.Contains(outStr, "unknown revision") || strings.Contains(outStr, "fatal: ambiguous argument") || strings.Contains(outStr, "no merge base") {
+			hint = " (hint: ensure full git history is fetched with 'fetch-depth: 0' in GitHub Actions or 'GIT_DEPTH: 0' in GitLab CI)"
+		}
+		return nil, fmt.Errorf("git diff %s...HEAD: %w\n%s%s", baseRef, err, outStr, hint)
 	}
 	result := splitLines(out)
 	sort.Strings(result)
