@@ -127,10 +127,11 @@ failing `pipeline --url ... --pr ...` run be reproduced locally with
 
 **`--forge`** — Forge type (`auto|github|gitlab`, default `auto`). When set to
 `auto`, the forge is detected from the repository URL or environment variables
-(`GITLAB_CI`). For GitLab, merge requests use `refs/merge-requests/<mr>/head`,
-API queries and comment upsert use `glab`, and GitLab CI variables
-(`CI_MERGE_REQUEST_IID`, `CI_REPOSITORY_URL`, `CI_COMMIT_SHA`, etc.) are
-detected automatically.
+(`GITLAB_CI`, `CI_SERVER_HOST`, `GITLAB_HOST`). For GitLab, merge requests use
+`refs/merge-requests/<mr>/head`, API queries and comment upsert use `glab`, and GitLab CI
+variables (`CI_MERGE_REQUEST_IID`, `CI_REPOSITORY_URL`, `CI_COMMIT_SHA`, etc.) are
+detected automatically. In GitLab CI pipelines, ensure `GITLAB_TOKEN` is configured
+with API access to enable MR note upsertion and commit signature validation.
 
 **`--all`** — Full repository scan. Walks every file on disk (respecting
 the same `ExtraNonAppDirs` and scaffold template exclusions as overlay

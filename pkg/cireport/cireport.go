@@ -82,13 +82,7 @@ func Run(o Options) (posted bool, err error) {
 }
 
 func isGitLab(o Options) bool {
-	if strings.EqualFold(o.Forge, "gitlab") {
-		return true
-	}
-	if strings.EqualFold(o.Forge, "github") {
-		return false
-	}
-	return strings.Contains(strings.ToLower(o.URL), "gitlab") || os.Getenv("GITLAB_CI") != ""
+	return gitlab.IsGitLabURL(o.URL, o.Forge)
 }
 
 // resolved is the internal, normalized form of Options.

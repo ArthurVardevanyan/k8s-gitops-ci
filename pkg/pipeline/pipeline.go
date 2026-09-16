@@ -807,11 +807,5 @@ func EnvOptions() Options {
 }
 
 func isGitLab(opts Options) bool {
-	if strings.EqualFold(opts.Forge, "gitlab") {
-		return true
-	}
-	if strings.EqualFold(opts.Forge, "github") {
-		return false
-	}
-	return strings.Contains(strings.ToLower(opts.URL), "gitlab") || os.Getenv("GITLAB_CI") != ""
+	return gitlab.IsGitLabURL(opts.URL, opts.Forge)
 }

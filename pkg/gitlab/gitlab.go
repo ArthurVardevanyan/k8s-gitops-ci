@@ -9,9 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
 )
+
+// ErrCLINotFound is returned when the glab binary is not found in PATH.
+var ErrCLINotFound = errors.New("glab CLI not found in PATH")
 
 // SignedCommitsHelpLinks defaults to GitLab commit signing docs. Orgs may override.
 var SignedCommitsHelpLinks = "See https://docs.gitlab.com/user/project/repository/signed_commits/"
@@ -25,6 +30,26 @@ type Client struct {
 	repo string
 	mr   string
 	env  func(string) string
+}
+
+// HasGLab reports whether the glab CLI is installed and available in PATH.
+func HasGLab() bool {
+	_, err := exec.LookPath("glab")
+	return err == nil
+}
+
+// IsGitLabURL reports whether a repository URL or forge flag targets GitLab.
+func IsGitLabURL(rawURL, forge string) bool {
+	if strings.EqualFold(forge, "gitlab") {
+		return true
+	}
+	if strings.EqualFold(forge, "github") {
+		return false
+	}
+	return strings.Contains(strings.ToLower(rawURL), "gitlab") ||
+		os.Getenv("GITLAB_CI") != "" ||
+		os.Getenv("GITLAB_HOST") != "" ||
+		os.Getenv("CI_SERVER_HOST") != ""
 }
 
 // NewClient builds a GitLab client. MR may be empty for non-MR runs.
@@ -47,7 +72,21 @@ func NewClient(repoURL, mr string) *Client {
 func NewDisabledClient() *Client { return &Client{} }
 
 // IsAvailable reports whether the client can talk to GitLab.
-func (c *Client) IsAvailable() bool { return c.repo != "" && c.mr != "" }
+func (c *Client) IsAvailable() bool {
+	return c.repo != "" && c.mr != "" && isNumeric(c.mr)
+}
+
+func isNumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
 
 // Repo returns the project slug (e.g. group/subgroup/project).
 func (c *Client) Repo() string { return c.repo }
@@ -100,20 +139,30 @@ func ValidateMRChecklist(c *Client) error {
 	return github.ValidatePRChecklistString(body, github.PRChecklistSpec)
 }
 
+type mrFields struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
 func fetchMRField(c *Client, field string) (string, error) {
+	if !isNumeric(c.mr) {
+		return "", fmt.Errorf("invalid MR identifier: %q", c.mr)
+	}
 	out, err := c.glab("mr", "view", c.mr, "-R", c.RepoSpec(), "-F", "json")
 	if err != nil {
 		return "", err
 	}
-	var data map[string]any
+	var data mrFields
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
 		if apiErr := checkAPIError([]byte(out)); apiErr != nil {
 			return "", apiErr
 		}
 		return "", fmt.Errorf("parsing MR JSON: %w", err)
 	}
-	val, _ := data[field].(string)
-	return val, nil
+	if field == "title" {
+		return data.Title, nil
+	}
+	return data.Description, nil
 }
 
 type mrCommit struct {
@@ -144,17 +193,62 @@ func GetUnsignedCommits(c *Client) ([]string, error) {
 		}
 		return nil, fmt.Errorf("parsing MR commits: %w", err)
 	}
+
+	type commitVerdict struct {
+		desc     string
+		unsigned bool
+		err      error
+	}
+
+	verdicts := make([]commitVerdict, len(commits))
+	concurrency := 8
+	if len(commits) < concurrency {
+		concurrency = len(commits)
+	}
+	if concurrency == 0 {
+		return nil, nil
+	}
+
+	ch := make(chan int, len(commits))
+	for i := range commits {
+		ch <- i
+	}
+	close(ch)
+
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+	for w := 0; w < concurrency; w++ {
+		go func() {
+			defer wg.Done()
+			for i := range ch {
+				cmt := commits[i]
+				desc := formatCommitDesc(cmt)
+				sigOut, err := c.glab("api", fmt.Sprintf("projects/%s/repository/commits/%s/signature", encodedProject, cmt.ID))
+				if err != nil {
+					errStr := err.Error()
+					if strings.Contains(errStr, "404") || strings.Contains(errStr, "Not Found") {
+						verdicts[i] = commitVerdict{desc: desc, unsigned: true}
+						continue
+					}
+					verdicts[i] = commitVerdict{desc: desc, err: fmt.Errorf("fetch signature for %s: %w", cmt.ID, err)}
+					continue
+				}
+				var sig commitSignature
+				if err := json.Unmarshal([]byte(sigOut), &sig); err != nil || sig.VerificationStatus != "verified" {
+					verdicts[i] = commitVerdict{desc: desc, unsigned: true}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
 	var unsigned []string
-	for _, cmt := range commits {
-		sigOut, err := c.glab("api", fmt.Sprintf("projects/%s/repository/commits/%s/signature", encodedProject, cmt.ID))
-		if err != nil {
-			// No signature endpoint or signature not found implies unverified
-			unsigned = append(unsigned, formatCommitDesc(cmt))
-			continue
+	for _, v := range verdicts {
+		if v.err != nil {
+			return nil, v.err
 		}
-		var sig commitSignature
-		if err := json.Unmarshal([]byte(sigOut), &sig); err != nil || sig.VerificationStatus != "verified" {
-			unsigned = append(unsigned, formatCommitDesc(cmt))
+		if v.unsigned {
+			unsigned = append(unsigned, v.desc)
 		}
 	}
 	return unsigned, nil
@@ -189,16 +283,28 @@ func (c *Client) glab(args ...string) (string, error) {
 }
 
 func (c *Client) glabStdin(stdin string, args ...string) (string, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	cmd := exec.CommandContext(ctx, "glab", args...)
 	if c.host != "" {
-		cmd.Env = append(os.Environ(), "GITLAB_HOST="+c.host)
+		env := make([]string, 0, len(os.Environ())+1)
+		for _, e := range os.Environ() {
+			if !strings.HasPrefix(e, "GITLAB_HOST=") {
+				env = append(env, e)
+			}
+		}
+		env = append(env, "GITLAB_HOST="+c.host)
+		cmd.Env = env
 	}
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	out, err := cmd.Output()
 	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return "", ErrCLINotFound
+		}
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))

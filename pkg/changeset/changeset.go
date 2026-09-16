@@ -14,6 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/gitlab"
 )
 
 // Options configures changed-file resolution.
@@ -399,14 +402,7 @@ func AuthHint() string {
 }
 
 func isGitLabRepo(raw, forge string) bool {
-	if strings.EqualFold(forge, "gitlab") {
-		return true
-	}
-	if strings.EqualFold(forge, "github") {
-		return false
-	}
-	lower := strings.ToLower(raw)
-	return strings.Contains(lower, "gitlab") || os.Getenv("GITLAB_CI") != ""
+	return gitlab.IsGitLabURL(raw, forge)
 }
 
 // ExtractRepoFromURL parses the owner/repo slug from a URL. For GitLab URLs,
@@ -415,15 +411,17 @@ func ExtractRepoFromURL(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	isGL := strings.Contains(strings.ToLower(raw), "gitlab") || os.Getenv("GITLAB_CI") != ""
+	if gitlab.IsGitLabURL(raw, "") {
+		_, project := gitlab.ExtractProject(raw)
+		if project != "" {
+			return project
+		}
+	}
 	if strings.HasPrefix(raw, "git@") {
 		parts := strings.Split(raw, ":")
 		if len(parts) == 2 {
 			path := strings.Trim(parts[1], "/")
 			path = strings.TrimSuffix(path, ".git")
-			if isGL {
-				return path
-			}
 			ps := strings.Split(path, "/")
 			if len(ps) >= 2 {
 				return ps[len(ps)-2] + "/" + ps[len(ps)-1]
@@ -437,9 +435,6 @@ func ExtractRepoFromURL(raw string) string {
 	}
 	path := strings.Trim(u.Path, "/")
 	path = strings.TrimSuffix(path, ".git")
-	if isGL && path != "" {
-		return path
-	}
 	ps := strings.Split(path, "/")
 	if len(ps) >= 2 {
 		return ps[len(ps)-2] + "/" + ps[len(ps)-1]
@@ -459,7 +454,7 @@ func fetchPRFiles(opts Options) ([]PRFile, error) {
 	}
 	repo := ExtractRepoFromURL(opts.RepoURL)
 	if repo == "" {
-		return nil, fmt.Errorf("could not extract repo from URL: %s", opts.RepoURL)
+		return nil, fmt.Errorf("could not extract repo from URL: %s", git.SanitizeURL(opts.RepoURL))
 	}
 	out, err := exec.CommandContext(
 		context.Background(), "gh", "api", "--paginate",
@@ -480,51 +475,72 @@ func fetchPRFiles(opts Options) ([]PRFile, error) {
 }
 
 func fetchMRFiles(opts Options) ([]PRFile, error) {
-	if !hasGLab() {
-		return nil, fmt.Errorf("glab command not available; check `glab auth status`")
+	if !gitlab.HasGLab() {
+		return nil, fmt.Errorf("glab command not available; check `glab auth status`: %w", gitlab.ErrCLINotFound)
 	}
-	repo := ExtractRepoFromURL(opts.RepoURL)
+	host, repo := gitlab.ExtractProject(opts.RepoURL)
 	if repo == "" {
-		return nil, fmt.Errorf("could not extract repo from URL: %s", opts.RepoURL)
+		return nil, fmt.Errorf("could not extract repo from URL: %s", git.SanitizeURL(opts.RepoURL))
 	}
-	encoded := strings.ReplaceAll(repo, "/", "%2F")
+	encoded := gitlab.EncodeProject(repo)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	cmd := exec.CommandContext(
-		context.Background(), "glab", "api", "--paginate",
-		fmt.Sprintf("projects/%s/merge_requests/%s/changes", encoded, opts.PR),
+		ctx, "glab", "api", "--paginate",
+		fmt.Sprintf("projects/%s/merge_requests/%s/diffs", encoded, opts.PR),
 	)
-	if host := extractHost(opts.RepoURL); host != "" {
-		cmd.Env = append(os.Environ(), "GITLAB_HOST="+host)
+	if host != "" {
+		env := make([]string, 0, len(os.Environ())+1)
+		for _, e := range os.Environ() {
+			if !strings.HasPrefix(e, "GITLAB_HOST=") {
+				env = append(env, e)
+			}
+		}
+		env = append(env, "GITLAB_HOST="+host)
+		cmd.Env = env
 	}
 	out, err := cmd.Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			return nil, fmt.Errorf("glab api changes: %w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+			return nil, fmt.Errorf("glab api diffs: %w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
 		}
-		return nil, fmt.Errorf("glab api changes: %w", err)
+		return nil, fmt.Errorf("glab api diffs: %w", err)
 	}
-	var res struct {
-		Changes []struct {
-			OldPath     string `json:"old_path"`
-			NewPath     string `json:"new_path"`
-			NewFile     bool   `json:"new_file"`
-			RenamedFile bool   `json:"renamed_file"`
-			DeletedFile bool   `json:"deleted_file"`
-		} `json:"changes"`
-		Message string `json:"message"`
-		Error   string `json:"error"`
+
+	type diffEntry struct {
+		OldPath     string `json:"old_path"`
+		NewPath     string `json:"new_path"`
+		NewFile     bool   `json:"new_file"`
+		RenamedFile bool   `json:"renamed_file"`
+		DeletedFile bool   `json:"deleted_file"`
 	}
-	if err := json.Unmarshal(out, &res); err != nil {
-		return nil, fmt.Errorf("parsing MR changes response: %w", err)
+
+	var allDiffs []diffEntry
+	dec := json.NewDecoder(strings.NewReader(string(out)))
+	for dec.More() {
+		var page []diffEntry
+		if err := dec.Decode(&page); err != nil {
+			var apiErr struct {
+				Message string `json:"message"`
+				Error   string `json:"error"`
+			}
+			if jerr := json.Unmarshal(out, &apiErr); jerr == nil {
+				if apiErr.Message != "" {
+					return nil, fmt.Errorf("glab api diffs: %s", apiErr.Message)
+				}
+				if apiErr.Error != "" {
+					return nil, fmt.Errorf("glab api diffs: %s", apiErr.Error)
+				}
+			}
+			return nil, fmt.Errorf("parsing MR diffs response: %w", err)
+		}
+		allDiffs = append(allDiffs, page...)
 	}
-	if res.Message != "" {
-		return nil, fmt.Errorf("glab api changes: %s", res.Message)
-	}
-	if res.Error != "" {
-		return nil, fmt.Errorf("glab api changes: %s", res.Error)
-	}
-	files := make([]PRFile, 0, len(res.Changes))
-	for _, c := range res.Changes {
+
+	files := make([]PRFile, 0, len(allDiffs))
+	for _, c := range allDiffs {
 		status := "modified"
 		filename := c.NewPath
 		switch {
@@ -542,28 +558,6 @@ func fetchMRFiles(opts Options) ([]PRFile, error) {
 		})
 	}
 	return files, nil
-}
-
-func extractHost(raw string) string {
-	if strings.HasPrefix(raw, "git@") {
-		trimmed := strings.TrimPrefix(raw, "git@")
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) == 2 {
-			return parts[0]
-		}
-	}
-	if strings.Contains(raw, "://") {
-		u, err := url.Parse(raw)
-		if err == nil {
-			return u.Hostname()
-		}
-	}
-	return ""
-}
-
-func hasGLab() bool {
-	_, err := exec.LookPath("glab")
-	return err == nil
 }
 
 // ghResponseHint inspects a gh api response body and, if it doesn't look

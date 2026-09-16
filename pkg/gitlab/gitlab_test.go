@@ -39,6 +39,25 @@ func TestEncodeProject(t *testing.T) {
 	}
 }
 
+func TestIsGitLabURL(t *testing.T) {
+	cases := []struct {
+		url   string
+		forge string
+		want  bool
+	}{
+		{"https://gitlab.com/org/repo", "", true},
+		{"https://gitlab.example.com/org/repo", "", true},
+		{"https://github.com/org/repo", "", false},
+		{"https://github.com/org/repo", "gitlab", true},
+		{"https://gitlab.com/org/repo", "github", false},
+	}
+	for _, tc := range cases {
+		if got := IsGitLabURL(tc.url, tc.forge); got != tc.want {
+			t.Errorf("IsGitLabURL(%q, %q) = %v, want %v", tc.url, tc.forge, got, tc.want)
+		}
+	}
+}
+
 func TestClient_Basic(t *testing.T) {
 	c := NewClient("https://gitlab.example.com/group/subgroup/repo", "42")
 	if !c.IsAvailable() {
@@ -62,6 +81,11 @@ func TestClient_Basic(t *testing.T) {
 	noMR := NewClient("https://gitlab.example.com/group/repo", "")
 	if noMR.IsAvailable() {
 		t.Error("client without MR should report unavailable")
+	}
+
+	invalidMR := NewClient("https://gitlab.example.com/group/repo", "--help")
+	if invalidMR.IsAvailable() {
+		t.Error("client with non-numeric MR should report unavailable")
 	}
 }
 
@@ -152,5 +176,64 @@ fi
 	}
 	if len(unsigned) != 1 || !strings.HasPrefix(unsigned[0], "def9876") {
 		t.Errorf("GetUnsignedCommits() = %v, want [def9876 unsigned commit]", unsigned)
+	}
+}
+
+func TestGetUnsignedCommits_404TreatedAsUnsigned(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake glab shell script assumes POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGlab := filepath.Join(dir, "glab")
+	script := `#!/bin/sh
+if echo "$@" | grep -q "commits$"; then
+  cat <<EOF
+[{"id":"abc1234567890","short_id":"abc1234","title":"unsigned via 404"}]
+EOF
+else
+  echo "404 Not Found" >&2
+  exit 1
+fi
+`
+	if err := os.WriteFile(fakeGlab, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake glab: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	c := NewClient("https://gitlab.com/org/repo", "1")
+	unsigned, err := GetUnsignedCommits(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(unsigned) != 1 {
+		t.Fatalf("expected 1 unsigned commit on 404, got %d", len(unsigned))
+	}
+}
+
+func TestGetUnsignedCommits_500ReturnsError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake glab shell script assumes POSIX shell")
+	}
+	dir := t.TempDir()
+	fakeGlab := filepath.Join(dir, "glab")
+	script := `#!/bin/sh
+if echo "$@" | grep -q "commits$"; then
+  cat <<EOF
+[{"id":"abc1234567890","short_id":"abc1234","title":"server error commit"}]
+EOF
+else
+  echo "500 Internal Server Error" >&2
+  exit 1
+fi
+`
+	if err := os.WriteFile(fakeGlab, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake glab: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	c := NewClient("https://gitlab.com/org/repo", "1")
+	_, err := GetUnsignedCommits(c)
+	if err == nil {
+		t.Fatal("expected error on 500 server error, got nil")
 	}
 }

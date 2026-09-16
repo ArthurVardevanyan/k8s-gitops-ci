@@ -66,11 +66,16 @@ func fetchNotes(c *Client) ([]mrNote, error) {
 		return nil, err
 	}
 	var notes []mrNote
-	if err := json.Unmarshal([]byte(out), &notes); err != nil {
-		if apiErr := checkAPIError([]byte(out)); apiErr != nil {
-			return nil, apiErr
+	dec := json.NewDecoder(strings.NewReader(out))
+	for dec.More() {
+		var page []mrNote
+		if err := dec.Decode(&page); err != nil {
+			if apiErr := checkAPIError([]byte(out)); apiErr != nil {
+				return nil, apiErr
+			}
+			return nil, fmt.Errorf("parsing MR notes: %w", err)
 		}
-		return nil, fmt.Errorf("parsing MR notes: %w", err)
+		notes = append(notes, page...)
 	}
 	return notes, nil
 }
