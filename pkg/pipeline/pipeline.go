@@ -146,60 +146,46 @@ func Run(opts Options) error {
 	if shouldRunPRChecks(opts) {
 		prStart := time.Now()
 		log.Header("PR Validation")
+		var pv prValidator
+		label := "PR"
 		if isGitLab(opts) {
-			client := gitlab.NewClient(opts.URL, opts.PR)
-			res.TitleErr = gitlab.ValidateMRTitle(client)
-			if res.TitleErr != nil {
-				log.Error("MR title: %v", res.TitleErr)
-			} else {
-				log.Info("MR title: passed")
-				res.TitleSuggestion = gitlab.MRTitleSuggestion(client)
-				if res.TitleSuggestion != "" {
-					log.Warn("MR title suggestion: %s", res.TitleSuggestion)
-				}
-			}
-			res.UnsignedErr = runGitLabUnsignedCheck(client)
-			if res.UnsignedErr != nil {
-				log.Error("unsigned commits: %v", res.UnsignedErr)
-			} else {
-				log.Info("unsigned commits check: passed")
-			}
-			if shouldRunChecklistCheck(opts) {
-				res.ChecklistErr = gitlab.ValidateMRChecklist(client)
-				if res.ChecklistErr != nil {
-					log.Error("MR checklist: %v", res.ChecklistErr)
-				} else {
-					log.Info("MR checklist: passed")
-				}
-			}
+			pv = gitlabValidator{c: gitlab.NewClient(opts.URL, opts.PR)}
+			label = "MR"
 		} else {
-			client := github.NewClient(opts.URL, opts.PR)
-			res.TitleErr = github.ValidatePRTitle(client)
+			pv = githubValidator{c: github.NewClient(opts.URL, opts.PR)}
+		}
+
+		if !isCheckDisabled("pr-title", opts.DisabledChecks) {
+			res.TitleErr = pv.ValidateTitle()
 			if res.TitleErr != nil {
-				log.Error("PR title: %v", res.TitleErr)
+				log.Error("%s title: %v", label, res.TitleErr)
 			} else {
-				log.Info("PR title: passed")
-				// Only consulted once the required prefix has already passed -
-				// see github.PRTitleSuggestion and ComposePRChecksSection/
-				// prTitleChild's non-blocking rendering of this.
-				res.TitleSuggestion = github.PRTitleSuggestion(client)
+				log.Info("%s title: passed", label)
+				res.TitleSuggestion = pv.TitleSuggestion()
 				if res.TitleSuggestion != "" {
-					log.Warn("PR title suggestion: %s", res.TitleSuggestion)
+					log.Warn("%s title suggestion: %s", label, res.TitleSuggestion)
 				}
 			}
-			res.UnsignedErr = runUnsignedCheck(client)
-			if res.UnsignedErr != nil {
+		}
+		if !isCheckDisabled("unsigned-commits", opts.DisabledChecks) {
+			commits, err := pv.GetUnsignedCommits()
+			switch {
+			case err != nil:
+				res.UnsignedErr = err
+				log.Error("unsigned commits: %v", err)
+			case len(commits) > 0:
+				res.UnsignedErr = fmt.Errorf("%d unsigned commits detected", len(commits))
 				log.Error("unsigned commits: %v", res.UnsignedErr)
-			} else {
+			default:
 				log.Info("unsigned commits check: passed")
 			}
-			if shouldRunChecklistCheck(opts) {
-				res.ChecklistErr = github.ValidatePRChecklist(client)
-				if res.ChecklistErr != nil {
-					log.Error("PR checklist: %v", res.ChecklistErr)
-				} else {
-					log.Info("PR checklist: passed")
-				}
+		}
+		if shouldRunChecklistCheck(opts) && !isCheckDisabled("pr-checklist", opts.DisabledChecks) {
+			res.ChecklistErr = pv.ValidateChecklist()
+			if res.ChecklistErr != nil {
+				log.Error("%s checklist: %v", label, res.ChecklistErr)
+			} else {
+				log.Info("%s checklist: passed", label)
 			}
 		}
 		tc.Record("PR Validation", time.Since(prStart), false)
@@ -476,27 +462,30 @@ func resolveBaseRef(targetBranch string) string {
 	return "origin/main"
 }
 
-func runUnsignedCheck(c *github.Client) error {
-	commits, err := github.GetUnsignedCommits(c)
-	if err != nil {
-		return err
-	}
-	if len(commits) > 0 {
-		return fmt.Errorf("%d unsigned commits detected", len(commits))
-	}
-	return nil
+type prValidator interface {
+	ValidateTitle() error
+	TitleSuggestion() string
+	GetUnsignedCommits() ([]string, error)
+	ValidateChecklist() error
 }
 
-func runGitLabUnsignedCheck(c *gitlab.Client) error {
-	commits, err := gitlab.GetUnsignedCommits(c)
-	if err != nil {
-		return err
-	}
-	if len(commits) > 0 {
-		return fmt.Errorf("%d unsigned commits detected", len(commits))
-	}
-	return nil
+type gitlabValidator struct{ c *gitlab.Client }
+
+func (v gitlabValidator) ValidateTitle() error    { return gitlab.ValidateMRTitle(v.c) }
+func (v gitlabValidator) TitleSuggestion() string { return gitlab.MRTitleSuggestion(v.c) }
+func (v gitlabValidator) GetUnsignedCommits() ([]string, error) {
+	return gitlab.GetUnsignedCommits(v.c)
 }
+func (v gitlabValidator) ValidateChecklist() error { return gitlab.ValidateMRChecklist(v.c) }
+
+type githubValidator struct{ c *github.Client }
+
+func (v githubValidator) ValidateTitle() error    { return github.ValidatePRTitle(v.c) }
+func (v githubValidator) TitleSuggestion() string { return github.PRTitleSuggestion(v.c) }
+func (v githubValidator) GetUnsignedCommits() ([]string, error) {
+	return github.GetUnsignedCommits(v.c)
+}
+func (v githubValidator) ValidateChecklist() error { return github.ValidatePRChecklist(v.c) }
 
 // commentSkipReason reports whether posting a PR/MR comment should be skipped,
 // and if so, why. Comment posting requires both an explicit opt-in
@@ -517,6 +506,15 @@ func commentSkipReason(opts Options) (reason string, skip bool) {
 		return "no repo/PR context available", true
 	}
 	return "", false
+}
+
+func isCheckDisabled(id string, disabled []string) bool {
+	for _, d := range disabled {
+		if strings.EqualFold(d, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // buildReport constructs the unified PR-comment report from the run result,
