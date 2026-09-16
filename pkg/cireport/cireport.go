@@ -17,24 +17,23 @@ import (
 	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/gitlab"
 )
 
 // Marker is the stable HTML-comment marker identifying the single self-CI
 // status comment on a repo's OWN pull requests.
 const Marker = "<!-- ci-self-report -->"
 
-// Options is the resolved input to Build/Run. Status fields accept the raw
-// operator-supplied strings (pass|warn|fail|skipped, plus common synonyms) and
-// are normalized internally.
+// Options configures the self-CI report body and target PR/MR.
 type Options struct {
-	// URL and PR identify the pull request to comment on. When either is
-	// empty (e.g. a push event or a local run), Run is a no-op.
 	URL string
 	PR  string
+	// Forge optionally forces the forge ("github" or "gitlab"). Auto-detected if empty.
+	Forge string
 
-	// CIStatus is the blocking `task ci` result: pass|fail (others → unknown).
+	// CIStatus is the authoritative CI outcome: pass|warn|fail|skipped.
 	CIStatus string
-	// CIDetail is already-read `task ci` failure detail (embedded when failed).
+	// CIDetail is an optional markdown bullet list of failing/warning checks.
 	CIDetail string
 
 	// ReplayStatus is the non-blocking replay result: pass|warn|fail|skipped.
@@ -50,26 +49,40 @@ type Options struct {
 	DocsURL string
 }
 
-// Run builds the comment body and upserts it on the PR. It NEVER returns an
+// Run builds the comment body and upserts it on the PR/MR. It NEVER returns an
 // error for an unavailable client or a failed post — the authoritative gate is
-// `task ci`, not this reporter — so a transient GitHub hiccup can't turn a
+// `task ci`, not this reporter — so a transient forge hiccup can't turn a
 // green build red.
 //
-// It returns posted=false (err=nil) when there was no PR/repo context to
+// It returns posted=false (err=nil) when there was no PR/MR context to
 // comment on, or when the upsert failed; posted=true only when a comment was
 // actually posted/updated. All user-facing logging is left to the caller (the
 // cmd/ shim), so the package emits nothing to stdout/stderr itself — the upsert
 // error, when present, is returned for the caller to log or ignore.
 func Run(o Options) (posted bool, err error) {
+	body := Build(o)
+	if isGitLab(o) {
+		glClient := gitlab.NewClient(o.URL, o.PR)
+		if !glClient.IsAvailable() {
+			return false, nil
+		}
+		if uerr := gitlab.UpsertComment(glClient, Marker, body); uerr != nil {
+			return false, uerr
+		}
+		return true, nil
+	}
 	client := github.NewClient(o.URL, o.PR)
 	if !client.IsAvailable() {
 		return false, nil
 	}
-	body := Build(o)
 	if uerr := github.UpsertComment(client, Marker, body); uerr != nil {
 		return false, uerr
 	}
 	return true, nil
+}
+
+func isGitLab(o Options) bool {
+	return gitlab.IsGitLabURL(o.URL, o.Forge)
 }
 
 // resolved is the internal, normalized form of Options.

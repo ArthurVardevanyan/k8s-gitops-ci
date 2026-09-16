@@ -85,7 +85,7 @@ Run `k8s-gitops-ci <command> --help` for per-command flags.
 error=N` line and per-phase timing, instead of only the aggregated
   pass/fail result at the end. Also available on `test`,
   `build-yaml`.
-- `--dirs`, `--disable-checks`, `--enable-checks`, `--hook-source`,
+- `--dirs`, `--forge`, `--disable-checks`, `--enable-checks`, `--hook-source`,
   `--concurrency`, `--assume-openshift`, `--app`, `--cluster` — every
   changeset-scoping and check-enablement flag `pipeline` accepts is also
   accepted by `test`, so a failing `pipeline --url ... --pr ...` run can

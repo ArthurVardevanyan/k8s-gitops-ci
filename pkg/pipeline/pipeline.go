@@ -11,6 +11,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/github"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/gitlab"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kubeconform"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/lint/kyverno"
@@ -30,6 +31,7 @@ type Options struct {
 	PR             string
 	Revision       string
 	TargetBranch   string
+	Forge          string
 	HookSource     hook.Source
 	TriggerComment string
 	LintOnly       bool
@@ -90,9 +92,9 @@ func Run(opts Options) error {
 	// the latter.
 	log.Header(opts.Providers.PipelineHeader())
 	log.Info("%s", version.String())
-	log.Info("URL: %s", opts.URL)
+	log.Info("URL: %s", git.SanitizeURL(opts.URL))
 	log.Info("PR: %s", opts.PR)
-	log.Info("Revision: %s", resolveRevision(opts.Revision, opts.PR))
+	log.Info("Revision: %s", resolveRevision(opts.Revision, opts.PR, opts))
 
 	log.Header("Setup")
 	setupStart := time.Now()
@@ -144,32 +146,46 @@ func Run(opts Options) error {
 	if shouldRunPRChecks(opts) {
 		prStart := time.Now()
 		log.Header("PR Validation")
-		client := github.NewClient(opts.URL, opts.PR)
-		res.TitleErr = github.ValidatePRTitle(client)
-		if res.TitleErr != nil {
-			log.Error("PR title: %v", res.TitleErr)
+		var pv prValidator
+		label := "PR"
+		if isGitLab(opts) {
+			pv = gitlabValidator{c: gitlab.NewClient(opts.URL, opts.PR)}
+			label = "MR"
 		} else {
-			log.Info("PR title: passed")
-			// Only consulted once the required prefix has already passed -
-			// see github.PRTitleSuggestion and ComposePRChecksSection/
-			// prTitleChild's non-blocking rendering of this.
-			res.TitleSuggestion = github.PRTitleSuggestion(client)
-			if res.TitleSuggestion != "" {
-				log.Warn("PR title suggestion: %s", res.TitleSuggestion)
+			pv = githubValidator{c: github.NewClient(opts.URL, opts.PR)}
+		}
+
+		if !isCheckDisabled("pr-title", opts.DisabledChecks) {
+			res.TitleErr = pv.ValidateTitle()
+			if res.TitleErr != nil {
+				log.Error("%s title: %v", label, res.TitleErr)
+			} else {
+				log.Info("%s title: passed", label)
+				res.TitleSuggestion = pv.TitleSuggestion()
+				if res.TitleSuggestion != "" {
+					log.Warn("%s title suggestion: %s", label, res.TitleSuggestion)
+				}
 			}
 		}
-		res.UnsignedErr = runUnsignedCheck(client)
-		if res.UnsignedErr != nil {
-			log.Error("unsigned commits: %v", res.UnsignedErr)
-		} else {
-			log.Info("unsigned commits check: passed")
+		if !isCheckDisabled("unsigned-commits", opts.DisabledChecks) {
+			commits, err := pv.GetUnsignedCommits()
+			switch {
+			case err != nil:
+				res.UnsignedErr = err
+				log.Error("unsigned commits: %v", err)
+			case len(commits) > 0:
+				res.UnsignedErr = fmt.Errorf("%d unsigned commits detected", len(commits))
+				log.Error("unsigned commits: %v", res.UnsignedErr)
+			default:
+				log.Info("unsigned commits check: passed")
+			}
 		}
-		if shouldRunChecklistCheck(opts) {
-			res.ChecklistErr = github.ValidatePRChecklist(client)
+		if shouldRunChecklistCheck(opts) && !isCheckDisabled("pr-checklist", opts.DisabledChecks) {
+			res.ChecklistErr = pv.ValidateChecklist()
 			if res.ChecklistErr != nil {
-				log.Error("PR checklist: %v", res.ChecklistErr)
+				log.Error("%s checklist: %v", label, res.ChecklistErr)
 			} else {
-				log.Info("PR checklist: passed")
+				log.Info("%s checklist: passed", label)
 			}
 		}
 		tc.Record("PR Validation", time.Since(prStart), false)
@@ -321,7 +337,7 @@ func setupWorkdir(opts Options) (cleanup func(), err error) {
 		return noop, nil
 	}
 
-	revision := resolveRevision(opts.Revision, opts.PR)
+	revision := resolveRevision(opts.Revision, opts.PR, opts)
 	dir, err := git.Clone(git.CloneOptions{URL: opts.URL, Revision: revision, Verbose: opts.Verbose})
 	if err != nil {
 		return noop, fmt.Errorf("cloning %s: %w", opts.URL, err)
@@ -344,16 +360,19 @@ func setupWorkdir(opts Options) (cleanup func(), err error) {
 }
 
 // resolveRevision determines the git revision to check out. An explicit
-// raw revision always wins. Otherwise, a valid PR number resolves to that
-// PR's head ref (refs/pull/<pr>/head) so PR runs check out the PR's actual
-// commits instead of falling through to the target repo's default branch -
-// which would silently validate the wrong code. With neither set, "HEAD"
-// requests the clone's default branch.
-func resolveRevision(raw, pr string) string {
+// raw revision always wins. Otherwise, a valid PR/MR number resolves to that
+// PR/MR's head ref (refs/pull/<pr>/head for GitHub, refs/merge-requests/<mr>/head
+// for GitLab) so runs check out the actual commits instead of falling through
+// to the target repo's default branch - which would silently validate the wrong code.
+// With neither set, "HEAD" requests the clone's default branch.
+func resolveRevision(raw, pr string, opts ...Options) string {
 	if raw != "" {
 		return raw
 	}
 	if isValidPR(pr) {
+		if len(opts) > 0 && isGitLab(opts[0]) {
+			return fmt.Sprintf("refs/merge-requests/%s/head", pr)
+		}
 		return fmt.Sprintf("refs/pull/%s/head", pr)
 	}
 	return "HEAD"
@@ -412,7 +431,8 @@ func toValidatorOptions(opts Options) validator.Options {
 		RepoURL:         opts.URL,
 		PR:              opts.PR,
 		BaseRef:         resolveBaseRef(opts.TargetBranch),
-		Revision:        resolveRevision(opts.Revision, opts.PR),
+		Revision:        resolveRevision(opts.Revision, opts.PR, opts),
+		Forge:           opts.Forge,
 		TriggerComment:  opts.TriggerComment,
 		HookSource:      opts.HookSource,
 		LintOnly:        opts.LintOnly,
@@ -442,30 +462,59 @@ func resolveBaseRef(targetBranch string) string {
 	return "origin/main"
 }
 
-func runUnsignedCheck(c *github.Client) error {
-	commits, err := github.GetUnsignedCommits(c)
-	if err != nil {
-		return err
-	}
-	if len(commits) > 0 {
-		return fmt.Errorf("%d unsigned commits detected", len(commits))
-	}
-	return nil
+type prValidator interface {
+	ValidateTitle() error
+	TitleSuggestion() string
+	GetUnsignedCommits() ([]string, error)
+	ValidateChecklist() error
 }
 
-// commentSkipReason reports whether posting a PR comment should be skipped,
+type gitlabValidator struct{ c *gitlab.Client }
+
+func (v gitlabValidator) ValidateTitle() error    { return gitlab.ValidateMRTitle(v.c) }
+func (v gitlabValidator) TitleSuggestion() string { return gitlab.MRTitleSuggestion(v.c) }
+func (v gitlabValidator) GetUnsignedCommits() ([]string, error) {
+	return gitlab.GetUnsignedCommits(v.c)
+}
+func (v gitlabValidator) ValidateChecklist() error { return gitlab.ValidateMRChecklist(v.c) }
+
+type githubValidator struct{ c *github.Client }
+
+func (v githubValidator) ValidateTitle() error    { return github.ValidatePRTitle(v.c) }
+func (v githubValidator) TitleSuggestion() string { return github.PRTitleSuggestion(v.c) }
+func (v githubValidator) GetUnsignedCommits() ([]string, error) {
+	return github.GetUnsignedCommits(v.c)
+}
+func (v githubValidator) ValidateChecklist() error { return github.ValidatePRChecklist(v.c) }
+
+// commentSkipReason reports whether posting a PR/MR comment should be skipped,
 // and if so, why. Comment posting requires both an explicit opt-in
 // (opts.PostComment, set from the CLI's --comment flag - off by default)
-// and repo/PR context being available (github.Client.IsAvailable()); a
-// local/no-PR run skips commenting regardless of the flag.
+// and repo/PR context being available; a local/no-PR run skips commenting
+// regardless of the flag.
 func commentSkipReason(opts Options) (reason string, skip bool) {
 	if !opts.PostComment {
 		return "--comment not passed", true
+	}
+	if isGitLab(opts) {
+		if !gitlab.NewClient(opts.URL, opts.PR).IsAvailable() {
+			return "no repo/PR context available", true
+		}
+		return "", false
 	}
 	if !github.NewClient(opts.URL, opts.PR).IsAvailable() {
 		return "no repo/PR context available", true
 	}
 	return "", false
+}
+
+func isCheckDisabled(id string, disabled []string) bool {
+	for _, d := range disabled {
+		if strings.EqualFold(d, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // buildReport constructs the unified PR-comment report from the run result,
@@ -564,6 +613,30 @@ func isRenderedOnly(s string) bool {
 }
 
 func postComment(res *Result, opts Options) error {
+	if isGitLab(opts) {
+		client := gitlab.NewClient(opts.URL, opts.PR)
+		if !client.IsAvailable() {
+			return nil
+		}
+		sections := composeSections(res, opts)
+		if opts.Quiet && !hasFindings(sections) {
+			if err := gitlab.DeleteComments(client, "<!-- gitops-ci-report -->"); err != nil {
+				return err
+			}
+			if err := gitlab.DeleteComments(client, validator.LegacyMarkers()...); err != nil {
+				return err
+			}
+			return gitlab.DeleteComments(client, opts.Providers.ForeignMarkers()...)
+		}
+		report := buildReport(res, opts)
+		if err := gitlab.UpsertComment(client, report.Marker, report.Render()); err != nil {
+			return err
+		}
+		if err := gitlab.DeleteComments(client, validator.LegacyMarkers()...); err != nil {
+			return err
+		}
+		return gitlab.DeleteComments(client, opts.Providers.ForeignMarkers()...)
+	}
 	client := github.NewClient(opts.URL, opts.PR)
 	if !client.IsAvailable() {
 		return nil
@@ -673,13 +746,66 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 	return sections
 }
 
-// EnvOptions loads options from environment.
+// EnvOptions loads options from environment. It checks PARAMS_* first
+// (Tekton / generic CI), then falls back to GitLab CI or GitHub Actions
+// environment variables.
 func EnvOptions() Options {
-	return Options{
+	opts := Options{
 		URL:            os.Getenv("PARAMS_URL"),
 		PR:             os.Getenv("PARAMS_PR"),
 		Revision:       os.Getenv("PARAMS_REVISION"),
 		TargetBranch:   os.Getenv("PARAMS_TARGET_BRANCH"),
 		TriggerComment: os.Getenv("PARAMS_TRIGGER_COMMENT"),
+		Forge:          os.Getenv("PARAMS_FORGE"),
 	}
+
+	if os.Getenv("GITLAB_CI") != "" {
+		if opts.Forge == "" {
+			opts.Forge = "gitlab"
+		}
+		if opts.URL == "" {
+			opts.URL = os.Getenv("CI_REPOSITORY_URL")
+			if opts.URL == "" {
+				opts.URL = os.Getenv("CI_PROJECT_URL")
+			}
+		}
+		if opts.PR == "" {
+			opts.PR = os.Getenv("CI_MERGE_REQUEST_IID")
+		}
+		if opts.Revision == "" {
+			opts.Revision = os.Getenv("CI_COMMIT_SHA")
+		}
+		if opts.TargetBranch == "" {
+			opts.TargetBranch = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
+		}
+	} else if os.Getenv("GITHUB_ACTIONS") == "true" {
+		if opts.Forge == "" {
+			opts.Forge = "github"
+		}
+		if opts.URL == "" && os.Getenv("GITHUB_REPOSITORY") != "" {
+			serverURL := os.Getenv("GITHUB_SERVER_URL")
+			if serverURL == "" {
+				serverURL = "https://github.com"
+			}
+			opts.URL = serverURL + "/" + os.Getenv("GITHUB_REPOSITORY") + ".git"
+		}
+		if opts.PR == "" {
+			ref := os.Getenv("GITHUB_REF")
+			if strings.HasPrefix(ref, "refs/pull/") {
+				parts := strings.Split(ref, "/")
+				if len(parts) >= 3 {
+					opts.PR = parts[2]
+				}
+			}
+		}
+		if opts.TargetBranch == "" {
+			opts.TargetBranch = os.Getenv("GITHUB_BASE_REF")
+		}
+	}
+
+	return opts
+}
+
+func isGitLab(opts Options) bool {
+	return gitlab.IsGitLabURL(opts.URL, opts.Forge)
 }

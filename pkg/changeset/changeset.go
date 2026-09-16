@@ -3,6 +3,7 @@ package changeset
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,6 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/gitlab"
 )
 
 // Options configures changed-file resolution.
@@ -21,6 +25,7 @@ type Options struct {
 	PR               string
 	BaseRef          string
 	IncludeDeletions bool
+	Forge            string
 }
 
 // PRFile is a single entry from the GitHub "list pull request files" API.
@@ -396,15 +401,27 @@ func AuthHint() string {
 	return "Set GH_TOKEN or run 'gh auth login'."
 }
 
-// ExtractRepoFromURL parses the owner/repo slug from a URL.
+func isGitLabRepo(raw, forge string) bool {
+	return gitlab.IsGitLabURL(raw, forge)
+}
+
+// ExtractRepoFromURL parses the owner/repo slug from a URL. For GitLab URLs,
+// it preserves nested subgroup paths (e.g. group/subgroup/project).
 func ExtractRepoFromURL(raw string) string {
 	if raw == "" {
 		return ""
 	}
+	if gitlab.IsGitLabURL(raw, "") {
+		_, project := gitlab.ExtractProject(raw)
+		if project != "" {
+			return project
+		}
+	}
 	if strings.HasPrefix(raw, "git@") {
 		parts := strings.Split(raw, ":")
 		if len(parts) == 2 {
-			path := strings.TrimSuffix(parts[1], ".git")
+			path := strings.Trim(parts[1], "/")
+			path = strings.TrimSuffix(path, ".git")
 			ps := strings.Split(path, "/")
 			if len(ps) >= 2 {
 				return ps[len(ps)-2] + "/" + ps[len(ps)-1]
@@ -425,19 +442,19 @@ func ExtractRepoFromURL(raw string) string {
 	return ""
 }
 
-// fetchPRFiles fetches the full list of PR files (with status) from the
-// GitHub API in one paginated call. --paginate ensures PRs with more than
-// one page of files (>30, gh's default page size) aren't silently
-// truncated. Callers filter/derive whatever subset they need from the
-// returned status field rather than issuing a second, differently-jq'd API
-// call, avoiding both an extra request and status-string duplication.
+// fetchPRFiles fetches the full list of PR/MR files (with status) from the
+// forge API in one paginated call. --paginate ensures PRs/MRs with more than
+// one page of files aren't silently truncated.
 func fetchPRFiles(opts Options) ([]PRFile, error) {
+	if isGitLabRepo(opts.RepoURL, opts.Forge) {
+		return fetchMRFiles(opts)
+	}
 	if !hasGH() {
 		return nil, fmt.Errorf("gh command not available; %s", AuthHint())
 	}
 	repo := ExtractRepoFromURL(opts.RepoURL)
 	if repo == "" {
-		return nil, fmt.Errorf("could not extract repo from URL: %s", opts.RepoURL)
+		return nil, fmt.Errorf("could not extract repo from URL: %s", git.SanitizeURL(opts.RepoURL))
 	}
 	out, err := exec.CommandContext(
 		context.Background(), "gh", "api", "--paginate",
@@ -453,6 +470,92 @@ func fetchPRFiles(opts Options) ([]PRFile, error) {
 		// gh returned a non-JSON body (commonly an HTML error page) with a
 		// zero exit code - surface a hint instead of a cryptic JSON error.
 		return nil, fmt.Errorf("parsing PR files response: %w%s", err, ghResponseHint(out))
+	}
+	return files, nil
+}
+
+func fetchMRFiles(opts Options) ([]PRFile, error) {
+	if !gitlab.HasGLab() {
+		return nil, fmt.Errorf("glab command not available; check `glab auth status`: %w", gitlab.ErrCLINotFound)
+	}
+	host, repo := gitlab.ExtractProject(opts.RepoURL)
+	if repo == "" {
+		return nil, fmt.Errorf("could not extract repo from URL: %s", git.SanitizeURL(opts.RepoURL))
+	}
+	encoded := gitlab.EncodeProject(repo)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(
+		ctx, "glab", "api", "--paginate",
+		fmt.Sprintf("projects/%s/merge_requests/%s/diffs", encoded, opts.PR),
+	)
+	if host != "" {
+		env := make([]string, 0, len(os.Environ())+1)
+		for _, e := range os.Environ() {
+			if !strings.HasPrefix(e, "GITLAB_HOST=") {
+				env = append(env, e)
+			}
+		}
+		env = append(env, "GITLAB_HOST="+host)
+		cmd.Env = env
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			return nil, fmt.Errorf("glab api diffs: %w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return nil, fmt.Errorf("glab api diffs: %w", err)
+	}
+
+	type diffEntry struct {
+		OldPath     string `json:"old_path"`
+		NewPath     string `json:"new_path"`
+		NewFile     bool   `json:"new_file"`
+		RenamedFile bool   `json:"renamed_file"`
+		DeletedFile bool   `json:"deleted_file"`
+	}
+
+	var allDiffs []diffEntry
+	dec := json.NewDecoder(strings.NewReader(string(out)))
+	for dec.More() {
+		var page []diffEntry
+		if err := dec.Decode(&page); err != nil {
+			var apiErr struct {
+				Message string `json:"message"`
+				Error   string `json:"error"`
+			}
+			if jerr := json.Unmarshal(out, &apiErr); jerr == nil {
+				if apiErr.Message != "" {
+					return nil, fmt.Errorf("glab api diffs: %s", apiErr.Message)
+				}
+				if apiErr.Error != "" {
+					return nil, fmt.Errorf("glab api diffs: %s", apiErr.Error)
+				}
+			}
+			return nil, fmt.Errorf("parsing MR diffs response: %w", err)
+		}
+		allDiffs = append(allDiffs, page...)
+	}
+
+	files := make([]PRFile, 0, len(allDiffs))
+	for _, c := range allDiffs {
+		status := "modified"
+		filename := c.NewPath
+		switch {
+		case c.DeletedFile:
+			status = "removed"
+			filename = c.OldPath
+		case c.NewFile:
+			status = "added"
+		case c.RenamedFile:
+			status = "renamed"
+		}
+		files = append(files, PRFile{
+			Filename: filename,
+			Status:   status,
+		})
 	}
 	return files, nil
 }

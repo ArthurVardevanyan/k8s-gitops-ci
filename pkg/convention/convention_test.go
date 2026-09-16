@@ -16,6 +16,10 @@ func TestIsKnownNonManifestFile(t *testing.T) {
 		{".goreleaser.yaml", true},
 		{".goreleaser.yml", true},
 		{".pre-commit-config.yaml", true},
+		{".gitlab-ci.yml", true},
+		{".gitlab-ci.yaml", true},
+		{".github/workflows/ci.yml", true},
+		{"sub/.github/workflows/build.yaml", true},
 		{"kubernetes/tekton/overlays/operator/deployment.yaml", false},
 		{"Taskfile.yml.bak", false},
 	}

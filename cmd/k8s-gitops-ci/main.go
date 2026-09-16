@@ -98,6 +98,7 @@ func parsePipelineOptions(args []string) (pipeline.Options, error) {
 	fs.StringVar(&opts.PR, "pr", opts.PR, "pull request number")
 	fs.StringVar(&opts.Revision, "revision", opts.Revision, "git revision")
 	fs.StringVar(&opts.TargetBranch, "target-branch", opts.TargetBranch, "target branch")
+	fs.StringVar(&opts.Forge, "forge", opts.Forge, "forge type (auto|github|gitlab)")
 	fs.StringVar(&hookSource, "hook-source", string(opts.HookSource), "hook source (main|pr|local)")
 	fs.StringVar(&opts.TriggerComment, "trigger-comment", opts.TriggerComment, "trigger comment text")
 	fs.StringVar(&dirs, "dirs", "", "comma-separated path prefixes to validate in full, replacing the diff/PR-derived changeset entirely (e.g. kubernetes/,tekton/,.tekton/,okd/)")
@@ -202,6 +203,7 @@ func runBuildYAML(args []string) error {
 // flag set.
 type validatorFlagSet struct {
 	url, pr, targetBranch, hookSource  string
+	forge                              string
 	dirs, disableChecks, enableChecks  string
 	concurrency                        int
 	assumeOpenshift, verbose, lintOnly bool
@@ -216,6 +218,7 @@ func bindValidatorFlags(fs *flag.FlagSet) *validatorFlagSet {
 	fs.StringVar(&v.url, "url", "", "repository URL (e.g. https://github.com/org/repo — NOT a PR URL; pass the PR number via --pr)")
 	fs.StringVar(&v.pr, "pr", "", "pull request number")
 	fs.StringVar(&v.targetBranch, "target-branch", "", "target branch")
+	fs.StringVar(&v.forge, "forge", "", "forge type (auto|github|gitlab)")
 	fs.StringVar(&v.hookSource, "hook-source", "", "hook source (main|pr|local)")
 	fs.StringVar(&v.dirs, "dirs", "", "comma-separated path prefixes to validate in full, replacing the diff/PR-derived changeset entirely (e.g. kubernetes/,tekton/,.tekton/,okd/)")
 	fs.StringVar(&v.disableChecks, "disable-checks", "", "comma-separated IDs to disable entirely (e.g. sync-options, golangci, avp); only affects checks/steps that default to enabled")
@@ -241,6 +244,7 @@ func (v *validatorFlagSet) applyTo(opts *validator.Options) {
 	opts.RepoURL = v.url
 	opts.PR = v.pr
 	opts.BaseRef = v.targetBranch
+	opts.Forge = v.forge
 	opts.HookSource = hook.Source(v.hookSource)
 	opts.Dirs = splitCommaList(v.dirs)
 	opts.DisabledChecks = splitCommaList(v.disableChecks)

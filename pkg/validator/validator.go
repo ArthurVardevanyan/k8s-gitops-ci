@@ -102,6 +102,7 @@ func resolveChangeset(opts Options) ([]string, error) {
 			PR:               opts.PR,
 			BaseRef:          opts.BaseRef,
 			IncludeDeletions: opts.IncludeDeletions,
+			Forge:            opts.Forge,
 		})
 	}
 	if err != nil {

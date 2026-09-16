@@ -3,11 +3,22 @@ package git
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 )
+
+// SanitizeURL strips userinfo (tokens, passwords) from a repository URL for display and logging.
+func SanitizeURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = nil
+	return u.String()
+}
 
 // CloneOptions configures a repository clone.
 type CloneOptions struct {

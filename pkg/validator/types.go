@@ -29,6 +29,7 @@ type Options struct {
 	BaseRef        string
 	Revision       string
 	TriggerComment string
+	Forge          string
 	// HookSource is the raw hook-source signal (e.g. "main"/"pr"/"local",
 	// wired straight through from pipeline.Options.HookSource / the CLI's
 	// --hook-source flag) that hook.ResolveSource normalizes - fail-closed

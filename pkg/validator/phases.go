@@ -751,7 +751,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// errors specifically (unlike kustomize.CheckFix above, which is a
 	// hard failure, not tolerated).
 	addedFilesStart := time.Now()
-	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL})
+	addedFiles, _ := changeset.GetAddedFiles(changeset.Options{BaseRef: opts.BaseRef, PR: opts.PR, RepoURL: opts.RepoURL, Forge: opts.Forge})
 	addedFilesDur := time.Since(addedFilesStart)
 	tc.RecordStep("Build YAML", "added-files", addedFilesDur)
 	log.Debug("added-files: %s", addedFilesDur.Round(time.Millisecond))

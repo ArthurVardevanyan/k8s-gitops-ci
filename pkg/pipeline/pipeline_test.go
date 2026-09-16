@@ -677,6 +677,65 @@ func TestResolveRevision_InvalidPR_DefaultsToHEAD(t *testing.T) {
 	}
 }
 
+func TestResolveRevision_GitLabMR(t *testing.T) {
+	opts := Options{Forge: "gitlab"}
+	if got := resolveRevision("", "27", opts); got != "refs/merge-requests/27/head" {
+		t.Errorf("resolveRevision = %q, want %q", got, "refs/merge-requests/27/head")
+	}
+
+	optsURL := Options{URL: "https://gitlab.example.com/org/repo"}
+	if got := resolveRevision("", "27", optsURL); got != "refs/merge-requests/27/head" {
+		t.Errorf("resolveRevision = %q, want %q", got, "refs/merge-requests/27/head")
+	}
+}
+
+func TestEnvOptions_GitLabCI(t *testing.T) {
+	t.Setenv("GITLAB_CI", "true")
+	t.Setenv("CI_PROJECT_URL", "https://gitlab.example.com/group/project")
+	t.Setenv("CI_MERGE_REQUEST_IID", "42")
+	t.Setenv("CI_COMMIT_SHA", "abc1234")
+	t.Setenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", "main")
+
+	opts := EnvOptions()
+	if opts.Forge != "gitlab" {
+		t.Errorf("expected Forge = gitlab, got %q", opts.Forge)
+	}
+	if opts.URL != "https://gitlab.example.com/group/project" {
+		t.Errorf("expected URL, got %q", opts.URL)
+	}
+	if opts.PR != "42" {
+		t.Errorf("expected PR = 42, got %q", opts.PR)
+	}
+	if opts.Revision != "abc1234" {
+		t.Errorf("expected Revision = abc1234, got %q", opts.Revision)
+	}
+	if opts.TargetBranch != "main" {
+		t.Errorf("expected TargetBranch = main, got %q", opts.TargetBranch)
+	}
+}
+
+func TestEnvOptions_GitHubActions(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_REPOSITORY", "example-org/example-repo")
+	t.Setenv("GITHUB_REF", "refs/pull/123/merge")
+	t.Setenv("GITHUB_BASE_REF", "main")
+
+	opts := EnvOptions()
+	if opts.Forge != "github" {
+		t.Errorf("expected Forge = github, got %q", opts.Forge)
+	}
+	if opts.URL != "https://github.com/example-org/example-repo.git" {
+		t.Errorf("expected URL, got %q", opts.URL)
+	}
+	if opts.PR != "123" {
+		t.Errorf("expected PR = 123, got %q", opts.PR)
+	}
+	if opts.TargetBranch != "main" {
+		t.Errorf("expected TargetBranch = main, got %q", opts.TargetBranch)
+	}
+}
+
 // ── setupWorkdir ──────────────────────────────────────────────────────────
 
 func newPipelineFixture(t *testing.T) (repoPath string) {

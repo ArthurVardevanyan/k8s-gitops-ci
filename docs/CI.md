@@ -106,7 +106,7 @@ flowchart TD
 
 | Mode                 | Command                                                            | Changeset source                                                                                                                                                                                                         |
 | -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Full pipeline        | `k8s-gitops-ci pipeline --url <repo> --pr <n>` (alias: `ci`)       | PR's changed files via the GitHub API                                                                                                                                                                                    |
+| Full pipeline        | `k8s-gitops-ci pipeline --url <repo> --pr <n>` (alias: `ci`)       | PR/MR's changed files via GitHub (`gh`) or GitLab (`glab`) API                                                                                                                                                           |
 | Local PR check       | `k8s-gitops-ci pipeline --revision <sha> --target-branch <branch>` | `git diff <target>...<revision>`                                                                                                                                                                                         |
 | Full repo scan       | `k8s-gitops-ci test --all`                                         | **every file on disk**, every overlay — ignores git state entirely (see `--all` below)                                                                                                                                   |
 | Directory scan       | `k8s-gitops-ci test [dirs...]` or `test --dirs kubernetes/`        | every file under the given positional directories (not a diff — the full tree under each path); with no positional dirs or `--dirs`, falls back to the same changeset resolution as `pipeline` (working-tree `git diff`) |
@@ -115,14 +115,23 @@ flowchart TD
 
 `test` accepts the same changeset-scoping and
 check-enablement flags as `pipeline` — `--url`/`--pr`/`--target-branch`
-(PR/diff source), `--dirs` (a full-tree walk of exactly the given path
+(PR/MR/diff source), `--dirs` (a full-tree walk of exactly the given path
 prefixes, replacing the diff/PR-derived changeset entirely — the same
 underlying behavior as `test`'s positional `[dirs...]`; when
 `test` is given both, the positional args take precedence),
+`--forge` (forge type: `auto|github|gitlab`),
 `--disable-checks`/`--enable-checks`, `--hook-source`, `--concurrency`,
 `--assume-openshift`, and `--app`/`--cluster` (below). This lets a
 failing `pipeline --url ... --pr ...` run be reproduced locally with
 `test` using an equivalent flag set.
+
+**`--forge`** — Forge type (`auto|github|gitlab`, default `auto`). When set to
+`auto`, the forge is detected from the repository URL or environment variables
+(`GITLAB_CI`, `CI_SERVER_HOST`, `GITLAB_HOST`). For GitLab, merge requests use
+`refs/merge-requests/<mr>/head`, API queries and comment upsert use `glab`, and GitLab CI
+variables (`CI_MERGE_REQUEST_IID`, `CI_REPOSITORY_URL`, `CI_COMMIT_SHA`, etc.) are
+detected automatically. In GitLab CI pipelines, ensure `GITLAB_TOKEN` is configured
+with API access to enable MR note upsertion and commit signature validation.
 
 **`--all`** — Full repository scan. Walks every file on disk (respecting
 the same `ExtraNonAppDirs` and scaffold template exclusions as overlay

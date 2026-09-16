@@ -476,3 +476,19 @@ func TestFetchPRFiles_RepoExtractionFailure(t *testing.T) {
 		t.Error("expected an error when repo cannot be extracted from RepoURL")
 	}
 }
+
+func TestExtractRepoFromURL_GitLabSubgroups(t *testing.T) {
+	cases := []struct {
+		url  string
+		want string
+	}{
+		{"https://gitlab.example.com/group/subgroup/project.git", "group/subgroup/project"},
+		{"git@gitlab.example.com:group/subgroup/project.git", "group/subgroup/project"},
+		{"https://github.com/owner/repo.git", "owner/repo"},
+	}
+	for _, tc := range cases {
+		if got := ExtractRepoFromURL(tc.url); got != tc.want {
+			t.Errorf("ExtractRepoFromURL(%q) = %q, want %q", tc.url, got, tc.want)
+		}
+	}
+}

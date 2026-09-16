@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/git"
 )
 
 // PRValidationResult carries the outcomes of PR-level checks (title, signing,
@@ -179,7 +181,7 @@ func LegacyMarkers() []string {
 // additionally runs (and can additionally fail on) checks the original run
 // never even attempted.
 func ReproduceCommand(opts Options) string {
-	cmd := fmt.Sprintf("%s pipeline --url=%q --pr=%s", opts.Providers.BinaryName(), opts.RepoURL, opts.PR)
+	cmd := fmt.Sprintf("%s pipeline --url=%q --pr=%s", opts.Providers.BinaryName(), git.SanitizeURL(opts.RepoURL), opts.PR)
 	if len(opts.Dirs) > 0 {
 		cmd += fmt.Sprintf(" --dirs=%q", strings.Join(opts.Dirs, ","))
 	}
@@ -194,6 +196,9 @@ func ReproduceCommand(opts Options) string {
 	}
 	if len(opts.EnabledChecks) > 0 {
 		cmd += fmt.Sprintf(" --enable-checks=%q", strings.Join(opts.EnabledChecks, ","))
+	}
+	if opts.Forge != "" && opts.Forge != "auto" {
+		cmd += fmt.Sprintf(" --forge=%q", opts.Forge)
 	}
 	return cmd
 }
