@@ -38,12 +38,19 @@ var KnownNonManifestFiles = map[string]bool{
 	".bulldozer.yaml":         true,
 	".policy.yml":             true,
 	".policy.yaml":            true,
+	".gitlab-ci.yml":          true,
+	".gitlab-ci.yaml":         true,
 }
 
-// IsKnownNonManifestFile reports whether path's basename is a known
-// non-Kubernetes-manifest tooling config file (see KnownNonManifestFiles).
+// IsKnownNonManifestFile reports whether path is a known
+// non-Kubernetes-manifest tooling config file (see KnownNonManifestFiles)
+// or CI workflow definition (e.g. .github/workflows/*.yml).
 func IsKnownNonManifestFile(path string) bool {
-	return KnownNonManifestFiles[filepath.Base(path)]
+	if KnownNonManifestFiles[filepath.Base(path)] {
+		return true
+	}
+	normalized := filepath.ToSlash(path)
+	return strings.HasPrefix(normalized, ".github/workflows/") || strings.Contains(normalized, "/.github/workflows/")
 }
 
 // ScaffoldDir is the root directory for scaffold-tool configs/templates.
