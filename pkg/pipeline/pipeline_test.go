@@ -714,6 +714,28 @@ func TestEnvOptions_GitLabCI(t *testing.T) {
 	}
 }
 
+func TestEnvOptions_GitHubActions(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_REPOSITORY", "example-org/example-repo")
+	t.Setenv("GITHUB_REF", "refs/pull/123/merge")
+	t.Setenv("GITHUB_BASE_REF", "main")
+
+	opts := EnvOptions()
+	if opts.Forge != "github" {
+		t.Errorf("expected Forge = github, got %q", opts.Forge)
+	}
+	if opts.URL != "https://github.com/example-org/example-repo.git" {
+		t.Errorf("expected URL, got %q", opts.URL)
+	}
+	if opts.PR != "123" {
+		t.Errorf("expected PR = 123, got %q", opts.PR)
+	}
+	if opts.TargetBranch != "main" {
+		t.Errorf("expected TargetBranch = main, got %q", opts.TargetBranch)
+	}
+}
+
 // ── setupWorkdir ──────────────────────────────────────────────────────────
 
 func newPipelineFixture(t *testing.T) (repoPath string) {

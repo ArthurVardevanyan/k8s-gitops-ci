@@ -749,7 +749,8 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 }
 
 // EnvOptions loads options from environment. It checks PARAMS_* first
-// (Tekton / generic CI), then falls back to GitLab CI environment variables.
+// (Tekton / generic CI), then falls back to GitLab CI or GitHub Actions
+// environment variables.
 func EnvOptions() Options {
 	opts := Options{
 		URL:            os.Getenv("PARAMS_URL"),
@@ -778,6 +779,29 @@ func EnvOptions() Options {
 		}
 		if opts.TargetBranch == "" {
 			opts.TargetBranch = os.Getenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME")
+		}
+	} else if os.Getenv("GITHUB_ACTIONS") == "true" {
+		if opts.Forge == "" {
+			opts.Forge = "github"
+		}
+		if opts.URL == "" && os.Getenv("GITHUB_REPOSITORY") != "" {
+			serverURL := os.Getenv("GITHUB_SERVER_URL")
+			if serverURL == "" {
+				serverURL = "https://github.com"
+			}
+			opts.URL = serverURL + "/" + os.Getenv("GITHUB_REPOSITORY") + ".git"
+		}
+		if opts.PR == "" {
+			ref := os.Getenv("GITHUB_REF")
+			if strings.HasPrefix(ref, "refs/pull/") {
+				parts := strings.Split(ref, "/")
+				if len(parts) >= 3 {
+					opts.PR = parts[2]
+				}
+			}
+		}
+		if opts.TargetBranch == "" {
+			opts.TargetBranch = os.Getenv("GITHUB_BASE_REF")
 		}
 	}
 
