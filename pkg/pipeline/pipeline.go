@@ -145,26 +145,30 @@ func Run(opts Options) error {
 		prStart := time.Now()
 		log.Header("PR Validation")
 		client := github.NewClient(opts.URL, opts.PR)
-		res.TitleErr = github.ValidatePRTitle(client)
-		if res.TitleErr != nil {
-			log.Error("PR title: %v", res.TitleErr)
-		} else {
-			log.Info("PR title: passed")
-			// Only consulted once the required prefix has already passed -
-			// see github.PRTitleSuggestion and ComposePRChecksSection/
-			// prTitleChild's non-blocking rendering of this.
-			res.TitleSuggestion = github.PRTitleSuggestion(client)
-			if res.TitleSuggestion != "" {
-				log.Warn("PR title suggestion: %s", res.TitleSuggestion)
+		if !isCheckDisabled("pr-title", opts.DisabledChecks) {
+			res.TitleErr = github.ValidatePRTitle(client)
+			if res.TitleErr != nil {
+				log.Error("PR title: %v", res.TitleErr)
+			} else {
+				log.Info("PR title: passed")
+				// Only consulted once the required prefix has already passed -
+				// see github.PRTitleSuggestion and ComposePRChecksSection/
+				// prTitleChild's non-blocking rendering of this.
+				res.TitleSuggestion = github.PRTitleSuggestion(client)
+				if res.TitleSuggestion != "" {
+					log.Warn("PR title suggestion: %s", res.TitleSuggestion)
+				}
 			}
 		}
-		res.UnsignedErr = runUnsignedCheck(client)
-		if res.UnsignedErr != nil {
-			log.Error("unsigned commits: %v", res.UnsignedErr)
-		} else {
-			log.Info("unsigned commits check: passed")
+		if !isCheckDisabled("unsigned-commits", opts.DisabledChecks) {
+			res.UnsignedErr = runUnsignedCheck(client)
+			if res.UnsignedErr != nil {
+				log.Error("unsigned commits: %v", res.UnsignedErr)
+			} else {
+				log.Info("unsigned commits check: passed")
+			}
 		}
-		if shouldRunChecklistCheck(opts) {
+		if shouldRunChecklistCheck(opts) && !isCheckDisabled("pr-checklist", opts.DisabledChecks) {
 			res.ChecklistErr = github.ValidatePRChecklist(client)
 			if res.ChecklistErr != nil {
 				log.Error("PR checklist: %v", res.ChecklistErr)
@@ -671,6 +675,15 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 	}
 	sections = append(sections, validator.ComposeCINotesSection(body))
 	return sections
+}
+
+func isCheckDisabled(id string, disabled []string) bool {
+	for _, d := range disabled {
+		if strings.EqualFold(d, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // EnvOptions loads options from environment.
