@@ -79,3 +79,39 @@ func TestNullForgeResolveRevision(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateChecklistString(t *testing.T) {
+	spec := ChecklistSpec{
+		Items: []ChecklistItem{
+			{ID: "testing", LabelPattern: "I have tested this"},
+			{ID: "docs", LabelPattern: "I have updated docs"},
+		},
+		Required: []string{"testing"},
+	}
+
+	t.Run("valid checklist", func(t *testing.T) {
+		body := "- [x] I have tested this\n- [ ] I have updated docs"
+		if err := ValidateChecklistString(body, spec); err != nil {
+			t.Errorf("expected valid checklist, got %v", err)
+		}
+	})
+
+	t.Run("missing required item", func(t *testing.T) {
+		body := "- [ ] I have tested this\n- [x] I have updated docs"
+		if err := ValidateChecklistString(body, spec); err == nil {
+			t.Error("expected error for unchecked required item")
+		}
+	})
+
+	t.Run("empty body with rules", func(t *testing.T) {
+		if err := ValidateChecklistString("", spec); err == nil {
+			t.Error("expected error for empty body with rules")
+		}
+	})
+
+	t.Run("empty spec always passes", func(t *testing.T) {
+		if err := ValidateChecklistString("", ChecklistSpec{}); err != nil {
+			t.Errorf("expected nil error for empty spec, got %v", err)
+		}
+	})
+}
