@@ -637,6 +637,21 @@ func TestPostComment_QueriesForeignMarkersFromCommentPolicy(t *testing.T) {
 	}
 }
 
+func TestIsCheckDisabled(t *testing.T) {
+	disabled := []string{"pr-title", "Unsigned-Commits"}
+	if !isCheckDisabled("pr-title", disabled) {
+		t.Error("expected pr-title to be disabled")
+	}
+	if !isCheckDisabled("unsigned-commits", disabled) {
+		t.Error("expected unsigned-commits to be disabled (case-insensitive)")
+	}
+	if isCheckDisabled("pr-checklist", disabled) {
+		t.Error("expected pr-checklist not to be disabled")
+	}
+}
+
+// ── setupWorkdir ──────────────────────────────────────────────────────────
+
 func newPipelineFixture(t *testing.T) (repoPath string) {
 	t.Helper()
 	dir := t.TempDir()

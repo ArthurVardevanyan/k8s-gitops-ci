@@ -1081,6 +1081,9 @@ var knownStepIDs = map[string]bool{
 	stepKyverno:        true,
 	stepScaffoldReadme: true,
 	stepKustomizeFix:   true,
+	"pr-title":         true,
+	"unsigned-commits": true,
+	"pr-checklist":     true,
 }
 
 // warnUnknownCheckIDs reports DisabledChecks/EnabledChecks entries that match
