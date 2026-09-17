@@ -444,11 +444,12 @@ func (f *ghForge) FetchFiles(repoURL, pr string) ([]forge.FileChange, error) {
 	return files, nil
 }
 
-func (f *ghForge) ResolveRevision(raw, _ string) string {
-	if raw != "" {
-		return raw
-	}
-	return "HEAD"
+// ResolveRevision implements Forge. GitHub serves a PR's head commit at
+// refs/pull/<pr>/head, so a PR run without an explicit raw revision
+// checks out the PR's actual commits instead of the target repo's
+// default branch — which would silently validate the wrong code.
+func (f *ghForge) ResolveRevision(raw, pr string) string {
+	return forge.ResolvePRRef(raw, pr, "refs/pull/%s/head")
 }
 
 func (f *ghForge) UpsertComment(repoURL, pr, marker, body string) error {

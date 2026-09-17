@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -106,8 +107,13 @@ type Forge interface {
 	// the forge API.  Each entry corresponds to one line in a PR diff.
 	FetchFiles(url, pr string) ([]FileChange, error)
 
-	// ResolveRevision returns the git ref to check out for a PR.
-	// An empty raw string means "use the default."
+	// ResolveRevision returns the git ref the pipeline should check out.
+	// An explicit raw revision always wins; otherwise a valid PR number
+	// resolves to this forge's PR head ref (e.g. refs/pull/<pr>/head on
+	// GitHub) so PR runs check out the PR's actual commits instead of
+	// the target repo's default branch — which would silently validate
+	// the wrong code; with neither set, "HEAD" requests the clone's
+	// default branch.
 	ResolveRevision(raw, pr string) string
 
 	// UpsertComment posts or updates the single CI report comment.
@@ -190,6 +196,33 @@ func Detect(rawURL, explicit string) Forge {
 	return nilForge
 }
 
+// ValidPR reports whether pr names a usable pull/merge request number.
+// An empty string, and an unsubstituted CI template placeholder (e.g.
+// "{{ params.pr }}"), are not valid PR numbers — such values must never
+// be templated into a git ref.
+func ValidPR(pr string) bool {
+	if pr == "" {
+		return false
+	}
+	matched, _ := regexp.MatchString(`\{\{.*\}\}`, pr)
+	return !matched
+}
+
+// ResolvePRRef is the shared resolution logic behind every Forge's
+// ResolveRevision: an explicit raw revision always wins; otherwise a
+// valid PR number is templated into prRefFormat (the forge-specific ref
+// the platform serves for a PR's head commit); anything else resolves to
+// "HEAD", the clone's default branch.
+func ResolvePRRef(raw, pr, prRefFormat string) string {
+	if raw != "" {
+		return raw
+	}
+	if prRefFormat != "" && ValidPR(pr) {
+		return fmt.Sprintf(prRefFormat, pr)
+	}
+	return "HEAD"
+}
+
 // nilForge is a no-op forge returned when no registered forge matches.
 var nilForge = &nullForge{}
 
@@ -207,11 +240,14 @@ func (n *nullForge) GetUnsignedCommits(_, _ string) ([]string, error) {
 }
 func (n *nullForge) ValidateChecklist(_, _ string) error          { return nil }
 func (n *nullForge) FetchFiles(_, _ string) ([]FileChange, error) { return nil, errNoForge }
-func (n *nullForge) ResolveRevision(raw, _ string) string {
-	if raw != "" {
-		return raw
-	}
-	return "HEAD"
+
+// ResolveRevision preserves the historical (pre-forge) resolution for
+// URLs no registered forge claims: an explicit raw wins, a valid PR
+// number resolves to the GitHub-style PR head ref, otherwise HEAD. If
+// the remote does not serve that ref, the clone step fails loudly rather
+// than silently validating the default branch.
+func (n *nullForge) ResolveRevision(raw, pr string) string {
+	return ResolvePRRef(raw, pr, "refs/pull/%s/head")
 }
 func (n *nullForge) UpsertComment(_, _, _, _ string) error { return nil }
 func (n *nullForge) DeleteComments(_, _ string, _ ...string) error {

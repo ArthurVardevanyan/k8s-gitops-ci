@@ -3,7 +3,6 @@ package pipeline
 import (
 	"fmt"
 	"os"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -344,14 +343,6 @@ func setupWorkdir(opts Options) (cleanup func(), err error) {
 	}, nil
 }
 
-func isValidPR(pr string) bool {
-	if pr == "" {
-		return false
-	}
-	matched, _ := regexp.MatchString(`\{\{.*\}\}`, pr)
-	return !matched
-}
-
 func (o *Options) isMergeQueue() bool {
 	return strings.Contains(o.TargetBranch, "gh-readonly-queue/")
 }
@@ -374,7 +365,7 @@ func kyvernoEnabled(opts Options) bool {
 // - including in --lint-only mode, since they're cheap, GitHub-API-only
 // checks unrelated to the (skipped) build/validation phases.
 func shouldRunPRChecks(opts Options) bool {
-	return isValidPR(opts.PR) && !opts.isMergeQueue()
+	return forge.ValidPR(opts.PR) && !opts.isMergeQueue()
 }
 
 // shouldRunChecklistCheck reports whether the non-blocking PR-checklist

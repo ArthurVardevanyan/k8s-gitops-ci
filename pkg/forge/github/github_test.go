@@ -278,3 +278,31 @@ func TestGhResponseHint(t *testing.T) {
 		t.Error("expected a hint for a non-JSON (HTML) response")
 	}
 }
+
+// TestGhForgeResolveRevision guards a regression introduced when the forge
+// package first added ResolveRevision: the implementation ignored the pr
+// parameter and always returned "HEAD", so PR runs checked out the target
+// repo's default branch instead of the PR's commits — the pipeline then
+// linted/validated the wrong code and hard-failed on files the PR added
+// (which don't exist on the default branch).
+func TestGhForgeResolveRevision(t *testing.T) {
+	f := &ghForge{}
+	cases := []struct {
+		name string
+		raw  string
+		pr   string
+		want string
+	}{
+		{name: "explicit-raw-wins", raw: "v1.2.3", pr: "42", want: "v1.2.3"},
+		{name: "pr-resolves-to-pr-head-ref", raw: "", pr: "42", want: "refs/pull/42/head"},
+		{name: "no-raw-no-pr-defaults-to-head", raw: "", pr: "", want: "HEAD"},
+		{name: "placeholder-pr-defaults-to-head", raw: "", pr: "{{ params.pr }}", want: "HEAD"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := f.ResolveRevision(tc.raw, tc.pr); got != tc.want {
+				t.Errorf("ResolveRevision(%q, %q) = %q, want %q", tc.raw, tc.pr, got, tc.want)
+			}
+		})
+	}
+}

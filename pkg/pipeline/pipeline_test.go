@@ -116,18 +116,6 @@ func TestValidatorResultFailed_Nil(t *testing.T) {
 	}
 }
 
-func TestIsValidPR(t *testing.T) {
-	if isValidPR("") {
-		t.Error("empty PR invalid")
-	}
-	if isValidPR("{{ params.pr }}") {
-		t.Error("placeholder PR invalid")
-	}
-	if !isValidPR("123") {
-		t.Error("numeric PR valid")
-	}
-}
-
 func TestResolveBaseRef(t *testing.T) {
 	if got := resolveBaseRef("gh-readonly-queue/main/pr-1-abc"); got != "main" {
 		t.Errorf("main base ref: %s", got)
