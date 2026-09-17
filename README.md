@@ -19,8 +19,7 @@ override variables — see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)'s
 go install github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/k8s-gitops-ci@latest
 ```
 
-Or build from source (see [Development](#development) below), or pull the
-container image built by this repo's own release pipeline.
+Or build from source (see [Development](#development) below).
 
 ## Usage
 

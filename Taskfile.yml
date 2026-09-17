@@ -543,24 +543,6 @@ tasks:
         -o {{.DIST}}/{{.NAME}}
         {{.MAIN_PACKAGE}}
 
-  # image:build and image:publish are commented out until the registry is wired up.
-  # image:build:
-  #   desc: Build and push container image with ko
-  #   env:
-  #     KO_DOCKER_REPO: '{{.KO_DOCKER_REPO | default "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"}}'
-  #     BUILD_VERSION: "{{.BUILD_VERSION}}"
-  #     BUILD_COMMIT: "{{.BUILD_COMMIT}}"
-  #   cmds:
-  #     - ko build {{.MAIN_PACKAGE}} --bare --sbom=none --tags={{.KO_TAGS | default "local"}}
-  #
-  # image:publish:
-  #   desc: Build+push image and write .image-tag / .image-ref / .image-digest
-  #   env:
-  #     KO_DOCKER_REPO: '{{.KO_DOCKER_REPO | default "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"}}'
-  #   cmds:
-  #     - |
-  #       ... (see upstream image:publish for full logic)
-
   # ── Testing ───────────────────────────────────────────────────────────────────
   test:
     desc: Run test suite

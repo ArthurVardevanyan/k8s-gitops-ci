@@ -114,17 +114,8 @@ Only what's actually active in `.goreleaser.yaml` today:
   Changed" list of merged PRs, a "New Contributors" section, and a Full
   Changelog compare link.
 
-**Not currently active** — present in config but not shipping:
-
-- **Container images.** `.goreleaser.yaml`'s `kos:` block (targeting
-  `registry.arthurvardevanyan.com/homelab/k8s-gitops-ci`,
-  `linux/amd64`+`linux/arm64`) exists, but every real `goreleaser
-release` invocation in `.tekton/k8s-gitops-ci.yaml` passes `--skip=ko`.
-  Taskfile's own `image:build`/`image:publish` targets are commented out
-  ("until the registry is wired up"). Don't describe a published
-  container image as an existing release artifact.
-- There is no Homebrew formula, GCS blob publishing, or any other
-  distribution channel beyond the two items above.
+- There is no container image, Homebrew formula, GCS blob publishing, or
+  any other distribution channel beyond the two items above.
 
 ## Release flow
 
