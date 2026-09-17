@@ -35,8 +35,8 @@ var ErrCLINotFound = errCLINotFound{}
 // comparison while still satisfying the error interface.
 type errTitle string
 
-func (e errTitle) Error() string   { return string(e) }
-func (e errTitle) Unwrap() error   { return nil }
+func (e errTitle) Error() string { return string(e) }
+func (e errTitle) Unwrap() error { return nil }
 
 // errEmptyTitle is returned when a title string is empty.
 var errEmptyTitle = errTitle("PR title is empty")
@@ -155,8 +155,8 @@ func Register(f Forge) {
 //
 // Selection order:
 //
-//	1. explicit flag (case-insensitive) match by Name().
-//	2. Highest Affinity by Matches(rawURL, explicit).
+//  1. explicit flag (case-insensitive) match by Name().
+//  2. Highest Affinity by Matches(rawURL, explicit).
 //
 // Returns a no-op null Forge when nothing matches.  Null is a true no-op
 // (IsAvailable always returns false, all other methods return nil/""/empty
@@ -198,15 +198,15 @@ var _ Forge = &nullForge{}
 
 type nullForge struct{}
 
-func (n *nullForge) Name() string { return "" }
-func (n *nullForge) IsAvailable(_, _ string) bool         { return false }
-func (n *nullForge) ValidateTitle(_, _ string) error      { return nil }
-func (n *nullForge) TitleSuggestion(_, _ string) string   { return "" }
+func (n *nullForge) Name() string                       { return "" }
+func (n *nullForge) IsAvailable(_, _ string) bool       { return false }
+func (n *nullForge) ValidateTitle(_, _ string) error    { return nil }
+func (n *nullForge) TitleSuggestion(_, _ string) string { return "" }
 func (n *nullForge) GetUnsignedCommits(_, _ string) ([]string, error) {
 	return nil, nil
 }
-func (n *nullForge) ValidateChecklist(_, _ string) error              { return nil }
-func (n *nullForge) FetchFiles(_, _ string) ([]FileChange, error)     { return nil, errNoForge }
+func (n *nullForge) ValidateChecklist(_, _ string) error          { return nil }
+func (n *nullForge) FetchFiles(_, _ string) ([]FileChange, error) { return nil, errNoForge }
 func (n *nullForge) ResolveRevision(raw, _ string) string {
 	if raw != "" {
 		return raw
@@ -217,12 +217,12 @@ func (n *nullForge) UpsertComment(_, _, _, _ string) error { return nil }
 func (n *nullForge) DeleteComments(_, _ string, _ ...string) error {
 	return nil
 }
-func (n *nullForge) ExtractRepo(s string) string            { return s }
+func (n *nullForge) ExtractRepo(s string) string { return s }
 func (n *nullForge) FillFromEnv() (string, string, string, string) {
 	return "", "", "", ""
 }
-func (n *nullForge) AuthHint() string                       { return "" }
-func (n *nullForge) Matches(_, _ string) int                { return 0 }
+func (n *nullForge) AuthHint() string        { return "" }
+func (n *nullForge) Matches(_, _ string) int { return 0 }
 
 // errNoForge is the error returned by FetchFiles when no forge matched.
 var errNoForge = errNoForgeStr{}
@@ -238,4 +238,3 @@ var (
 	mu       = new(sync.RWMutex)
 	registry []Forge
 )
-

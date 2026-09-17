@@ -446,18 +446,6 @@ func fetchPRFiles(opts Options) ([]PRFile, error) {
 	return files, nil
 }
 
-// ghResponseHint inspects a gh api response body and, if it doesn't look
-// like JSON (e.g. an HTML error page), returns a short diagnostic suffix
-// pointing at the most common cause: an invalid/expired gh token or the
-// wrong gh host.
-func ghResponseHint(out []byte) string {
-	trimmed := strings.TrimSpace(string(out))
-	if trimmed == "" || strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		return ""
-	}
-	return " (gh returned a non-JSON response; check `gh auth status` - the token may be invalid/expired or pointed at the wrong host)"
-}
-
 // gitDiff returns changed files for local (non-PR) mode. When baseRef is
 // empty (the common local-dev case), it diffs the working tree - the union
 // of unstaged and staged changes - which is what a developer running
@@ -534,11 +522,6 @@ func splitLines(out []byte) []string {
 		}
 	}
 	return lines
-}
-
-func hasGH() bool {
-	_, err := exec.LookPath("gh")
-	return err == nil
 }
 
 func isNumericString(s string) bool {

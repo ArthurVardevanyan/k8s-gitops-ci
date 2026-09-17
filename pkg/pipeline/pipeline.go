@@ -44,7 +44,7 @@ type Options struct {
 	// regardless of this flag.
 	PostComment     bool
 	Verbose         bool
-	Forge           string // explicit forge name (e.g. "github", "gitlab"); empty means auto-detect
+	Forge           string   // explicit forge name (e.g. "github", "gitlab"); empty means auto-detect
 	AssumeOpenShift bool     // treat OpenShift/OKD-only API groups as exempt from the sync-options check
 	DisabledChecks  []string // IDs to disable entirely (e.g. "sync-options", "golangci", "avp"); only affects steps that default to enabled
 	EnabledChecks   []string // IDs to explicitly enable; only affects steps that default to disabled (e.g. "kyverno")

@@ -263,3 +263,18 @@ func TestParseUnsignedCommits_UnverifiedTreatedAsUnsigned(t *testing.T) {
 		t.Fatalf("expected 1 unsigned commit, got %v", got)
 	}
 }
+
+func TestGhResponseHint(t *testing.T) {
+	if hint := ghResponseHint([]byte(`{"filename":"a"}`)); hint != "" {
+		t.Errorf("expected no hint for JSON object, got %q", hint)
+	}
+	if hint := ghResponseHint([]byte(`[{"filename":"a"}]`)); hint != "" {
+		t.Errorf("expected no hint for JSON array, got %q", hint)
+	}
+	if hint := ghResponseHint(nil); hint != "" {
+		t.Errorf("expected no hint for empty response, got %q", hint)
+	}
+	if hint := ghResponseHint([]byte("<html>Not Found</html>")); hint == "" {
+		t.Error("expected a hint for a non-JSON (HTML) response")
+	}
+}

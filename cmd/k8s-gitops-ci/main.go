@@ -10,8 +10,8 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/config"
-	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/all" // registers all built-in forges via init()
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/csv"
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/all" // registers all built-in forges via init()
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/ghostpatch"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/hook"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/kustomize"
@@ -204,12 +204,12 @@ func runBuildYAML(args []string) error {
 // failing pipeline run can be reproduced with "test" using an equivalent
 // flag set.
 type validatorFlagSet struct {
-	url, pr, targetBranch, hookSource, forge string
-	dirs, disableChecks, enableChecks        string
-	concurrency                              int
+	url, pr, targetBranch, hookSource, forge  string
+	dirs, disableChecks, enableChecks         string
+	concurrency                               int
 	assumeOpenshift, verbose, lintOnly, quiet bool
-	all, upstreamSchemas                     bool
-	apps, clusters                           []string
+	all, upstreamSchemas                      bool
+	apps, clusters                            []string
 }
 
 // bindValidatorFlags registers the shared flags on fs and returns the

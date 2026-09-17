@@ -382,8 +382,21 @@ var errPRFileNoGH = errNoGH{}
 
 type errNoGH struct{}
 
-func (errNoGH) Error() string   { return "gh command not available" }
-func (errNoGH) Unwrap() error   { return forge.ErrCLINotFound }
+func (errNoGH) Error() string { return "gh command not available" }
+func (errNoGH) Unwrap() error { return forge.ErrCLINotFound }
+
+func hasGH() bool {
+	_, err := exec.LookPath("gh")
+	return err == nil
+}
+
+func ghResponseHint(out []byte) string {
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" || strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		return ""
+	}
+	return " (gh returned a non-JSON response; check `gh auth status` - the token may be invalid/expired or pointed at the wrong host)"
+}
 
 // ---------------------------------------------------------------------------
 // Forge implementation (implements forge.Forge)
@@ -447,9 +460,30 @@ func (f *ghForge) ValidateChecklist(repoURL, pr string) error {
 }
 
 func (f *ghForge) FetchFiles(repoURL, pr string) ([]forge.FileChange, error) {
-	// gh fetch-files implementation would go here.
-	// For now, return an error indicating the CLI tool is not available.
-	return nil, errPRFileNoGH
+	if !f.IsAvailable(repoURL, pr) {
+		return nil, fmt.Errorf("no repo/PR context available for FetchFiles")
+	}
+	if !hasGH() {
+		return nil, fmt.Errorf("gh command not available; %s", f.AuthHint())
+	}
+	repo := extractRepo(repoURL)
+	if repo == "" {
+		return nil, fmt.Errorf("could not extract repo from URL: %s", repoURL)
+	}
+	out, err := exec.CommandContext(
+		context.Background(), "gh", "api", "--paginate",
+		"-H", "Accept: application/vnd.github+json",
+		"-H", "X-GitHub-Api-Version: 2022-11-28",
+		fmt.Sprintf("repos/%s/pulls/%s/files", repo, pr),
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh api files: %w%s", err, ghResponseHint(out))
+	}
+	var files []forge.FileChange
+	if err := json.Unmarshal(out, &files); err != nil {
+		return nil, fmt.Errorf("parsing PR files response: %w%s", err, ghResponseHint(out))
+	}
+	return files, nil
 }
 
 func (f *ghForge) ResolveRevision(raw, _ string) string {
@@ -477,7 +511,7 @@ func (f *ghForge) UpsertComment(repoURL, pr, marker, body string) error {
 		return err
 	}
 	// Create new comment.
-	_, err = c.ghStdin(body, "pr", "comment", pr, "--body-file", "@-")
+	_, err = c.ghStdin(body, "pr", "comment", pr, "--body-file", "-")
 	return err
 }
 
@@ -546,4 +580,3 @@ func (f *ghForge) Matches(rawURL, _ string) int {
 	}
 	return forge.AffinityNone
 }
-
