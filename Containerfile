@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
 
 # OS packages available in UBI repos
 RUN microdnf install -y --nodocs --setopt=install_weak_deps=0 \
