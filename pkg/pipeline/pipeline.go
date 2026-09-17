@@ -93,7 +93,7 @@ func Run(opts Options) error {
 	log.Info("%s", version.String())
 	log.Info("URL: %s", opts.URL)
 	log.Info("PR: %s", opts.PR)
-	log.Info("Revision: %s", resolveRevision(opts.Revision, opts.PR))
+	log.Info("Revision: %s", forge.Detect(opts.URL, opts.Forge).ResolveRevision(opts.Revision, opts.PR))
 
 	log.Header("Setup")
 	setupStart := time.Now()
@@ -322,7 +322,7 @@ func setupWorkdir(opts Options) (cleanup func(), err error) {
 		return noop, nil
 	}
 
-	revision := resolveRevision(opts.Revision, opts.PR)
+	revision := forge.Detect(opts.URL, opts.Forge).ResolveRevision(opts.Revision, opts.PR)
 	dir, err := git.Clone(git.CloneOptions{URL: opts.URL, Revision: revision, Verbose: opts.Verbose})
 	if err != nil {
 		return noop, fmt.Errorf("cloning %s: %w", opts.URL, err)
@@ -342,22 +342,6 @@ func setupWorkdir(opts Options) (cleanup func(), err error) {
 		_ = os.Chdir(origWD)
 		_ = git.Cleanup(dir)
 	}, nil
-}
-
-// resolveRevision determines the git revision to check out. An explicit
-// raw revision always wins. Otherwise, a valid PR number resolves to that
-// PR's head ref (refs/pull/<pr>/head) so PR runs check out the PR's actual
-// commits instead of falling through to the target repo's default branch -
-// which would silently validate the wrong code. With neither set, "HEAD"
-// requests the clone's default branch.
-func resolveRevision(raw, pr string) string {
-	if raw != "" {
-		return raw
-	}
-	if isValidPR(pr) {
-		return fmt.Sprintf("refs/pull/%s/head", pr)
-	}
-	return "HEAD"
 }
 
 func isValidPR(pr string) bool {
@@ -413,7 +397,7 @@ func toValidatorOptions(opts Options) validator.Options {
 		RepoURL:         opts.URL,
 		PR:              opts.PR,
 		BaseRef:         resolveBaseRef(opts.TargetBranch),
-		Revision:        resolveRevision(opts.Revision, opts.PR),
+		Revision:        forge.Detect(opts.URL, opts.Forge).ResolveRevision(opts.Revision, opts.PR),
 		TriggerComment:  opts.TriggerComment,
 		HookSource:      opts.HookSource,
 		LintOnly:        opts.LintOnly,

@@ -649,38 +649,6 @@ func TestPostComment_QueriesForeignMarkersFromCommentPolicy(t *testing.T) {
 	}
 }
 
-// ── resolveRevision ───────────────────────────────────────────────────────
-
-func TestResolveRevision_ExplicitWins(t *testing.T) {
-	if got := resolveRevision("v1.2.3", "42"); got != "v1.2.3" {
-		t.Errorf("resolveRevision = %q, want %q", got, "v1.2.3")
-	}
-}
-
-func TestResolveRevision_PRFallsBackToRefsPullHead(t *testing.T) {
-	// This is the correctness fix: a PR run with no explicit --revision
-	// must check out the PR's own commits, not the target repo's default
-	// branch - otherwise the pipeline would silently validate the wrong code.
-	if got := resolveRevision("", "42"); got != "refs/pull/42/head" {
-		t.Errorf("resolveRevision = %q, want %q", got, "refs/pull/42/head")
-	}
-}
-
-func TestResolveRevision_NoRevisionNoPR_DefaultsToHEAD(t *testing.T) {
-	if got := resolveRevision("", ""); got != "HEAD" {
-		t.Errorf("resolveRevision = %q, want %q", got, "HEAD")
-	}
-}
-
-func TestResolveRevision_InvalidPR_DefaultsToHEAD(t *testing.T) {
-	// A placeholder/invalid PR value must not be templated into the ref.
-	if got := resolveRevision("", "{{ params.pr }}"); got != "HEAD" {
-		t.Errorf("resolveRevision = %q, want %q", got, "HEAD")
-	}
-}
-
-// ── setupWorkdir ──────────────────────────────────────────────────────────
-
 func newPipelineFixture(t *testing.T) (repoPath string) {
 	t.Helper()
 	dir := t.TempDir()
