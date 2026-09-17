@@ -218,8 +218,8 @@ func (n *nullForge) DeleteComments(_, _ string, _ ...string) error {
 	return nil
 }
 func (n *nullForge) ExtractRepo(s string) string { return s }
-func (n *nullForge) FillFromEnv() (string, string, string, string) {
-	return "", "", "", ""
+func (n *nullForge) FillFromEnv() (url, pr, revision, targetBranch string) {
+	return url, pr, revision, targetBranch
 }
 func (n *nullForge) AuthHint() string        { return "" }
 func (n *nullForge) Matches(_, _ string) int { return 0 }

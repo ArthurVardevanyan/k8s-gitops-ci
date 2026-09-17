@@ -377,14 +377,6 @@ func AuthHint() string {
 	return "Set GH_TOKEN or run 'gh auth login'."
 }
 
-// errPRFile is returned when PR file fetching fails because gh is not available.
-var errPRFileNoGH = errNoGH{}
-
-type errNoGH struct{}
-
-func (errNoGH) Error() string { return "gh command not available" }
-func (errNoGH) Unwrap() error { return forge.ErrCLINotFound }
-
 func hasGH() bool {
 	_, err := exec.LookPath("gh")
 	return err == nil
@@ -557,8 +549,8 @@ func (f *ghForge) ExtractRepo(repoURL string) string {
 	return extractRepo(repoURL)
 }
 
-func (f *ghForge) FillFromEnv() (string, string, string, string) {
-	return "", "", "", ""
+func (f *ghForge) FillFromEnv() (url, pr, revision, targetBranch string) {
+	return url, pr, revision, targetBranch
 }
 
 func (f *ghForge) AuthHint() string {
