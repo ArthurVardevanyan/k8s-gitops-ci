@@ -785,6 +785,15 @@ local `test` run against a live working tree, which always has an empty
 under `DryRunParse`); when either is unavailable, every ambiguous mismatch
 stays blocking - the conservative pre-comparison policy.
 
+One caveat for ad-hoc/CLI runs: `--app`/`--cluster` targeting takes priority
+over diff-based changeset resolution (`resolveChangeset` →
+`resolveTargetOverlays`), replacing the changeset with **every file under the
+targeted directories**. A targeted run therefore treats every overlay in scope
+as directly touched, so it exercises the direct-blocking path and never
+downgrades pre-existing drift. That is correct for an intentional "validate
+this app/cluster in full" run, but it means such a run cannot reproduce a CI
+PR's pre-existing-vs-new classification.
+
 Like Kustomize Build, the Scaffold Validation section itself is composed
 from five always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec,
 Disabled Overlays, Pre-Existing Scaffold Drift, Cluster Coverage -
