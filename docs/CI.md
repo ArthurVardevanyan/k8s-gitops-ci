@@ -28,6 +28,7 @@ package map; this is the detailed, step-by-step reference.
     - [Kustomize Fix](#kustomize-fix)
     - [Ghost Patch Detection](#ghost-patch-detection)
     - [Scaffold Validation](#scaffold-validation)
+      - [Baseline Comparison (Pre-existing Drift Filtering)](#baseline-comparison-pre-existing-drift-filtering)
     - [Registered checks](#registered-checks)
       - [Runtime validation checks (admission rules)](#runtime-validation-checks-admission-rules)
         - [Every check must cite a verifiable upstream function](#every-check-must-cite-a-verifiable-upstream-function)
@@ -698,6 +699,14 @@ tested, cover every way a change can require this:
   mismatch, not-yet-rolled-out cluster → skip) and `operatorOverlays` (full)
   vs. `clusterOverlays` (per-cluster, driven by `RunOptions.FullTest`) split.
 
+Separately from drift detection, `scaffold.Generate` runs the same tool in
+**write mode** for one app and hashes the resulting overlay content
+(`scaffold.GenerateResult`). Under `DryRunParse` it uses `scaffold.GenerateArgs`
+(the write-mode counterpart to `ScaffoldArgs`: the dry-run flag dropped, run in
+a given `WorkDir`); under `DiffDirs` it reuses the `--output`-to-directory
+contract. It backs the baseline comparison below and is a no-op seam when
+`GenerateArgs` is unset.
+
 For each app, `pkg/scaffold.Run` regenerates its overlays via the scaffold
 tool and diffs the result against every overlay actually being checked,
 **bounded-parallel** (up to
@@ -716,9 +725,10 @@ failure - so a transient network blip during an in-tool fetch doesn't fail
 the whole pipeline. Only output that matches `scaffold.IsTransientError`
 (default: the common transient network signatures) is retried; a
 context-deadline timeout or any non-transient error is never retried and
-fails fast on the first attempt. An overlay is skipped rather
-than failed when it's disabled - either explicitly
-(`scaffoldDisabled: [...]` in the app's own scafctl config - see
+fails fast on the first attempt.
+
+An overlay is skipped rather than failed when it's disabled - either
+explicitly (`scaffoldDisabled: [...]` in the app's own scafctl config - see
 `scaffold.IsOverlayDisabled`), via a `disabled: true` flag on its
 override entry (`overlayDefinitions.overrides.<cluster>.disabled` - the
 `scaffold.OverlayConfigDisabled` seam, whose generic default reads that
@@ -728,36 +738,52 @@ widely-used shape), or via change-group 0
 `scaffold.Summary.SkippedClusters`, aggregated per app by
 `runScaffoldValidation` and flattened by `flattenSkippedClusters` into the
 Scaffold Validation section's "Cluster Coverage" sub-dropdown). A scafctl
-execution failure is always treated as blocking. A content mismatch is
-blocking when the PR itself touches the affected overlay (or a base/
-component it inherits from - `isOverlayRelatedToChangedFiles`; the
-overlay's own directory and the app's `base/` are coarse signals, but a
-`components/<name>/<version>/` change only counts when that specific
-overlay's kustomization reference chain actually includes the changed
-version directory - resolved via `overlay.RefsChangedDir` over the
-`kustomize.ResolveRefs` graph - so version-partitioned components
-(`components/foo/v0.21.0` vs `components/foo/v0.19.1`) don't blame an
-overlay pinned to a different, unaffected version); otherwise
-it's checked against the merge-base template/config
-(`computeBaselineMismatches`, gated on `Options.BaseRef` being set - i.e.
-an actual CI/PR run, never a local `test` run against a live working
-tree, which always has an empty `BaseRef`) and downgraded to a
-non-blocking "Pre-Existing Scaffold Drift" entry (⚠️) when it mismatches
-there too - this accounts for drift caused by something external to the
-PR (e.g. a shared data source changing independently) rather than by the
-PR's own edits. `computeBaselineMismatches` mutates the app's on-disk
-template/config files in place for the duration of the re-run (backed up
-and restored via `defer`, so a panic mid-run can never leave the working
-tree altered) - a real but substantially riskier technique than a flat
-"any drift blocks" policy, which is why it's reserved for exactly the
-case it exists to fix rather than applied unconditionally. Missing
-clusters themselves are **not** blocking, unlike drift/exec failures - a
-skip is an expected, informational "here's what wasn't checked and why",
+execution failure is always treated as blocking.
+
+Missing clusters themselves are **not** blocking, unlike drift/exec failures:
+a skip is an expected, informational "here's what wasn't checked and why",
 never a finding (see `scaffold.Run`'s own doc comment), so "Cluster
 Coverage" renders as ℹ️ rather than ⚠️/❌ when clusters are skipped - a
 deliberately quieter tier than an actual (non-blocking) warning like
 "Pre-Existing Scaffold Drift", so a reader can tell "just FYI" apart from
 "worth a second look."
+
+#### Baseline Comparison (Pre-existing Drift Filtering)
+
+A content mismatch is blocking when the PR directly touches the affected
+overlay's own files or its app's scaffold template
+(`isOverlayScaffoldRelated`) - a change to either unambiguously changes what
+scaffold generates for it. A `base/` or `components/` edit is never
+scaffold-related: those aren't scaffold inputs at all (contrast
+`isOverlayRelatedToChangedFiles`, the render/build heuristic used by the
+build and kubeconform phases, whose `overlay.RefsChangedDir` version-precise
+component scoping applies there).
+
+An app scaffold-config edit is app-wide and ambiguous - it may or may not
+change any particular overlay's output - so it is deliberately **not**
+treated as directly related. Those mismatches are instead filtered against
+the **merge-base baseline**: `computeBaselineDrift` generates the app at
+both the merge-base and `HEAD`, each in its own throwaway `git worktree`
+(`git.AddWorktree`, so the caller's working tree is never read or written),
+and compares each overlay's generated content (`scaffold.Generate` +
+`scaffold.DiffOverlay`). This is the same baseline idea as the original
+pre-existing-drift filter, with the baseline established by re-**generating**
+at the merge-base rather than by swapping merge-base files into the live
+tree.
+
+- Equal generated content means the change under test does not alter that
+  overlay's output, so its drift is pre-existing/external (e.g. a shared data
+  source changing independently) and is downgraded to the non-blocking
+  "Pre-Existing Scaffold Drift" entry (⚠️), named with the drifted files.
+- Differing generated content means the PR's own change altered the expected
+  output, so the mismatch stays blocking - the author regenerated the app but
+  missed that overlay - and the differing files are named in the report.
+
+This is gated on `Options.BaseRef` being set (an actual CI/PR run, never a
+local `test` run against a live working tree, which always has an empty
+`BaseRef`) and on the generator being available (`scaffold.GenerateArgs`
+under `DryRunParse`); when either is unavailable, every ambiguous mismatch
+stays blocking - the conservative pre-comparison policy.
 
 Like Kustomize Build, the Scaffold Validation section itself is composed
 from five always-shown sub-dropdowns (Scaffold Drift, Scaffold Exec,

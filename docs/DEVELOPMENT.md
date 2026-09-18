@@ -636,15 +636,17 @@ count:
   one detected ghost is blocking, `StatusWarning` otherwise (see
   [`CI.md`](CI.md#ghost-patch-detection)).
 - **Scaffold Validation** (`ComposeScaffoldValidationSection`) — always
-  renders four children: Scaffold Drift, Scaffold Exec (both
-  `StatusError` on failure), Pre-Existing Scaffold Drift, and Cluster
-  Coverage. Real per-app scaffold-drift detection across three triggers
-  (template, config, and overlay changes — see
-  [`CI.md`](CI.md#scaffold-validation)). A mismatch the PR doesn't itself
-  touch is checked against the merge-base template/config
-  (`computeBaselineMismatches`) and rendered as a separate,
-  `StatusWarning` "Pre-Existing Scaffold Drift" child when it drifts
-  there too; skipped/not-yet-rolled-out clusters render as a
+  renders five children: Scaffold Drift, Scaffold Exec (both
+  `StatusError` on failure), Disabled Overlays, Pre-Existing Scaffold
+  Drift, and Cluster Coverage. Real per-app scaffold-drift detection
+  across three triggers (template, config, and overlay changes — see
+  [`CI.md`](CI.md#scaffold-validation)). A config-triggered mismatch the
+  PR doesn't directly touch is settled by generating the app at the
+  merge-base and `HEAD` in throwaway git worktrees and comparing each
+  overlay's generated content (`computeBaselineDrift`); equal content
+  renders as a `StatusWarning` "Pre-Existing Scaffold Drift" child,
+  differing content stays blocking. Skipped/not-yet-rolled-out clusters
+  render as a
   `StatusInfo` "Cluster Coverage" child (deliberately quieter than
   `StatusWarning` — per `scaffold.Run`'s own doc comment, a skip is
   informational, never a finding). (The README scaffold-status table's

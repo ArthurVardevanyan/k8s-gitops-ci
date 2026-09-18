@@ -1085,11 +1085,10 @@ func composeDisabledOverlaysChild(disabledOverlays []string) ReportSection {
 }
 
 // composePreExistingDriftChild builds the non-blocking "Pre-Existing
-// Scaffold Drift" sub-check: overlays that also drift against the
-// merge-base template/config (see computeBaselineMismatches in
-// scaffold_wiring.go) and that this PR doesn't itself touch. Surfaced for
-// visibility (⚠️), never promoted to an error - this PR isn't responsible
-// for fixing it.
+// Scaffold Drift" sub-check: overlays whose generated content is identical at
+// the merge-base and HEAD (see computeBaselineDrift in scaffold_wiring.go),
+// so the drift is external rather than this PR's. Surfaced for visibility
+// (⚠️), never promoted to an error - this PR isn't responsible for fixing it.
 func composePreExistingDriftChild(preExistingDriftSummary string) ReportSection {
 	if preExistingDriftSummary == "" {
 		return ReportSection{Name: "Pre-Existing Scaffold Drift", Status: StatusPassed, Summary: "None detected."}

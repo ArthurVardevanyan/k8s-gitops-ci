@@ -292,12 +292,13 @@ func TestIsOverlayRelatedToChangedFiles(t *testing.T) {
 
 func TestIsOverlayScaffoldRelated(t *testing.T) {
 	// Unlike isOverlayRelatedToChangedFiles, scaffold relatedness is a
-	// pure path-prefix check over genuine scaffold inputs - it needs no
-	// on-disk kustomization refs. Only the overlay's own files, the app's
-	// scaffold template, and the app's scaffold config count; a base/ or
-	// components/ edit (even one an overlay's kustomization chain reaches,
-	// transitively through a version-variant component) is never
-	// scaffold-related.
+	// pure path-prefix check over the files that unambiguously change an
+	// overlay's generated output - it needs no on-disk kustomization refs.
+	// Only the overlay's own files and the app's scaffold template count. A
+	// base/ or components/ edit is never scaffold-related (it isn't a
+	// scaffold input at all), and an app scaffold-config edit is also not
+	// directly related - it is app-wide and ambiguous, settled precisely by
+	// generated-content comparison (computeBaselineDrift), not the path.
 	chdirTemp(t)
 
 	cases := []struct {
@@ -309,8 +310,8 @@ func TestIsOverlayScaffoldRelated(t *testing.T) {
 		{"overlay itself changed", "c1", []string{"myapp/overlays/c1/kustomization.yaml"}, true},
 		{"overlay own patch changed", "c1", []string{"myapp/overlays/c1/patch.yaml"}, true},
 		{"template changed", "c1", []string{".scafctl/templates/myapp/overlays/kustomization.yaml"}, true},
-		{"config yaml changed", "c1", []string{".scafctl/configs/myapp.yaml"}, true},
-		{"config yml changed", "c1", []string{".scafctl/configs/myapp.yml"}, true},
+		{"config yaml changed is NOT directly related", "c1", []string{".scafctl/configs/myapp.yaml"}, false},
+		{"config yml changed is NOT directly related", "c1", []string{".scafctl/configs/myapp.yml"}, false},
 		{"base changed is NOT scaffold-related", "c1", []string{"myapp/base/deployment.yaml"}, false},
 		{"directly referenced component changed is NOT scaffold-related", "c1", []string{"myapp/components/foo/v1/x.yaml"}, false},
 		{"transitively referenced version-variant component changed is NOT scaffold-related", "c1", []string{"myapp/components/foo/v1-variant/x.yaml"}, false},
@@ -328,21 +329,41 @@ func TestIsOverlayScaffoldRelated(t *testing.T) {
 	}
 }
 
-func TestComputeBaselineMismatches_EmptyBaseRefSkipsEntirely(t *testing.T) {
-	// A local test run against a live working tree always has an
-	// empty BaseRef (see gitDiff's own doc comment) - this must be an
-	// instant no-op, never attempting a git call or touching any file,
-	// regardless of whether the CWD is even a git repo.
-	log := logger.NewLogger(false, "")
-	got := computeBaselineMismatches(Options{}, "myapp", log)
-	if len(got) != 0 {
-		t.Errorf("expected an empty baseline set, got %v", got)
+func TestIsAppScaffoldConfigChanged(t *testing.T) {
+	cases := []struct {
+		name    string
+		changed []string
+		want    bool
+	}{
+		{"config yaml changed", []string{".scafctl/configs/myapp.yaml"}, true},
+		{"config yml changed", []string{".scafctl/configs/myapp.yml"}, true},
+		{"other app config", []string{".scafctl/configs/otherapp.yaml"}, false},
+		{"overlay changed", []string{"myapp/overlays/c1/kustomization.yaml"}, false},
+		{"nothing changed", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isAppScaffoldConfigChanged("myapp", c.changed); got != c.want {
+				t.Errorf("isAppScaffoldConfigChanged(%v) = %v, want %v", c.changed, got, c.want)
+			}
+		})
 	}
 }
 
-// runGitForTest runs a git command in dir, failing the test on error - used
-// to build a small real repo so computeBaselineMismatches's merge-base +
-// backup/restore machinery can be exercised end to end.
+func TestComputeBaselineDrift_EmptyBaseRefSkipsEntirely(t *testing.T) {
+	// A local test run against a live working tree always has an empty
+	// BaseRef (see gitDiff's own doc comment) - this must be an instant
+	// no-op, never attempting a git call or generating anything.
+	log := logger.NewLogger(false, "")
+	res := computeBaselineDrift(Options{}, "myapp", []string{"c1"}, log)
+	if len(res.PreExisting) != 0 || len(res.Diffs) != 0 {
+		t.Errorf("expected an empty result, got %+v", res)
+	}
+}
+
+// runGitForTest runs a git command in the current directory, failing the test
+// on error - used to build small real repos so computeBaselineDrift's
+// merge-base + worktree machinery can be exercised end to end.
 func runGitForTest(t *testing.T, args ...string) {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "git", args...)
@@ -352,97 +373,130 @@ func runGitForTest(t *testing.T, args ...string) {
 	}
 }
 
-// TestComputeBaselineMismatches_RestoresFilesRegardlessOfOutcome is the
-// safety-critical guard for computeBaselineMismatches: whatever happens
-// during the merge-base re-run (scafctl not being configured for the
-// baseline content will itself typically error, which is fine - the
-// function must still degrade gracefully, never panic), the app's on-disk
-// template/config files must end up back at their pre-call (HEAD/PR)
-// content, never left sitting at the merge-base content it temporarily
-// swapped in.
-func TestComputeBaselineMismatches_RestoresFilesRegardlessOfOutcome(t *testing.T) {
-	chdirTemp(t)
-
-	runGitForTest(t, "init", "-q")
-	runGitForTest(t, "config", "user.email", "test@example.com")
-	runGitForTest(t, "config", "user.name", "Test")
-
-	configPath := filepath.Join(".scafctl", "configs", "myapp.yaml")
-	templatePath := filepath.Join(".scafctl", "templates", "myapp", "template.yaml")
-	mustWrite(t, configPath, "v1\n")
-	mustWrite(t, templatePath, "v1\n")
-	runGitForTest(t, "add", "-A")
-	runGitForTest(t, "commit", "-q", "-m", "base")
-	runGitForTest(t, "branch", "old-main") // simulates the PR's target branch
-
-	// The "PR's own commit": bump both files past the merge-base content.
-	mustWrite(t, configPath, "v2 (PR content)\n")
-	mustWrite(t, templatePath, "v2 (PR content)\n")
-	runGitForTest(t, "add", "-A")
-	runGitForTest(t, "commit", "-q", "-m", "pr change")
-
-	log := logger.NewLogger(false, "")
-	// Does not assert on the returned set's contents - scafctl isn't
-	// configured with a real solution for "v1"/"v2" content, so the
-	// re-run itself is expected to error out (Summary.Errors, no
-	// MismatchFiles) - only that it never panics and always restores.
-	_ = computeBaselineMismatches(Options{BaseRef: "old-main"}, "myapp", log)
-
-	gotConfig, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("reading config after call: %v", err)
-	}
-	if string(gotConfig) != "v2 (PR content)\n" {
-		t.Errorf("config file left at %q, want restored to the PR content %q", gotConfig, "v2 (PR content)\n")
-	}
-
-	gotTemplate, err := os.ReadFile(templatePath)
-	if err != nil {
-		t.Fatalf("reading template after call: %v", err)
-	}
-	if string(gotTemplate) != "v2 (PR content)\n" {
-		t.Errorf("template file left at %q, want restored to the PR content %q", gotTemplate, "v2 (PR content)\n")
-	}
+// withFakeGenerate substitutes generateScaffold for the duration of a test.
+func withFakeGenerate(t *testing.T, fn func(scaffold.GenerateOptions) (*scaffold.GenerateResult, error)) {
+	t.Helper()
+	orig := generateScaffold
+	generateScaffold = fn
+	t.Cleanup(func() { generateScaffold = orig })
 }
 
-// TestComputeBaselineMismatches_NewFileNotAtBaselineIsRemovedAfterRestore
-// guards the "file didn't exist at merge-base" branch: computeBaseline-
-// Mismatches only overwrites a template file with baseline content when
-// `git show` actually finds it there; for this test that means the
-// template file is never touched at all (it's the config file's baseline-
-// absence path that's meaningfully exercised elsewhere), but a brand new
-// template file added only in the PR's own commit must still exist,
-// untouched, after the call.
-func TestComputeBaselineMismatches_NewFileNotAtBaselineIsRemovedAfterRestore(t *testing.T) {
+// gitRepoWithConfigRevision builds a real repo whose merge-base ("old-main")
+// has scaffold config v1 and whose HEAD has v2, plus a committed overlay.
+func gitRepoWithConfigRevision(t *testing.T) {
+	t.Helper()
 	chdirTemp(t)
-
 	runGitForTest(t, "init", "-q")
 	runGitForTest(t, "config", "user.email", "test@example.com")
 	runGitForTest(t, "config", "user.name", "Test")
 
-	mustWrite(t, "README.md", "placeholder\n")
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "v1\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "c1", "kustomization.yaml"), "committed\n")
 	runGitForTest(t, "add", "-A")
 	runGitForTest(t, "commit", "-q", "-m", "base")
 	runGitForTest(t, "branch", "old-main")
 
-	// The app (config + template) is introduced entirely in the PR - it
-	// doesn't exist at all at the merge-base.
-	configPath := filepath.Join(".scafctl", "configs", "myapp.yaml")
-	templatePath := filepath.Join(".scafctl", "templates", "myapp", "template.yaml")
-	mustWrite(t, configPath, "new app\n")
-	mustWrite(t, templatePath, "new app\n")
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "v2\n")
 	runGitForTest(t, "add", "-A")
-	runGitForTest(t, "commit", "-q", "-m", "add myapp")
+	runGitForTest(t, "commit", "-q", "-m", "pr change")
+}
+
+// TestComputeBaselineDrift_EqualGeneratedContentIsPreExisting is the core
+// regression guard: when the PR's config edit does not change an overlay's
+// generated output, the drift there is external and must be downgraded rather
+// than blocking.
+func TestComputeBaselineDrift_EqualGeneratedContentIsPreExisting(t *testing.T) {
+	gitRepoWithConfigRevision(t)
+	withFakeGenerate(t, func(scaffold.GenerateOptions) (*scaffold.GenerateResult, error) {
+		return &scaffold.GenerateResult{Overlays: map[string]map[string]string{
+			"c1": {"kustomization.yaml": "identical-hash"},
+		}}, nil
+	})
 
 	log := logger.NewLogger(false, "")
-	_ = computeBaselineMismatches(Options{BaseRef: "old-main"}, "myapp", log)
-
-	got, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("expected the new app's config to still exist after the call, got: %v", err)
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	if !res.PreExisting["c1"] {
+		t.Errorf("expected c1 to be classified external, got %+v", res)
 	}
-	if string(got) != "new app\n" {
-		t.Errorf("config file = %q, want unchanged %q", got, "new app\n")
+	if len(res.Diffs) != 0 {
+		t.Errorf("expected no diffs, got %+v", res.Diffs)
+	}
+}
+
+// TestComputeBaselineDrift_DifferingContentBlocks is the other half: when the
+// PR's config edit does change an overlay's generated output, the drift is the
+// PR's responsibility and must stay blocking, with the differing files
+// reported.
+func TestComputeBaselineDrift_DifferingContentBlocks(t *testing.T) {
+	gitRepoWithConfigRevision(t)
+	withFakeGenerate(t, func(opts scaffold.GenerateOptions) (*scaffold.GenerateResult, error) {
+		cfg, _ := os.ReadFile(filepath.Join(opts.WorkDir, ".scafctl", "configs", "myapp.yaml"))
+		val := "v1"
+		if strings.Contains(string(cfg), "v2") {
+			val = "v2"
+		}
+		return &scaffold.GenerateResult{Overlays: map[string]map[string]string{
+			"c1": {"kustomization.yaml": val},
+		}}, nil
+	})
+
+	log := logger.NewLogger(false, "")
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	if res.PreExisting["c1"] {
+		t.Errorf("expected c1 NOT to be classified external, got %+v", res)
+	}
+	if got := res.Diffs["c1"]; len(got) != 1 || got[0] != "kustomization.yaml" {
+		t.Errorf("expected the differing file to be reported, got %v", got)
+	}
+}
+
+// TestComputeBaselineDrift_NeitherSideGeneratedIsInconclusive guards the
+// conservative edge: equal content is only meaningful when at least one side
+// actually generated the overlay.
+func TestComputeBaselineDrift_NeitherSideGeneratedIsInconclusive(t *testing.T) {
+	gitRepoWithConfigRevision(t)
+	withFakeGenerate(t, func(scaffold.GenerateOptions) (*scaffold.GenerateResult, error) {
+		return &scaffold.GenerateResult{Overlays: map[string]map[string]string{}}, nil
+	})
+
+	log := logger.NewLogger(false, "")
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	if res.PreExisting["c1"] {
+		t.Errorf("expected an inconclusive overlay to stay blocking, got %+v", res)
+	}
+}
+
+// TestComputeBaselineDrift_DoesNotMutateWorkingTree guards the safety property
+// that replaced the old in-place baseline swap: the comparison must never read
+// or write the caller's own working tree, only throwaway worktrees.
+func TestComputeBaselineDrift_DoesNotMutateWorkingTree(t *testing.T) {
+	gitRepoWithConfigRevision(t)
+	withFakeGenerate(t, func(scaffold.GenerateOptions) (*scaffold.GenerateResult, error) {
+		return &scaffold.GenerateResult{Overlays: map[string]map[string]string{}}, nil
+	})
+
+	configPath := filepath.Join(".scafctl", "configs", "myapp.yaml")
+	overlayPath := filepath.Join("myapp", "overlays", "c1", "kustomization.yaml")
+	log := logger.NewLogger(false, "")
+	_ = computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+
+	if got, _ := os.ReadFile(configPath); string(got) != "v2\n" {
+		t.Errorf("config = %q, want unchanged %q", got, "v2\n")
+	}
+	if got, _ := os.ReadFile(overlayPath); string(got) != "committed\n" {
+		t.Errorf("overlay = %q, want unchanged %q", got, "committed\n")
+	}
+}
+
+// TestComputeBaselineDrift_OutsideGitRepoDegrades ensures a non-git working
+// tree (or any worktree failure) degrades to "nothing external", never panics
+// or fails the run.
+func TestComputeBaselineDrift_OutsideGitRepoDegrades(t *testing.T) {
+	chdirTemp(t)
+	log := logger.NewLogger(false, "")
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	if len(res.PreExisting) != 0 {
+		t.Errorf("expected no external overlays outside a git repo, got %+v", res)
 	}
 }
 

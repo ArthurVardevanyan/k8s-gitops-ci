@@ -116,6 +116,22 @@ func TestExtractCreatedFiles(t *testing.T) {
 	}
 }
 
+func TestOverlayRelPath(t *testing.T) {
+	cases := []struct {
+		app, cluster, file, want string
+	}{
+		{"myapp", "dev", "myapp/overlays/dev/new.yaml", "new.yaml"},
+		{"myapp", "dev", "./myapp/overlays/dev/sub/x.yaml", "sub/x.yaml"},
+		{"myapp", "dev", "other/path.yaml", "other/path.yaml"},
+		{"myapp", "", "myapp/overlays/dev/new.yaml", "myapp/overlays/dev/new.yaml"},
+	}
+	for _, c := range cases {
+		if got := overlayRelPath(c.app, c.cluster, c.file); got != c.want {
+			t.Errorf("overlayRelPath(%q, %q, %q) = %q, want %q", c.app, c.cluster, c.file, got, c.want)
+		}
+	}
+}
+
 func TestIsInChangedFiles(t *testing.T) {
 	if !IsInChangedFiles("dev", []string{"app/overlays/dev/base.yaml"}) {
 		t.Error("expected in changed files")
@@ -500,6 +516,11 @@ func TestRun_DryRunParse_PerClusterDrift(t *testing.T) {
 	if len(summary.MismatchFiles) != 1 || summary.MismatchFiles[0] != "dev" {
 		t.Errorf("expected [dev] in MismatchFiles (normalized to cluster name), got %v", summary.MismatchFiles)
 	}
+	// The would-create file behind the mismatch is kept, relative to the
+	// overlay, so the report can name the drifted file.
+	if got := summary.MismatchPaths["dev"]; len(got) != 1 || got[0] != "new.yaml" {
+		t.Errorf("expected MismatchPaths[dev] = [new.yaml], got %v", summary.MismatchPaths)
+	}
 	// Drift must be reported only via MismatchFiles, never as an execution
 	// error - otherwise it would unconditionally block, bypassing the
 	// blocking-vs-pre-existing drift classification.
@@ -527,6 +548,9 @@ func TestRun_DryRunParse_FullTestSkipsNewCluster(t *testing.T) {
 	summary := Run(RunOptions{App: "myapp", Overlays: []string{"dev"}, FullTest: true})
 	if len(summary.MismatchFiles) != 1 || summary.MismatchFiles[0] != "dev" {
 		t.Errorf("expected [dev] mismatch (normalized to cluster name), got %v", summary.MismatchFiles)
+	}
+	if got := summary.MismatchPaths["dev"]; len(got) != 1 || got[0] != "new.yaml" {
+		t.Errorf("expected MismatchPaths[dev] = [new.yaml], got %v", summary.MismatchPaths)
 	}
 	if len(summary.Errors) != 0 {
 		t.Errorf("expected no execution errors for pure drift, got %v", summary.Errors)

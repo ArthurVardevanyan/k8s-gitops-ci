@@ -104,6 +104,34 @@ func Cleanup(dir string) error {
 	return os.RemoveAll(dir)
 }
 
+// AddWorktree creates a detached git worktree of ref under a fresh temporary
+// directory and returns its path plus a cleanup function. It lets a caller
+// materialize another revision's working tree (e.g. a merge-base's config and
+// templates) without mutating the caller's own checkout. cleanup is safe to
+// call more than once and is intended for defer; it never reports an error,
+// because failing to remove a temporary directory must not fail a run.
+//
+// ref may be any revision git accepts (a SHA, branch, or HEAD). The caller's
+// repository must be a normal (non-bare) clone; Clone produces one.
+func AddWorktree(ctx context.Context, ref string) (dir string, cleanup func(), err error) {
+	dir, err = os.MkdirTemp("", "k8s-gitops-ci-wt-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("create worktree dir: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "git", "worktree", "add", "--quiet", "--detach", dir, ref)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", nil, fmt.Errorf("git worktree add %s: %w: %s", ref, err, strings.TrimSpace(string(out)))
+	}
+	cleanup = func() {
+		// context.Background, not the caller's ctx: cleanup must still run
+		// (and remove the temp dir) even if that context was cancelled.
+		_ = exec.CommandContext(context.Background(), "git", "worktree", "remove", "--force", dir).Run()
+		_ = os.RemoveAll(dir)
+	}
+	return dir, cleanup, nil
+}
+
 // ShowRefPath returns the content of path at ref via git show.
 func ShowRefPath(ctx context.Context, ref, path string) ([]byte, error) {
 	return exec.CommandContext(ctx, "git", "show", fmt.Sprintf("%s:%s", ref, path)).Output()
