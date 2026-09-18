@@ -189,6 +189,47 @@ func TestClone_EmptyRevision_UsesDefaultBranch(t *testing.T) {
 	assertFileMissing(t, dir, "feature.txt")
 }
 
+func TestAddWorktree(t *testing.T) {
+	fx := newCloneFixture(t)
+	chdirForTest(t, fx.repoPath)
+
+	dir, cleanup, err := AddWorktree(context.Background(), fx.mainSHA)
+	if err != nil {
+		t.Fatalf("AddWorktree: %v", err)
+	}
+	defer cleanup()
+	assertFileExists(t, dir, "README.md")
+	// Detached at main, so the feature-only file is absent.
+	assertFileMissing(t, dir, "feature.txt")
+
+	cleanup()
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Error("cleanup should remove the worktree directory")
+	}
+}
+
+func TestAddWorktree_InvalidRef_Errors(t *testing.T) {
+	fx := newCloneFixture(t)
+	chdirForTest(t, fx.repoPath)
+
+	if _, _, err := AddWorktree(context.Background(), "does-not-exist"); err == nil {
+		t.Fatal("expected an error for an unresolvable ref")
+	}
+}
+
+// chdirForTest changes into dir for the duration of the test.
+func chdirForTest(t *testing.T, dir string) {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+}
+
 func TestClone_UnresolvableRevision_Errors(t *testing.T) {
 	fx := newCloneFixture(t)
 	dir, err := Clone(CloneOptions{URL: fx.repoPath, Revision: "refs/pull/999/head"})
