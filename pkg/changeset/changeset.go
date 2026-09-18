@@ -2,7 +2,6 @@ package changeset
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge"
 )
 
 // Options configures changed-file resolution.
@@ -21,6 +22,7 @@ type Options struct {
 	PR               string
 	BaseRef          string
 	IncludeDeletions bool
+	Forge            string // explicit forge name; empty means auto-detect from URL
 }
 
 // PRFile is a single entry from the GitHub "list pull request files" API.
@@ -426,47 +428,22 @@ func ExtractRepoFromURL(raw string) string {
 }
 
 // fetchPRFiles fetches the full list of PR files (with status) from the
-// GitHub API in one paginated call. --paginate ensures PRs with more than
-// one page of files (>30, gh's default page size) aren't silently
-// truncated. Callers filter/derive whatever subset they need from the
-// returned status field rather than issuing a second, differently-jq'd API
-// call, avoiding both an extra request and status-string duplication.
+// configured forge's API in one call. Callers filter/derive whatever subset
+// they need from the returned status field rather than issuing a second,
+// differently-jq'd API call, avoiding both an extra request and status-string
+// duplication.
 func fetchPRFiles(opts Options) ([]PRFile, error) {
-	if !hasGH() {
-		return nil, fmt.Errorf("gh command not available; %s", AuthHint())
-	}
-	repo := ExtractRepoFromURL(opts.RepoURL)
-	if repo == "" {
-		return nil, fmt.Errorf("could not extract repo from URL: %s", opts.RepoURL)
-	}
-	out, err := exec.CommandContext(
-		context.Background(), "gh", "api", "--paginate",
-		"-H", "Accept: application/vnd.github+json",
-		"-H", "X-GitHub-Api-Version: 2022-11-28",
-		fmt.Sprintf("repos/%s/pulls/%s/files", repo, opts.PR),
-	).Output()
+	eng := forge.Detect(opts.RepoURL, opts.Forge)
+	pf, err := eng.FetchFiles(opts.RepoURL, opts.PR)
 	if err != nil {
-		return nil, fmt.Errorf("gh api files: %w%s", err, ghResponseHint(out))
+		return nil, err
 	}
-	var files []PRFile
-	if err := json.Unmarshal(out, &files); err != nil {
-		// gh returned a non-JSON body (commonly an HTML error page) with a
-		// zero exit code - surface a hint instead of a cryptic JSON error.
-		return nil, fmt.Errorf("parsing PR files response: %w%s", err, ghResponseHint(out))
+	// Adapt forge.FileChange into our own PRFile type.
+	files := make([]PRFile, len(pf))
+	for i, p := range pf {
+		files[i] = PRFile{Filename: p.Filename, Status: p.Status}
 	}
 	return files, nil
-}
-
-// ghResponseHint inspects a gh api response body and, if it doesn't look
-// like JSON (e.g. an HTML error page), returns a short diagnostic suffix
-// pointing at the most common cause: an invalid/expired gh token or the
-// wrong gh host.
-func ghResponseHint(out []byte) string {
-	trimmed := strings.TrimSpace(string(out))
-	if trimmed == "" || strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		return ""
-	}
-	return " (gh returned a non-JSON response; check `gh auth status` - the token may be invalid/expired or pointed at the wrong host)"
 }
 
 // gitDiff returns changed files for local (non-PR) mode. When baseRef is
@@ -545,11 +522,6 @@ func splitLines(out []byte) []string {
 		}
 	}
 	return lines
-}
-
-func hasGH() bool {
-	_, err := exec.LookPath("gh")
-	return err == nil
 }
 
 func isNumericString(s string) bool {

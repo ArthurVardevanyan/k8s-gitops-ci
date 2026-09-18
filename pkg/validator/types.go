@@ -101,6 +101,11 @@ type Options struct {
 	// actually enabled, since preparing policies shells out to `kustomize
 	// build` and shouldn't be paid for runs that never use it.
 	PolicyPath string
+	// Forge is an explicitly selected forge name (e.g. "github", "gitlab");
+	// when non-empty it overrides URL-based auto-detection in
+	// forge.Detect(), allowing assertion of a specific forge implementation
+	// regardless of URL heuristics.
+	Forge string
 }
 
 // Result carries per-section findings.
