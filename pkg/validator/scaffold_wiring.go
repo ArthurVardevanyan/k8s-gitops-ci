@@ -86,8 +86,8 @@ type scaffoldValidationResult struct {
 // scaffold config changed: a config edit may or may not alter what scaffold
 // generates for any given overlay. computeBaselineDrift settles that question
 // precisely by generating the app at both the merge-base and HEAD - in two
-// throwaway git worktrees, so the caller's working tree is never mutated - and
-// comparing the generated content per overlay. Generated content equal at both
+// throwaway git worktrees, so generation never touches the caller's working
+// tree - and comparing the generated content per overlay. Generated content equal at both
 // revisions means the PR's config change does not affect the overlay, so the
 // drift is caused by something external (e.g. cluster-metadata API data
 // changing independently) and is downgraded to a non-blocking
@@ -460,9 +460,9 @@ func addWorktree(ctx context.Context, ref string) (dir string, cleanup func(), e
 // overlay's generated content.
 //
 // It runs each revision's generation in its own throwaway git worktree
-// (git.AddWorktree), so the caller's working tree is never read or written by
-// the comparison - replacing an earlier baseline technique that mutated the
-// app's on-disk config/templates in place. Content is compared after the tool
+// (git.AddWorktree), so generation never touches the caller's working tree -
+// replacing an earlier baseline technique that mutated the app's on-disk
+// config/templates in place. Content is compared after the tool
 // runs: an overlay the tool rewrites holds generated content, and one it skips
 // because "nothing changed" already equals its generated content, so the
 // post-run overlay tree is always the generated tree.
