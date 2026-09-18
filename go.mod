@@ -4,8 +4,8 @@ go 1.27.0
 
 require (
 	github.com/containernetworking/cni v1.3.1
-	github.com/google/cel-go v0.31.0
-	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260915102006-01bd6d82a470
+	github.com/google/cel-go v0.32.0
+	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20260918083452-c8f5937deb7b
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/yannh/kubeconform v0.8.0
 	golang.org/x/mod v0.41.0
