@@ -31,6 +31,7 @@ func runCIReport(args []string) error {
 		ciReport     = fs.String("ci-report", "", "path to a file with `task ci` failure detail (optional; embedded when ci-status=fail)")
 		replayStatus = fs.String("replay-status", "skipped", "live replay result: pass|warn|fail|skipped")
 		replayReport = fs.String("replay-report", "", "path to the replay's Markdown report (optional)")
+		forge        = fs.String("forge", "", "forge name (e.g. \"github\", \"gitlab\"); empty means auto-detect from URL")
 	)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -43,6 +44,7 @@ func runCIReport(args []string) error {
 		CIDetail:     cireport.ReadDetailFile(*ciReport),
 		ReplayStatus: *replayStatus,
 		ReplayReport: cireport.ReadDetailFile(*replayReport),
+		Forge:        *forge,
 		ReplayLabel:  "HomeLab",
 		DocsURL:      "https://github.com/ArthurVardevanyan/k8s-gitops-ci/blob/main/docs/DEVELOPMENT.md#end-to-end--regression-replay",
 	})

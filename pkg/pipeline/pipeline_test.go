@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version"
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge" // registers github forge via init()
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/github"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/logger"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/provider"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator"
@@ -111,18 +113,6 @@ func TestValidatorResultFailed_PassingRun(t *testing.T) {
 func TestValidatorResultFailed_Nil(t *testing.T) {
 	if validatorResultFailed(nil) {
 		t.Error("expected validatorResultFailed(nil) to be false")
-	}
-}
-
-func TestIsValidPR(t *testing.T) {
-	if isValidPR("") {
-		t.Error("empty PR invalid")
-	}
-	if isValidPR("{{ params.pr }}") {
-		t.Error("placeholder PR invalid")
-	}
-	if !isValidPR("123") {
-		t.Error("numeric PR valid")
 	}
 }
 
@@ -646,38 +636,6 @@ func TestPostComment_QueriesForeignMarkersFromCommentPolicy(t *testing.T) {
 		t.Errorf("expected postComment to query for the CommentPolicy's foreign marker, got log:\n%s", log)
 	}
 }
-
-// ── resolveRevision ───────────────────────────────────────────────────────
-
-func TestResolveRevision_ExplicitWins(t *testing.T) {
-	if got := resolveRevision("v1.2.3", "42"); got != "v1.2.3" {
-		t.Errorf("resolveRevision = %q, want %q", got, "v1.2.3")
-	}
-}
-
-func TestResolveRevision_PRFallsBackToRefsPullHead(t *testing.T) {
-	// This is the correctness fix: a PR run with no explicit --revision
-	// must check out the PR's own commits, not the target repo's default
-	// branch - otherwise the pipeline would silently validate the wrong code.
-	if got := resolveRevision("", "42"); got != "refs/pull/42/head" {
-		t.Errorf("resolveRevision = %q, want %q", got, "refs/pull/42/head")
-	}
-}
-
-func TestResolveRevision_NoRevisionNoPR_DefaultsToHEAD(t *testing.T) {
-	if got := resolveRevision("", ""); got != "HEAD" {
-		t.Errorf("resolveRevision = %q, want %q", got, "HEAD")
-	}
-}
-
-func TestResolveRevision_InvalidPR_DefaultsToHEAD(t *testing.T) {
-	// A placeholder/invalid PR value must not be templated into the ref.
-	if got := resolveRevision("", "{{ params.pr }}"); got != "HEAD" {
-		t.Errorf("resolveRevision = %q, want %q", got, "HEAD")
-	}
-}
-
-// ── setupWorkdir ──────────────────────────────────────────────────────────
 
 func newPipelineFixture(t *testing.T) (repoPath string) {
 	t.Helper()
