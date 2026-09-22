@@ -251,7 +251,12 @@ per step:
 
 - `Options.DisabledChecks []string` — turn off a step that defaults to
   **enabled** (most steps: `sync-options`, `markdownlint`, `prettier`,
-  `shellcheck`, `golangci`, `kubeconform`, `avp`, `kustomize-fix`, ...). For
+  `shellcheck`, `golangci`, `kubeconform`, `avp`, `kustomize-fix`, ...).
+  Three additional pipeline-layer IDs (`pr-title`, `unsigned-commits`,
+  `pr-checklist`) participate in the same ID vocabulary but are decided
+  by `pkg/pipeline`'s own case-exact `isCheckDisabled` matching (not
+  `stepEnabled`); they are registered in the validator's
+  `knownStepIDs` only so `warnUnknownCheckIDs` doesn't flag them. For
   `markdownlint`/`prettier`/`shellcheck`/`golangci`/`kustomize-fix`,
   `DisabledChecks` doesn't mean "org-specific opt-out" so much as "no
   `<tool>` binary available" - see [`CI.md`](CI.md#kustomize-fix) for why
