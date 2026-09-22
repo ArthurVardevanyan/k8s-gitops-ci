@@ -15,6 +15,7 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
     pipelinesascode.tekton.dev/task-1: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/base/clair-action/clair-action-task.yaml"
+    pipelinesascode.tekton.dev/task-2: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/tasks/buildah/0.8.0/buildah.yaml"
 spec:
   params:
     - name: git-url
@@ -850,9 +851,21 @@ spec:
             workspace: docker-config
         params:
           - name: IMAGE
-            value: $(params.IMAGE)
-          - name: IMAGE_TAG
-            value: $(params.IMAGE_TAG)
+            value: "$(params.IMAGE):$(params.IMAGE_TAG)"
+          - name: IMAGE_REPOSITORIES
+            value: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci,ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
+          - name: PLATFORMS
+            value: "linux/amd64,linux/arm64"
+          - name: DOCKERFILE
+            value: "./Containerfile"
+          - name: CONTEXT
+            value: "."
+          - name: FORMAT
+            value: "oci"
+          - name: TLSVERIFY
+            value: "false"
+          - name: STORAGE_DRIVER
+            value: "overlay"
         taskRef:
           name: buildah
           kind: Task
@@ -865,13 +878,13 @@ spec:
             operator: in
             values: ["push"]
         runAfter:
-          - build
+          - image-build
         taskRef:
           name: clair-action
           kind: Task
         params:
           - name: IMAGE
-            value: "$(tasks.build.results.IMAGE)"
+            value: "$(tasks.image-build.results.IMAGE_URL)"
 
   taskRunTemplate:
     serviceAccountName: pipeline
