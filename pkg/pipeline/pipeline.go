@@ -145,7 +145,7 @@ func Run(opts Options) error {
 		prStart := time.Now()
 		log.Header("PR Validation")
 		eng := forge.Detect(opts.URL, opts.Forge)
-		if !isCheckDisabled("pr-title", opts.DisabledChecks) {
+		if !isCheckDisabled(validator.StepPRTitle, opts.DisabledChecks) {
 			res.TitleErr = eng.ValidateTitle(opts.URL, opts.PR)
 			if res.TitleErr != nil {
 				log.Error("PR title: %v", res.TitleErr)
@@ -160,7 +160,7 @@ func Run(opts Options) error {
 				}
 			}
 		}
-		if !isCheckDisabled("unsigned-commits", opts.DisabledChecks) {
+		if !isCheckDisabled(validator.StepUnsignedCommits, opts.DisabledChecks) {
 			res.UnsignedErr = runUnsignedCheck(eng, opts.URL, opts.PR)
 			if res.UnsignedErr != nil {
 				log.Error("unsigned commits: %v", res.UnsignedErr)
@@ -168,7 +168,7 @@ func Run(opts Options) error {
 				log.Info("unsigned commits check: passed")
 			}
 		}
-		if shouldRunChecklistCheck(opts) && !isCheckDisabled("pr-checklist", opts.DisabledChecks) {
+		if shouldRunChecklistCheck(opts) && !isCheckDisabled(validator.StepPRChecklist, opts.DisabledChecks) {
 			res.ChecklistErr = eng.ValidateChecklist(opts.URL, opts.PR)
 			if res.ChecklistErr != nil {
 				log.Error("PR checklist: %v", res.ChecklistErr)
@@ -657,7 +657,7 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 
 func isCheckDisabled(id string, disabled []string) bool {
 	for _, d := range disabled {
-		if strings.EqualFold(d, id) {
+		if d == id {
 			return true
 		}
 	}

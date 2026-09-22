@@ -638,14 +638,16 @@ func TestPostComment_QueriesForeignMarkersFromCommentPolicy(t *testing.T) {
 }
 
 func TestIsCheckDisabled(t *testing.T) {
-	disabled := []string{"pr-title", "Unsigned-Commits"}
-	if !isCheckDisabled("pr-title", disabled) {
+	disabled := []string{validator.StepPRTitle, validator.StepUnsignedCommits}
+	if !isCheckDisabled(validator.StepPRTitle, disabled) {
 		t.Error("expected pr-title to be disabled")
 	}
-	if !isCheckDisabled("unsigned-commits", disabled) {
-		t.Error("expected unsigned-commits to be disabled (case-insensitive)")
+	if !isCheckDisabled(validator.StepUnsignedCommits, disabled) {
+		t.Error("expected unsigned-commits to be disabled")
 	}
-	if isCheckDisabled("pr-checklist", disabled) {
+	// Case-exact matching (consistent with stepEnabled/warnUnknownCheckIDs):
+	// a case-mismatched ID must not disable anything.
+	if isCheckDisabled(validator.StepPRChecklist, disabled) {
 		t.Error("expected pr-checklist not to be disabled")
 	}
 }
