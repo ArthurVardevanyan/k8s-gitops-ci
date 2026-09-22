@@ -48,6 +48,7 @@ var resourceScope = map[string]bool{
 	"apiextensions.k8s.io/CustomResourceDefinition":                           true,
 	"apiregistration.k8s.io/APIService":                                       true,
 	"apiserver.openshift.io/APIRequestCount":                                  true,
+	"apps.gitlab.com/GitLab":                                                  false,
 	"apps.openshift.io/DeploymentConfig":                                      false,
 	"apps/ControllerRevision":                                                 false,
 	"apps/DaemonSet":                                                          false,

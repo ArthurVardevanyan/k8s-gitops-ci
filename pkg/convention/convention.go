@@ -38,6 +38,8 @@ var KnownNonManifestFiles = map[string]bool{
 	".bulldozer.yaml":         true,
 	".policy.yml":             true,
 	".policy.yaml":            true,
+	".gitlab-ci.yml":          true,
+	".gitlab-ci.yaml":         true,
 }
 
 // IsKnownNonManifestFile reports whether path's basename is a known

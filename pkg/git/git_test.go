@@ -16,6 +16,28 @@ func TestCloneNotARepo(t *testing.T) {
 	}
 }
 
+func TestSanitizeURL(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"https://gitlab-ci-token:secret123@gitlab.example.com/org/repo.git", "https://gitlab.example.com/org/repo.git"},
+		{"fatal: unable to access 'https://user:token@gitlab.com/repo': 403", "fatal: unable to access 'https://gitlab.com/repo': 403"},
+		{"fatal: unable to access 'https://user:p@ssword@gitlab.com/repo': 403", "fatal: unable to access 'https://gitlab.com/repo': 403"},
+		{"https://user:p@ss@w@rd@gitlab.example.com/org/repo.git", "https://gitlab.example.com/org/repo.git"},
+		{"https://user:pass@gitlab.example.com:8443/org/repo.git", "https://gitlab.example.com:8443/org/repo.git"},
+		{"https://gitlab.example.com/@group/repo.git", "https://gitlab.example.com/@group/repo.git"},
+		{"https://github.com/org/repo.git", "https://github.com/org/repo.git"},
+		{"git@gitlab.example.com:org/repo.git", "git@gitlab.example.com:org/repo.git"},
+		{"invalid-url", "invalid-url"},
+	}
+	for _, tc := range tests {
+		if got := SanitizeURL(tc.in); got != tc.want {
+			t.Errorf("SanitizeURL(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestCleanup(t *testing.T) {
 	dir, err := os.MkdirTemp("", "git-test-*")
 	if err != nil {
