@@ -105,9 +105,23 @@ reset --hard FETCH_HEAD` + `git clean -fd` (works for any ref/SHA
    build only. See [RELEASE.md](RELEASE.md) for the exact rules and
    commands.
 
-A commented-out `clair-action` task (`runAfter: [build]`, referencing the
-external Task pulled in by the `task-1` annotation above) is present but
-disabled — see [Known limitations](#known-limitations).
+A dedicated `image-build` task (a step inside `build`, gated on
+`${PARAM_EVENT} == "push"`) builds and pushes the multi-arch container
+image (`linux/amd64` + `linux/arm64`) to
+`registry.arthurvardevanyan.com/homelab/k8s-gitops-ci` using the
+toolbox image's pre-installed `k8s-gitops-ci` binary and its `image
+publish` subcommand. This uses the Taskfile's `image:publish` target
+under the hood — the same `podman manifest` flow that the Taskfile's
+`image:publish` target exposes. Images are published **only on GA
+pushes** (never on RCs, PRs, or non-release pushes); the step gates on
+the `event` param and skips entirely when it's a PR. The `IMAGE` result
+is written to `/tekton/results/image` and consumed by the `clair-action`
+task (see below).
+
+The `clair-action` task (see [PaC trigger](#pac-trigger)) is now
+**enabled** (re-enabled alongside the image-build step). It runs as a
+child of `build`, receives the published image tag via the `IMAGE`
+result, and scans it for vulnerabilities.
 
 ## The lint task
 
@@ -256,10 +270,8 @@ headroom now that the steps actually parallelize.
   a real, visible false failure on that PR in the meantime. Not something
   more code in this repo can close: it's inherent to validating via a
   pre-built binary rather than the sources `build` is compiling.
-- **The Clair image-vulnerability scan is planned, not enabled.** The
+- **The Clair image-vulnerability scan is now active.** The
   `pipelinesascode.tekton.dev/task-1` annotation pulls in an external
-  Task definition, and a `clair-action` task block referencing it exists
-  in the pipeline — but that task block is entirely commented out
-  (`# TODO: clair scan (re-enable once image build is wired up)`). This
-  is consistent with container-image publishing itself being inactive
-  (see [RELEASE.md](RELEASE.md)) — there's no image to scan yet.
+  Task definition, and the `clair-action` task block is enabled — it
+  receives the published image tag from the `image-build` step's
+  `IMAGE` result and scans it for vulnerabilities.

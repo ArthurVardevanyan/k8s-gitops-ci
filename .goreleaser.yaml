@@ -50,18 +50,12 @@ builds:
       - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildVersion={{.Version}}
       - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildTime={{.Date}}
       - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.Commit={{.Commit}}
-kos:
-  - repositories:
-      - registry.arthurvardevanyan.com/homelab/k8s-gitops-ci
-    tags:
-      - "{{.Version}}"
-      - latest
-    bare: true
-    preserve_import_paths: false
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    main: ./cmd/k8s-gitops-ci
+# image building is handled by:
+#   - Taskfile.yml `image:build` / `image:publish` (podman, multi-arch)
+#   - the `.tekton/` pipeline's `image-build` task (in-cluster, GA only)
+#
+# goreleaser's docker/kos publishers are not used here.
+
 changelog:
   # Use GitHub's native auto-generated release notes ("What's Changed" +
   # New Contributors + Full Changelog compare link) as the release body.

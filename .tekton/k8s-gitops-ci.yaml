@@ -45,9 +45,17 @@ spec:
         type: string
       - name: target-branch
         type: string
+      - name: IMAGE
+        type: string
+        default: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"
+      - name: IMAGE_TAG
+        type: string
+        default: ""
     workspaces:
       - name: git_auth_secret
       - name: go-cache
+        optional: true
+      - name: docker-config
         optional: true
     tasks:
       - name: build
@@ -56,6 +64,8 @@ spec:
             workspace: git_auth_secret
           - name: go-cache
             workspace: go-cache
+          - name: docker-config
+            workspace: docker-config
         params:
           - name: git-url
             value: $(params.git-url)
@@ -69,6 +79,10 @@ spec:
             value: $(params.event)
           - name: target-branch
             value: $(params.target-branch)
+          - name: IMAGE
+            value: $(params.IMAGE)
+          - name: IMAGE_TAG
+            value: $(params.IMAGE_TAG)
         taskSpec:
           params:
             - name: git-url
@@ -86,11 +100,23 @@ spec:
             - name: target-branch
               type: string
               default: ""
-          results: []
+            - name: IMAGE
+              type: string
+              default: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"
+            - name: IMAGE_TAG
+              type: string
+              default: ""
           workspaces:
             - name: basic-auth
             - name: go-cache
               optional: true
+            - name: docker-config
+              optional: true
+          results:
+            - name: IMAGE
+              description: The built image reference (repository:tag)
+            - name: IMAGE_TAG
+              description: The image tag
           volumes:
             - name: home
               emptyDir: {}
@@ -598,6 +624,61 @@ spec:
                   goreleaser build --snapshot --clean
                 fi
 
+            - name: image-build
+              # Only runs on push events (releases, not PRs).  Reuses the
+              # toolbox image's pre-installed `k8s-gitops-ci` binary to
+              # build and push the multi-arch container image.
+              when:
+                - input: "$(params.event)"
+                  operator: in
+                  values: ["push"]
+              image: registry.arthurvardevanyan.com/homelab/toolbox:not_latest
+              env:
+                - name: PARAM_IMAGE
+                  value: $(params.IMAGE)
+                - name: PARAM_IMAGE_TAG
+                  value: $(params.IMAGE_TAG)
+                - name: PARAM_REVISION
+                  value: $(params.revision)
+                - name: PARAM_EVENT
+                  value: $(params.event)
+                - name: AUTH_PATH
+                  value: $(workspaces.basic-auth.path)
+              script: |
+                #!/bin/bash
+                set -o errexit
+                set -o nounset
+                set -o pipefail
+
+                : "${PARAM_IMAGE:=""}"
+                : "${PARAM_IMAGE_TAG:=""}"
+                : "${PARAM_REVISION:=""}"
+                : "${PARAM_EVENT:=""}"
+                : "${AUTH_PATH:=""}"
+
+                # No image to build for PRs — the step is gated on `event:
+                # push` above, so this is only reachable for pushes.
+                if [ -n "${PARAM_IMAGE}" ] && [ -n "${PARAM_IMAGE_TAG}" ]; then
+                  # The toolbox image has `k8s-gitops-ci` installed at
+                  # /usr/local/bin/k8s-gitops-ci — it includes `task
+                  # image:build`/`image:publish` support via the
+                  # Taskfile's `image:build`/`image:publish` targets (see
+                  # Taskfile.yml).  Use the binary directly to build and
+                  # push; this avoids needing podman/kos inside the task
+                  # itself.
+                  echo "Building image ${PARAM_IMAGE}:${PARAM_IMAGE_TAG}..."
+                  k8s-gitops-ci image publish \
+                    --image "${PARAM_IMAGE}" \
+                    --tag "${PARAM_IMAGE_TAG}" \
+                    --git-revision "${PARAM_REVISION}"
+                  echo "Image ${PARAM_IMAGE}:${PARAM_IMAGE_TAG} published successfully"
+                  # Output results for downstream tasks (clair-action).
+                  echo -n "${PARAM_IMAGE}:${PARAM_IMAGE_TAG}" | tee "$(results.IMAGE.path)"
+                  echo -n "${PARAM_IMAGE_TAG}" | tee "$(results.IMAGE_TAG.path)"
+                else
+                  echo "No image to build (IMAGE or IMAGE_TAG empty) — skipping"
+                fi
+
       - name: lint
         when:
           - input: "$(params.event)"
@@ -707,16 +788,19 @@ spec:
                   --comment \
                   --quiet
 
-      # TODO: clair scan (re-enable once image build is wired up)
-      # - name: clair-action
-      #   runAfter:
-      #     - build
-      #   taskRef:
-      #     name: clair-action
-      #     kind: Task
-      #   params:
-      #     - name: IMAGE
-      #       value: $(tasks.build.results.IMAGE)
+      - name: clair-action
+        when:
+          - input: "$(params.event)"
+            operator: in
+            values: ["push"]
+        runAfter:
+          - build
+        taskRef:
+          name: clair-action
+          kind: Task
+        params:
+          - name: IMAGE
+            value: "$(tasks.build.results.IMAGE)"
 
   taskRunTemplate:
     serviceAccountName: pipeline
