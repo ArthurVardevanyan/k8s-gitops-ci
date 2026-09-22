@@ -764,7 +764,7 @@ change any particular overlay's output - so it is deliberately **not**
 treated as directly related. Those mismatches are instead filtered against
 the **merge-base baseline**: `computeBaselineDrift` generates the app at
 both the merge-base and `HEAD`, each in its own throwaway `git worktree`
-(`git.AddWorktree`, so the caller's working tree is never read or written),
+(`git.AddWorktree`, so generation never touches the caller's working tree),
 and compares each overlay's generated content (`scaffold.Generate` +
 `scaffold.DiffOverlay`). This is the same baseline idea as the original
 pre-existing-drift filter, with the baseline established by re-**generating**
