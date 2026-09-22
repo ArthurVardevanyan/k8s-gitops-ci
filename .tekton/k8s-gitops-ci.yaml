@@ -642,8 +642,6 @@ spec:
                   value: $(params.revision)
                 - name: PARAM_EVENT
                   value: $(params.event)
-                - name: AUTH_PATH
-                  value: $(workspaces.basic-auth.path)
               script: |
                 #!/bin/bash
                 set -o errexit
@@ -654,7 +652,6 @@ spec:
                 : "${PARAM_IMAGE_TAG:=""}"
                 : "${PARAM_REVISION:=""}"
                 : "${PARAM_EVENT:=""}"
-                : "${AUTH_PATH:=""}"
 
                 # No image to build for PRs — the step is gated on `event:
                 # push` above, so this is only reachable for pushes.
