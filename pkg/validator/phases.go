@@ -36,23 +36,40 @@ import (
 
 // Step IDs for standalone (non-check-registry) lint/build steps that
 // participate in the same generic enable/disable ID mechanism as
-// check-registry checks. See stepEnabled and the Options doc comment.
+// check-registry checks. The last three IDs (pr-title, unsigned-commits,
+// pr-checklist) are pipeline-layer PR check IDs: gated in pkg/pipeline via
+// isCheckDisabled (not via stepEnabled), registered here only so
+// warnUnknownCheckIDs doesn't flag them, since pipeline.toValidatorOptions
+// forwards the same DisabledChecks/EnabledChecks slices to the validator.
+// See stepEnabled and the Options doc comment.
 const (
-	stepMarkdownlint   = "markdownlint"
-	stepPrettier       = "prettier"
-	stepShellcheck     = "shellcheck"
-	stepGolangci       = "golangci"
-	stepKubeconform    = "kubeconform"
-	stepCEL            = "cel"
-	stepAVP            = "avp"
-	stepKyverno        = "kyverno"
-	stepScaffoldReadme = "scaffold-readme"
-	stepKustomizeFix   = "kustomize-fix"
+	stepMarkdownlint    = "markdownlint"
+	stepPrettier        = "prettier"
+	stepShellcheck      = "shellcheck"
+	stepGolangci        = "golangci"
+	stepKubeconform     = "kubeconform"
+	stepCEL             = "cel"
+	stepAVP             = "avp"
+	stepKyverno         = "kyverno"
+	stepScaffoldReadme  = "scaffold-readme"
+	stepKustomizeFix    = "kustomize-fix"
+	stepPRTitle         = "pr-title"
+	stepUnsignedCommits = "unsigned-commits"
+	stepPRChecklist     = "pr-checklist"
 )
 
 // StepKyverno is the exported alias for the internal kyverno step ID, so
 // external callers can reference validator.StepKyverno.
 const StepKyverno = stepKyverno
+
+// StepPRTitle/StepUnsignedCommits/StepPRChecklist are exported aliases for
+// the internal pipeline-layer PR check step IDs, so external callers can
+// reference validator.StepPRTitle, etc. rather than raw string literals.
+const (
+	StepPRTitle         = stepPRTitle
+	StepUnsignedCommits = stepUnsignedCommits
+	StepPRChecklist     = stepPRChecklist
+)
 
 // DefaultEnabledChecks is an enablement seam: when Options.EnabledChecks is
 // empty, this slice is used as the default enabled set in the
@@ -1068,22 +1085,24 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	tc.Record("Post-Build Validation", time.Since(postBuildStart), true)
 }
 
-// knownStepIDs is every standalone step ID, i.e. the IDs that participate in
-// the enable/disable mechanism without being registered checks.
+// knownStepIDs is every step ID that participates in the enable/disable
+// mechanism without being a registered check: the validator's own steps plus
+// the pipeline-layer PR check IDs (forwarded to the validator, never run by
+// it - see the const block above).
 var knownStepIDs = map[string]bool{
-	stepMarkdownlint:   true,
-	stepPrettier:       true,
-	stepShellcheck:     true,
-	stepGolangci:       true,
-	stepKubeconform:    true,
-	stepCEL:            true,
-	stepAVP:            true,
-	stepKyverno:        true,
-	stepScaffoldReadme: true,
-	stepKustomizeFix:   true,
-	"pr-title":         true,
-	"unsigned-commits": true,
-	"pr-checklist":     true,
+	stepMarkdownlint:    true,
+	stepPrettier:        true,
+	stepShellcheck:      true,
+	stepGolangci:        true,
+	stepKubeconform:     true,
+	stepCEL:             true,
+	stepAVP:             true,
+	stepKyverno:         true,
+	stepScaffoldReadme:  true,
+	stepKustomizeFix:    true,
+	stepPRTitle:         true,
+	stepUnsignedCommits: true,
+	stepPRChecklist:     true,
 }
 
 // warnUnknownCheckIDs reports DisabledChecks/EnabledChecks entries that match

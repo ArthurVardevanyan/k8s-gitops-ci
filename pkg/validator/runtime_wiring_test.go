@@ -450,7 +450,7 @@ func TestUnknownCheckIDsAreReported(t *testing.T) {
 
 	log := logger.NewLogger(false, "")
 	warnUnknownCheckIDs(Options{
-		DisabledChecks: []string{current, stale, "markdownlint"},
+		DisabledChecks: []string{current, stale, "markdownlint", StepPRTitle, StepUnsignedCommits, StepPRChecklist},
 		EnabledChecks:  []string{"kyverno"},
 	}, log)
 	out := strings.Join(log.Warnings(), "\n")
@@ -458,9 +458,13 @@ func TestUnknownCheckIDsAreReported(t *testing.T) {
 	if !strings.Contains(out, stale) {
 		t.Errorf("the stale pre-family ID %q was not reported:\n%s", stale, out)
 	}
-	// A valid check ID, a valid step ID and a valid default-off step must not
-	// warn, or the warning is noise that gets ignored.
-	for _, quiet := range []string{current, "markdownlint", "kyverno"} {
+	// A valid check ID, a valid step ID, valid default-off steps, and valid
+	// pipeline-layer PR check IDs must not warn, or the warning is noise that
+	// gets ignored.
+	for _, quiet := range []string{
+		current, "markdownlint", "kyverno",
+		StepPRTitle, StepUnsignedCommits, StepPRChecklist,
+	} {
 		if strings.Contains(out, quiet) {
 			t.Errorf("valid ID %q was reported as unknown:\n%s", quiet, out)
 		}

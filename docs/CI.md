@@ -61,7 +61,11 @@ package map; this is the detailed, step-by-step reference.
 
 ## Pipeline Flow
 
-`pkg/validator/phases.go`'s `RunAll` runs four or six phases, in order:
+`pipeline.Run` runs a PR Validation phase (PR title / unsigned commits /
+PR checklist) before the validator phases - only when a valid `--pr` is
+given, cheap and forge-API-only. PR title and unsigned commits also run
+under `--lint-only`; the checklist is additionally skipped there. The
+validator's `RunAll` then runs four or six phases, in order:
 
 ```mermaid
 flowchart TD
@@ -226,17 +230,59 @@ failure — this pipeline just isn't such a caller today.
 
 ## Validation Steps
 
-Every step below is listed in the order its owning phase runs (see
-[Pipeline Flow](#pipeline-flow) above): Linting, then Static Checks, then
-Build YAML (Kustomize Fix, Ghost Patch Detection, Scaffold Validation),
-then Post-Build Validation (Registered checks, NAD validation). Most
-steps are gated by a stable string **check ID** via
-`Options.DisabledChecks`/`EnabledChecks` (see `docs/DEVELOPMENT.md`'s
-[Generic check-enablement
-mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)) — each
-such step is headed by that ID in backticks below. A few steps (Ghost
-Patch Detection, Scaffold Validation's drift triggers, NAD validation)
-have no check ID at all and always run.
+Before the validator's phases, `pipeline.Run` also runs a pipeline-layer
+PR Validation phase (only when `--pr` is set): three checks gated by
+stable string IDs, decided by `pkg/pipeline`'s own `isCheckDisabled`
+function (case-exact matching, unlike `stepEnabled`) and registered in
+the validator's `knownStepIDs` so `warnUnknownCheckIDs` doesn't flag
+them; they have no effect in `test` mode (which calls `validator.RunAll`
+directly).
+
+### PR Validation phase (pipeline layer)
+
+#### `pr-title`
+
+Checks that the PR title follows the repo's required convention (default:
+Conventional Commits prefix) via the forge's `ValidateTitle`.
+
+- **Default:** on. **Disable:** `--disable-checks pr-title`. On pass, the
+  forge may additionally emit a non-blocking title suggestion; both
+  failure and suggestion render as a "PR Title" row in the PR Checks
+  section.
+- Gated in `pkg/pipeline` (not via `stepEnabled`), defaults to enabled,
+  fails the pipeline on violation. Also runs under `--lint-only`.
+
+#### `unsigned-commits`
+
+Requires that every commit on the PR carries a verified signature
+(via the forge's `GetUnsignedCommits`).
+
+- **Default:** on. **Disable:** `--disable-checks unsigned-commits`. Fails
+  the pipeline on any unsigned commit.
+- Gated in `pkg/pipeline`, defaults to enabled, also runs under
+  `--lint-only`.
+
+#### `pr-checklist`
+
+Checks that the PR body's checklist is complete (via the forge's
+`ValidateChecklist`).
+
+- **Default:** on. **Disable:** `--disable-checks pr-checklist`. Fails the
+  pipeline on an incomplete checklist.
+- Gated in `pkg/pipeline`; additionally **skipped under `--lint-only`**
+  (it covers build/validation-adjacent items that don't make sense when
+  the build phase is skipped).
+
+Steps in the validator's phases are listed next, in the order each owning
+phase runs: Linting, then Static Checks, then Build YAML (Kustomize Fix,
+Ghost Patch Detection, Scaffold Validation), then Post-Build Validation
+(Registered checks, NAD validation). Most are gated by a stable string
+**check ID** via `Options.DisabledChecks`/`EnabledChecks` (see
+`docs/DEVELOPMENT.md`'s [Generic check-enablement
+mechanism](DEVELOPMENT.md#generic-check-enablement-mechanism)) — each such
+step is headed by that ID in backticks below. A few steps (Ghost Patch
+Detection, Scaffold Validation's drift triggers, NAD validation) have no
+check ID at all and always run.
 
 ### Linting phase (all steps run concurrently)
 
@@ -1879,7 +1925,9 @@ See `docs/DEVELOPMENT.md`'s
 [Unified PR-comment report](DEVELOPMENT.md#unified-pr-comment-report-pkgvalidatorunified_reportgo-compose_sectionsgo)
 section for the full rendering model (sections, sub-check dropdowns,
 status icons). In short: one PR comment, each top-level section a
-collapsible `<details>` block - PR Checks, Linting, Static Checks,
+collapsible `<details>` block - PR Checks (whose title/unsigned-commits/
+pr-checklist sub-items are gateable via `--disable-checks`; see
+[Validation Steps](#validation-steps) above), Linting, Static Checks,
 Kustomize Build, Scaffold Validation, Scaffold Drift Protection,
 Resource Compliance, and CI Notes, plus NetworkAttachmentDefinition
 Validation when a NAD is present in the rendered-overlay chain and Kyverno
