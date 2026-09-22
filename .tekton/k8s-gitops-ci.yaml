@@ -625,14 +625,10 @@ spec:
                 fi
 
             - name: image-build
-              # Only runs on push events (releases, not PRs).  Reuses the
-              # toolbox image's pre-installed `k8s-gitops-ci` binary to
-              # build and push the multi-arch container image.
-              when:
-                - input: "$(params.event)"
-                  operator: in
-                  values: ["push"]
-              image: registry.arthurvardevanyan.com/homelab/toolbox:not_latest
+              # Builds the multi-arch container image (linux/amd64 +
+              # linux/arm64) using buildah and pushes to both Quay and GHCR.
+              # PR events use `pr-{number}` tag; push events use `main` (with
+              # optional version tag for GA releases).
               env:
                 - name: PARAM_IMAGE
                   value: $(params.IMAGE)
@@ -642,6 +638,8 @@ spec:
                   value: $(params.revision)
                 - name: PARAM_EVENT
                   value: $(params.event)
+                - name: PARAM_PR_NUMBER
+                  value: $(params.pull-request-number)
               script: |
                 #!/bin/bash
                 set -o errexit
@@ -652,29 +650,85 @@ spec:
                 : "${PARAM_IMAGE_TAG:=""}"
                 : "${PARAM_REVISION:=""}"
                 : "${PARAM_EVENT:=""}"
+                : "${PARAM_PR_NUMBER:=""}"
 
-                # No image to build for PRs — the step is gated on `event:
-                # push` above, so this is only reachable for pushes.
-                if [ -n "${PARAM_IMAGE}" ] && [ -n "${PARAM_IMAGE_TAG}" ]; then
-                  # The toolbox image has `k8s-gitops-ci` installed at
-                  # /usr/local/bin/k8s-gitops-ci — it includes `task
-                  # image:build`/`image:publish` support via the
-                  # Taskfile's `image:build`/`image:publish` targets (see
-                  # Taskfile.yml).  Use the binary directly to build and
-                  # push; this avoids needing podman/kos inside the task
-                  # itself.
-                  echo "Building image ${PARAM_IMAGE}:${PARAM_IMAGE_TAG}..."
-                  k8s-gitops-ci image publish \
-                    --image "${PARAM_IMAGE}" \
-                    --tag "${PARAM_IMAGE_TAG}" \
-                    --git-revision "${PARAM_REVISION}"
-                  echo "Image ${PARAM_IMAGE}:${PARAM_IMAGE_TAG} published successfully"
-                  # Output results for downstream tasks (clair-action).
-                  echo -n "${PARAM_IMAGE}:${PARAM_IMAGE_TAG}" | tee "$(results.IMAGE.path)"
-                  echo -n "${PARAM_IMAGE_TAG}" | tee "$(results.IMAGE_TAG.path)"
+                # Tagging strategy: PR events use pr-{number}, push uses main + optional version
+                if [ "${PARAM_EVENT}" = "pull_request" ]; then
+                  TAG="pr-${PARAM_PR_NUMBER}"
+                elif [ -n "${PARAM_IMAGE_TAG}" ]; then
+                  TAG="${PARAM_IMAGE_TAG}"
                 else
-                  echo "No image to build (IMAGE or IMAGE_TAG empty) — skipping"
+                  TAG="main"
                 fi
+
+                # Push to both registries (Quay + GHCR)
+                QUAY_IMAGE="registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"
+                GHCR_IMAGE="ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
+                IMAGE_REPOS="${QUAY_IMAGE},${GHCR_IMAGE}"
+                PLATFORMS="linux/amd64,linux/arm64"
+
+                echo "Building image ${PARAM_IMAGE}:${TAG} for ${PLATFORMS}..."
+                echo "Pushing to: ${IMAGE_REPOS}"
+
+                # Multi-arch build + push using buildah (same pattern as
+                # tekton/buildah task but inline — single-arch buildah is not
+                # available in the toolbox image).
+                MULTI_ARCH=false
+                if [ -n "${IMAGE_REPOS}" ]; then
+                  MULTI_ARCH=true
+                fi
+
+                if [ "${MULTI_ARCH}" = "true" ]; then
+                  # ── Multi-arch mode ────────────────────────────────────────
+                  # 1. Parse platforms into array
+                  IFS=',' read -ra PLATFORMS_ARRAY <<< "${PLATFORMS}"
+                  IMAGES=()
+                  for PLATFORM in "${PLATFORMS_ARRAY[@]}"; do
+                    ARCH="${PLATFORM##*/}"
+                    IMAGES+=("${ARCH}:")
+                  done
+
+                  # 2. Build each architecture
+                  for i in "${!PLATFORMS_ARRAY[@]}"; do
+                    PLATFORM="${PLATFORMS_ARRAY[$i]}"
+                    ARCH="${PLATFORM##*/}"
+                    IMAGE="${PARAM_IMAGE}:${ARCH}"
+                    echo "Building ${IMAGE} for ${PLATFORM}..."
+                    buildah bud --arch="${ARCH}" --format="oci" --tls-verify=false \
+                      -f ./Containerfile -t "${IMAGE}" .
+                  done
+
+                  # 3. Create and populate manifest list
+                  MANIFEST_IMAGE="${IMAGES[0]}"
+                  MANIFEST_TAG="${IMAGES[0]%%:*}"
+                  echo "Creating manifest ${MANIFEST_IMAGE}:${TAG}..."
+                  buildah manifest create "${MANIFEST_IMAGE}:${TAG}"
+                  for i in "${!PLATFORMS_ARRAY[@]}"; do
+                    ARCH="${PLATFORMS_ARRAY[$i]##*/}"
+                    IMAGE="${PARAM_IMAGE}:${ARCH}"
+                    echo "Adding ${IMAGE} (${ARCH}) to manifest..."
+                    buildah manifest add "${MANIFEST_IMAGE}:${TAG}" "docker://${IMAGE}"
+                  done
+
+                  # 4. Push manifest to all repositories
+                  for repo in ${IMAGE_REPOS//,/ }; do
+                    echo "Pushing manifest to ${repo}:${TAG}..."
+                    buildah manifest push --tls-verify=false "${MANIFEST_IMAGE}:${TAG}" "docker://${repo}:${TAG}"
+                  done
+
+                  # 5. Cleanup intermediate images
+                  for i in "${!PLATFORMS_ARRAY[@]}"; do
+                    ARCH="${PLATFORMS_ARRAY[$i]##*/}"
+                    IMAGE="${PARAM_IMAGE}:${ARCH}"
+                    buildah rm "${IMAGE}" 2>/dev/null || true
+                  done
+                fi
+
+                echo "Image ${PARAM_IMAGE}:${TAG} published successfully to both registries"
+
+                # Output results for downstream tasks (clair-action).
+                echo -n "${PARAM_IMAGE}:${TAG}" | tee "$(results.IMAGE.path)"
+                echo -n "${TAG}" | tee "$(results.IMAGE_TAG.path)"
 
       - name: lint
         when:
@@ -784,6 +838,26 @@ spec:
                   --disable-checks golangci \
                   --comment \
                   --quiet
+
+      - name: image-build
+        # Pushes the multi-arch container image to both Quay and GHCR using
+        # the remote buildah task.  PR events use `pr-{number}` tag; push
+        # events use `main` (with optional version tag for GA releases).
+        workspaces:
+          - name: source
+            workspace: git_auth_secret
+          - name: dockerconfig
+            workspace: docker-config
+        params:
+          - name: IMAGE
+            value: $(params.IMAGE)
+          - name: IMAGE_TAG
+            value: $(params.IMAGE_TAG)
+        taskRef:
+          name: buildah
+          kind: Task
+        runAfter:
+          - build
 
       - name: clair-action
         when:
