@@ -90,7 +90,7 @@ func Run(opts Options) error {
 	// the latter.
 	log.Header(opts.Providers.PipelineHeader())
 	log.Info("%s", version.String())
-	log.Info("URL: %s", opts.URL)
+	log.Info("URL: %s", git.SanitizeURL(opts.URL))
 	log.Info("PR: %s", opts.PR)
 	log.Info("Revision: %s", forge.Detect(opts.URL, opts.Forge).ResolveRevision(opts.Revision, opts.PR))
 
@@ -145,26 +145,30 @@ func Run(opts Options) error {
 		prStart := time.Now()
 		log.Header("PR Validation")
 		eng := forge.Detect(opts.URL, opts.Forge)
-		res.TitleErr = eng.ValidateTitle(opts.URL, opts.PR)
-		if res.TitleErr != nil {
-			log.Error("PR title: %v", res.TitleErr)
-		} else {
-			log.Info("PR title: passed")
-			// Non-blocking suggestion: consult the engine only after the
-			// required prefix has already passed - see
-			// forge.Forge.TitleSuggestion.
-			res.TitleSuggestion = eng.TitleSuggestion(opts.URL, opts.PR)
-			if res.TitleSuggestion != "" {
-				log.Warn("PR title suggestion: %s", res.TitleSuggestion)
+		if !isCheckDisabled("pr-title", opts.DisabledChecks) {
+			res.TitleErr = eng.ValidateTitle(opts.URL, opts.PR)
+			if res.TitleErr != nil {
+				log.Error("PR title: %v", res.TitleErr)
+			} else {
+				log.Info("PR title: passed")
+				// Non-blocking suggestion: consult the engine only after the
+				// required prefix has already passed - see
+				// forge.Forge.TitleSuggestion.
+				res.TitleSuggestion = eng.TitleSuggestion(opts.URL, opts.PR)
+				if res.TitleSuggestion != "" {
+					log.Warn("PR title suggestion: %s", res.TitleSuggestion)
+				}
 			}
 		}
-		res.UnsignedErr = runUnsignedCheck(eng, opts.URL, opts.PR)
-		if res.UnsignedErr != nil {
-			log.Error("unsigned commits: %v", res.UnsignedErr)
-		} else {
-			log.Info("unsigned commits check: passed")
+		if !isCheckDisabled("unsigned-commits", opts.DisabledChecks) {
+			res.UnsignedErr = runUnsignedCheck(eng, opts.URL, opts.PR)
+			if res.UnsignedErr != nil {
+				log.Error("unsigned commits: %v", res.UnsignedErr)
+			} else {
+				log.Info("unsigned commits check: passed")
+			}
 		}
-		if shouldRunChecklistCheck(opts) {
+		if shouldRunChecklistCheck(opts) && !isCheckDisabled("pr-checklist", opts.DisabledChecks) {
 			res.ChecklistErr = eng.ValidateChecklist(opts.URL, opts.PR)
 			if res.ChecklistErr != nil {
 				log.Error("PR checklist: %v", res.ChecklistErr)
@@ -324,7 +328,7 @@ func setupWorkdir(opts Options) (cleanup func(), err error) {
 	revision := forge.Detect(opts.URL, opts.Forge).ResolveRevision(opts.Revision, opts.PR)
 	dir, err := git.Clone(git.CloneOptions{URL: opts.URL, Revision: revision, Verbose: opts.Verbose})
 	if err != nil {
-		return noop, fmt.Errorf("cloning %s: %w", opts.URL, err)
+		return noop, fmt.Errorf("cloning %s: %w", git.SanitizeURL(opts.URL), err)
 	}
 
 	origWD, err := os.Getwd()
@@ -385,7 +389,7 @@ func (o *Options) Workers() int {
 
 func toValidatorOptions(opts Options) validator.Options {
 	return validator.Options{
-		RepoURL:         opts.URL,
+		RepoURL:         git.SanitizeURL(opts.URL),
 		PR:              opts.PR,
 		BaseRef:         resolveBaseRef(opts.TargetBranch),
 		Revision:        forge.Detect(opts.URL, opts.Forge).ResolveRevision(opts.Revision, opts.PR),
@@ -649,6 +653,15 @@ func composeSections(res *Result, opts Options) []validator.ReportSection {
 	}
 	sections = append(sections, validator.ComposeCINotesSection(body))
 	return sections
+}
+
+func isCheckDisabled(id string, disabled []string) bool {
+	for _, d := range disabled {
+		if strings.EqualFold(d, id) {
+			return true
+		}
+	}
+	return false
 }
 
 // EnvOptions loads options from environment.
