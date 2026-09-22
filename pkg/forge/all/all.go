@@ -6,4 +6,5 @@ package all
 
 import (
 	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/github" // registers github forge via init()
+	_ "github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/forge/gitlab" // registers gitlab forge via init()
 )
