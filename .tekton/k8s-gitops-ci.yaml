@@ -743,6 +743,8 @@ spec:
             value: "$(params.IMAGE):$(params.IMAGE_TAG)"
           - name: IMAGE_REPOSITORIES
             value: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci,ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
+          - name: IMAGE_TAG_SUFFIX
+            value: "${ARCH}"
           - name: PLATFORMS
             value: "linux/amd64,linux/arm64"
           - name: DOCKERFILE
