@@ -735,7 +735,7 @@ spec:
         # events use `main` (with optional version tag for GA releases).
         workspaces:
           - name: source
-            workspace: git_auth_secret
+            workspace: go-cache
           - name: dockerconfig
             workspace: docker-config
         params:
@@ -748,7 +748,7 @@ spec:
           - name: DOCKERFILE
             value: "./Containerfile"
           - name: CONTEXT
-            value: "."
+            value: "./src"
           - name: FORMAT
             value: "oci"
           - name: TLSVERIFY
