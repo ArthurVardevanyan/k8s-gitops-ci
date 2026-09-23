@@ -748,7 +748,7 @@ spec:
           - name: DOCKERFILE
             value: "./Containerfile"
           - name: CONTEXT
-            value: "./src"
+            value: "."
           - name: FORMAT
             value: "oci"
           - name: TLSVERIFY
