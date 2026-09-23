@@ -14,8 +14,6 @@ metadata:
     pipelinesascode.tekton.dev/max-concurrency: "1"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
-    pipelinesascode.tekton.dev/task-1: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/base/clair-action/clair-action-task.yaml"
-    pipelinesascode.tekton.dev/task-2: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/tasks/buildah/0.8.0/buildah.yaml"
 spec:
   params:
     - name: git-url
@@ -46,12 +44,6 @@ spec:
         type: string
       - name: target-branch
         type: string
-      - name: IMAGE
-        type: string
-        default: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"
-      - name: IMAGE_TAG
-        type: string
-        default: ""
     workspaces:
       - name: git_auth_secret
       - name: go-cache
@@ -80,10 +72,6 @@ spec:
             value: $(params.event)
           - name: target-branch
             value: $(params.target-branch)
-          - name: IMAGE
-            value: $(params.IMAGE)
-          - name: IMAGE_TAG
-            value: $(params.IMAGE_TAG)
         taskSpec:
           params:
             - name: git-url
@@ -99,12 +87,6 @@ spec:
             - name: event
               type: string
             - name: target-branch
-              type: string
-              default: ""
-            - name: IMAGE
-              type: string
-              default: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"
-            - name: IMAGE_TAG
               type: string
               default: ""
           workspaces:
@@ -728,56 +710,6 @@ spec:
                   --disable-checks golangci \
                   --comment \
                   --quiet
-
-      - name: image-build
-        # Pushes the multi-arch container image to both Quay and GHCR using
-        # the remote buildah task.  PR events use `pr-{number}` tag; push
-        # events use `main` (with optional version tag for GA releases).
-        workspaces:
-          - name: source
-            workspace: git_auth_secret
-          - name: dockerconfig
-            workspace: docker-config
-        params:
-          - name: IMAGE
-            value: "$(params.IMAGE):$(params.IMAGE_TAG)"
-          - name: IMAGE_REPOSITORIES
-            value: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci,ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
-          - name: PLATFORMS
-            value: "linux/amd64,linux/arm64"
-          - name: DOCKERFILE
-            value: "./Containerfile"
-          - name: CONTEXT
-            value: "."
-          - name: GIT_URL
-            value: $(params.git-url)
-          - name: GIT_REVISION
-            value: $(params.git-commit)
-          - name: FORMAT
-            value: "oci"
-          - name: TLSVERIFY
-            value: "false"
-          - name: STORAGE_DRIVER
-            value: "overlay"
-        taskRef:
-          name: buildah
-          kind: Task
-        runAfter:
-          - build
-
-      - name: clair-action
-        when:
-          - input: "$(params.event)"
-            operator: in
-            values: ["push"]
-        runAfter:
-          - image-build
-        taskRef:
-          name: clair-action
-          kind: Task
-        params:
-          - name: IMAGE
-            value: "$(tasks.image-build.results.IMAGE_URL)"
 
   taskRunTemplate:
     serviceAccountName: pipeline
