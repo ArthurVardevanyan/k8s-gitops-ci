@@ -1,0 +1,81 @@
+name: build-image
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        if: github.event_name == 'pull_request'
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    steps:
+      - run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          PR_TAG="pr-${PR_NUM}"
+          echo "Deleting PR tag ${PR_TAG}..."
+          # List all container package versions for this repo
+          JSON=$(gh api repos/${{ github.repository }}/packages/containers/k8s-gitops-ci/versions \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -o /dev/stdout 2>/dev/null)
+          # Find the package version ID that has the matching tag
+          PACKAGE_VERSION_ID=$(echo "$JSON" | jq -r '
+            .[] | select(.metadata.tags[]? == "'"${PR_TAG}"'") | .id
+          ' | head -1)
+          if [ -n "${PACKAGE_VERSION_ID}" ] && [ "${PACKAGE_VERSION_ID}" != "null" ]; then
+            gh api -X DELETE repos/${{ github.repository }}/packages/containers/k8s-gitops-ci/versions/${PACKAGE_VERSION_ID} \
+              -H "X-GitHub-Api-Version: 2022-11-28"
+            echo "Deleted package version ${PACKAGE_VERSION_ID} for tag ${PR_TAG}"
+          else
+            echo "No package version found for tag ${PR_TAG} (JSON length: $(echo "$JSON" | jq 'length'))"
+          fi

@@ -118,6 +118,11 @@ the `event` param and skips entirely when it's a PR. The `IMAGE` result
 is written to `/tekton/results/image` and consumed by the `clair-action`
 task (see below).
 
+> **Note:** Container image building has been migrated to GitHub Actions
+> (`.github/workflows/build-image.yml`) for native multi-arch support
+> (`linux/amd64` + `linux/arm64`) and simpler authentication. The Tekton
+> image pipeline (`.tekton/k8s-gitops-ci-image.yaml`) has been removed.
+
 The `clair-action` task (see [PaC trigger](#pac-trigger)) is now
 **enabled** (re-enabled alongside the image-build step). It runs as a
 child of `build`, receives the published image tag via the `IMAGE`

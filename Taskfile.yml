@@ -545,7 +545,8 @@ tasks:
 
   # image:build: Build a single-arch (native) image locally (useful for
   # quick iteration and for validating a Containerfile change before a
-  # release).
+  # release). Production image building is done via GitHub Actions
+  # (`.github/workflows/build-image.yml`).
   image:build:
     desc: Build a single-arch (native) image with podman
     vars:
@@ -557,6 +558,9 @@ tasks:
 
   # image:publish: Multi-arch image build + manifest push (the same pattern
   # as [docker-ntp/build-multiarch-podman.sh](https://github.com/ArthurVardevanyan/docker-ntp/blob/main/build-multiarch-podman.sh).
+  # Production image building is done via GitHub Actions
+  # (`.github/workflows/build-image.yml`); this target is for local
+  # development only (requires podman with qemu-binfmt support).
   # Requires: (1) podman with qemu-binfmt support for cross-arch builds
   # (2) `podman login` credentials for the target registry
   # (3) `{{.IMAGE}}:{{.IMAGE_TAG}}` override for release CI (the

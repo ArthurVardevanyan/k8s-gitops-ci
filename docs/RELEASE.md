@@ -115,13 +115,10 @@ today:
   Changed" list of merged PRs, a "New Contributors" section, and a Full
   Changelog compare link.
 - **Container images** — multi-arch (`linux/amd64` + `linux/arm64`) built
-  with `podman` via the Taskfile's `image:publish` target (the
-  `image:build` / `image:publish` pair from [TEKTON.md](TEKTON.md)'s
-  image-build section). Built and published inside the Tekton pipeline's
-  `image-build` task (see [TEKTON.md](TEKTON.md)) **only on GA pushes** —
-  RCs, PRs, and non-GA pushes do not publish images. The registry target
-  is `registry.arthurvardevanyan.com/homelab/k8s-gitops-ci`; the
-  `pipeline` ServiceAccount provides the `registry-auth` secret.
+  via GitHub Actions (`.github/workflows/build-image.yml`). Pushed to
+  `ghcr.io/${{ github.repository }}`: `pr-${PR_NUM}` on PRs, `latest` on
+  push to `main`. Tags are automatically cleaned up when PRs are
+  closed/merged.
 
 **Not currently active** — present in config but not shipping:
 
@@ -152,21 +149,28 @@ Everything runs inside the single Tekton build step described in
      GoReleaser's GitHub Releases API call with `target_commitish`
      auto-creates the tag on GitHub; the raw Git Data API isn't permitted
      for this pipeline's GitHub App token, which returns
-     `403: Resource not accessible by integration`), then runs GoReleaser
+     `403: Resoursce not accessible by integration`), then runs GoReleaser
      (`GORELEASER_CURRENT_TAG="v${VERSION}" goreleaser release --skip=ko --clean`)
      to publish the GitHub Release (binaries + native notes) against the
-     correct previous GA. The pipeline's dedicated `image-build` task
-     (see [TEKTON.md](TEKTON.md)) then builds and pushes the multi-arch
-     container image (`linux/amd64` + `linux/arm64`) to the registry —
-     images are published only on GA pushes, never on RCs or PRs.
+     correct previous GA. Container images are built separately via
+     GitHub Actions (see [Published artifacts](#published-artifacts)).
+
    - **RC** — `v${VERSION}` is already the latest GA tag, and there's a
      shippable change (see [Release candidates](#release-candidates)). The
      step cuts `v<next>-rc.N` as a GitHub pre-release.
+
    - **CI-only** — otherwise (no `VERSION` bump and nothing shippable since
      the last GA). **This is what makes ordinary merges CI-only.**
+
 3. **PR event:** a snapshot build only — no tag, no GitHub Release.
    `goreleaser build --snapshot --clean`. This validates
    that a real release build succeeds without publishing anything.
+4. **Container images** — built via GitHub Actions on `pull_request` and
+   `push` events targeting `main` (see
+   `.github/workflows/build-image.yml`):
+   - PR pushes: pushed as `pr-${PR_NUM}`, automatically deleted when the
+     PR is closed/merged.
+   - Pushes to `main`: pushed as `latest` (and also `sha-${sha}`).
 
 ## Cutting a release
 
@@ -184,8 +188,8 @@ change — not by a local tag push or a per-merge automation:
    under-bump for the commits since the last release.
 3. **Merge the PR.** That merge is a `push` to `main`; the pipeline sees
    `v${VERSION}` doesn't exist yet, so it tags `v${VERSION}` and publishes
-   the GitHub Release (binaries + native notes) **and** the multi-arch
-   container image (`linux/amd64` + `linux/arm64`).
+   the GitHub Release (binaries + native notes). Container images are built
+   separately via GitHub Actions.
 
 No one pushes a tag by hand; the tag is created by the pipeline as a
 consequence of the merged `VERSION` bump.

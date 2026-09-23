@@ -51,8 +51,8 @@ builds:
       - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.BuildTime={{.Date}}
       - -X github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/version.Commit={{.Commit}}
 # image building is handled by:
-#   - Taskfile.yml `image:build` / `image:publish` (podman, multi-arch)
-#   - the `.tekton/` pipeline's `image-build` task (in-cluster, GA only)
+#   - GitHub Actions (`.github/workflows/build-image.yml`) for production builds
+#   - Taskfile.yml `image:build` / `image:publish` (podman, local dev only)
 #
 # goreleaser's docker/kos publishers are not used here.
 
