@@ -25,7 +25,7 @@ spec:
     - name: target-branch
       value: "{{ target_branch }}"
     - name: IMAGE
-      value: "ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
+      value: "ghcr.io/arthurvardevanyan/k8s-gitops-ci"
     - name: IMAGE_TAG
       value: ""
   pipelineSpec:
@@ -43,7 +43,7 @@ spec:
         type: string
       - name: IMAGE
         type: string
-        default: "ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
+        default: "ghcr.io/arthurvardevanyan/k8s-gitops-ci"
       - name: IMAGE_TAG
         type: string
         default: ""
@@ -148,7 +148,7 @@ spec:
             workspace: docker-config
         params:
           - name: IMAGE
-            value: "ghcr.io/ArthurVardevanyan/k8s-gitops-ci:$(tasks.resolve-image-tag.results.IMAGE_TAG)"
+            value: "ghcr.io/arthurvardevanyan/k8s-gitops-ci:$(tasks.resolve-image-tag.results.IMAGE_TAG)"
           - name: DOCKERFILE
             value: "./Containerfile"
           - name: CONTEXT
