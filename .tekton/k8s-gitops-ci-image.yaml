@@ -86,13 +86,6 @@ spec:
                 value: $(params.event)
               - name: PARAM_TARGET_BRANCH
                 value: $(params.target-branch)
-            securityContext:
-              runAsNonRoot: true
-              readOnlyRootFilesystem: true
-              allowPrivilegeEscalation: false
-              capabilities:
-                drop:
-                  - ALL
           steps:
             - name: resolve-tag
               image: registry.arthurvardevanyan.com/homelab/toolbox:not_latest
