@@ -7,4 +7,4 @@ metadata:
   namespace: k8s-gitops-ci
 spec:
   url: "https://github.com/ArthurVardevanyan/k8s-gitops-ci"
-  concurrency_limit: 1
+  concurrency_limit: 2
