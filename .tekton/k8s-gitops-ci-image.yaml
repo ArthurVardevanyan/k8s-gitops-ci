@@ -55,6 +55,13 @@ spec:
     tasks:
       - name: resolve-image-tag
         runAfter: []
+        params:
+          - name: pull-request-number
+            value: $(params.pull-request-number)
+          - name: event
+            value: $(params.event)
+          - name: target-branch
+            value: $(params.target-branch)
         taskSpec:
           params:
             - name: pull-request-number
@@ -199,4 +206,3 @@ spec:
     - name: docker-config
       secret:
         secretName: "k8s-gitops-ci-push-pull-secret"
-      optional: true
