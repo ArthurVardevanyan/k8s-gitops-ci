@@ -5,3 +5,5 @@ namespace: homelab
 resources:
   - repo.yaml
   - go-cache-pvc.yaml
+  - sa.yaml
+  - push-secret.yaml
