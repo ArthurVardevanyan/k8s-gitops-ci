@@ -51,7 +51,6 @@ spec:
       - name: data
       - name: git_auth_secret
       - name: docker-config
-        optional: true
     tasks:
       - name: resolve-image-tag
         runAfter: []
@@ -138,9 +137,37 @@ spec:
           - name: basic-auth
             workspace: git_auth_secret
 
+      - name: write-ghcr-auth
+        runAfter: []
+        workspaces:
+          - name: git-auth
+            workspace: git_auth_secret
+          - name: dockerconfig
+            workspace: docker-config
+        taskSpec:
+          workspaces:
+            - name: git-auth
+            - name: dockerconfig
+          volumes:
+            - name: tmp
+              emptyDir: {}
+          steps:
+            - name: write-config
+              image: registry.arthurvardevanyan.com/homelab/toolbox:not_latest
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              script: |
+                #!/usr/bin/env sh
+                set -eu
+                TOKEN="$(cat "$(workspaces.git-auth.path)/git-provider-token")"
+                AUTH="$(printf 'oauth2:%s' "$TOKEN" | base64 | tr -d '\n')"
+                printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$AUTH" > "$(workspaces.dockerconfig.path)/config.json"
+
       - name: buildah
         runAfter:
           - git-clone
+          - write-ghcr-auth
         workspaces:
           - name: source
             workspace: data
@@ -193,5 +220,15 @@ spec:
       secret:
         secretName: "{{ git_auth_secret }}"
     - name: docker-config
-      secret:
-        secretName: "k8s-gitops-ci-push-pull-secret"
+      volumeClaimTemplate:
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: k8s-gitops-ci-image-docker-config
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Mi
+          storageClassName: rook-ceph-block-ci
