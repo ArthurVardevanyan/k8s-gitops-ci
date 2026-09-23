@@ -749,6 +749,10 @@ spec:
             value: "./Containerfile"
           - name: CONTEXT
             value: "."
+          - name: GIT_URL
+            value: $(params.git-url)
+          - name: GIT_REVISION
+            value: $(params.git-commit)
           - name: FORMAT
             value: "oci"
           - name: TLSVERIFY
