@@ -735,7 +735,7 @@ spec:
         # events use `main` (with optional version tag for GA releases).
         workspaces:
           - name: source
-            workspace: go-cache
+            workspace: git_auth_secret
           - name: dockerconfig
             workspace: docker-config
         params:
