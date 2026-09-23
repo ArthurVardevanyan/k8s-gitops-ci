@@ -10,7 +10,7 @@ metadata:
     pipelinesascode.tekton.dev/max-concurrency: "1"
     pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
     pipelinesascode.tekton.dev/task: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/tasks/git-clone/0.9.1/git-clone.yaml"
-    pipelinesascode.tekton.dev/task-1: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/tasks/buildah/0.8.0/buildah.yaml"
+    pipelinesascode.tekton.dev/task-1: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/tasks/buildah/0.7.1/buildah.yaml"
     pipelinesascode.tekton.dev/task-2: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/base/clair-action/clair-action-task.yaml"
 spec:
   params:
@@ -25,7 +25,7 @@ spec:
     - name: target-branch
       value: "{{ target_branch }}"
     - name: IMAGE
-      value: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"
+      value: "ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
     - name: IMAGE_TAG
       value: ""
   pipelineSpec:
@@ -43,7 +43,7 @@ spec:
         type: string
       - name: IMAGE
         type: string
-        default: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"
+        default: "ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
       - name: IMAGE_TAG
         type: string
         default: ""
@@ -148,11 +148,7 @@ spec:
             workspace: docker-config
         params:
           - name: IMAGE
-            value: "$(params.IMAGE):$(tasks.resolve-image-tag.results.IMAGE_TAG)"
-          - name: IMAGE_REPOSITORIES
-            value: "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci,ghcr.io/ArthurVardevanyan/k8s-gitops-ci"
-          - name: PLATFORMS
-            value: "linux/amd64,linux/arm64"
+            value: "ghcr.io/ArthurVardevanyan/k8s-gitops-ci:$(tasks.resolve-image-tag.results.IMAGE_TAG)"
           - name: DOCKERFILE
             value: "./Containerfile"
           - name: CONTEXT
