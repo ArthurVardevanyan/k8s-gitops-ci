@@ -56,6 +56,8 @@ jobs:
         run: |
           platform=${{ matrix.platform }}
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          REPO="${{ github.repository }}"
+          echo "GHCR_IMAGE_LOWER=ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - uses: actions/checkout@v5
 
@@ -63,7 +65,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.GHCR_IMAGE }}
+          images: ${{ env.GHCR_IMAGE_LOWER }}
           tags: |
             type=ref,event=pr,prefix=pr-,suffix=
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -96,7 +98,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.GHCR_IMAGE_LOWER }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           push: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
@@ -147,7 +149,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.GHCR_IMAGE }}
+          images: ${{ env.GHCR_IMAGE_LOWER }}
           tags: |
             type=raw,value=main,enable=${{ github.ref_name == 'main' }}
             type=raw,value=latest,enable=${{ github.ref_name == 'main' }}
@@ -169,11 +171,11 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.GHCR_IMAGE }}@sha256:%s ' *)
+            $(printf '${{ env.GHCR_IMAGE_LOWER }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect '${{ env.GHCR_IMAGE }}:${{ steps.meta.outputs.version }}'
+          docker buildx imagetools inspect '${{ env.GHCR_IMAGE_LOWER }}:${{ steps.meta.outputs.version }}'
 
   cleanup:
     runs-on: ubuntu-latest
