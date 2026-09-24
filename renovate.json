@@ -24,6 +24,14 @@
       "datasourceTemplate": "git-refs",
       "packageNameTemplate": "https://github.com/{{depName}}",
       "currentValueTemplate": "main"
+    },
+    {
+      "customType": "regex",
+      "description": "Pinned CLI tool versions in Containerfile ARGs (GH_VERSION, GLAB_VERSION, KUSTOMIZE_VERSION, SHELLCHECK_VERSION, PRETTIER_VERSION, MARKDOWNLINT_CLI_VERSION)",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*(versioning=(?<versioning>\\S+))?\\s*\\n\\s*[A-Za-z0-9_]+_VERSION:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
+      ]
     }
   ],
   "packageRules": [

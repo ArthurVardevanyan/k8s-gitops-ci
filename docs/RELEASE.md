@@ -92,7 +92,8 @@ module resolver); those have since been mirrored as `v`-prefixed tags
 
 ## Published artifacts
 
-Only what's actually active in `.goreleaser.yaml` today:
+Only what's actually active in `.goreleaser.yaml` and the Tekton pipeline
+today:
 
 - **Go binaries** for `linux/amd64` and `darwin/arm64` only. The
   `builds[].goos`/`goarch` cartesian product is `{linux,darwin} ×
@@ -113,18 +114,16 @@ Only what's actually active in `.goreleaser.yaml` today:
   (`.goreleaser.yaml`'s `changelog.use: github-native`): a "What's
   Changed" list of merged PRs, a "New Contributors" section, and a Full
   Changelog compare link.
+- **Container images** — multi-arch (`linux/amd64` + `linux/arm64`) built
+  via GitHub Actions (`.github/workflows/build-image.yml`). Pushed to
+  `ghcr.io/${{ github.repository }}`: `pr-${PR_NUM}` on PRs, `latest` on
+  push to `main`. Tags are automatically cleaned up when PRs are
+  closed/merged.
 
 **Not currently active** — present in config but not shipping:
 
-- **Container images.** `.goreleaser.yaml`'s `kos:` block (targeting
-  `registry.arthurvardevanyan.com/homelab/k8s-gitops-ci`,
-  `linux/amd64`+`linux/arm64`) exists, but every real `goreleaser
-release` invocation in `.tekton/k8s-gitops-ci.yaml` passes `--skip=ko`.
-  Taskfile's own `image:build`/`image:publish` targets are commented out
-  ("until the registry is wired up"). Don't describe a published
-  container image as an existing release artifact.
 - There is no Homebrew formula, GCS blob publishing, or any other
-  distribution channel beyond the two items above.
+  distribution channel beyond the three items above.
 
 ## Release flow
 
@@ -150,18 +149,28 @@ Everything runs inside the single Tekton build step described in
      GoReleaser's GitHub Releases API call with `target_commitish`
      auto-creates the tag on GitHub; the raw Git Data API isn't permitted
      for this pipeline's GitHub App token, which returns
-     `403: Resource not accessible by integration`), then runs GoReleaser
+     `403: Resoursce not accessible by integration`), then runs GoReleaser
      (`GORELEASER_CURRENT_TAG="v${VERSION}" goreleaser release --skip=ko --clean`)
      to publish the GitHub Release (binaries + native notes) against the
-     correct previous GA.
+     correct previous GA. Container images are built separately via
+     GitHub Actions (see [Published artifacts](#published-artifacts)).
+
    - **RC** — `v${VERSION}` is already the latest GA tag, and there's a
      shippable change (see [Release candidates](#release-candidates)). The
      step cuts `v<next>-rc.N` as a GitHub pre-release.
+
    - **CI-only** — otherwise (no `VERSION` bump and nothing shippable since
      the last GA). **This is what makes ordinary merges CI-only.**
+
 3. **PR event:** a snapshot build only — no tag, no GitHub Release.
    `goreleaser build --snapshot --clean`. This validates
    that a real release build succeeds without publishing anything.
+4. **Container images** — built via GitHub Actions on `pull_request` and
+   `push` events targeting `main` (see
+   `.github/workflows/build-image.yml`):
+   - PR pushes: pushed as `pr-${PR_NUM}`, automatically deleted when the
+     PR is closed/merged.
+   - Pushes to `main`: pushed as `latest` (and also `sha-${sha}`).
 
 ## Cutting a release
 
@@ -179,7 +188,8 @@ change — not by a local tag push or a per-merge automation:
    under-bump for the commits since the last release.
 3. **Merge the PR.** That merge is a `push` to `main`; the pipeline sees
    `v${VERSION}` doesn't exist yet, so it tags `v${VERSION}` and publishes
-   the GitHub Release (binaries + native notes).
+   the GitHub Release (binaries + native notes). Container images are built
+   separately via GitHub Actions.
 
 No one pushes a tag by hand; the tag is created by the pipeline as a
 consequence of the merged `VERSION` bump.
@@ -188,9 +198,11 @@ consequence of the merged `VERSION` bump.
 
 Between GA releases, the pipeline automatically publishes **release
 candidates** for the _next_ version so changes can be validated before GA
-(e.g. a personal repo can pin to an RC build to test). RCs are **binary/
-asset only** — download the artifacts from the RC's GitHub pre-release;
-they are not meant to be consumed as a Go module (see the note below).
+(e.g. a personal repo can pin to an RC build to test). RCs are
+**binary/asset only** — no container image is published for RCs
+(images are published only on GA pushes). Download the artifacts from
+the RC's GitHub pre-release; they are not meant to be consumed as a Go
+module (see the note below).
 
 **When an RC is cut.** On a merge to `main`, the pipeline cuts
 `v<next>-rc.N` only when **all** of these hold:

@@ -234,6 +234,7 @@ maintainable file-size bounds.
 | Annotation vs. `EXEMPTIONS` selector exemptions, adding a new exemptable check | [EXEMPTIONS.md](EXEMPTIONS.md)                             |
 | Tekton pipeline/task layout, PaC triggers, build-step script                   | [TEKTON.md](TEKTON.md)                                     |
 | Versioning (`VERSION` file), releases & RCs, release artifacts                 | [RELEASE.md](RELEASE.md)                                   |
+| Multi-arch image build + push (GitHub Actions; local podman for dev)           | [TEKTON.md](TEKTON.md#the-build-task)                      |
 | Trust model, `exec.Command` audit, file-permission rationale                   | [SECURITY.md](SECURITY.md)                                 |
 | Embedded kubeconform schemas / Kyverno policies, how an org supplies its own   | [SCHEMAS.md](SCHEMAS.md)                                   |
 | Build/test/lint commands, repo structure, design conventions                   | [DEVELOPMENT.md](DEVELOPMENT.md)                           |

@@ -543,23 +543,42 @@ tasks:
         -o {{.DIST}}/{{.NAME}}
         {{.MAIN_PACKAGE}}
 
-  # image:build and image:publish are commented out until the registry is wired up.
-  # image:build:
-  #   desc: Build and push container image with ko
-  #   env:
-  #     KO_DOCKER_REPO: '{{.KO_DOCKER_REPO | default "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"}}'
-  #     BUILD_VERSION: "{{.BUILD_VERSION}}"
-  #     BUILD_COMMIT: "{{.BUILD_COMMIT}}"
-  #   cmds:
-  #     - ko build {{.MAIN_PACKAGE}} --bare --sbom=none --tags={{.KO_TAGS | default "local"}}
-  #
-  # image:publish:
-  #   desc: Build+push image and write .image-tag / .image-ref / .image-digest
-  #   env:
-  #     KO_DOCKER_REPO: '{{.KO_DOCKER_REPO | default "registry.arthurvardevanyan.com/homelab/k8s-gitops-ci"}}'
-  #   cmds:
-  #     - |
-  #       ... (see upstream image:publish for full logic)
+  # image:build: Build a single-arch (native) image locally (useful for
+  # quick iteration and for validating a Containerfile change before a
+  # release). Production image building is done via GitHub Actions
+  # (`.github/workflows/build-image.yml`).
+  image:build:
+    desc: Build a single-arch (native) image with podman
+    vars:
+      TAG:
+        sh: |
+          if [ -n "{{.IMAGE_TAG}}" ]; then echo "{{.IMAGE_TAG}}"; else echo "local"; fi
+    cmds:
+      - podman build --platform linux/{{env "ARCH"}} -t {{.IMAGE}}:{{.TAG}} -f Containerfile .
+
+  # image:publish: Multi-arch image build + manifest push (the same pattern
+  # as [docker-ntp/build-multiarch-podman.sh](https://github.com/ArthurVardevanyan/docker-ntp/blob/main/build-multiarch-podman.sh).
+  # Production image building is done via GitHub Actions
+  # (`.github/workflows/build-image.yml`); this target is for local
+  # development only (requires podman with qemu-binfmt support).
+  # Requires: (1) podman with qemu-binfmt support for cross-arch builds
+  # (2) `podman login` credentials for the target registry
+  # (3) `{{.IMAGE}}:{{.IMAGE_TAG}}` override for release CI (the
+  # pipeline passes the GA version tag).
+  image:publish:
+    desc: Build multi-arch image + push manifest (linux/amd64 + linux/arm64)
+    vars:
+      TAG:
+        sh: |
+          if [ -n "{{.IMAGE_TAG}}" ]; then echo "{{.IMAGE_TAG}}"; else echo "{{now | date "2006.01.02.1504"}}"; fi
+    cmds:
+      - |
+        TAG="{{.IMAGE}}:{{.TAG}}"
+        podman manifest rm "$TAG" 2>/dev/null || true
+        podman manifest create "$TAG"
+        podman build --platform linux/amd64 --manifest "$TAG" --build-arg GOARCH=amd64 --build-arg BUILD_VERSION={{.BUILD_VERSION}} --build-arg BUILD_COMMIT={{.BUILD_COMMIT}} --build-arg BUILD_TIME={{.BUILD_TIME}} -f Containerfile .
+        podman build --platform linux/arm64 --manifest "$TAG" --build-arg GOARCH=arm64 --build-arg BUILD_VERSION={{.BUILD_VERSION}} --build-arg BUILD_COMMIT={{.BUILD_COMMIT}} --build-arg BUILD_TIME={{.BUILD_TIME}} -f Containerfile .
+        podman manifest push "$TAG"
 
   # ── Testing ───────────────────────────────────────────────────────────────────
   test:

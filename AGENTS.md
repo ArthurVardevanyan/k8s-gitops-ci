@@ -76,18 +76,22 @@ assumption.
 `go build` won't produce, and future `task` targets may add embedded-
 resource generation steps a raw command would silently skip.
 
-| Action                                             | Command                        |
-| -------------------------------------------------- | ------------------------------ |
-| Build                                              | `task build`                   |
-| Test                                               | `task test`                    |
-| Lint                                               | `task lint`                    |
-| Format                                             | `task format`                  |
-| Full CI                                            | `task ci`                      |
-| Replay real merged PRs (smoke gate)                | `task test:homelab-prs`        |
-| Regenerate embedded schemas                        | `task schemas:pull`            |
-| Bump the pinned schema SHA to the branch tip       | `task update:schemas`          |
-| Regenerate resource-scope maps from a live cluster | `task update:scoped-resources` |
-| Verify runtime checks' upstream citations          | `task verify:upstream-refs`    |
+| Action                                                    | Command                        |
+| --------------------------------------------------------- | ------------------------------ |
+| Build                                                     | `task build`                   |
+| Test                                                      | `task test`                    |
+| Lint                                                      | `task lint`                    |
+| Format                                                    | `task format`                  |
+| Full CI                                                   | `task ci`                      |
+| Replay real merged PRs (smoke gate)                       | `task test:homelab-prs`        |
+| Regenerate embedded schemas                               | `task schemas:pull`            |
+| Bump the pinned schema SHA to the branch tip              | `task update:schemas`          |
+| Regenerate resource-scope maps from a live cluster        | `task update:scoped-resources` |
+| Verify runtime checks' upstream citations                 | `task verify:upstream-refs`    |
+| Build single-arch (native) image locally (local dev only) | `task image:build`             |
+| Build multi-arch image + push manifest (local dev only)   | `task image:publish`           |
+
+Production image building is done via GitHub Actions (`.github/workflows/build-image.yml`), supporting `linux/amd64` + `linux/arm64`.
 
 **Note:** When running `task ci` via Bash, set `timeout` to **90 seconds** (it takes longer than the default 30s cutoff in practice — 90s is a good starting point; extend if needed).
 
