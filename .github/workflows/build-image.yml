@@ -63,22 +63,25 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     steps:
+      - name: Lowercase repository for GHCR
+        id: repo
+        run: |
+          REPO="${{ github.repository }}"
+          echo "PACKAGE=$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - run: |
           PR_NUM=${{ github.event.pull_request.number }}
           PR_TAG="pr-${PR_NUM}"
           echo "Deleting PR tag ${PR_TAG}..."
-          # List all container package versions for this repo
-          JSON=$(gh api repos/${{ github.repository }}/packages/containers/k8s-gitops-ci/versions \
+          JSON=$(gh api repos/${{ github.repository }}/packages/containers/${{ steps.repo.outputs.PACKAGE }}/versions \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             -o /dev/stdout 2>/dev/null)
-          # Find the package version ID that has the matching tag
           PACKAGE_VERSION_ID=$(echo "$JSON" | jq -r '
             .[] | select(.metadata.tags[]? == "'"${PR_TAG}"'") | .id
           ' | head -1)
           if [ -n "${PACKAGE_VERSION_ID}" ] && [ "${PACKAGE_VERSION_ID}" != "null" ]; then
-            gh api -X DELETE repos/${{ github.repository }}/packages/containers/k8s-gitops-ci/versions/${PACKAGE_VERSION_ID} \
+            gh api -X DELETE repos/${{ github.repository }}/packages/containers/${{ steps.repo.outputs.PACKAGE }}/versions/${PACKAGE_VERSION_ID} \
               -H "X-GitHub-Api-Version: 2022-11-28"
             echo "Deleted package version ${PACKAGE_VERSION_ID} for tag ${PR_TAG}"
           else
