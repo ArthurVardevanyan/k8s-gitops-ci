@@ -19,8 +19,27 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Lowercase repository for GHCR
+        id: repo
+        run: |
+          REPO="${{ github.repository }}"
+          echo "IMAGE=ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.repo.outputs.IMAGE }}
+          tags: |
+            type=ref,event=pr,prefix=pr-,suffix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=,suffix=
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -35,24 +54,10 @@ jobs:
           context: .
           file: Containerfile
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}
+          push: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-        if: github.event_name == 'pull_request'
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Containerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
   cleanup:
     runs-on: ubuntu-latest
