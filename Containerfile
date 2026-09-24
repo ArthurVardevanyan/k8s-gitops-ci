@@ -1,11 +1,12 @@
 # ── Stage 1: hermetic engine build ────────────────────────────────────────
 # Cross-compiles the Go binary inside the image (CGO off → pure static
 # binary) so the image is reproducible, hermetic, and truly multi-arch:
-# the build stage always uses a native amd64 golang base and cross-compiles
+# the build stage always uses a native golang base and cross-compiles
 # for GOARCH, avoiding qemu for the expensive go-build phase. Only stage 2's
 # RUN steps (microdnf + npm + curl) execute under emulation when the target
 # platform differs from the host.
-FROM golang:1.27@sha256:7bffdb405cd12940d2980daa49a86ef575ed4525a17ee7d0c9562547357ab46a AS builder
+# Multi-arch manifest digest for golang:1.27 (linux/amd64 + linux/arm64)
+FROM golang:1.27@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 AS builder
 
 # Version metadata — filled at build time from the pipeline
 ARG BUILD_VERSION=local
