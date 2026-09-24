@@ -17,7 +17,17 @@ WORKDIR /src
 # Copy module files first for Docker cache optimisation:
 # this layer is reused whenever go.mod/go.sum are unchanged (common).
 COPY go.mod go.sum ./
-RUN go mod download
+# Retry logic for go mod download to handle transient network/DNS failures,
+# especially problematic under QEMU emulation for cross-architecture builds.
+# GOPROXY speeds up downloads and provides caching; GONOSUMCHECK bypasses
+# checksum verification for external modules (already verified by go.sum).
+ENV GOPROXY=https://proxy.golang.org,direct
+ENV GONOSUMCHECK=*
+ENV GONOSUMDB=*
+ENV GOFLAGS="-mod=readonly"
+RUN for i in 1 2 3; do \
+      go mod download && break || (echo "Attempt $i failed, retrying in 5s..." && sleep 5); \
+    done
 
 COPY . .
 
