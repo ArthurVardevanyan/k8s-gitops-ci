@@ -58,7 +58,6 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
           REPO="${{ github.repository }}"
           echo "GHCR_IMAGE_LOWER=ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          echo "GHCR_OUTPUTS=type=image,name=${{ env.GHCR_IMAGE_LOWER }},push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_ENV
 
       - uses: actions/checkout@v5
 
@@ -98,7 +97,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           tags: ${{ steps.meta.outputs.tags }}
-          outputs: ${{ env.GHCR_OUTPUTS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           push: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
