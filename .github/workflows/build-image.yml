@@ -68,7 +68,7 @@ jobs:
         with:
           images: ${{ env.GHCR_IMAGE_LOWER }}
           tags: |
-            type=sha,prefix=,suffix=
+            type=sha,prefix=sha-,suffix=
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
@@ -97,6 +97,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          tags: ${{ steps.meta.outputs.tags }}
           outputs: ${{ env.GHCR_OUTPUTS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
