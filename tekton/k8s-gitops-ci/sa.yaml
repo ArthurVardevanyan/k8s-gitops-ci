@@ -1,0 +1,10 @@
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: pipeline
+  namespace: k8s-gitops-ci
+  labels:
+    app.kubernetes.io/instance: k8s-gitops-ci
+secrets:
+  - name: k8s-gitops-ci-push-pull-secret

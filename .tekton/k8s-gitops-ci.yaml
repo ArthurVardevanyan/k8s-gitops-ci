@@ -14,7 +14,6 @@ metadata:
     pipelinesascode.tekton.dev/max-concurrency: "1"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/target-namespace: "k8s-gitops-ci"
-    pipelinesascode.tekton.dev/task-1: "https://raw.githubusercontent.com/ArthurVardevanyan/HomeLab/main/tekton/base/clair-action/clair-action-task.yaml"
 spec:
   params:
     - name: git-url
@@ -49,6 +48,8 @@ spec:
       - name: git_auth_secret
       - name: go-cache
         optional: true
+      - name: docker-config
+        optional: true
     tasks:
       - name: build
         workspaces:
@@ -56,6 +57,8 @@ spec:
             workspace: git_auth_secret
           - name: go-cache
             workspace: go-cache
+          - name: docker-config
+            workspace: docker-config
         params:
           - name: git-url
             value: $(params.git-url)
@@ -86,10 +89,11 @@ spec:
             - name: target-branch
               type: string
               default: ""
-          results: []
           workspaces:
             - name: basic-auth
             - name: go-cache
+              optional: true
+            - name: docker-config
               optional: true
           volumes:
             - name: home
@@ -706,17 +710,6 @@ spec:
                   --disable-checks golangci \
                   --comment \
                   --quiet
-
-      # TODO: clair scan (re-enable once image build is wired up)
-      # - name: clair-action
-      #   runAfter:
-      #     - build
-      #   taskRef:
-      #     name: clair-action
-      #     kind: Task
-      #   params:
-      #     - name: IMAGE
-      #       value: $(tasks.build.results.IMAGE)
 
   taskRunTemplate:
     serviceAccountName: pipeline
