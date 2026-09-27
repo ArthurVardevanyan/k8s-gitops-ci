@@ -64,6 +64,7 @@ jobs:
           else
             echo "GHCR_PUSH_MODE=digest" >> $GITHUB_ENV
             echo "GHCR_OUTPUTS=type=image,name=${{ env.GHCR_IMAGE_LOWER }},push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_ENV
+            echo "GHCR_TAGS=" >> $GITHUB_ENV
           fi
 
       - uses: actions/checkout@v5
@@ -79,6 +80,12 @@ jobs:
             type=sha,prefix=,suffix=
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Set GHCR tags (only for PR builds)
+        if: github.event_name == 'pull_request'
+        id: tags
+        run: |
+          echo "GHCR_TAGS=${{ steps.meta.outputs.tags }}" >> $GITHUB_ENV
 
       - name: Set up Docker Context for Buildx
         run: docker context create builders
@@ -105,6 +112,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          tags: ${{ env.GHCR_TAGS }}
           outputs: ${{ env.GHCR_OUTPUTS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
