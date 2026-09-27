@@ -58,13 +58,7 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
           REPO="${{ github.repository }}"
           echo "GHCR_IMAGE_LOWER=ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "GHCR_PUSH_MODE=tag" >> $GITHUB_ENV
-            echo "GHCR_OUTPUTS=type=image,name=${{ env.GHCR_IMAGE_LOWER }},push=true" >> $GITHUB_ENV
-          else
-            echo "GHCR_PUSH_MODE=digest" >> $GITHUB_ENV
-            echo "GHCR_OUTPUTS=type=image,name=${{ env.GHCR_IMAGE_LOWER }},push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_ENV
-          fi
+          echo "GHCR_OUTPUTS=type=image,name=${{ env.GHCR_IMAGE_LOWER }},push-by-digest=true,name-canonical=true,push=true" >> $GITHUB_ENV
 
       - uses: actions/checkout@v5
 
@@ -74,8 +68,6 @@ jobs:
         with:
           images: ${{ env.GHCR_IMAGE_LOWER }}
           tags: |
-            type=ref,event=pr,prefix=pr-,suffix=
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=,suffix=
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
@@ -105,7 +97,6 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          tags: ${{ steps.meta.outputs.tags }}
           outputs: ${{ env.GHCR_OUTPUTS }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -184,32 +175,3 @@ jobs:
       - name: Inspect image
         run: |
           docker buildx imagetools inspect '${{ env.GHCR_IMAGE_LOWER }}:${{ steps.meta.outputs.version }}'
-
-  cleanup:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    steps:
-      - name: Lowercase repository for GHCR
-        id: repo
-        run: |
-          REPO="${{ github.repository }}"
-          echo "PACKAGE=$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-      - run: |
-          PR_NUM=${{ github.event.pull_request.number }}
-          PR_TAG="pr-${PR_NUM}"
-          echo "Deleting PR tag ${PR_TAG}..."
-          JSON=$(gh api repos/${{ github.repository }}/packages/containers/${{ steps.repo.outputs.PACKAGE }}/versions \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            -o /dev/stdout 2>/dev/null)
-          PACKAGE_VERSION_ID=$(echo "$JSON" | jq -r '
-            .[] | select(.metadata.tags[]? == "'"${PR_TAG}"'") | .id
-          ' | head -1)
-          if [ -n "${PACKAGE_VERSION_ID}" ] && [ "${PACKAGE_VERSION_ID}" != "null" ]; then
-            gh api -X DELETE repos/${{ github.repository }}/packages/containers/${{ steps.repo.outputs.PACKAGE }}/versions/${PACKAGE_VERSION_ID} \
-              -H "X-GitHub-Api-Version: 2022-11-28"
-            echo "Deleted package version ${PACKAGE_VERSION_ID} for tag ${PR_TAG}"
-          else
-            echo "No package version found for tag ${PR_TAG} (JSON length: $(echo "$JSON" | jq 'length'))"
-          fi
