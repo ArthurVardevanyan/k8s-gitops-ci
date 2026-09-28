@@ -29,19 +29,15 @@ jobs:
         run: |
           REPO="${{ github.repository }}"
           GHCR="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')"
-          # compute push_images: true for push-to-main or same-repo PR, false for fork PRs
+          # push_images: true only for push-to-main, false for PRs and fork PRs
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "main" ]; then
             echo "push_images=true" >> $GITHUB_OUTPUT
             echo "TAG=${GHCR}:$(cat VERSION)" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
-            echo "push_images=true" >> $GITHUB_OUTPUT
-            echo "TAG=${GHCR}:pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
           else
             echo "push_images=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up Docker Buildx
-        if: steps.prepare.outputs.push_images == 'true'
         uses: docker/setup-buildx-action@v3
         with:
           driver: docker-container
@@ -67,6 +63,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Inspect image
-        if: steps.prepare.outputs.push_images == 'true'
-        run: docker buildx imagetools inspect '${{ steps.prepare.outputs.TAG }}'
+      - name: Build only (no push)
+        if: steps.prepare.outputs.push_images == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: false
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
