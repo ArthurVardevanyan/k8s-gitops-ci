@@ -114,9 +114,7 @@ publish` subcommand. This uses the Taskfile's `image:publish` target
 under the hood — the same `podman manifest` flow that the Taskfile's
 `image:publish` target exposes. Images are published **only on GA
 pushes** (never on RCs, PRs, or non-release pushes); the step gates on
-the `event` param and skips entirely when it's a PR. The `IMAGE` result
-is written to `/tekton/results/image` and consumed by the `clair-action`
-task (see below).
+the `event` param and skips entirely when it's a PR.
 
 > **Note:** Container image building has been migrated to GitHub Actions
 > (`.github/workflows/build-image.yml`) for native multi-arch support
@@ -124,9 +122,8 @@ task (see below).
 > image pipeline (`.tekton/k8s-gitops-ci-image.yaml`) has been removed.
 
 The `clair-action` task (see [PaC trigger](#pac-trigger)) is now
-**enabled** (re-enabled alongside the image-build step). It runs as a
-child of `build`, receives the published image tag via the `IMAGE`
-result, and scans it for vulnerabilities.
+disabled — the external Clair scan Task definition is no longer
+referenced by any task in the pipeline.
 
 ## The lint task
 
@@ -275,8 +272,8 @@ headroom now that the steps actually parallelize.
   a real, visible false failure on that PR in the meantime. Not something
   more code in this repo can close: it's inherent to validating via a
   pre-built binary rather than the sources `build` is compiling.
-- **The Clair image-vulnerability scan is now active.** The
-  `pipelinesascode.tekton.dev/task-1` annotation pulls in an external
-  Task definition, and the `clair-action` task block is enabled — it
-  receives the published image tag from the `image-build` step's
-  `IMAGE` result and scans it for vulnerabilities.
+- **Container image building has been migrated to GitHub Actions.**
+  The Tekton image pipeline (`.tekton/k8s-gitops-ci-image.yaml`) has
+  been removed; container builds now run in
+  `.github/workflows/build-image.yml` with native multi-arch support
+  (`linux/amd64` + `linux/arm64`).

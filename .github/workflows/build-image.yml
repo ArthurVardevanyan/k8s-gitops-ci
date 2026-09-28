@@ -86,7 +86,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: false
           load: true
-          tags: ghcr.io/${{ github.repository }}:build-${{ matrix.platform }}
+          tags: ghcr.io/${{ github.repository }}:build-${{ matrix.platform.replace('/', '-') }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
