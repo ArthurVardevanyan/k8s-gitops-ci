@@ -81,11 +81,20 @@ jobs:
           mkdir -p /tmp/digests
           TAG_NAME="${{ env.PLATFORM_TAG }}"
           IMAGE="${{ env.GHCR_IMAGE_LOWER }}:${TAG_NAME}"
-          digest=$(docker inspect "$IMAGE" --format '{{index .RepoDigests 0 }}' 2>/dev/null | cut -d@ -f2 | sed 's/^sha256://')
+          # .RepoDigests is empty for a locally-loaded (unpushed) image, so
+          # fall back to the image ID. Strip a "repo@" prefix (if present) and
+          # a leading "sha256:" so the stored value is always a bare 64-char
+          # hex digest — the merge job re-prefixes it with "sha256:".
+          digest=$(docker inspect "$IMAGE" --format '{{index .RepoDigests 0 }}' 2>/dev/null | sed -e 's/.*@//' -e 's/^sha256://')
           if [ -z "$digest" ]; then
-            digest=$(docker inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null | cut -d@ -f2)
+            digest=$(docker inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null | sed 's/^sha256://')
+          fi
+          if [ -z "$digest" ]; then
+            echo "::error::No digest found for $IMAGE (both .RepoDigests and .Id were empty)"
+            exit 1
           fi
           echo "$digest" > "/tmp/digests/${TAG_NAME}.sha256"
+          echo "Saved digest for $TAG_NAME: $digest"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
@@ -150,12 +159,32 @@ jobs:
           echo "On a push to main that does NOT bump VERSION, only main is updated."
 
       - name: Download digests
-        if: github.event_name == 'push'
         uses: actions/download-artifact@v5
         with:
           path: /tmp/digests
           pattern: digests-*
           merge-multiple: true
+
+      - name: Validate digest files
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(/tmp/digests/*.sha256)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No digest files were produced by the build job(s)"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            d=$(tr -d '[:space:]' < "$f")
+            echo "Checking $(basename "$f"): $d"
+            if [[ "$d" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "  OK: bare 64-char hex digest"
+            else
+              echo "::error::Malformed digest in $f: '$d' (must be a bare 64-char hex digest)"
+              exit 1
+            fi
+          done
 
       - name: Docker metadata
         if: github.event_name == 'push'
