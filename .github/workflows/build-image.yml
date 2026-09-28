@@ -171,7 +171,7 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '$GHCR_IMAGE_LOWER@sha256:%s ' $(cat /tmp/digests/*.sha256 | tr '\n' ' '))
+            $(printf "${GHCR_IMAGE_LOWER}@sha256:%s " $(cat /tmp/digests/*.sha256 | tr '\n' ' '))
 
       - name: Inspect image
         if: steps.version.outputs.changed == 'true'
