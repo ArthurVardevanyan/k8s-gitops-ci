@@ -81,7 +81,7 @@ jobs:
           mkdir -p /tmp/digests
           TAG_NAME="${{ env.PLATFORM_TAG }}"
           IMAGE="${{ env.GHCR_IMAGE_LOWER }}:${TAG_NAME}"
-          digest=$(docker inspect "$IMAGE" --format '{{index .RepoDigests 0 }}' 2>/dev/null | cut -d@ -f2)
+          digest=$(docker inspect "$IMAGE" --format '{{index .RepoDigests 0 }}' 2>/dev/null | cut -d@ -f2 | sed 's/^sha256://')
           if [ -z "$digest" ]; then
             digest=$(docker inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null | cut -d@ -f2)
           fi
