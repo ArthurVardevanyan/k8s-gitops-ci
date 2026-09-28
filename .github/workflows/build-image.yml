@@ -72,7 +72,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: false
           load: true
-          tags: ghcr.io/${{ github.repository }}:${{ env.PLATFORM_TAG }}
+          tags: ${{ env.GHCR_IMAGE_LOWER }}:${{ env.PLATFORM_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -80,9 +80,10 @@ jobs:
         run: |
           mkdir -p /tmp/digests
           TAG_NAME="${{ env.PLATFORM_TAG }}"
-          digest=$(docker inspect ghcr.io/${{ github.repository }}:${TAG_NAME} --format '{{index .RepoDigests 0 }}' 2>/dev/null | cut -d@ -f2)
+          IMAGE="${{ env.GHCR_IMAGE_LOWER }}:${TAG_NAME}"
+          digest=$(docker inspect "$IMAGE" --format '{{index .RepoDigests 0 }}' 2>/dev/null | cut -d@ -f2)
           if [ -z "$digest" ]; then
-            digest=$(docker inspect ghcr.io/${{ github.repository }}:${TAG_NAME} --format '{{.Id}}' 2>/dev/null | cut -d@ -f2)
+            digest=$(docker inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null | cut -d@ -f2)
           fi
           echo "$digest" > "/tmp/digests/${TAG_NAME}.sha256"
 
@@ -117,6 +118,11 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Prepare environment
+        run: |
+          REPO="${{ github.repository }}"
+          echo "GHCR_IMAGE_LOWER=ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Check if VERSION changed
         id: version
@@ -165,7 +171,7 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' $(cat /tmp/digests/*.sha256 | tr '\n' ' '))
+            $(printf '$GHCR_IMAGE_LOWER@sha256:%s ' $(cat /tmp/digests/*.sha256 | tr '\n' ' '))
 
       - name: Inspect image
         if: steps.version.outputs.changed == 'true'
