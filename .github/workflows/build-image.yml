@@ -132,6 +132,7 @@ jobs:
           else
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
+          echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
 
       - name: Download digests
         uses: actions/download-artifact@v5
@@ -148,6 +149,7 @@ jobs:
           tags: |
             type=raw,value=main,enable=${{ github.ref_name == 'main' }}
             type=raw,value=latest,enable=${{ github.ref_name == 'main' && steps.version.outputs.changed == 'true' }}
+            type=semver,pattern={{raw}},enable=${{ steps.version.outputs.changed == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
