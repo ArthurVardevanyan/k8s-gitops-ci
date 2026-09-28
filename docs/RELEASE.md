@@ -149,7 +149,7 @@ Everything runs inside the single Tekton build step described in
      GoReleaser's GitHub Releases API call with `target_commitish`
      auto-creates the tag on GitHub; the raw Git Data API isn't permitted
      for this pipeline's GitHub App token, which returns
-     `403: Resoursce not accessible by integration`), then runs GoReleaser
+     `403: Resource not accessible by integration`), then runs GoReleaser
      (`GORELEASER_CURRENT_TAG="v${VERSION}" goreleaser release --skip=ko --clean`)
      to publish the GitHub Release (binaries + native notes) against the
      correct previous GA. Container images are built separately via
