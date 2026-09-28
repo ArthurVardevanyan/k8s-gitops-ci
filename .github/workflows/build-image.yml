@@ -138,6 +138,10 @@ jobs:
       security-events: read
       statuses: read
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Check if VERSION changed
         id: version
         run: |
