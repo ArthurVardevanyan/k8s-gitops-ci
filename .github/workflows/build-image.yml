@@ -146,10 +146,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.GHCR_IMAGE_LOWER }}
+          labels: |
+            version=${{ steps.version.outputs.version }}
           tags: |
             type=raw,value=main,enable=${{ github.ref_name == 'main' }}
             type=raw,value=latest,enable=${{ github.ref_name == 'main' && steps.version.outputs.changed == 'true' }}
-            type=semver,pattern={{raw}},enable=${{ steps.version.outputs.changed == 'true' }}
+            type=semver,label=version,enable=${{ steps.version.outputs.changed == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
