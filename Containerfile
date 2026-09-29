@@ -67,6 +67,26 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" \
 # this stage work with `podman build --platform linux/amd64,linux/arm64`.
 FROM registry.access.redhat.com/ubi10/ubi-minimal:10.2-1789645153@sha256:04febb4a74cc9ef3eca05ef851d92957276cc6e82fe8cb1ee44abf5114d440d8 AS runtime
 
+# Build-time metadata (re-declared so build-args from the workflow flow into
+# this stage and can be used in LABEL instructions below).
+ARG BUILD_VERSION=local
+ARG BUILD_COMMIT=unknown
+ARG BUILD_TIME="1970-01-01T00:00:00Z"
+ARG BUILD_SOURCE=https://github.com/ArthurVardevanyan/k8s-gitops-ci
+
+# ── OCI-compliant image labels ────────────────────────────────────────────
+LABEL org.opencontainers.image.title="k8s-gitops-ci" \
+      org.opencontainers.image.description="Kubernetes GitOps CI engine" \
+      org.opencontainers.image.source="${BUILD_SOURCE}" \
+      org.opencontainers.image.vendor="k8s-gitops-ci" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${BUILD_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIME}" \
+      org.opencontainers.image.ref.name="${BUILD_VERSION}" \
+      org.opencontainers.image.base.name="registry.access.redhat.com/ubi10/ubi-minimal:10.2-1789645153" \
+      org.opencontainers.image.base.digest="sha256:04febb4a74cc9ef3eca05ef851d92957276cc6e82fe8cb1ee44abf5114d440d8"
+
 # ── Version pins for vendored CLI tools ───────────────────────────────────
 # Downstream consumers can override these at build time (e.g. `--build-arg
 # GH_VERSION=2.100.0`); the defaults here are stable and versioned.
