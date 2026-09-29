@@ -118,10 +118,12 @@ today:
   via GitHub Actions (`.github/workflows/build-image.yml`). On PRs both
   architectures are built and loaded locally but nothing is pushed. On
   push to `main`, per-architecture tags (`${VERSION}-linux-amd64`,
-  `${VERSION}-linux-arm64`) are pushed as ephemeral intermediates; a
-  merge job then creates the multi-arch indexes (`${VERSION}`, `main`,
-  `latest`) and deletes those per-arch tags, then re-verifies that the
-  indexes still resolve. Pushed to `ghcr.io/${{ github.repository }}`.
+  `${VERSION}-linux-arm64`) are pushed; a merge job creates the
+  multi-arch indexes (`${VERSION}`, `main`, `latest`). Per-arch tags
+  and index entries share the same underlying digests on GHCR so the
+  per-arch tags remain in the registry — GHCR does not support
+  deleting them without breaking the index. Pushed to
+  `ghcr.io/${{ github.repository }}`.
 
 **Not currently active** — present in config but not shipping:
 
@@ -174,9 +176,10 @@ Everything runs inside the single Tekton build step described in
    - PR pushes: both architectures are built and loaded locally; nothing
      is pushed to the registry.
    - Pushes to `main`: per-architecture tags (`${VERSION}-linux-amd64`,
-     `${VERSION}-linux-arm64`) are pushed as ephemeral intermediates;
-     a merge job creates the `${VERSION}`/`main`/`latest` indexes and
-     then deletes those per-arch tags.
+     `${VERSION}-linux-arm64`) are pushed; a merge job creates the
+     `${VERSION}`/`main`/`latest` indexes. Per-arch tags and index
+     entries share the same digests on GHCR, so the per-arch tags
+     remain in the registry.
 
 ## Cutting a release
 
