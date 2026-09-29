@@ -1,10 +1,10 @@
 # This workflow builds each architecture on a matching native runner via a
 # matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU), then
 # merges them into multi-arch tags: the version tag plus `main` and `latest`.
-# Attestations are disabled (they cause `imagetools create` to produce
-# `unknown/unknown` platform entries). Per-arch images are pushed to GHCR
-# only on `push` to `main`; on PRs both arches are still built and loaded
-# (so the build is exercised) but nothing is pushed.
+# Provenance attestation is disabled (it causes `imagetools create` to
+# produce `unknown/unknown` platform entries). Per-arch images are pushed
+# to GHCR only on `push` to `main`; on PRs both arches are still built and
+# loaded (so the build is exercised) but nothing is pushed.
 name: build-image
 
 on:
@@ -145,8 +145,8 @@ jobs:
           ARM64="${GHCR}:${VERSION}-linux-arm64"
           # Per-arch tags are manifest-wrapped by docker/buildx but
           # `imagetools create` reads through the wrapper. With provenance
-          # disabled (attest: false + provenance: false) the merged index
-          # contains exactly 2 platform entries, no bogus unknown/unknown.
+          # disabled the merged index contains exactly 2 platform entries,
+          # no bogus unknown/unknown.
           for TAG in "$VERSION" "main" "latest"; do
             REF="${GHCR}:${TAG}"
             docker buildx imagetools create -t "$REF" "$AMD64" "$ARM64"
