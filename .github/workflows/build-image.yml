@@ -90,12 +90,12 @@ jobs:
             BUILD_SOURCE=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Attestations (SBOM/provenance) create extra manifest entries that
-          # `docker buildx imagetools create` treats as `unknown/unknown`
-          # platform entries. Since we don't use attestation elsewhere, remove
-          # it from the pushed images so the merge step produces a clean
-          # index with exactly 2 platform entries.
+          # NOTE: `attest: false` alone is NOT sufficient — docker/build-push-action
+          # re-adds `--attest=type=provenance` when `provenance: true` (default).
+          # We must also set `provenance: false` to fully disable attestation,
+          # preventing `unknown/unknown` entries in the merged multi-arch index.
           attest: false
+          provenance: false
 
       - name: Show image labels (PR)
         if: steps.prep.outputs.do_push == 'false'
@@ -143,13 +143,12 @@ jobs:
         run: |
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
           VERSION="${{ steps.version.outputs.version }}"
-          AMD64="${GHCR}:${VERSION}-linux-amd64"
-          ARM64="${GHCR}:${VERSION}-linux-arm64"
+          # Per-arch tags are manifest-wrapped by docker/buildx but
+          # `imagetools create` reads through the wrapper. With provenance
+          # disabled (attest: false + provenance: false) the merged index
+          # contains exactly 2 platform entries, no bogus unknown/unknown.
           for TAG in "$VERSION" "main" "latest"; do
             REF="${GHCR}:${TAG}"
-            # Per-arch tags are manifest-wrapped by docker/buildx but
-            # `imagetools create` reads through the wrapper and preserves
-            # each image's platform. No --platform flag needed (auto-inferred).
             docker buildx imagetools create -t "$REF" "$AMD64" "$ARM64"
             echo "Pushed ${REF}"
           done
