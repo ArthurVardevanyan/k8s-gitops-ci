@@ -12,3 +12,4 @@ indent_style = tab
 [*.{yaml,yml,json,md,sh}]
 indent_style = space
 indent_size = 2
+# Minor whitespace fix
