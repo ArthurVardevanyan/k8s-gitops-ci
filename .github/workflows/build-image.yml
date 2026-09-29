@@ -90,11 +90,9 @@ jobs:
             BUILD_SOURCE=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # NOTE: `attest: false` alone is NOT sufficient — docker/build-push-action
-          # re-adds `--attest=type=provenance` when `provenance: true` (default).
-          # We must also set `provenance: false` to fully disable attestation,
-          # preventing `unknown/unknown` entries in the merged multi-arch index.
-          attest: false
+          # docker/build-push-action re-adds `--attest=type=provenance` when
+          # `provenance: true` (default). Setting `provenance: false` disables
+          # it, preventing `unknown/unknown` entries in the merged index.
           provenance: false
 
       - name: Show image labels (PR)
