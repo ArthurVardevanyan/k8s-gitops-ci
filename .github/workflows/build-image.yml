@@ -1,10 +1,10 @@
 # This workflow builds each architecture on a matching native runner via a
 # matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU), then
 # merges them into multi-arch tags: the version tag plus `main` and `latest`.
-# Attestations are disabled (they cause `imagetools create` to produce
-# `unknown/unknown` platform entries). Per-arch images are pushed to GHCR
-# only on `push` to `main`; on PRs both arches are still built and loaded
-# (so the build is exercised) but nothing is pushed.
+# Per-arch images are pushed to GHCR only on `push` to `main`; they are
+# ephemeral intermediates, deleted again once the multi-arch indexes are
+# created and verified. On PRs both arches are still built and loaded (so
+# the build is exercised) but nothing is pushed.
 name: build-image
 
 on:
@@ -90,12 +90,10 @@ jobs:
             BUILD_SOURCE=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # Attestations (SBOM/provenance) create extra manifest entries that
-          # `docker buildx imagetools create` treats as `unknown/unknown`
-          # platform entries. Since we don't use attestation elsewhere, remove
-          # it from the pushed images so the merge step produces a clean
-          # index with exactly 2 platform entries.
-          attest: false
+          # `docker/build-push-action` re-adds `--attest=type=provenance` when
+          # `provenance: true` (default). Setting `provenance: false` disables
+          # it, preventing `unknown/unknown` entries in the merged index.
+          provenance: false
 
       - name: Show image labels (PR)
         if: steps.prep.outputs.do_push == 'false'
@@ -147,10 +145,10 @@ jobs:
           ARM64="${GHCR}:${VERSION}-linux-arm64"
           for TAG in "$VERSION" "main" "latest"; do
             REF="${GHCR}:${TAG}"
-            # `docker manifest create` fails because per-arch tags are
-            # manifest-wrapped by docker/buildx; `imagetools create` reads
-            # through the wrapper and produces a clean index.
-            docker buildx imagetools create -t "$REF" --platform auto "$AMD64" "$ARM64"
+            # Per-arch tags are manifest-wrapped by docker/buildx but
+            # `imagetools create` reads through the wrapper and preserves
+            # each image's platform.
+            docker buildx imagetools create -t "$REF" "$AMD64" "$ARM64"
             echo "Pushed ${REF}"
           done
 
@@ -170,3 +168,37 @@ jobs:
             fi
           done
           echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
+
+      - name: Clean up per-arch tags
+        run: |
+          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="${{ steps.version.outputs.version }}"
+          for PAIR in linux-amd64 linux-arm64; do
+            TAG="${GHCR}:${VERSION}-${PAIR}"
+            echo "Removing ${TAG}"
+            docker manifest inspect "${TAG}" >/dev/null
+            docker manifest rm "${TAG}"
+          done
+          echo "Per-arch tags removed; ${GHCR}:${VERSION} / main / latest indexes remain."
+
+      - name: Verify indexes survive per-arch cleanup
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="${{ steps.version.outputs.version }}"
+          for TAG in "${{ steps.version.outputs.version }}" "main" "latest"; do
+            REF="ghcr.io/${REPO}:${TAG}"
+            echo "Checking ${REF} after cleanup..."
+            INDEX="$(docker manifest inspect "$REF")"
+            DIGESTS="$(echo "$INDEX" | jq -r '.manifests[].digest')"
+            TOKEN="$(curl -s -H "Authorization: Bearer $GHCR_TOKEN" "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull" | jq -r .token)"
+            for DIGEST in $DIGESTS; do
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${REPO}/manifests/${DIGEST}")"
+              if [ "$CODE" != "200" ]; then
+                echo "::error::${REF} references ${DIGEST} which no longer resolves (HTTP ${CODE}) - per-arch cleanup deleted a manifest the index depends on"
+                exit 1
+              fi
+            done
+            echo "${REF}: all referenced manifests still resolve."
+          done
