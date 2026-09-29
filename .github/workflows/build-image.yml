@@ -1,10 +1,10 @@
 # This workflow builds each architecture on a matching native runner via a
 # matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU), then
 # merges them into multi-arch tags: the version tag plus `main` and `latest`.
-# Provenance attestation is disabled (it causes `imagetools create` to
-# produce `unknown/unknown` platform entries). Per-arch images are pushed
-# to GHCR only on `push` to `main`; on PRs both arches are still built and
-# loaded (so the build is exercised) but nothing is pushed.
+# Attestations are disabled (they cause `imagetools create` to produce
+# `unknown/unknown` platform entries). Per-arch images are pushed to GHCR
+# only on `push` to `main`; on PRs both arches are still built and loaded
+# (so the build is exercised) but nothing is pushed.
 name: build-image
 
 on:
@@ -90,10 +90,12 @@ jobs:
             BUILD_SOURCE=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # docker/build-push-action re-adds `--attest=type=provenance` when
-          # `provenance: true` (default). Setting `provenance: false` disables
-          # it, preventing `unknown/unknown` entries in the merged index.
-          provenance: false
+          # Attestations (SBOM/provenance) create extra manifest entries that
+          # `docker buildx imagetools create` treats as `unknown/unknown`
+          # platform entries. Since we don't use attestation elsewhere, remove
+          # it from the pushed images so the merge step produces a clean
+          # index with exactly 2 platform entries.
+          attest: false
 
       - name: Show image labels (PR)
         if: steps.prep.outputs.do_push == 'false'
@@ -143,13 +145,12 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           AMD64="${GHCR}:${VERSION}-linux-amd64"
           ARM64="${GHCR}:${VERSION}-linux-arm64"
-          # Per-arch tags are manifest-wrapped by docker/buildx but
-          # `imagetools create` reads through the wrapper. With provenance
-          # disabled the merged index contains exactly 2 platform entries,
-          # no bogus unknown/unknown.
           for TAG in "$VERSION" "main" "latest"; do
             REF="${GHCR}:${TAG}"
-            docker buildx imagetools create -t "$REF" "$AMD64" "$ARM64"
+            # `docker manifest create` fails because per-arch tags are
+            # manifest-wrapped by docker/buildx; `imagetools create` reads
+            # through the wrapper and produces a clean index.
+            docker buildx imagetools create -t "$REF" --platform auto "$AMD64" "$ARM64"
             echo "Pushed ${REF}"
           done
 
