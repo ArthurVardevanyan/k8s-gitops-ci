@@ -1,5 +1,12 @@
-# This workflow builds a multi-arch Docker image for linux/amd64 and linux/arm64
-# using a single multi-platform build, pushing one final multi-arch tag.
+# This workflow builds each architecture on a matching native runner via a
+# matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU), then
+# merges them into multi-arch tags: the version tag plus `main` and `latest`.
+# The merge builds every index with EXPLICIT per-platform annotation
+# (`docker manifest create` + `annotate --os/--arch`), so the indexes never
+# contain the `unknown/unknown` entries that `imagetools create` from raw
+# digests produced. Per-arch images are pushed to GHCR only on `push` to
+# `main`; on PRs both arches are still built and loaded (so the build is
+# exercised) but nothing is pushed.
 name: build-image
 
 on:
@@ -18,56 +25,148 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
+    name: Build (${{ matrix.platform }})
     steps:
       - uses: actions/checkout@v5
 
-      - name: Prepare environment
-        id: prepare
+      - name: Prepare
+        id: prep
         run: |
+          PLATFORM=${{ matrix.platform }}
+          PAIR="${PLATFORM//\//-}"
           REPO="${{ github.repository }}"
           GHCR="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]')"
-          # push_images: true only for push-to-main, false for PRs and fork PRs
+          VERSION="$(cat VERSION)"
+          # Commit timestamp (UTC) keeps a rebuild of the same commit
+          # byte-for-byte reproducible.
+          BUILD_TIME="$(TZ=UTC git show -s --format=%cd --date='format:%Y-%m-%dT%H:%M:%SZ' HEAD 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "main" ]; then
-            echo "push_images=true" >> $GITHUB_OUTPUT
-            echo "TAG=${GHCR}:$(cat VERSION)" >> $GITHUB_OUTPUT
+            echo "do_push=true" >> $GITHUB_OUTPUT
+            TAG="${GHCR}:${VERSION}-${PAIR}"
           else
-            echo "push_images=false" >> $GITHUB_OUTPUT
+            echo "do_push=false" >> $GITHUB_OUTPUT
+            TAG="${GHCR}:pr-${{ github.event.pull_request.number }}-${PAIR}"
           fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "platform_pair=${PAIR}" >> $GITHUB_ENV
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker-container
 
       - name: Login to GHCR
-        if: steps.prepare.outputs.push_images == 'true'
+        if: steps.prep.outputs.do_push == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
-        if: steps.prepare.outputs.push_images == 'true'
+      - name: Build
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Containerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.prepare.outputs.TAG }}
+          platforms: ${{ matrix.platform }}
+          push: ${{ steps.prep.outputs.do_push == 'true' }}
+          load: ${{ steps.prep.outputs.do_push == 'false' }}
+          tags: ${{ steps.prep.outputs.tag }}
+          build-args: |
+            BUILD_VERSION=${{ steps.prep.outputs.version }}
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ steps.prep.outputs.build_time }}
+            BUILD_SOURCE=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build multi-arch (verify)
-        if: steps.prepare.outputs.push_images == 'false'
+      - name: Show image labels (PR)
+        if: steps.prep.outputs.do_push == 'false'
         run: |
-          docker buildx build --platform linux/amd64,linux/arm64 \
-            --file Containerfile \
-            --cache-from type=gha \
-            --cache-to type=gha,mode=max \
-            .
+          echo "Labels baked into ${{ steps.prep.outputs.tag }}:"
+          docker inspect --format '{{json .Config.Labels}}' "${{ steps.prep.outputs.tag }}" | jq .
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    if: |
+      github.event_name == 'push' && github.ref_name == 'main'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get version
+        id: version
+        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+
+      - name: Verify per-arch images exist
+        run: |
+          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="${{ steps.version.outputs.version }}"
+          for PAIR in linux-amd64 linux-arm64; do
+            if ! docker manifest inspect "${GHCR}:${VERSION}-${PAIR}" >/dev/null 2>&1; then
+              echo "::error::Per-arch image ${GHCR}:${VERSION}-${PAIR} not found in registry"
+              exit 1
+            fi
+          done
+          echo "Both per-arch images are present."
+
+      - name: Create and push multi-arch indexes
+        run: |
+          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="${{ steps.version.outputs.version }}"
+          AMD64="${GHCR}:${VERSION}-linux-amd64"
+          ARM64="${GHCR}:${VERSION}-linux-arm64"
+          for TAG in "$VERSION" "main" "latest"; do
+            REF="${GHCR}:${TAG}"
+            # Build a fresh index from the per-arch tags, then EXPLICITLY
+            # annotate each entry's platform. Relying on platform inference
+            # is what produced the `unknown/unknown` entries; explicit
+            # --os/--arch guarantees correct platform metadata.
+            docker manifest create "$REF" "$AMD64" "$ARM64"
+            docker manifest annotate "$REF" "$AMD64" --os linux --arch amd64
+            docker manifest annotate "$REF" "$ARM64" --os linux --arch arm64
+            docker manifest push "$REF"
+            echo "Pushed ${REF}"
+          done
+
+      - name: Verify indexes
+        run: |
+          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          for TAG in "${{ steps.version.outputs.version }}" "main" "latest"; do
+            REF="${GHCR}:${TAG}"
+            echo "=== ${REF} ==="
+            INSPECT="$(docker manifest inspect "$REF")"
+            echo "$INSPECT"
+            TOTAL="$(echo "$INSPECT" | jq '.manifests | length')"
+            BAD="$(echo "$INSPECT" | jq '[.manifests[] | select((.platform == null) or (.platform.os == "unknown") or (.platform.architecture == "unknown"))] | length')"
+            if [ "$TOTAL" -ne 2 ] || [ "$BAD" -ne 0 ]; then
+              echo "::error::${REF} is invalid: ${TOTAL} entries, ${BAD} with unknown/missing platform"
+              exit 1
+            fi
+          done
+          echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
