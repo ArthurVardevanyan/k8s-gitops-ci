@@ -115,10 +115,13 @@ today:
   Changed" list of merged PRs, a "New Contributors" section, and a Full
   Changelog compare link.
 - **Container images** — multi-arch (`linux/amd64` + `linux/arm64`) built
-  via GitHub Actions (`.github/workflows/build-image.yml`). Pushed to
-  `ghcr.io/${{ github.repository }}`: `pr-${PR_NUM}` on PRs, `latest` on
-  push to `main`. Tags are automatically cleaned up when PRs are
-  closed/merged.
+  via GitHub Actions (`.github/workflows/build-image.yml`). On PRs both
+  architectures are built and loaded locally but nothing is pushed. On
+  push to `main`, per-architecture tags (`${VERSION}-linux-amd64`,
+  `${VERSION}-linux-arm64`) are pushed as ephemeral intermediates; a
+  merge job then creates the multi-arch indexes (`${VERSION}`, `main`,
+  `latest`) and deletes those per-arch tags, then re-verifies that the
+  indexes still resolve. Pushed to `ghcr.io/${{ github.repository }}`.
 
 **Not currently active** — present in config but not shipping:
 
@@ -168,9 +171,12 @@ Everything runs inside the single Tekton build step described in
 4. **Container images** — built via GitHub Actions on `pull_request` and
    `push` events targeting `main` (see
    `.github/workflows/build-image.yml`):
-   - PR pushes: pushed as `pr-${PR_NUM}`, automatically deleted when the
-     PR is closed/merged.
-   - Pushes to `main`: pushed as `latest` (and also `sha-${sha}`).
+   - PR pushes: both architectures are built and loaded locally; nothing
+     is pushed to the registry.
+   - Pushes to `main`: per-architecture tags (`${VERSION}-linux-amd64`,
+     `${VERSION}-linux-arm64`) are pushed as ephemeral intermediates;
+     a merge job creates the `${VERSION}`/`main`/`latest` indexes and
+     then deletes those per-arch tags.
 
 ## Cutting a release
 

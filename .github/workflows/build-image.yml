@@ -1,10 +1,10 @@
 # This workflow builds each architecture on a matching native runner via a
 # matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU), then
 # merges them into multi-arch tags: the version tag plus `main` and `latest`.
-# Provenance attestation is disabled (it causes `imagetools create` to
-# produce `unknown/unknown` platform entries). Per-arch images are pushed
-# to GHCR only on `push` to `main`; on PRs both arches are still built and
-# loaded (so the build is exercised) but nothing is pushed.
+# Per-arch images are pushed to GHCR only on `push` to `main`; they are
+# ephemeral intermediates, deleted again once the multi-arch indexes are
+# created and verified. On PRs both arches are still built and loaded (so
+# the build is exercised) but nothing is pushed.
 name: build-image
 
 on:
@@ -168,3 +168,37 @@ jobs:
             fi
           done
           echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
+
+      - name: Clean up per-arch tags
+        run: |
+          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="${{ steps.version.outputs.version }}"
+          for PAIR in linux-amd64 linux-arm64; do
+            TAG="${GHCR}:${VERSION}-${PAIR}"
+            echo "Removing ${TAG}"
+            docker manifest inspect "${TAG}" >/dev/null
+            docker manifest rm "${TAG}"
+          done
+          echo "Per-arch tags removed; ${GHCR}:${VERSION} / main / latest indexes remain."
+
+      - name: Verify indexes survive per-arch cleanup
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="${{ steps.version.outputs.version }}"
+          for TAG in "${{ steps.version.outputs.version }}" "main" "latest"; do
+            REF="ghcr.io/${REPO}:${TAG}"
+            echo "Checking ${REF} after cleanup..."
+            INDEX="$(docker manifest inspect "$REF")"
+            DIGESTS="$(echo "$INDEX" | jq -r '.manifests[].digest')"
+            TOKEN="$(curl -s -H "Authorization: Bearer $GHCR_TOKEN" "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull" | jq -r .token)"
+            for DIGEST in $DIGESTS; do
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "https://ghcr.io/v2/${REPO}/manifests/${DIGEST}")"
+              if [ "$CODE" != "200" ]; then
+                echo "::error::${REF} references ${DIGEST} which no longer resolves (HTTP ${CODE}) - per-arch cleanup deleted a manifest the index depends on"
+                exit 1
+              fi
+            done
+            echo "${REF}: all referenced manifests still resolve."
+          done
