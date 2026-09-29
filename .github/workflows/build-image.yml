@@ -147,10 +147,10 @@ jobs:
           ARM64="${GHCR}:${VERSION}-linux-arm64"
           for TAG in "$VERSION" "main" "latest"; do
             REF="${GHCR}:${TAG}"
-            # `docker manifest create` fails because per-arch tags are
-            # manifest-wrapped by docker/buildx; `imagetools create` reads
-            # through the wrapper and produces a clean index.
-            docker buildx imagetools create -t "$REF" --platform auto "$AMD64" "$ARM64"
+            # Per-arch tags are manifest-wrapped by docker/buildx but
+            # `imagetools create` reads through the wrapper and preserves
+            # each image's platform. No --platform flag needed (auto-inferred).
+            docker buildx imagetools create -t "$REF" "$AMD64" "$ARM64"
             echo "Pushed ${REF}"
           done
 
