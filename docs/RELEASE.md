@@ -124,23 +124,19 @@ today:
   and loaded locally but nothing is pushed. On a push to `main`, the merge
   job creates the `main` index; on a GA push (`VERSION` advanced) it also
   creates `${VERSION}` and `latest`. Released indexes are never moved by a
-  non-release push. After publishing, `scripts/prune-ghcr.sh` deletes
+  non-release push. After publishing, the prune job deletes
   every package version that is neither a kept tag nor a per-arch image
   referenced by one (see below). Pushed to
   `ghcr.io/${{ github.repository }}`.
 
   GHCR cannot untag (the registry Tag DELETE endpoint is unsupported), so
   pruning goes through the GitHub Packages API, which deletes a whole
-  version. The script therefore aborts without deleting anything if a kept
+  version. The prune job therefore aborts without deleting anything if a kept
   tag is unreadable or references a missing image, and re-verifies every
   kept tag afterwards. The GHCR versions page will still list each
   per-arch image as an untagged version; those are the children of the
   kept tags and must not be deleted by hand, or the tags that reference
-  them break. To preview a prune:
-
-  ```bash
-  DRY_RUN=1 GH_TOKEN="$(gh auth token)" REPO=<owner>/<repo> scripts/prune-ghcr.sh
-  ```
+  them break.
 
 **Not currently active** — present in config but not shipping:
 
@@ -196,7 +192,7 @@ Everything runs inside the single Tekton build step described in
      no tag; a merge job builds the multi-arch indexes from those
      digests, keeping the tag list minimal (`main`, `latest`, and
      release versions). On a GA push (`VERSION` advanced), also creates
-     `${VERSION}` and `latest`. After publishing, `scripts/prune-ghcr.sh`
+     `${VERSION}` and `latest`. After publishing, the prune job
      removes every package version that is not a kept tag or one of its
      per-arch images.
 

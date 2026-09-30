@@ -16,8 +16,8 @@
 #
 # The prune job then deletes every package version that is neither a kept
 # tag (`main`, `latest`, `X.Y.Z`) nor a per-arch image referenced by one
-# (scripts/prune-ghcr.sh). GHCR cannot untag, so this goes through the
-# GitHub Packages API.
+# (prune job below). GHCR cannot untag, so this goes through the GitHub
+# Packages API.
 
 name: build-image
 
@@ -233,10 +233,93 @@ jobs:
     if: |
       github.event_name == 'push' && github.ref_name == 'main'
     steps:
-      - uses: actions/checkout@v5
-
+      # GHCR cannot untag (registry Tag DELETE returns 405), so cleanup goes
+      # through the Packages API, which deletes a whole package version.
+      # Deleting a version an index still references breaks that index, so
+      # only versions that are neither a kept tag nor a child of one are
+      # deleted, and nothing is deleted if a kept tag cannot be verified.
       - name: Prune unreferenced package versions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: scripts/prune-ghcr.sh
+          OWNER_TYPE: ${{ github.event.repository.owner.type }}
+        run: |
+          set -euo pipefail
+          REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          OWNER="${REPO%%/*}"
+          PKG="${REPO#*/}"
+          KEEP_RE='^(main|latest|[0-9]+\.[0-9]+\.[0-9]+)$'
+          ACCEPT='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
+
+          if [ "$OWNER_TYPE" = "Organization" ]; then
+            API="/orgs/${OWNER}/packages/container/${PKG}/versions"
+          else
+            API="/users/${OWNER}/packages/container/${PKG}/versions"
+          fi
+
+          REG_TOKEN="$(curl -sf --user "x-access-token:${GH_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull" | jq -r .token)"
+          if [ -z "$REG_TOKEN" ] || [ "$REG_TOKEN" = "null" ]; then
+            echo "::error::Could not obtain a GHCR registry token; nothing pruned."
+            exit 1
+          fi
+
+          # registry_get <tag-or-digest> [curl args...]
+          registry_get() {
+            local ref="$1"
+            shift
+            curl -sf -H "Authorization: Bearer ${REG_TOKEN}" -H "Accept: ${ACCEPT}" \
+              "$@" "https://ghcr.io/v2/${REPO}/manifests/${ref}"
+          }
+
+          # verify_kept: every kept tag must resolve with every child present.
+          # Prints each kept version digest and child digest to stdout.
+          verify_kept() {
+            local tag body d
+            while read -r tag; do
+              [ -z "$tag" ] && continue
+              body="$(registry_get "$tag")" || {
+                echo "::error::Kept tag ${tag} cannot be read from the registry." >&2
+                return 1
+              }
+              for d in $(jq -r '.manifests[]?.digest' <<<"$body"); do
+                registry_get "$d" -o /dev/null -I || {
+                  echo "::error::Tag ${tag} references ${d}, which is missing." >&2
+                  return 1
+                }
+                echo "$d"
+              done
+            done < <(jq -r --arg re "$KEEP_RE" '.[].metadata.container.tags[] | select(test($re))' <<<"$KEPT_TAGGED" | sort -u)
+          }
+
+          VERSIONS="$(gh api --paginate "${API}?per_page=100" --jq '.[]' | jq -s '.')"
+          echo "Package has $(jq length <<<"$VERSIONS") version(s)."
+
+          KEPT_TAGGED="$(jq -c --arg re "$KEEP_RE" \
+            '[.[] | select((.metadata.container.tags // []) | any(test($re)))]' <<<"$VERSIONS")"
+          if [ "$(jq length <<<"$KEPT_TAGGED")" -eq 0 ]; then
+            echo "::error::No version carries a kept tag (main/latest/X.Y.Z); refusing to prune."
+            exit 1
+          fi
+
+          CHILDREN="$(verify_kept)"
+          KEEP_DIGESTS="$( (jq -r '.[].name' <<<"$KEPT_TAGGED"; echo "$CHILDREN") | sed '/^$/d' | sort -u)"
+          echo "Keeping:"
+          while read -r d; do echo "  $d"; done <<<"$KEEP_DIGESTS"
+
+          FAILED=0
+          while IFS=$'\t' read -r ID DIGEST TAGS; do
+            [ -z "$ID" ] && continue
+            grep -qFx "$DIGEST" <<<"$KEEP_DIGESTS" && continue
+            echo "Deleting ${ID} ${DIGEST:0:19} [${TAGS}]"
+            gh api -X DELETE "${API}/${ID}" >/dev/null || {
+              echo "::warning::Failed to delete version ${ID}"
+              FAILED=$((FAILED + 1))
+            }
+          done < <(jq -r '.[] | [.id, .name, ((.metadata.container.tags // []) | join(","))] | @tsv' <<<"$VERSIONS")
+
+          verify_kept >/dev/null
+          echo "Post-prune verification passed."
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::${FAILED} deletion(s) failed."
+            exit 1
+          fi
