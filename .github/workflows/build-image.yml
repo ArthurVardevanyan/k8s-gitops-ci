@@ -97,7 +97,7 @@ jobs:
           # documented multi-platform pattern: tags are added later
           # by the merge job, keeping the tag list to a minimum
           # (`main`, `latest`, `0.62.4`, …).
-          tags: ${{ steps.prep.outputs.ghcr }}:${{ github.sha }}-${{ matrix.platform_pair }}
+          tags: ${{ steps.prep.outputs.ghcr }}:${{ github.sha }}-${{ env.platform_pair }}
           build-args: |
             BUILD_VERSION=${{ steps.prep.outputs.version }}
             BUILD_COMMIT=${{ github.sha }}
@@ -115,7 +115,7 @@ jobs:
         run: |
           # `docker/build-push-action`@v6 writes the manifest digest to
           # ${{ steps.build.outputs.digest }} on completion.
-          echo "${{ steps.build.outputs.digest }}" > "${{ matrix.platform_pair }}-digest"
+          echo "${{ steps.build.outputs.digest }}" > "${{ env.platform_pair }}-digest"
           echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
 
       - name: Show image labels (PR)
@@ -123,15 +123,15 @@ jobs:
         run: |
           echo "Labels baked into image:"
           docker inspect --format '{{json .Config.Labels}}' \
-            "ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}-${{ matrix.platform_pair }}" \
+            "ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}-${{ env.platform_pair }}" \
             | jq .
 
       - name: Upload digest artifact
         if: steps.prep.outputs.do_push == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ matrix.platform_pair }}
-          path: ${{ matrix.platform_pair }}-digest
+          name: digest-${{ env.platform_pair }}
+          path: ${{ env.platform_pair }}-digest
 
   merge:
     runs-on: ubuntu-latest
