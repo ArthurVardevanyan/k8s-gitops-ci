@@ -1,11 +1,21 @@
 # This workflow builds each architecture on a matching native runner via a
 # matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU), then
-# merges them into multi-arch tags: the version tag plus `main` and `latest`.
-# Per-arch images are pushed to GHCR only on `push` to `main`; per-arch
-# tags and multi-arch indexes share the same underlying digests on GHCR
-# so the tags cannot be safely deleted without breaking the index. On PRs
-# both arches are still built and loaded (so the build is exercised) but
-# nothing is pushed.
+# merges them into multi-arch indexes. Per-arch images are tagged by their
+# commit SHA (`${SHA}-linux-amd64`, `${SHA}-linux-arm64`) so every commit
+# gets a unique per-arch pair that never collides with a released version.
+# The merge job:
+#
+#  - always (re)creates the `main` index — it tracks the newest commit;
+#  - on a GA (`VERSION` advanced) also creates `${VERSION}` and `latest`;
+#    the `${VERSION}` tag and `latest` stay pinned to the GA commit and
+#    are never moved again. On non-release pushes only `main` advances;
+#    released indexes are immutable.
+#
+# After publishing, orphaned per-arch tags (not referenced by any index) are
+# pruned. If GHCR lacks tag-deletion support the prune warns and skips so
+# the publish is unaffected; a post-prune re-verify guards against an
+# index being broken by the prune. On PRs both arches are still built and
+# loaded (so the build is exercised) but nothing is pushed.
 name: build-image
 
 on:
@@ -53,7 +63,7 @@ jobs:
           BUILD_TIME="$(TZ=UTC git show -s --format=%cd --date='format:%Y-%m-%dT%H:%M:%SZ' HEAD 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "main" ]; then
             echo "do_push=true" >> $GITHUB_OUTPUT
-            TAG="${GHCR}:${VERSION}-${PAIR}"
+            TAG="${GHCR}:${{ github.sha }}-${PAIR}"
           else
             echo "do_push=false" >> $GITHUB_OUTPUT
             TAG="${GHCR}:pr-${{ github.event.pull_request.number }}-${PAIR}"
@@ -126,37 +136,72 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
 
+      - name: Classify push (GA vs CI-only)
+        id: classify
+        run: |
+          set -euo pipefail
+          CUR="$(cat VERSION)"
+          BEFORE="${{ github.event.before }}"
+          ZERO="0000000000000000000000000000000000000000"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ]; then
+            BEFORE="$(git rev-parse -q --verify HEAD~1 2>/dev/null || echo "")"
+          fi
+          PREV="$(git show "${BEFORE}:VERSION" 2>/dev/null || echo "")"
+          if [ -n "$PREV" ] && [ "$CUR" != "$PREV" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "VERSION advanced ${PREV} -> ${CUR}: GA release. Publishing \`${CUR}\` + \`${GHCR_IMAGE}:latest\` + main."
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            if [ -z "$PREV" ]; then
+              echo "No prior VERSION resolvable; treating as CI-only (updating main only)."
+            else
+              echo "VERSION unchanged at ${CUR}: CI-only. Updating main only; \`${CUR}\` and latest left untouched."
+            fi
+          fi
+
       - name: Verify per-arch images exist
         run: |
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          VERSION="${{ steps.version.outputs.version }}"
+          SHA="${{ github.sha }}"
           for PAIR in linux-amd64 linux-arm64; do
-            if ! docker manifest inspect "${GHCR}:${VERSION}-${PAIR}" >/dev/null 2>&1; then
-              echo "::error::Per-arch image ${GHCR}:${VERSION}-${PAIR} not found in registry"
+            if ! docker manifest inspect "${GHCR}:${SHA}-linux-${PAIR}" >/dev/null 2>&1; then
+              echo "::error::Per-arch image ${GHCR}:${SHA}-linux-${PAIR} not found in registry"
               exit 1
             fi
           done
-          echo "Both per-arch images are present."
+          echo "Per-arch images for ${SHA} are present."
 
       - name: Create and push multi-arch indexes
         run: |
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          SHA="${{ github.sha }}"
           VERSION="${{ steps.version.outputs.version }}"
-          AMD64="${GHCR}:${VERSION}-linux-amd64"
-          ARM64="${GHCR}:${VERSION}-linux-arm64"
-          for TAG in "$VERSION" "main" "latest"; do
-            REF="${GHCR}:${TAG}"
+          AMD64="${GHCR}:${SHA}-linux-amd64"
+          ARM64="${GHCR}:${SHA}-linux-arm64"
+          # `main` always tracks the newest commit; it is (re)created
+          # on every push to main so it is the bleeding-edge tag.
+          docker buildx imagetools create -t "${GHCR}:main" "$AMD64" "$ARM64"
+          echo "Pushed ${GHCR}:main"
+          if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
             # Per-arch tags are manifest-wrapped by docker/buildx but
             # `imagetools create` reads through the wrapper and preserves
             # each image's platform.
-            docker buildx imagetools create -t "$REF" "$AMD64" "$ARM64"
-            echo "Pushed ${REF}"
-          done
+            docker buildx imagetools create -t "${GHCR}:${VERSION}" "$AMD64" "$ARM64"
+            docker buildx imagetools create -t "${GHCR}:latest" "$AMD64" "$ARM64"
+            echo "GA: pushed ${GHCR}:${VERSION} and ${GHCR}:latest"
+          else
+            echo "CI-only: leaving \`${VERSION}\` and latest as-is."
+          fi
 
       - name: Verify indexes
         run: |
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          for TAG in "${{ steps.version.outputs.version }}" "main" "latest"; do
+          VERSION="${{ steps.version.outputs.version }}"
+          TAGS="main"
+          if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
+            TAGS="${TAGS} ${VERSION} latest"
+          fi
+          for TAG in $TAGS; do
             REF="${GHCR}:${TAG}"
             echo "=== ${REF} ==="
             INSPECT="$(docker manifest inspect "$REF")"
@@ -169,3 +214,85 @@ jobs:
             fi
           done
           echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
+
+      - name: Prune orphaned per-arch tags
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          # Pull+push scoped token (tag deletion needs the push scope).
+          TOKEN="$(curl -sf -H "Authorization: Bearer ${GHCR_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull,push" | jq -r .token)"
+          ALL_TAGS="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+            "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]')"
+          # per-arch tags carry the -linux-<arch> suffix; everything else
+          # (main, latest, and each released ${VERSION}) is a multi-arch index.
+          PER_ARCH="$(echo "$ALL_TAGS" | grep -E -- '-linux-(amd64|arm64)$' || true)"
+          INDEXES="$(echo "$ALL_TAGS" | grep -Ev -- '-linux-(amd64|arm64)$' || true)"
+          if [ -z "$PER_ARCH" ]; then
+            echo "No per-arch tags to consider; nothing to prune."
+            exit 0
+          fi
+          # Union of the child-manifest digests every index references.
+          REFERENCED=""
+          for R in $INDEXES; do
+            CHILD="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${REPO}/manifests/${R}" | jq -r '.manifests[]?.digest // empty' 2>/dev/null || true)"
+            [ -n "$CHILD" ] && REFERENCED="${REFERENCED}${CHILD}"$'\n'
+          done
+          # A per-arch image is "referenced" when the image-manifest digest
+          # an index points at matches. Per-arch tags may be a single-platform
+          # wrapper index (reference = .manifests[0].digest) or a plain
+          # manifest (reference = its own digest); normalize either way.
+          PRUNED=0 UNPRUNED=0
+          for P in $PER_ARCH; do
+            BODY="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${REPO}/manifests/${P}" 2>/dev/null || true)"
+            INNER="$(echo "$BODY" | jq -r 'if (.manifests? | length) > 0 then .manifests[0].digest else .digest // empty end' 2>/dev/null)"
+            if [ -z "$INNER" ]; then
+              echo "::warning::Could not resolve a digest for ${REPO}:${P}; leaving it in place."
+              continue
+            fi
+            if printf '%s' "$REFERENCED" | grep -qFx "$INNER"; then
+              UNPRUNED=$((UNPRUNED+1))
+              echo "Keep ${REPO}:${P} (referenced by an index)."
+            else
+              echo "Pruning ${REPO}:${P} (not referenced by any index)..."
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+                -H "Authorization: Bearer ${TOKEN}" \
+                "https://ghcr.io/v2/${REPO}/tags/${P}")"
+              if [ "$CODE" != "200" ] && [ "$CODE" != "202" ] && [ "$CODE" != "204" ]; then
+                echo "::warning::Tag DELETE for ${REPO}:${P} returned HTTP ${CODE}; tag deletion may not be supported - skipping prune (publish is unaffected)."
+                continue
+              fi
+              PRUNED=$((PRUNED+1))
+            fi
+          done
+          # Safety net: pruning must never leave an index dangling.
+          BROKEN=0
+          for R in $INDEXES; do
+            CHILD="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/${REPO}/manifests/${R}" | jq -r '.manifests[]?.digest' 2>/dev/null || true)"
+            for D in $CHILD; do
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+                "https://ghcr.io/v2/${REPO}/manifests/${D}")"
+              if [ "$CODE" != "200" ]; then
+                echo "::error::Post-prune: index ${REPO}:${R} references ${D} which no longer resolves (HTTP ${CODE})."
+                BROKEN=1
+              fi
+            done
+          done
+          if [ "$BROKEN" -ne 0 ]; then
+            echo "::error::Pruning corrupted an index - this must not happen. Aborting."
+            exit 1
+          fi
+          if [ "$PRUNED" -gt 0 ]; then
+            echo "Pruned ${PRUNED} orphaned per-arch tag(s); kept ${UNPRUNED} referenced."
+          else
+            echo "No orphans to prune (${UNPRUNED} referenced per-arch tag(s))."
+          fi

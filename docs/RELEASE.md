@@ -117,13 +117,16 @@ today:
 - **Container images** — multi-arch (`linux/amd64` + `linux/arm64`) built
   via GitHub Actions (`.github/workflows/build-image.yml`). On PRs both
   architectures are built and loaded locally but nothing is pushed. On
-  push to `main`, per-architecture tags (`${VERSION}-linux-amd64`,
-  `${VERSION}-linux-arm64`) are pushed; a merge job creates the
-  multi-arch indexes (`${VERSION}`, `main`, `latest`). Per-arch tags
-  and index entries share the same underlying digests on GHCR so the
-  per-arch tags remain in the registry — GHCR does not support
-  deleting them without breaking the index. Pushed to
-  `ghcr.io/${{ github.repository }}`.
+  push to `main`, per-architecture tags (`<sha>-linux-amd64`,
+  `<sha>-linux-arm64`) are pushed where `<sha>` is the full commit SHA;
+  a merge job always creates the `main` index and, on a GA push
+  (`VERSION` advanced), also creates `${VERSION}` and `latest`.
+  Released indexes (`${VERSION}`, `latest`) are never moved by a
+  non-release push. After publishing, orphaned per-arch tags (not
+  referenced by any index) are pruned; if GHCR lacks tag-deletion
+  support the prune warns and skips so the publish is unaffected, and
+  a post-prune re-verify guards against an index being broken by the
+  prune. Pushed to `ghcr.io/${{ github.repository }}`.
 
 **Not currently active** — present in config but not shipping:
 
@@ -175,11 +178,13 @@ Everything runs inside the single Tekton build step described in
    `.github/workflows/build-image.yml`):
    - PR pushes: both architectures are built and loaded locally; nothing
      is pushed to the registry.
-   - Pushes to `main`: per-architecture tags (`${VERSION}-linux-amd64`,
-     `${VERSION}-linux-arm64`) are pushed; a merge job creates the
-     `${VERSION}`/`main`/`latest` indexes. Per-arch tags and index
-     entries share the same digests on GHCR, so the per-arch tags
-     remain in the registry.
+   - Pushes to `main`: per-architecture tags (`<sha>-linux-amd64`,
+     `<sha>-linux-arm64`) are pushed (where `<sha>` is the commit SHA);
+     a merge job always creates the `main` index and, on a GA push
+     (`VERSION` advanced), also creates `${VERSION}` and `latest`.
+     Released indexes are never moved by a non-release push. After
+     publishing, orphaned per-arch tags are pruned; if GHCR lacks
+     tag-deletion support the prune warns and skips.
 
 ## Cutting a release
 

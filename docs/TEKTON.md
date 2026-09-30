@@ -105,17 +105,6 @@ reset --hard FETCH_HEAD` + `git clean -fd` (works for any ref/SHA
    build only. See [RELEASE.md](RELEASE.md) for the exact rules and
    commands.
 
-A dedicated `image-build` task (a step inside `build`, gated on
-`${PARAM_EVENT} == "push"`) builds and pushes the multi-arch container
-image (`linux/amd64` + `linux/arm64`) to
-`registry.arthurvardevanyan.com/homelab/k8s-gitops-ci` using the
-toolbox image's pre-installed `k8s-gitops-ci` binary and its `image
-publish` subcommand. This uses the Taskfile's `image:publish` target
-under the hood — the same `podman manifest` flow that the Taskfile's
-`image:publish` target exposes. Images are published **only on GA
-pushes** (never on RCs, PRs, or non-release pushes); the step gates on
-the `event` param and skips entirely when it's a PR.
-
 > **Note:** Container image building has been migrated to GitHub Actions
 > (`.github/workflows/build-image.yml`) for native multi-arch support
 > (`linux/amd64` + `linux/arm64`) and simpler authentication. The Tekton
