@@ -263,7 +263,7 @@ jobs:
         run: |
           set -euo pipefail
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$(cat VERSION)"
           TAGS="main"
           if [ "${{ github.event_name }}" = "push" ]; then
             CUR="$(cat VERSION)"
@@ -294,7 +294,7 @@ jobs:
         run: |
           set -uo pipefail
           REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$(cat VERSION)"
           GHCR="ghcr.io/${REPO}"
 
           # Fetch a token with pull,push scope for GHCR tag operations.
@@ -359,7 +359,7 @@ jobs:
         run: |
           set -euo pipefail
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="$(cat VERSION)"
           BROKEN=0
           for TAG in main ${VERSION} latest; do
             if ! docker buildx imagetools inspect "${GHCR}:${TAG}" >/dev/null 2>&1; then
