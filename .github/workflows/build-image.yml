@@ -164,8 +164,8 @@ jobs:
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
           SHA="${{ github.sha }}"
           for PAIR in linux-amd64 linux-arm64; do
-            if ! docker manifest inspect "${GHCR}:${SHA}-linux-${PAIR}" >/dev/null 2>&1; then
-              echo "::error::Per-arch image ${GHCR}:${SHA}-linux-${PAIR} not found in registry"
+            if ! docker manifest inspect "${GHCR}:${SHA}-${PAIR}" >/dev/null 2>&1; then
+              echo "::error::Per-arch image ${GHCR}:${SHA}-${PAIR} not found in registry"
               exit 1
             fi
           done
