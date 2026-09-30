@@ -463,29 +463,37 @@ spec:
                   # delete_rcs <base>: remove every v<base>-rc.* GitHub release
                   # AND its tag, locally and on the remote. Best-effort — a
                   # cleanup hiccup must never fail a publish.
-                  # Uses the GitHub REST API directly (curl) instead of `gh release
-                  # delete` — `gh`'s --cleanup-tag is version-dependent and can
-                  # silently fail depending on the installed `gh` version, token
-                  # scopes, and API rate limits; curl + the REST API is
-                  # deterministic and gives the same permissions as the existing
-                  # GITHUB_TOKEN used throughout this step.
+                  # Discovers releases through the REST API list endpoint
+                  # (which includes draft/untagged releases) and deletes by
+                  # release ID (the tag-based endpoint only supports GET;
+                  # DELETE on /releases/tags/ returns 404). Releases are
+                  # deleted before their tags to avoid leaving behind untagged
+                  # draft releases that become permanently orphaned.
                   delete_rcs() {
                     _base="$1"
                     _repo="${PARAM_GIT_URL##*github.com/}"
                     _repo="${_repo%.git}"
-                    for _t in $(git tag -l "v${_base}-rc.*"); do
-                      # Delete the GitHub Release (which also removes the tag
-                      # from GitHub's side). -sf = silent + fail on HTTP error;
-                      # || true so cleanup never fails a publish.
-                      curl -sf -X DELETE \
-                        -H "Authorization: token ${GITHUB_TOKEN}" \
-                        "https://api.github.com/repos/${_repo}/releases/tags/${_t}" \
-                        2>/dev/null || true
-                      # Fallback: push deletion to the remote (no-op if the tag
-                      # was already deleted via the API above).
-                      git push origin ":refs/tags/${_t}" 2>/dev/null || true
-                      # Local cleanup.
-                      git tag -d "${_t}" 2>/dev/null || true
+                    if [ -z "${_base}" ]; then
+                      # GA path: sweep every RC release.
+                      _tag_re='^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'
+                    else
+                      _tag_re="^v${_base}-rc\\.[0-9]+$"
+                    fi
+                    for line in $(gh api --paginate \
+                      "repos/${_repo}/releases?per_page=100" 2>/dev/null | \
+                      jq -r --arg re "${_tag_re}" \
+                        '.[] | select(.tag_name != null) | select(.tag_name | test($re)) | "\(.id)\t\(.tag_name)"' 2>/dev/null); do
+                      [ -z "${line}" ] && continue
+                      _rid="$(printf '%s' "${line}" | cut -f1)"
+                      _tag="$(printf '%s' "${line}" | cut -f2)"
+                      [ -z "${_rid}" ] && continue
+                      if gh api -X DELETE \
+                        "repos/${_repo}/releases/${_rid}" >/dev/null 2>&1; then
+                        git push origin ":refs/tags/${_tag}" 2>/dev/null || true
+                        git tag -d "${_tag}" 2>/dev/null || true
+                      else
+                        echo "WARNING: failed to delete release ${_tag} (id=${_rid})" >&2
+                      fi
                     done
                   }
 
@@ -508,15 +516,15 @@ spec:
                     fi
 
                     echo "Releasing GA ${NEW_SEMVER}..."
-                    # Delete this version's RC releases + tags BEFORE cutting
-                    # GA. GitHub-native release notes (changelog.use:
+                    # Delete ALL RC releases + tags BEFORE cutting GA.
+                    # GitHub-native release notes (changelog.use:
                     # github-native) derive "previous tag" from the most recent
                     # tag by date/semver; if the v${VERSION}-rc.* tags still
                     # exist, the notes compare against the RC instead of the
                     # prior GA, producing a truncated changelog and a wrong
                     # "Full Changelog" compare link. Removing them first makes
                     # the previous tag resolve to the last real GA.
-                    delete_rcs "${VERSION}"
+                    delete_rcs
 
                     # GoReleaser only validates that GORELEASER_CURRENT_TAG
                     # exists as a local git tag pointing at HEAD (a local-only
@@ -563,10 +571,28 @@ spec:
                       && [ "${NEXT}" != "${LATEST}" ] \
                       && [ -n "${CHANGED}" ]; then
                       # Drop RCs for any *other* base (a shifted next version
-                      # means the old base will never GA).
-                      for _rct in $(git tag -l 'v*-rc.*'); do
-                        _rcbase="$(printf '%s' "${_rct}" | sed -n 's/^v\([0-9]\+\.[0-9]\+\.[0-9]\+\)-rc\.[0-9]\+$/\1/p')"
-                        [ -n "${_rcbase}" ] && [ "${_rcbase}" != "${NEXT}" ] && delete_rcs "${_rcbase}"
+                      # means the old base will never GA). Discovers RCs via
+                      # the API (includes orphaned untagged drafts).
+                      _repo="${PARAM_GIT_URL##*github.com/}"
+                      _repo="${_repo%.git}"
+                      _api_rc_re='^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'
+                      for line in $(gh api --paginate \
+                        "repos/${_repo}/releases?per_page=100" 2>/dev/null | \
+                        jq -r --arg re "${_api_rc_re}" \
+                          '.[] | select(.tag_name != null) | select(.tag_name | test($re)) | "\(.id)\t\(.tag_name)"' 2>/dev/null); do
+                        [ -z "${line}" ] && continue
+                        _rid="$(printf '%s' "${line}" | cut -f1)"
+                        _tag="$(printf '%s' "${line}" | cut -f2)"
+                        _rcbase="$(printf '%s' "${_tag}" | sed -n 's/^v\([0-9]\+\.[0-9]\+\.[0-9]\+\)-rc\.[0-9]\+$/\1/p')"
+                        [ -z "${_rcbase}" ] && continue
+                        [ "${_rcbase}" = "${NEXT}" ] && continue
+                        if gh api -X DELETE \
+                          "repos/${_repo}/releases/${_rid}" >/dev/null 2>&1; then
+                          git push origin ":refs/tags/${_tag}" 2>/dev/null || true
+                          git tag -d "${_tag}" 2>/dev/null || true
+                        else
+                          echo "WARNING: failed to delete release ${_tag} (id=${_rid})" >&2
+                        fi
                       done
 
                       # Idempotency: HEAD already carries an rc tag for NEXT

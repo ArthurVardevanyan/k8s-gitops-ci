@@ -267,13 +267,21 @@ strict `MAJOR.MINOR.PATCH` regex gate in both the Tekton pipeline and
 
 **Cleanup.**
 
-- When the GA for a version is published, its `v<version>-rc.*`
-  **releases and tags are deleted** (best-effort — cleanup never fails a
-  publish).
+- When the GA for a version is published, **every** `v*-rc.*` release
+  and tag is deleted (best-effort — cleanup never fails a publish).
+  On a push to `main` that advances `VERSION`, the pipeline sweeps all RC
+  releases before cutting the GA tag, so the native release notes compare
+  against the prior GA, not a lingering RC.
 - If the computed `next` shifts mid-cycle (e.g. patch RCs exist, then a
   `feat:` lands so `next` becomes a minor), the now-stale RCs for the old
   base are deleted when the first RC for the new base is cut — they would
   never become GA.
+- Both sweeps discover releases through the **releases list API** (which
+  includes draft/untagged releases) and delete by **release ID**. This
+  avoids the GitHub bug where `DELETE /repos/{owner}/{repo}/releases/tags/
+{tag_name}` returns 404 for a release whose tag was deleted first (an
+  orphaned draft). The tag is always deleted _after_ the release so the
+  release cannot turn into an untagged draft.
 
 **Go-module note.** RC tags use standard semver (`v<next>-rc.N`), which is
 a valid Go pre-release version, and they are deleted at GA. Deleting a tag
