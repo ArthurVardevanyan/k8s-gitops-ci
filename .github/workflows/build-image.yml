@@ -153,18 +153,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download digests
-        run: |
-          for PAIR in linux-amd64 linux-arm64; do
-            gh run download \
-              --repo ${{ github.repository }} \
-              --name digest-${PAIR} \
-              --job merge \
-              -D .
-          done
-          echo "DIGEST_AMD64=$(cat linux-amd64-digest)" >> $GITHUB_ENV
-          echo "DIGEST_ARM64=$(cat linux-arm64-digest)" >> $GITHUB_ENV
-
       - name: Get version
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
