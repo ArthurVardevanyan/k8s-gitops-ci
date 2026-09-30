@@ -115,19 +115,28 @@ today:
   Changed" list of merged PRs, a "New Contributors" section, and a Full
   Changelog compare link.
 - **Container images** — multi-arch (`linux/amd64` + `linux/arm64`) built
-  via GitHub Actions (`.github/workflows/build-image.yml`). Per-arch images
-  are pushed with a per-arch tag (`${SHA}-${PAIR}`) — these tags are
-  temporary and are only used to construct multi-arch indexes. The merge
-  job creates multi-arch indexes with `docker buildx imagetools create`
-  that reference those per-arch tags directly. After publishing,
-  unreferenced per-arch tags are pruned via the registry Tag DELETE API
-  (`DELETE /v2/<repo>/tags/<tag>`) to keep the tag list clean
-  (`main`, `latest`, and release versions only). On PRs both architectures
-  are built and loaded locally but nothing is pushed. On a push to `main`,
-  a merge job creates the `main` index; on a GA push (`VERSION` advanced)
-  it also creates `${VERSION}` and `latest`. Released indexes are never
-  moved by a non-release push. Pushed to
+  via GitHub Actions (`.github/workflows/build-image.yml`). Each
+  architecture is built on a native runner and pushed **by digest only**
+  (no tag, no provenance/SBOM attestations), so the only tags in the
+  registry are `main`, `latest`, and release versions. The merge job
+  builds the multi-arch index from those digests with
+  `docker buildx imagetools create`. On PRs both architectures are built
+  and loaded locally but nothing is pushed. On a push to `main`, the merge
+  job creates the `main` index; on a GA push (`VERSION` advanced) it also
+  creates `${VERSION}` and `latest`. Released indexes are never moved by a
+  non-release push. After publishing, the prune job deletes
+  every package version that is neither a kept tag nor a per-arch image
+  referenced by one (see below). Pushed to
   `ghcr.io/${{ github.repository }}`.
+
+  GHCR cannot untag (the registry Tag DELETE endpoint is unsupported), so
+  pruning goes through the GitHub Packages API, which deletes a whole
+  version. The prune job therefore aborts without deleting anything if a kept
+  tag is unreadable or references a missing image, and re-verifies every
+  kept tag afterwards. The GHCR versions page will still list each
+  per-arch image as an untagged version; those are the children of the
+  kept tags and must not be deleted by hand, or the tags that reference
+  them break.
 
 **Not currently active** — present in config but not shipping:
 
@@ -179,13 +188,13 @@ Everything runs inside the single Tekton build step described in
    `.github/workflows/build-image.yml`):
    - PR pushes: both architectures are built and loaded locally; nothing
      is pushed to the registry.
-   - Pushes to `main`: per-architecture images are pushed with a
-     per-arch tag (`${SHA}-${PAIR}`); a merge job builds multi-arch
-     indexes from those tags, keeping the tag list minimal (`main`,
-     `latest`, and release versions). On a GA push (`VERSION`
-     advanced), also creates `${VERSION}` and `latest`. After
-     publishing, unreferenced per-arch tags are pruned via the
-     registry Tag DELETE API to keep the tag list clean.
+   - Pushes to `main`: per-architecture images are pushed by digest with
+     no tag; a merge job builds the multi-arch indexes from those
+     digests, keeping the tag list minimal (`main`, `latest`, and
+     release versions). On a GA push (`VERSION` advanced), also creates
+     `${VERSION}` and `latest`. After publishing, the prune job
+     removes every package version that is not a kept tag or one of its
+     per-arch images.
 
 ## Cutting a release
 
