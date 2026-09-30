@@ -115,18 +115,17 @@ today:
   Changed" list of merged PRs, a "New Contributors" section, and a Full
   Changelog compare link.
 - **Container images** — multi-arch (`linux/amd64` + `linux/arm64`) built
-  via GitHub Actions (`.github/workflows/build-image.yml`). On PRs both
-  architectures are built and loaded locally but nothing is pushed. On
-  push to `main`, per-architecture tags (`<sha>-linux-amd64`,
-  `<sha>-linux-arm64`) are pushed where `<sha>` is the full commit SHA;
-  a merge job always creates the `main` index and, on a GA push
-  (`VERSION` advanced), also creates `${VERSION}` and `latest`.
-  Released indexes (`${VERSION}`, `latest`) are never moved by a
-  non-release push. After publishing, orphaned per-arch tags (not
-  referenced by any index) are pruned; if GHCR lacks tag-deletion
-  support the prune warns and skips so the publish is unaffected, and
-  a post-prune re-verify guards against an index being broken by the
-  prune. Pushed to `ghcr.io/${{ github.repository }}`.
+  via GitHub Actions (`.github/workflows/build-image.yml`). Per-arch images
+  are pushed without a tag — only by digest
+  (`type=image,name=<repo>,push-by-digest`) — and the merge job builds
+  multi-arch indexes that reference those digests directly, keeping the
+  tag list minimal. On PRs both architectures are built and loaded locally
+  but nothing is pushed. On a push to `main`, a merge job creates the
+  `main` index; on a GA push (`VERSION` advanced) it also creates
+  `${VERSION}` and `latest`. Released indexes are never moved by a
+  non-release push. After publishing, unreferenced versions are pruned
+  via the GitHub Packages API to keep the tag list clean. Pushed to
+  `ghcr.io/${{ github.repository }}`.
 
 **Not currently active** — present in config but not shipping:
 
@@ -178,13 +177,13 @@ Everything runs inside the single Tekton build step described in
    `.github/workflows/build-image.yml`):
    - PR pushes: both architectures are built and loaded locally; nothing
      is pushed to the registry.
-   - Pushes to `main`: per-architecture tags (`<sha>-linux-amd64`,
-     `<sha>-linux-arm64`) are pushed (where `<sha>` is the commit SHA);
-     a merge job always creates the `main` index and, on a GA push
-     (`VERSION` advanced), also creates `${VERSION}` and `latest`.
-     Released indexes are never moved by a non-release push. After
-     publishing, orphaned per-arch tags are pruned; if GHCR lacks
-     tag-deletion support the prune warns and skips.
+   - Pushes to `main`: per-architecture images are pushed by digest
+     only (no tag); a merge job builds multi-arch indexes from those
+     digests, keeping the tag list minimal (`main`, `latest`, and
+     release versions). On a GA push (`VERSION` advanced), also
+     creates `${VERSION}` and `latest`. After publishing, unreferenced
+     versions are pruned via the GitHub Packages API to keep the
+     tag list clean.
 
 ## Cutting a release
 
