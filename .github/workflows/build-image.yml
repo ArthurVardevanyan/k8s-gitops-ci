@@ -362,8 +362,25 @@ jobs:
           set -euo pipefail
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
           VERSION="$(cat VERSION)"
+          CUR="$VERSION"
+          ZERO="0000000000000000000000000000000000000000"
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ]; then
+            BEFORE="$(git rev-parse -q --verify HEAD~1 2>/dev/null || echo "")"
+          fi
+          PREV="$(git show "${BEFORE}:VERSION" 2>/dev/null || echo "")"
+          # GA push: VERSION advanced; verify main + ${VERSION} + latest
+          # CI-only: VERSION unchanged; only verify main + latest
+          RELEASE=false
+          if [ -n "$PREV" ] && [ "$CUR" != "$PREV" ]; then
+            RELEASE=true
+          fi
           BROKEN=0
-          for TAG in main ${VERSION} latest; do
+          VERIFY_TAGS="main latest"
+          if [ "$RELEASE" = "true" ]; then
+            VERIFY_TAGS="${VERIFY_TAGS} ${VERSION}"
+          fi
+          for TAG in $VERIFY_TAGS; do
             if ! docker buildx imagetools inspect "${GHCR}:${TAG}" >/dev/null 2>&1; then
               echo "::error::Post-prune: index ${GHCR}:${TAG} is broken (missing child)"
               BROKEN=1
