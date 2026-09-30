@@ -11,11 +11,10 @@
 #    are never moved again. On non-release pushes only `main` advances;
 #    released indexes are immutable.
 #
-# After publishing, orphaned per-arch tags (not referenced by any index) are
-# pruned. If GHCR lacks tag-deletion support the prune warns and skips so
-# the publish is unaffected; a post-prune re-verify guards against an
-# index being broken by the prune. On PRs both arches are still built and
-# loaded (so the build is exercised) but nothing is pushed.
+# After publishing, old per-arch tags from previous (non-released) pushes
+# are NOT pruned: GHCR's tag DELETE removes the underlying manifest, which
+# would corrupt multi-arch indexes. They accumulate harmlessly — each
+# image is ~120MB and GHCR has generous storage.
 name: build-image
 
 on:
@@ -214,85 +213,3 @@ jobs:
             fi
           done
           echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
-
-      - name: Prune orphaned per-arch tags
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -uo pipefail
-          REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          # Pull+push scoped token (tag deletion needs the push scope).
-          TOKEN="$(curl -sf --user "x-access-token:${GHCR_TOKEN}" \
-            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull,push" | jq -r .token)"
-          ALL_TAGS="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-            "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]')"
-          # per-arch tags carry the -linux-<arch> suffix; everything else
-          # (main, latest, and each released ${VERSION}) is a multi-arch index.
-          PER_ARCH="$(echo "$ALL_TAGS" | grep -E -- '-linux-(amd64|arm64)$' || true)"
-          INDEXES="$(echo "$ALL_TAGS" | grep -Ev -- '-linux-(amd64|arm64)$' || true)"
-          if [ -z "$PER_ARCH" ]; then
-            echo "No per-arch tags to consider; nothing to prune."
-            exit 0
-          fi
-          # Union of the child-manifest digests every index references.
-          REFERENCED=""
-          for R in $INDEXES; do
-            CHILD="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
-              "https://ghcr.io/v2/${REPO}/manifests/${R}" | jq -r '.manifests[]?.digest // empty' 2>/dev/null || true)"
-            [ -n "$CHILD" ] && REFERENCED="${REFERENCED}${CHILD}"$'\n'
-          done
-          # A per-arch image is "referenced" when the image-manifest digest
-          # an index points at matches. Per-arch tags may be a single-platform
-          # wrapper index (reference = .manifests[0].digest) or a plain
-          # manifest (reference = its own digest); normalize either way.
-          PRUNED=0 UNPRUNED=0
-          for P in $PER_ARCH; do
-            BODY="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
-              "https://ghcr.io/v2/${REPO}/manifests/${P}" 2>/dev/null || true)"
-            INNER="$(echo "$BODY" | jq -r 'if (.manifests? | length) > 0 then .manifests[0].digest else .digest // empty end' 2>/dev/null)"
-            if [ -z "$INNER" ]; then
-              echo "::warning::Could not resolve a digest for ${REPO}:${P}; leaving it in place."
-              continue
-            fi
-            if printf '%s' "$REFERENCED" | grep -qFx "$INNER"; then
-              UNPRUNED=$((UNPRUNED+1))
-              echo "Keep ${REPO}:${P} (referenced by an index)."
-            else
-              echo "Pruning ${REPO}:${P} (not referenced by any index)..."
-              CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
-                -H "Authorization: Bearer ${TOKEN}" \
-                "https://ghcr.io/v2/${REPO}/tags/${P}")"
-              if [ "$CODE" != "200" ] && [ "$CODE" != "202" ] && [ "$CODE" != "204" ]; then
-                echo "::warning::Tag DELETE for ${REPO}:${P} returned HTTP ${CODE}; tag deletion may not be supported - skipping prune (publish is unaffected)."
-                continue
-              fi
-              PRUNED=$((PRUNED+1))
-            fi
-          done
-          # Safety net: pruning must never leave an index dangling.
-          BROKEN=0
-          for R in $INDEXES; do
-            CHILD="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
-              "https://ghcr.io/v2/${REPO}/manifests/${R}" | jq -r '.manifests[]?.digest' 2>/dev/null || true)"
-            for D in $CHILD; do
-              CODE="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" \
-                -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
-                "https://ghcr.io/v2/${REPO}/manifests/${D}")"
-              if [ "$CODE" != "200" ]; then
-                echo "::error::Post-prune: index ${REPO}:${R} references ${D} which no longer resolves (HTTP ${CODE})."
-                BROKEN=1
-              fi
-            done
-          done
-          if [ "$BROKEN" -ne 0 ]; then
-            echo "::error::Pruning corrupted an index - this must not happen. Aborting."
-            exit 1
-          fi
-          if [ "$PRUNED" -gt 0 ]; then
-            echo "Pruned ${PRUNED} orphaned per-arch tag(s); kept ${UNPRUNED} referenced."
-          else
-            echo "No orphans to prune (${UNPRUNED} referenced per-arch tag(s))."
-          fi
