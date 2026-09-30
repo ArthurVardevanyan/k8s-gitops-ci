@@ -222,7 +222,7 @@ jobs:
           set -uo pipefail
           REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
           # Pull+push scoped token (tag deletion needs the push scope).
-          TOKEN="$(curl -sf -H "Authorization: Bearer ${GHCR_TOKEN}" \
+          TOKEN="$(curl -sf --user "x-access-token:${GHCR_TOKEN}" \
             "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull,push" | jq -r .token)"
           ALL_TAGS="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
             "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]')"
