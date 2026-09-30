@@ -317,8 +317,6 @@ jobs:
               main|latest|[0-9]*.[0-9]*.[0-9]*) ;;
               *) continue ;;
             esac
-            # Skip tags we already inspected.
-            echo "$TAG" | grep -qE '^[0-9]' && continue
             for D in $(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null \
               | jq -r '.manifests[]?.digest // empty' 2>/dev/null); do
               KEPT_DIGESTS="${KEPT_DIGESTS}${D}"$'\n'
