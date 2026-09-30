@@ -80,11 +80,36 @@ jobs:
           # Write annotations as one manifest:key=value per line so build-push-action
           # parses them as separate entries. Always written so PR builds can also
           # catch format mistakes early.
-          ANNOTATIONS="$(printf 'manifest:org.opencontainers.image.description=%s\\nmanifest:org.opencontainers.image.source=%s\\nmanifest:org.opencontainers.image.licenses=%s' "$DESC" "https://github.com/${REPO}" "Apache-2.0")"
-          echo "$ANNOTATIONS" > "${RUNNER_TEMP}/annotations.txt"
           echo "annotations<<EOF" >> $GITHUB_OUTPUT
-          echo "$ANNOTATIONS" >> $GITHUB_OUTPUT
+          echo "manifest:org.opencontainers.image.description=${DESC}" >> $GITHUB_OUTPUT
+          echo "manifest:org.opencontainers.image.source=https://github.com/${REPO}" >> $GITHUB_OUTPUT
+          echo "manifest:org.opencontainers.image.licenses=Apache-2.0" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          # Also write to a file so validation can run on PRs too.
+          {
+            echo "manifest:org.opencontainers.image.description=${DESC}"
+            echo "manifest:org.opencontainers.image.source=https://github.com/${REPO}"
+            echo "manifest:org.opencontainers.image.licenses=Apache-2.0"
+          } > "${RUNNER_TEMP}/annotations.txt"
+
+      - name: Validate annotations
+        run: |
+          # Validate annotations from the file. Works on PRs and pushes.
+          LINES="$(wc -l < "${RUNNER_TEMP}/annotations.txt")"
+          if [ "$LINES" -ne 3 ]; then
+            echo "::error::annotations has ${LINES} lines, expected 3"
+            exit 1
+          fi
+          if grep -q '\\' "${RUNNER_TEMP}/annotations.txt"; then
+            echo "::error::annotations contains backslashes (should be real newlines)"
+            exit 1
+          fi
+          LINES=$(grep -cP '^manifest:[a-z.-]+=.+' "${RUNNER_TEMP}/annotations.txt" || true)
+          if [ "$LINES" -ne 3 ]; then
+            echo "::error::annotations lines do not match manifest:key=value pattern"
+            exit 1
+          fi
+          echo "annotations validated: 3 lines, ok"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -123,6 +148,9 @@ jobs:
           # Set manifest annotations so GHCR shows a description on the
           # GHCR versions page. Without this, a multi-arch index has no
           # annotations and GHCR shows "No description provided".
+          # Always pass directly from multi-line output so PR builds also
+          # catch annotation issues. File-based validation above is for
+          # pre-build checks on PRs.
           annotations: ${{ steps.prep.outputs.annotations }}
 
       - name: Export digest
@@ -184,11 +212,12 @@ jobs:
         id: desc
         run: |
           set -euo pipefail
-          echo "desc=$(grep -oP 'org\.opencontainers\.image\.description=\"\K[^"]+' Containerfile | head -1)" >> $GITHUB_OUTPUT
-          if [ -z "${{ steps.desc.outputs.desc }}" ]; then
+          DESC="$(grep -oP 'org\.opencontainers\.image\.description=\"\K[^"]+' Containerfile | head -1)"
+          if [ -z "$DESC" ]; then
             echo "::error::org.opencontainers.image.description label not found in Containerfile"
             exit 1
           fi
+          echo "desc=${DESC}" >> $GITHUB_OUTPUT
 
       - name: Classify push (GA vs CI-only)
         id: classify
