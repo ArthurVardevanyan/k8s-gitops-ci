@@ -148,9 +148,10 @@ jobs:
           # Set manifest annotations so GHCR shows a description on the
           # GHCR versions page. Without this, a multi-arch index has no
           # annotations and GHCR shows "No description provided".
-          # Always pass via file so PR builds can validate and push
-          # builds get the annotations correctly.
-          annotations: file:${{ runner.temp }}/annotations.txt
+          # Always pass directly from multi-line output so PR builds also
+          # catch annotation issues. File-based validation above is for
+          # pre-build checks on PRs.
+          annotations: ${{ steps.prep.outputs.annotations }}
 
       - name: Export digest
         if: steps.prep.outputs.do_push == 'true'
