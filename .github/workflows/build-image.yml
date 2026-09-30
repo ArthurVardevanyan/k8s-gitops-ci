@@ -195,16 +195,17 @@ jobs:
       - name: Create and push multi-arch indexes
         run: |
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          SHA="${{ github.sha }}"
           VERSION="${{ steps.version.outputs.version }}"
-          AMD64="${GHCR}@${DIGEST_AMD64}"
-          ARM64="${GHCR}@${DIGEST_ARM64}"
+          AMD64="${GHCR}:${SHA}-linux-amd64"
+          ARM64="${GHCR}:${SHA}-linux-arm64"
           # `main` always tracks the newest commit; it is (re)created
           # on every push to main so it is the bleeding-edge tag.
           docker buildx imagetools create -t "${GHCR}:main" "$AMD64" "$ARM64"
           echo "Pushed ${GHCR}:main"
           if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
-            # `imagetools create` reads through the push-by-digest wrapper
-            # and preserves each image's platform.
+            # `imagetools create` reads through the tag reference and
+            # preserves each image's platform.
             docker buildx imagetools create -t "${GHCR}:${VERSION}" "$AMD64" "$ARM64"
             docker buildx imagetools create -t "${GHCR}:latest" "$AMD64" "$ARM64"
             echo "GA: pushed ${GHCR}:${VERSION} and ${GHCR}:latest"
@@ -256,23 +257,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Download digests
-        run: |
-          for PAIR in linux-amd64 linux-arm64; do
-            gh run download \
-              --repo ${{ github.repository }} \
-              --name digest-${PAIR} \
-              -D .
-          done
-          DIGEST_AMD64=$(cat linux-amd64-digest)
-          DIGEST_ARM64=$(cat linux-arm64-digest)
-          echo "DIGEST_AMD64=${DIGEST_AMD64}" >> $GITHUB_ENV
-          echo "DIGEST_ARM64=${DIGEST_ARM64}" >> $GITHUB_ENV
-
-      - name: Get version
-        id: version
-        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
-
       - name: Pre-prune safety check
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -304,92 +288,70 @@ jobs:
           done
           echo "Pre-prune safety check passed: all indexes resolvable."
 
-      - name: Prune unreferenced versions
+      - name: Prune unreferenced per-arch tags
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -uo pipefail
           REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          GHCR="ghcr.io/${REPO}"
           VERSION="${{ steps.version.outputs.version }}"
+          GHCR="ghcr.io/${REPO}"
 
-          echo "Fetching all package versions..."
-          ALL_VERS=$(gh api "/users/${REPO%/*}/packages/container/${REPO##*/}/versions?per_page=100" | jq -c '.')
-          TOTAL=$(echo "$ALL_VERS" | jq length)
-          echo "Total versions found: ${TOTAL}"
+          # Fetch a token with pull,push scope for GHCR tag operations.
+          TOKEN="$(curl -sf --user "x-access-token:${GHCR_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull,push" | jq -r .token)"
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::Could not obtain GHCR token; skipping prune."
+            exit 0
+          fi
 
-          # Build set of tags to keep: release tags, plus per-arch images
-          # referenced by kept indexes.
-          KEEP_IDS=""
-          KEPT_TAGS=""
+          # List all tags in the registry.
+          ALL_TAGS="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+            "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]' | sort -u)"
+          [ -z "$ALL_TAGS" ] && { echo "No tags found; nothing to prune."; exit 0; }
+
+          # Collect multi-arch index digests (these are what we keep).
           KEPT_DIGESTS=""
-
-          # Collect release tags (X.Y.Z)
-          for VER in "$VERSION"; do
-            while IFS= read -r line; do
-              ID=$(echo "$line" | jq -r '.id')
-              TAGS=$(echo "$line" | jq -r '.tags[]')
-              for T in $TAGS; do
-                if [[ "$T" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                  echo "Keeping version ${ID} (release tag: ${T})"
-                  KEEP_IDS="${KEEP_IDS} ${ID}"
-                  KEPT_TAGS="${KEPT_TAGS} ${T}"
-                  break
-                fi
-              done
-            done < <(echo "$ALL_VERS" | jq -c '.[]')
-          done
-
-          # Collect per-arch image digests referenced by kept indexes
-          echo "Collecting referenced digests..."
           for TAG in main ${VERSION} latest; do
-            RAW=$(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null || true)
-            while IFS= read -r line; do
-              D=$(echo "$line" | jq -r '.digest')
-              if [[ "$D" == sha256:* ]]; then
-                echo "Keeping digest ${D} (referenced by ${TAG})"
-                KEPT_DIGESTS="${KEPT_DIGESTS} ${D}"
-              fi
-            done < <(echo "$RAW" | jq -c '.manifests[]? // empty')
+            for D in $(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null \
+              | jq -r '.manifests[]?.digest // empty' 2>/dev/null); do
+              KEPT_DIGESTS="${KEPT_DIGESTS}${D}"$'\n'
+            done
           done
 
-          # Find versions to delete (not in keep lists)
-          TO_DELETE=0
-          while IFS= read -r line; do
-            ID=$(echo "$line" | jq -r '.id')
-            DIGEST=$(echo "$line" | jq -r '.digest')
-            TAGS=$(echo "$line" | jq -r '.metadata.container.tags[]?')
-            # Check if this version should be kept
-            SHOULD_DELETE=true
-            # Check if any tag is in KEPT_TAGS
-            for T in $TAGS; do
-              for KT in $KEPT_TAGS; do
-                if [ "$T" = "$KT" ]; then
-                  SHOULD_DELETE=false
-                fi
-              done
-            done
-            # Check if digest matches a kept index child
-            if [ "$SHOULD_DELETE" = true ]; then
-              for KD in $KEPT_DIGESTS; do
-                if [ "$DIGEST" = "$KD" ]; then
-                  SHOULD_DELETE=false
-                fi
-              done
-            fi
-            if [ "$SHOULD_DELETE" = false ]; then
+          PRUNED=0 UNPRUNED=0
+          for TAG in $ALL_TAGS; do
+            # Skip multi-arch index tags (main, latest, X.Y.Z) and their
+            # direct per-arch entries — they are either the index itself
+            # or per-arch images that the index references.
+            if echo "$TAG" | grep -qE '^main$|^latest$|^([0-9]+\.[0-9]+\.[0-9]+)$'; then
+              UNPRUNED=$((UNPRUNED+1))
+              echo "Keeping ${TAG} (multi-arch index tag)."
               continue
             fi
-            echo "Deleting version ${ID}: ${DIGEST:7:12} (tags: ${TAGS:-none})"
-            gh api \
-              -X DELETE \
-              "/users/${REPO%/*}/packages/container/${REPO##*/}/versions/${ID}" \
-              --silent 2>/dev/null || true
-            TO_DELETE=$((TO_DELETE + 1))
-          done < <(echo "$ALL_VERS" | jq -c '.[]')
-
-          echo "Deleted ${TO_DELETE} unreferenced version(s)."
+            # Check if this tag's manifest digest is referenced by any index.
+            BODY="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+              "https://ghcr.io/v2/${REPO}/manifests/${TAG}" 2>/dev/null || true)"
+            [ -z "$BODY" ] && { echo "Skipping ${TAG} (could not fetch)."; continue; }
+            INNER="$(echo "$BODY" | jq -r 'if (.manifests? | length) > 0 then .manifests[0].digest else .digest // empty end' 2>/dev/null)"
+            if [ -n "$INNER" ] && printf '%s' "$KEPT_DIGESTS" | grep -qFx "$INNER"; then
+              UNPRUNED=$((UNPRUNED+1))
+              echo "Keeping ${TAG} (referenced by an index)."
+            else
+              echo "Pruning ${TAG} (not referenced by any index)..."
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+                -H "Authorization: Bearer ${TOKEN}" \
+                "https://ghcr.io/v2/${REPO}/tags/${TAG}")"
+              if [ "$CODE" != "200" ] && [ "$CODE" != "202" ] && [ "$CODE" != "204" ]; then
+                echo "::warning::Tag DELETE for ${TAG} returned HTTP ${CODE}; skipping."
+                UNPRUNED=$((UNPRUNED+1))
+                continue
+              fi
+              PRUNED=$((PRUNED+1))
+            fi
+          done
+          echo "Pruned ${PRUNED} orphaned tag(s); kept ${UNPRUNED}."
 
       - name: Post-prune verification
         env:
