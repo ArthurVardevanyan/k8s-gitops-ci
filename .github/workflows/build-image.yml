@@ -1,21 +1,23 @@
-# This workflow builds each architecture on a matching native runner via a
-# matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU),
-# then merges them into multi-arch indexes. Per-arch images are pushed
-# without a tag — only by digest (type=image,name=<repo>,push-by-digest) —
-# and the merge job builds multi-arch indexes that reference those digests
-# directly. This keeps the tag list clean: only `main`, `latest`, and
-# release versions like `0.62.4` appear as tags.
+# Builds each architecture on a matching native runner via a matrix (amd64 on
+# an amd64 runner, arm64 on an arm64 runner - no QEMU), then merges them into
+# a multi-arch index.
+#
+# Per-arch images are pushed by digest only (push-by-digest): they carry no
+# tag, so the tag list only ever contains `main`, `latest` and release
+# versions like `0.62.6`. Provenance/SBOM attestations are disabled so no
+# extra untagged versions or `unknown/unknown` index entries appear.
 #
 # The merge job:
 #
-#  - always (re)creates the `main` index — it tracks the newest commit;
+#  - always (re)creates the `main` index - it tracks the newest commit;
 #  - on a GA (`VERSION` advanced) also creates `${VERSION}` and `latest`;
-#    the `${VERSION}` tag and `latest` stay pinned to the GA commit and
-#    are never moved again. On non-release pushes only `main` advances;
-#    released indexes are immutable.
+#    these stay pinned to the GA commit and are never moved again. On
+#    non-release pushes only `main` advances.
 #
-# After publishing, unreferenced versions (not referenced by any kept
-# index) are pruned via the GitHub Packages API.
+# The prune job then deletes every package version that is neither a kept
+# tag (`main`, `latest`, `X.Y.Z`) nor a per-arch image referenced by one
+# (scripts/prune-ghcr.sh). GHCR cannot untag, so this goes through the
+# GitHub Packages API.
 
 name: build-image
 
@@ -34,10 +36,6 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  GHCR_IMAGE: ghcr.io/${{ github.repository }}
-  GHCR_IMAGE_LOWERCASE: ghcr.io/${{ github.repository }}
 
 jobs:
   build:
@@ -91,13 +89,11 @@ jobs:
           context: .
           file: Containerfile
           platforms: ${{ matrix.platform }}
-          push: ${{ steps.prep.outputs.do_push == 'true' }}
+          # Push: by digest, no tag. PR: load into the local daemon only.
+          push: false
           load: ${{ steps.prep.outputs.do_push == 'false' }}
-          # Push without a tag — only by digest.  This is Docker's
-          # documented multi-platform pattern: tags are added later
-          # by the merge job, keeping the tag list to a minimum
-          # (`main`, `latest`, `0.62.4`, …).
-          tags: ${{ steps.prep.outputs.ghcr }}:${{ github.sha }}-${{ env.platform_pair }}
+          outputs: ${{ steps.prep.outputs.do_push == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.prep.outputs.ghcr) || '' }}
+          tags: ${{ steps.prep.outputs.do_push == 'false' && format('local/k8s-gitops-ci:{0}', env.platform_pair) || '' }}
           build-args: |
             BUILD_VERSION=${{ steps.prep.outputs.version }}
             BUILD_COMMIT=${{ github.sha }}
@@ -105,33 +101,34 @@ jobs:
             BUILD_SOURCE=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # `docker/build-push-action` re-adds `--attest=type=provenance` when
-          # `provenance: true` (default). Setting `provenance: false` disables
-          # it, preventing `unknown/unknown` entries in the merged index.
+          # No attestations: they add extra untagged package versions and
+          # `unknown/unknown` entries to the merged index.
           provenance: false
+          sbom: false
 
-      - name: Save digest
+      - name: Export digest
         if: steps.prep.outputs.do_push == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          # `docker/build-push-action`@v6 writes the manifest digest to
-          # ${{ steps.build.outputs.digest }} on completion.
-          echo "${{ steps.build.outputs.digest }}" > "${{ env.platform_pair }}-digest"
-          echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        if: steps.prep.outputs.do_push == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.platform_pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Show image labels (PR)
         if: steps.prep.outputs.do_push == 'false'
         run: |
           echo "Labels baked into image:"
           docker inspect --format '{{json .Config.Labels}}' \
-            "ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}-${{ env.platform_pair }}" \
-            | jq .
-
-      - name: Upload digest artifact
-        if: steps.prep.outputs.do_push == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: digest-${{ env.platform_pair }}
-          path: ${{ env.platform_pair }}-digest
+            "local/k8s-gitops-ci:${{ env.platform_pair }}" | jq .
 
   merge:
     runs-on: ubuntu-latest
@@ -142,6 +139,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Download digests
+        uses: actions/download-artifact@v5
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -170,7 +174,7 @@ jobs:
           PREV="$(git show "${BEFORE}:VERSION" 2>/dev/null || echo "")"
           if [ -n "$PREV" ] && [ "$CUR" != "$PREV" ]; then
             echo "release=true" >> "$GITHUB_OUTPUT"
-            echo "VERSION advanced ${PREV} -> ${CUR}: GA release. Publishing \`${CUR}\` + \`${GHCR_IMAGE}:latest\` + main."
+            echo "VERSION advanced ${PREV} -> ${CUR}: GA release. Publishing \`${CUR}\` + \`latest\` + main."
           else
             echo "release=false" >> "$GITHUB_OUTPUT"
             if [ -z "$PREV" ]; then
@@ -182,24 +186,24 @@ jobs:
 
       - name: Create and push multi-arch indexes
         run: |
+          set -euo pipefail
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          SHA="${{ github.sha }}"
           VERSION="${{ steps.version.outputs.version }}"
-          AMD64="${GHCR}:${SHA}-linux-amd64"
-          ARM64="${GHCR}:${SHA}-linux-arm64"
-          # `main` always tracks the newest commit; it is (re)created
-          # on every push to main so it is the bleeding-edge tag.
-          docker buildx imagetools create -t "${GHCR}:main" "$AMD64" "$ARM64"
-          echo "Pushed ${GHCR}:main"
-          if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
-            # `imagetools create` reads through the tag reference and
-            # preserves each image's platform.
-            docker buildx imagetools create -t "${GHCR}:${VERSION}" "$AMD64" "$ARM64"
-            docker buildx imagetools create -t "${GHCR}:latest" "$AMD64" "$ARM64"
-            echo "GA: pushed ${GHCR}:${VERSION} and ${GHCR}:latest"
-          else
-            echo "CI-only: leaving \`${VERSION}\` and latest as-is."
+          DIGESTS=("${RUNNER_TEMP}"/digests/*)
+          if [ "${#DIGESTS[@]}" -ne 2 ]; then
+            echo "::error::Expected 2 digests (amd64 + arm64), found ${#DIGESTS[@]}"
+            exit 1
           fi
+          REFS=()
+          for F in "${DIGESTS[@]}"; do
+            REFS+=("${GHCR}@sha256:$(basename "$F")")
+          done
+          TAGS=(-t "${GHCR}:main")
+          if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
+            TAGS+=(-t "${GHCR}:${VERSION}" -t "${GHCR}:latest")
+          fi
+          docker buildx imagetools create "${TAGS[@]}" "${REFS[@]}"
+          echo "Pushed: ${TAGS[*]}"
 
       - name: Verify indexes
         run: |
@@ -223,171 +227,16 @@ jobs:
           done
           echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
 
-      - name: Dry-run prune (PR preview)
-        if: github.event_name == 'pull_request'
-        id: prune-preview
-        run: |
-          echo "Dry-run prune preview (read-only on PR):"
-          echo "Dry-run is a preview only; actual pruning happens on push to main."
-
   prune:
     runs-on: ubuntu-latest
     needs: [build, merge]
     if: |
       github.event_name == 'push' && github.ref_name == 'main'
-    env:
-      GHCR_IMAGE: ghcr.io/${{ github.repository }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Pre-prune safety check
+      - name: Prune unreferenced package versions
         env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          VERSION="$(cat VERSION)"
-          TAGS="main"
-          if [ "${{ github.event_name }}" = "push" ]; then
-            CUR="$(cat VERSION)"
-            BEFORE="${{ github.event.before }}"
-            ZERO="0000000000000000000000000000000000000000"
-            if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ]; then
-              BEFORE="$(git rev-parse -q --verify HEAD~1 2>/dev/null || echo "")"
-            fi
-            PREV="$(git show "${BEFORE}:VERSION" 2>/dev/null || echo "")"
-            if [ -n "$PREV" ] && [ "$CUR" != "$PREV" ]; then
-              TAGS="${TAGS} ${CUR} latest"
-            fi
-          fi
-          for TAG in $TAGS; do
-            for PAIR in linux-amd64 linux-arm64; do
-              REF="${GHCR}:${TAG}"
-              if ! docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
-                echo "::error::Pre-prune: ${REF} (arch=${PAIR}) is not resolvable — aborting prune."
-                exit 1
-              fi
-            done
-          done
-          echo "Pre-prune safety check passed: all indexes resolvable."
-
-      - name: Prune unreferenced per-arch tags
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -uo pipefail
-          REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          VERSION="$(cat VERSION)"
-          GHCR="ghcr.io/${REPO}"
-
-          # Fetch a token with pull,push scope for GHCR tag operations.
-          TOKEN="$(curl -sf --user "x-access-token:${GHCR_TOKEN}" \
-            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull,push" | jq -r .token)"
-          if [ -z "$TOKEN" ]; then
-            echo "::warning::Could not obtain GHCR token; skipping prune."
-            exit 0
-          fi
-
-          # List all tags in the registry.
-          ALL_TAGS="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-            "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]' | sort -u)"
-          [ -z "$ALL_TAGS" ] && { echo "No tags found; nothing to prune."; exit 0; }
-
-          # Collect digests referenced by ALL multi-arch index tags.
-          # We inspect every X.Y.Z tag plus main and latest, then gather
-          # the per-arch digests they reference — those per-arch digests
-          # are the ONLY ones we are allowed to prune.
-          KEPT_DIGESTS=""
-          # Inspect known index tags first.
-          for TAG in main ${VERSION} latest; do
-            for D in $(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null \
-              | jq -r '.manifests[]?.digest // empty' 2>/dev/null); do
-              KEPT_DIGESTS="${KEPT_DIGESTS}${D}"$'\n'
-            done
-          done
-          # Inspect every other semver tag that exists in the registry —
-          # it might be a multi-arch index created by a previous push.
-          for TAG in $ALL_TAGS; do
-            case "$TAG" in
-              main|latest|[0-9]*.[0-9]*.[0-9]*) ;;
-              *) continue ;;
-            esac
-            for D in $(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null \
-              | jq -r '.manifests[]?.digest // empty' 2>/dev/null); do
-              KEPT_DIGESTS="${KEPT_DIGESTS}${D}"$'\n'
-            done
-          done
-
-          PRUNED=0 UNPRUNED=0
-          for TAG in $ALL_TAGS; do
-            # Skip multi-arch index tags — always keep them.
-            if echo "$TAG" | grep -qE '^main$|^latest$|^([0-9]+\.[0-9]+\.[0-9]+)$'; then
-              UNPRUNED=$((UNPRUNED+1))
-              echo "Keeping ${TAG} (multi-arch index tag)."
-              continue
-            fi
-            # Check if this tag's manifest digest is referenced by any index.
-            BODY="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.oci.image.manifest.v1+json" \
-              "https://ghcr.io/v2/${REPO}/manifests/${TAG}" 2>/dev/null || true)"
-            [ -z "$BODY" ] && { echo "Skipping ${TAG} (could not fetch)."; continue; }
-            INNER="$(echo "$BODY" | jq -r 'if (.manifests? | length) > 0 then .manifests[0].digest else .digest // empty end' 2>/dev/null)"
-            if [ -n "$INNER" ] && printf '%s' "$KEPT_DIGESTS" | grep -qFx "$INNER"; then
-              UNPRUNED=$((UNPRUNED+1))
-              echo "Keeping ${TAG} (referenced by an index)."
-            else
-              echo "Pruning ${TAG} (not referenced by any index)..."
-              CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
-                -H "Authorization: Bearer ${TOKEN}" \
-                "https://ghcr.io/v2/${REPO}/tags/${TAG}")"
-              if [ "$CODE" != "200" ] && [ "$CODE" != "202" ] && [ "$CODE" != "204" ]; then
-                echo "::warning::Tag DELETE for ${TAG} returned HTTP ${CODE}; skipping."
-                UNPRUNED=$((UNPRUNED+1))
-                continue
-              fi
-              PRUNED=$((PRUNED+1))
-            fi
-          done
-          echo "Pruned ${PRUNED} orphaned tag(s); kept ${UNPRUNED}."
-
-      - name: Post-prune verification
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          VERSION="$(cat VERSION)"
-          CUR="$VERSION"
-          ZERO="0000000000000000000000000000000000000000"
-          BEFORE="${{ github.event.before }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ]; then
-            BEFORE="$(git rev-parse -q --verify HEAD~1 2>/dev/null || echo "")"
-          fi
-          PREV="$(git show "${BEFORE}:VERSION" 2>/dev/null || echo "")"
-          # GA push: VERSION advanced; verify main + ${VERSION} + latest
-          # CI-only: VERSION unchanged; only verify main + latest
-          RELEASE=false
-          if [ -n "$PREV" ] && [ "$CUR" != "$PREV" ]; then
-            RELEASE=true
-          fi
-          BROKEN=0
-          VERIFY_TAGS="main latest"
-          if [ "$RELEASE" = "true" ]; then
-            VERIFY_TAGS="${VERIFY_TAGS} ${VERSION}"
-          fi
-          for TAG in $VERIFY_TAGS; do
-            if ! docker buildx imagetools inspect "${GHCR}:${TAG}" >/dev/null 2>&1; then
-              echo "::error::Post-prune: index ${GHCR}:${TAG} is broken (missing child)"
-              BROKEN=1
-            fi
-          done
-          if [ "$BROKEN" -ne 0 ]; then
-            echo "::error::Pruning broke at least one index — this must not happen. Aborting."
-            exit 1
-          fi
-          echo "Post-prune verification passed: all indexes healthy."
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: scripts/prune-ghcr.sh
