@@ -298,9 +298,27 @@ jobs:
             "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]' | sort -u)"
           [ -z "$ALL_TAGS" ] && { echo "No tags found; nothing to prune."; exit 0; }
 
-          # Collect multi-arch index digests (these are what we keep).
+          # Collect digests referenced by ALL multi-arch index tags.
+          # We inspect every X.Y.Z tag plus main and latest, then gather
+          # the per-arch digests they reference — those per-arch digests
+          # are the ONLY ones we are allowed to prune.
           KEPT_DIGESTS=""
+          # Inspect known index tags first.
           for TAG in main ${VERSION} latest; do
+            for D in $(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null \
+              | jq -r '.manifests[]?.digest // empty' 2>/dev/null); do
+              KEPT_DIGESTS="${KEPT_DIGESTS}${D}"$'\n'
+            done
+          done
+          # Inspect every other semver tag that exists in the registry —
+          # it might be a multi-arch index created by a previous push.
+          for TAG in $ALL_TAGS; do
+            case "$TAG" in
+              main|latest|[0-9]*.[0-9]*.[0-9]*) ;;
+              *) continue ;;
+            esac
+            # Skip tags we already inspected.
+            echo "$TAG" | grep -qE '^[0-9]' && continue
             for D in $(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null \
               | jq -r '.manifests[]?.digest // empty' 2>/dev/null); do
               KEPT_DIGESTS="${KEPT_DIGESTS}${D}"$'\n'
@@ -309,9 +327,7 @@ jobs:
 
           PRUNED=0 UNPRUNED=0
           for TAG in $ALL_TAGS; do
-            # Skip multi-arch index tags (main, latest, X.Y.Z) and their
-            # direct per-arch entries — they are either the index itself
-            # or per-arch images that the index references.
+            # Skip multi-arch index tags — always keep them.
             if echo "$TAG" | grep -qE '^main$|^latest$|^([0-9]+\.[0-9]+\.[0-9]+)$'; then
               UNPRUNED=$((UNPRUNED+1))
               echo "Keeping ${TAG} (multi-arch index tag)."
