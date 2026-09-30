@@ -70,16 +70,21 @@ jobs:
           echo "platform_pair=${PAIR}" >> $GITHUB_ENV
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
-          # Read description from Containerfile label
+          # Read description from Containerfile label.
           DESC="$(grep -oP 'org\.opencontainers\.image\.description="\K[^"]+' Containerfile | head -1)"
           if [ -z "$DESC" ]; then
             echo "::error::org.opencontainers.image.description label not found in Containerfile"
             exit 1
           fi
           echo "desc=$DESC" >> $GITHUB_OUTPUT
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "main" ]; then
-            echo "annotations={\"manifest:org.opencontainers.image.description\":\"$DESC\",\"manifest:org.opencontainers.image.source\":\"https://github.com/$REPO\",\"manifest:org.opencontainers.image.licenses\":\"Apache-2.0\"}" >> $GITHUB_OUTPUT
-          fi
+          # Write annotations as one manifest:key=value per line so build-push-action
+          # parses them as separate entries. Always written so PR builds can also
+          # catch format mistakes early.
+          ANNOTATIONS="$(printf 'manifest:org.opencontainers.image.description=%s\\nmanifest:org.opencontainers.image.source=%s\\nmanifest:org.opencontainers.image.licenses=%s' "$DESC" "https://github.com/${REPO}" "Apache-2.0")"
+          echo "$ANNOTATIONS" > "${RUNNER_TEMP}/annotations.txt"
+          echo "annotations<<EOF" >> $GITHUB_OUTPUT
+          echo "$ANNOTATIONS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -118,7 +123,7 @@ jobs:
           # Set manifest annotations so GHCR shows a description on the
           # GHCR versions page. Without this, a multi-arch index has no
           # annotations and GHCR shows "No description provided".
-          annotations: ${{ steps.prep.outputs.do_push == 'true' && steps.prep.outputs.annotations || '' }}
+          annotations: ${{ steps.prep.outputs.annotations }}
 
       - name: Export digest
         if: steps.prep.outputs.do_push == 'true'
@@ -178,7 +183,13 @@ jobs:
       - name: Read image description
         id: desc
         run: |
+          set -euo pipefail
           echo "desc=$(grep -oP 'org\.opencontainers\.image\.description=\"\K[^"]+' Containerfile | head -1)" >> $GITHUB_OUTPUT
+          if [ -z "${{ steps.desc.outputs.desc }}" ]; then
+            echo "::error::org.opencontainers.image.description label not found in Containerfile"
+            exit 1
+          fi
+
       - name: Classify push (GA vs CI-only)
         id: classify
         run: |
@@ -236,6 +247,11 @@ jobs:
           if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
             TAGS="${TAGS} ${VERSION} latest"
           fi
+          EXPECTED_DESC="$(grep -oP 'org\.opencontainers\.image\.description=\"\K[^"]+' Containerfile | head -1)"
+          if [ -z "$EXPECTED_DESC" ]; then
+            echo "::error::org.opencontainers.image.description label not found in Containerfile"
+            exit 1
+          fi
           for TAG in $TAGS; do
             REF="${GHCR}:${TAG}"
             echo "=== ${REF} ==="
@@ -247,10 +263,20 @@ jobs:
               echo "::error::${REF} is invalid: ${TOTAL} entries, ${BAD} with unknown/missing platform"
               exit 1
             fi
-            if [ -z "$DESC" ]; then
-              echo "::error::${REF} is missing org.opencontainers.image.description annotation"
+            if [ "$DESC" != "$EXPECTED_DESC" ]; then
+              echo "::error::${REF} description '${DESC}' does not match Containerfile '${EXPECTED_DESC}'"
               exit 1
             fi
+            # Also verify each per-platform image has the correct description.
+            while read -r digest; do
+              echo "=== ${REF} platform ${digest} ==="
+              PLATFORM_RAW="$(docker buildx imagetools inspect --raw "${GHCR}:${TAG}@${digest}" 2>&1)"
+              PLATFORM_DESC="$(echo "$PLATFORM_RAW" | jq -r '.annotations["org.opencontainers.image.description"] // empty')"
+              if [ "$PLATFORM_DESC" != "$EXPECTED_DESC" ]; then
+                echo "::error::Platform ${digest} description '${PLATFORM_DESC}' does not match Containerfile '${EXPECTED_DESC}'"
+                exit 1
+              fi
+            done < <(echo "$RAW" | jq -r '.manifests[]?.digest')
             echo "  OK: ${TOTAL} platforms, description=${DESC}"
           done
           echo "All indexes valid: 2 platforms each, no unknown/unknown entries, all have descriptions."
