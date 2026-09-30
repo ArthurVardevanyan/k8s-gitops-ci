@@ -120,11 +120,13 @@ today:
   (no tag, no provenance/SBOM attestations), so the only tags in the
   registry are `main`, `latest`, and release versions. The merge job
   builds the multi-arch index from those digests with
-  `docker buildx imagetools create`. On PRs both architectures are built
-  and loaded locally but nothing is pushed. On a push to `main`, the merge
-  job creates the `main` index; on a GA push (`VERSION` advanced) it also
-  creates `${VERSION}` and `latest`. Released indexes are never moved by a
-  non-release push. After publishing, the prune job deletes
+  `docker buildx imagetools create` and sets index annotations
+  (description, source, license) so that GHCR displays the description
+  on the versions page. On PRs both architectures are built and loaded
+  locally but nothing is pushed. On a push to `main`, the merge job
+  creates the `main` index; on a GA push (`VERSION` advanced) it also
+  creates `${VERSION}` and `latest`. Released indexes are never moved by
+  a non-release push. After publishing, the prune job deletes
   every package version that is neither a kept tag nor a per-arch image
   referenced by one (see below). Pushed to
   `ghcr.io/${{ github.repository }}`.

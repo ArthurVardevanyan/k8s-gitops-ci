@@ -105,6 +105,10 @@ jobs:
           # `unknown/unknown` entries to the merged index.
           provenance: false
           sbom: false
+          # Set manifest annotations so GHCR shows a description on the
+          # GHCR versions page. Without this, a multi-arch index has no
+          # annotations and GHCR shows "No description provided".
+          annotations: ${{ steps.prep.outputs.do_push == 'true' && format('manifest:org.opencontainers.image.description=Kubernetes GitOps CI engine,manifest:org.opencontainers.image.source=https://github.com/{0},manifest:org.opencontainers.image.licenses=Apache-2.0', github.repository) || '' }}
 
       - name: Export digest
         if: steps.prep.outputs.do_push == 'true'
@@ -161,6 +165,11 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
 
+      - name: Read image description
+        run: |
+          export desc=$(sed -n 's/.*org\\.opencontainers\\.image\\.description="\(.*\)".*/\1/p' Containerfile | head -1)
+          echo "desc=${desc}" >> $GITHUB_OUTPUT
+
       - name: Classify push (GA vs CI-only)
         id: classify
         run: |
@@ -202,7 +211,12 @@ jobs:
           if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
             TAGS+=(-t "${GHCR}:${VERSION}" -t "${GHCR}:latest")
           fi
-          docker buildx imagetools create "${TAGS[@]}" "${REFS[@]}"
+          DESC="${{ steps.version.outputs.desc }}"
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.description=${DESC}" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            "${TAGS[@]}" "${REFS[@]}"
           echo "Pushed: ${TAGS[*]}"
 
       - name: Verify indexes
@@ -216,16 +230,21 @@ jobs:
           for TAG in $TAGS; do
             REF="${GHCR}:${TAG}"
             echo "=== ${REF} ==="
-            INSPECT="$(docker manifest inspect "$REF")"
-            echo "$INSPECT"
-            TOTAL="$(echo "$INSPECT" | jq '.manifests | length')"
-            BAD="$(echo "$INSPECT" | jq '[.manifests[] | select((.platform == null) or (.platform.os == "unknown") or (.platform.architecture == "unknown"))] | length')"
+            RAW="$(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>&1)"
+            TOTAL="$(echo "$RAW" | jq '.manifests | length')"
+            BAD="$(echo "$RAW" | jq '[.manifests[] | select((.platform == null) or (.platform.os == "unknown") or (.platform.architecture == "unknown"))] | length')"
+            DESC="$(echo "$RAW" | jq -r '.annotations["org.opencontainers.image.description"] // empty')"
             if [ "$TOTAL" -ne 2 ] || [ "$BAD" -ne 0 ]; then
               echo "::error::${REF} is invalid: ${TOTAL} entries, ${BAD} with unknown/missing platform"
               exit 1
             fi
+            if [ -z "$DESC" ]; then
+              echo "::error::${REF} is missing org.opencontainers.image.description annotation"
+              exit 1
+            fi
+            echo "  OK: ${TOTAL} platforms, description=${DESC}"
           done
-          echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
+          echo "All indexes valid: 2 platforms each, no unknown/unknown entries, all have descriptions."
 
   prune:
     runs-on: ubuntu-latest
