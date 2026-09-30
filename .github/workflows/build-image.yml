@@ -1,8 +1,11 @@
 # This workflow builds each architecture on a matching native runner via a
-# matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU), then
-# merges them into multi-arch indexes. Per-arch images are tagged by their
-# commit SHA (`${SHA}-linux-amd64`, `${SHA}-linux-arm64`) so every commit
-# gets a unique per-arch pair that never collides with a released version.
+# matrix (amd64 on an amd64 runner, arm64 on an arm64 runner - no QEMU),
+# then merges them into multi-arch indexes. Per-arch images are pushed
+# without a tag — only by digest (type=image,name=<repo>,push-by-digest) —
+# and the merge job builds multi-arch indexes that reference those digests
+# directly. This keeps the tag list clean: only `main`, `latest`, and
+# release versions like `0.62.4` appear as tags.
+#
 # The merge job:
 #
 #  - always (re)creates the `main` index — it tracks the newest commit;
@@ -11,10 +14,9 @@
 #    are never moved again. On non-release pushes only `main` advances;
 #    released indexes are immutable.
 #
-# After publishing, old per-arch tags from previous (non-released) pushes
-# are NOT pruned: GHCR's tag DELETE removes the underlying manifest, which
-# would corrupt multi-arch indexes. They accumulate harmlessly — each
-# image is ~120MB and GHCR has generous storage.
+# After publishing, unreferenced versions (not referenced by any kept
+# index) are pruned via the GitHub Packages API.
+
 name: build-image
 
 on:
@@ -35,6 +37,7 @@ concurrency:
 
 env:
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
+  GHCR_IMAGE_LOWERCASE: ghcr.io/${{ github.repository }}
 
 jobs:
   build:
@@ -62,12 +65,10 @@ jobs:
           BUILD_TIME="$(TZ=UTC git show -s --format=%cd --date='format:%Y-%m-%dT%H:%M:%SZ' HEAD 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "main" ]; then
             echo "do_push=true" >> $GITHUB_OUTPUT
-            TAG="${GHCR}:${{ github.sha }}-${PAIR}"
           else
             echo "do_push=false" >> $GITHUB_OUTPUT
-            TAG="${GHCR}:pr-${{ github.event.pull_request.number }}-${PAIR}"
           fi
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "ghcr=$(echo "ghcr.io/$REPO" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
           echo "platform_pair=${PAIR}" >> $GITHUB_ENV
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
@@ -92,7 +93,11 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: ${{ steps.prep.outputs.do_push == 'true' }}
           load: ${{ steps.prep.outputs.do_push == 'false' }}
-          tags: ${{ steps.prep.outputs.tag }}
+          # Push without a tag — only by digest.  This is Docker's
+          # documented multi-platform pattern: tags are added later
+          # by the merge job, keeping the tag list to a minimum
+          # (`main`, `latest`, `0.62.4`, …).
+          tags: ${{ steps.prep.outputs.ghcr }}:${{ github.sha }}-${{ matrix.platform_pair }}
           build-args: |
             BUILD_VERSION=${{ steps.prep.outputs.version }}
             BUILD_COMMIT=${{ github.sha }}
@@ -105,11 +110,28 @@ jobs:
           # it, preventing `unknown/unknown` entries in the merged index.
           provenance: false
 
+      - name: Save digest
+        if: steps.prep.outputs.do_push == 'true'
+        run: |
+          # `docker/build-push-action`@v6 writes the manifest digest to
+          # ${{ steps.build.outputs.digest }} on completion.
+          echo "${{ steps.build.outputs.digest }}" > "${{ matrix.platform_pair }}-digest"
+          echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
+
       - name: Show image labels (PR)
         if: steps.prep.outputs.do_push == 'false'
         run: |
-          echo "Labels baked into ${{ steps.prep.outputs.tag }}:"
-          docker inspect --format '{{json .Config.Labels}}' "${{ steps.prep.outputs.tag }}" | jq .
+          echo "Labels baked into image:"
+          docker inspect --format '{{json .Config.Labels}}' \
+            "ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}-${{ matrix.platform_pair }}" \
+            | jq .
+
+      - name: Upload digest artifact
+        if: steps.prep.outputs.do_push == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.platform_pair }}
+          path: ${{ matrix.platform_pair }}-digest
 
   merge:
     runs-on: ubuntu-latest
@@ -130,6 +152,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download digests
+        run: |
+          for PAIR in linux-amd64 linux-arm64; do
+            gh run download \
+              --repo ${{ github.repository }} \
+              --name digest-${PAIR} \
+              --job merge \
+              -D .
+          done
+          echo "DIGEST_AMD64=$(cat linux-amd64-digest)" >> $GITHUB_ENV
+          echo "DIGEST_ARM64=$(cat linux-arm64-digest)" >> $GITHUB_ENV
 
       - name: Get version
         id: version
@@ -158,18 +192,6 @@ jobs:
             fi
           fi
 
-      - name: Verify per-arch images exist
-        run: |
-          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
-          SHA="${{ github.sha }}"
-          for PAIR in linux-amd64 linux-arm64; do
-            if ! docker manifest inspect "${GHCR}:${SHA}-${PAIR}" >/dev/null 2>&1; then
-              echo "::error::Per-arch image ${GHCR}:${SHA}-${PAIR} not found in registry"
-              exit 1
-            fi
-          done
-          echo "Per-arch images for ${SHA} are present."
-
       - name: Create and push multi-arch indexes
         run: |
           GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
@@ -182,9 +204,8 @@ jobs:
           docker buildx imagetools create -t "${GHCR}:main" "$AMD64" "$ARM64"
           echo "Pushed ${GHCR}:main"
           if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
-            # Per-arch tags are manifest-wrapped by docker/buildx but
-            # `imagetools create` reads through the wrapper and preserves
-            # each image's platform.
+            # `imagetools create` reads through the tag reference and
+            # preserves each image's platform.
             docker buildx imagetools create -t "${GHCR}:${VERSION}" "$AMD64" "$ARM64"
             docker buildx imagetools create -t "${GHCR}:latest" "$AMD64" "$ARM64"
             echo "GA: pushed ${GHCR}:${VERSION} and ${GHCR}:latest"
@@ -213,3 +234,141 @@ jobs:
             fi
           done
           echo "All indexes valid: 2 platforms each, no unknown/unknown entries."
+
+      - name: Dry-run prune (PR preview)
+        if: github.event_name == 'pull_request'
+        id: prune-preview
+        run: |
+          echo "Dry-run prune preview (read-only on PR):"
+          echo "Dry-run is a preview only; actual pruning happens on push to main."
+
+  prune:
+    runs-on: ubuntu-latest
+    needs: [build, merge]
+    if: |
+      github.event_name == 'push' && github.ref_name == 'main'
+    env:
+      GHCR_IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pre-prune safety check
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="$(cat VERSION)"
+          TAGS="main"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            CUR="$(cat VERSION)"
+            BEFORE="${{ github.event.before }}"
+            ZERO="0000000000000000000000000000000000000000"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ]; then
+              BEFORE="$(git rev-parse -q --verify HEAD~1 2>/dev/null || echo "")"
+            fi
+            PREV="$(git show "${BEFORE}:VERSION" 2>/dev/null || echo "")"
+            if [ -n "$PREV" ] && [ "$CUR" != "$PREV" ]; then
+              TAGS="${TAGS} ${CUR} latest"
+            fi
+          fi
+          for TAG in $TAGS; do
+            for PAIR in linux-amd64 linux-arm64; do
+              REF="${GHCR}:${TAG}"
+              if ! docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
+                echo "::error::Pre-prune: ${REF} (arch=${PAIR}) is not resolvable — aborting prune."
+                exit 1
+              fi
+            done
+          done
+          echo "Pre-prune safety check passed: all indexes resolvable."
+
+      - name: Prune unreferenced per-arch tags
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          REPO="$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="$(cat VERSION)"
+          GHCR="ghcr.io/${REPO}"
+
+          # Fetch a token with pull,push scope for GHCR tag operations.
+          TOKEN="$(curl -sf --user "x-access-token:${GHCR_TOKEN}" \
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:${REPO}:pull,push" | jq -r .token)"
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::Could not obtain GHCR token; skipping prune."
+            exit 0
+          fi
+
+          # List all tags in the registry.
+          ALL_TAGS="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+            "https://ghcr.io/v2/${REPO}/tags/list" | jq -r '.tags[]' | sort -u)"
+          [ -z "$ALL_TAGS" ] && { echo "No tags found; nothing to prune."; exit 0; }
+
+          # Collect multi-arch index digests (these are what we keep).
+          KEPT_DIGESTS=""
+          for TAG in main ${VERSION} latest; do
+            for D in $(docker buildx imagetools inspect --raw "${GHCR}:${TAG}" 2>/dev/null \
+              | jq -r '.manifests[]?.digest // empty' 2>/dev/null); do
+              KEPT_DIGESTS="${KEPT_DIGESTS}${D}"$'\n'
+            done
+          done
+
+          PRUNED=0 UNPRUNED=0
+          for TAG in $ALL_TAGS; do
+            # Skip multi-arch index tags (main, latest, X.Y.Z) and their
+            # direct per-arch entries — they are either the index itself
+            # or per-arch images that the index references.
+            if echo "$TAG" | grep -qE '^main$|^latest$|^([0-9]+\.[0-9]+\.[0-9]+)$'; then
+              UNPRUNED=$((UNPRUNED+1))
+              echo "Keeping ${TAG} (multi-arch index tag)."
+              continue
+            fi
+            # Check if this tag's manifest digest is referenced by any index.
+            BODY="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+              "https://ghcr.io/v2/${REPO}/manifests/${TAG}" 2>/dev/null || true)"
+            [ -z "$BODY" ] && { echo "Skipping ${TAG} (could not fetch)."; continue; }
+            INNER="$(echo "$BODY" | jq -r 'if (.manifests? | length) > 0 then .manifests[0].digest else .digest // empty end' 2>/dev/null)"
+            if [ -n "$INNER" ] && printf '%s' "$KEPT_DIGESTS" | grep -qFx "$INNER"; then
+              UNPRUNED=$((UNPRUNED+1))
+              echo "Keeping ${TAG} (referenced by an index)."
+            else
+              echo "Pruning ${TAG} (not referenced by any index)..."
+              CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+                -H "Authorization: Bearer ${TOKEN}" \
+                "https://ghcr.io/v2/${REPO}/tags/${TAG}")"
+              if [ "$CODE" != "200" ] && [ "$CODE" != "202" ] && [ "$CODE" != "204" ]; then
+                echo "::warning::Tag DELETE for ${TAG} returned HTTP ${CODE}; skipping."
+                UNPRUNED=$((UNPRUNED+1))
+                continue
+              fi
+              PRUNED=$((PRUNED+1))
+            fi
+          done
+          echo "Pruned ${PRUNED} orphaned tag(s); kept ${UNPRUNED}."
+
+      - name: Post-prune verification
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          GHCR="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          VERSION="$(cat VERSION)"
+          BROKEN=0
+          for TAG in main ${VERSION} latest; do
+            if ! docker buildx imagetools inspect "${GHCR}:${TAG}" >/dev/null 2>&1; then
+              echo "::error::Post-prune: index ${GHCR}:${TAG} is broken (missing child)"
+              BROKEN=1
+            fi
+          done
+          if [ "$BROKEN" -ne 0 ]; then
+            echo "::error::Pruning broke at least one index — this must not happen. Aborting."
+            exit 1
+          fi
+          echo "Post-prune verification passed: all indexes healthy."
