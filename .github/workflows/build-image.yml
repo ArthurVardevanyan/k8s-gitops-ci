@@ -70,6 +70,16 @@ jobs:
           echo "platform_pair=${PAIR}" >> $GITHUB_ENV
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
+          # Read description from Containerfile label
+          DESC="$(grep -oP 'org\.opencontainers\.image\.description="\K[^"]+' Containerfile | head -1)"
+          if [ -z "$DESC" ]; then
+            echo "::error::org.opencontainers.image.description label not found in Containerfile"
+            exit 1
+          fi
+          echo "desc=$DESC" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" = "main" ]; then
+            echo "annotations={\"manifest:org.opencontainers.image.description\":\"$DESC\",\"manifest:org.opencontainers.image.source\":\"https://github.com/$REPO\",\"manifest:org.opencontainers.image.licenses\":\"Apache-2.0\"}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -108,7 +118,7 @@ jobs:
           # Set manifest annotations so GHCR shows a description on the
           # GHCR versions page. Without this, a multi-arch index has no
           # annotations and GHCR shows "No description provided".
-          annotations: ${{ steps.prep.outputs.do_push == 'true' && format('manifest:org.opencontainers.image.description=Kubernetes GitOps CI engine,manifest:org.opencontainers.image.source=https://github.com/{0},manifest:org.opencontainers.image.licenses=Apache-2.0', github.repository) || '' }}
+          annotations: ${{ steps.prep.outputs.do_push == 'true' && steps.prep.outputs.annotations || '' }}
 
       - name: Export digest
         if: steps.prep.outputs.do_push == 'true'
@@ -166,10 +176,9 @@ jobs:
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
 
       - name: Read image description
+        id: desc
         run: |
-          export desc=$(sed -n 's/.*org\\.opencontainers\\.image\\.description="\(.*\)".*/\1/p' Containerfile | head -1)
-          echo "desc=${desc}" >> $GITHUB_OUTPUT
-
+          echo "desc=$(grep -oP 'org\.opencontainers\.image\.description=\"\K[^"]+' Containerfile | head -1)" >> $GITHUB_OUTPUT
       - name: Classify push (GA vs CI-only)
         id: classify
         run: |
@@ -211,7 +220,7 @@ jobs:
           if [ "${{ steps.classify.outputs.release }}" = "true" ]; then
             TAGS+=(-t "${GHCR}:${VERSION}" -t "${GHCR}:latest")
           fi
-          DESC="${{ steps.version.outputs.desc }}"
+          DESC="${{ steps.desc.outputs.desc }}"
           docker buildx imagetools create \
             --annotation "index:org.opencontainers.image.description=${DESC}" \
             --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \

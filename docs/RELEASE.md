@@ -120,7 +120,7 @@ today:
   (no tag, no provenance/SBOM attestations), so the only tags in the
   registry are `main`, `latest`, and release versions. The merge job
   builds the multi-arch index from those digests with
-  `docker buildx imagetools create` and sets index annotations
+  `docker buildx imagetools create`, setting index annotations
   (description, source, license) so that GHCR displays the description
   on the versions page. On PRs both architectures are built and loaded
   locally but nothing is pushed. On a push to `main`, the merge job
