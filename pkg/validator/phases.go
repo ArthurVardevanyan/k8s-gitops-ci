@@ -1296,6 +1296,12 @@ func filterYAML(files []string) []string {
 		if convention.IsScaffoldTemplate(f) {
 			continue
 		}
+		// Helm chart templates (templates/ under a Chart.yaml) are
+		// Go-templated source, not YAML or manifests until rendered; the
+		// rendered output is validated by the overlay build instead.
+		if convention.IsHelmChartTemplate(f) {
+			continue
+		}
 		// Deliberately-invalid test fixtures (testdata/invalid/) are meant to
 		// be rejected by a validator; never lint them.
 		if isInvalidTestdata(f) {

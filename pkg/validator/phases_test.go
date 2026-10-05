@@ -900,3 +900,37 @@ configMapGenerator:
 		t.Errorf("expected 0 files (generator input excluded), got: %v", excluded)
 	}
 }
+
+func TestFilterYAMLSkipsHelmChartTemplates(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	files := map[string]string{
+		"chart/Chart.yaml":                "name: c\n",
+		"chart/templates/deploy.yaml":     "{{ range .Values.items }}\n---\nkind: X\n{{ end }}\n",
+		"kustomize/templates/deploy.yaml": "kind: Deployment\n",
+	}
+	in := make([]string, 0, len(files))
+	for rel, body := range files {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		in = append(in, p)
+	}
+	got := filterYAML(in)
+	want := map[string]bool{
+		filepath.Join(dir, "chart", "Chart.yaml"):                   true,
+		filepath.Join(dir, "kustomize", "templates", "deploy.yaml"): true,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("filterYAML = %v, want exactly %v", got, want)
+	}
+	for _, f := range got {
+		if !want[f] {
+			t.Errorf("unexpected file kept: %s", f)
+		}
+	}
+}
