@@ -1,8 +1,10 @@
 package convention
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // KnownNonManifestFiles lists YAML/YML basenames that, by strong
@@ -83,4 +85,48 @@ func IsScaffoldTemplate(path string) bool {
 // should be excluded from manifest/YAML validation of raw changed files.
 func IsScaffoldArtifact(path string) bool {
 	return IsScaffoldConfig(path) || IsScaffoldTemplate(path)
+}
+
+// helmChartDirs caches, per directory, whether it contains a Chart.yaml, so a
+// changeset with many chart template files does not stat the same chart root
+// once per file.
+var helmChartDirs sync.Map // map[string]bool
+
+func isHelmChartDir(dir string) bool {
+	if v, ok := helmChartDirs.Load(dir); ok {
+		if cached, isBool := v.(bool); isBool {
+			return cached
+		}
+	}
+	info, err := os.Stat(filepath.Join(dir, "Chart.yaml"))
+	ok := err == nil && !info.IsDir()
+	helmChartDirs.Store(dir, ok)
+	return ok
+}
+
+// IsHelmChartTemplate reports whether path is a Helm chart template file:
+// it lives (at any depth) under a directory named `templates` whose parent
+// directory contains a Chart.yaml. That is exactly how Helm defines a
+// chart's templates/ tree. These files are Go-templated source (unresolved
+// {{ ... }} actions, often a bare `{{ range }}` at the top level), so they
+// are frequently not valid standalone YAML and are not Kubernetes manifests
+// until rendered; raw syntax and manifest validators must skip them. The
+// rendered chart output is still validated by the overlay build phase.
+//
+// Detection is structural, not a path allowlist: a `templates/` directory
+// without a sibling Chart.yaml (for example a Kustomize app that happens to
+// use that directory name) is NOT treated as a chart and is still validated.
+// path is resolved relative to the current working directory when relative.
+func IsHelmChartTemplate(path string) bool {
+	dir := filepath.Dir(filepath.Clean(path))
+	for {
+		if filepath.Base(dir) == "templates" && isHelmChartDir(filepath.Dir(dir)) {
+			return true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
 }

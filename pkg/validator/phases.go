@@ -392,6 +392,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			// <ScaffoldDir>/configs/*.yaml trips a "missing 'kind' key" error.
 			yamlFiles = excludeScaffoldArtifacts(yamlFiles)
 			yamlFiles = excludeInvalidTestdata(yamlFiles)
+			yamlFiles = excludeHelmChartTemplates(yamlFiles)
 			yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
 			yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
 			// configMapGenerator / secretGenerator inputs are data payloads
@@ -920,6 +921,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 				yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
 				yamlFiles = excludeScaffoldArtifacts(yamlFiles)
 				yamlFiles = excludeInvalidTestdata(yamlFiles)
+				yamlFiles = excludeHelmChartTemplates(yamlFiles)
 				yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
 				// Exclude files covered by scoped overlays unless in lint-only
 				// mode (rendered pass is authoritative for those).
@@ -1175,6 +1177,21 @@ func excludeScaffoldArtifacts(files []string) []string {
 	return out
 }
 
+// excludeHelmChartTemplates drops Helm chart template files (see
+// convention.IsHelmChartTemplate) from a file list - they are Go-templated
+// source, not Kubernetes manifests until rendered, so raw manifest
+// validators must not attempt to parse or schema-check them.
+func excludeHelmChartTemplates(files []string) []string {
+	var out []string
+	for _, f := range files {
+		if convention.IsHelmChartTemplate(f) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 // isInvalidTestdata reports whether f lives under a `testdata/invalid/`
 // directory. By repo convention, deliberately-malformed fixtures (inputs a
 // linter/validator is expected to reject) live in a `testdata/invalid/`
@@ -1294,6 +1311,12 @@ func filterYAML(files []string) []string {
 		// standalone YAML (unresolved {{ ... }}); never syntax/manifest-check
 		// them as raw files.
 		if convention.IsScaffoldTemplate(f) {
+			continue
+		}
+		// Helm chart templates (templates/ under a Chart.yaml) are
+		// Go-templated source, not YAML or manifests until rendered; the
+		// rendered output is validated by the overlay build instead.
+		if convention.IsHelmChartTemplate(f) {
 			continue
 		}
 		// Deliberately-invalid test fixtures (testdata/invalid/) are meant to

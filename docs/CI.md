@@ -355,6 +355,12 @@ Under `--lint-only` (no Build YAML phase), only the **raw** pass runs — there
 is no rendered output to validate.
 
 - **Package:** `pkg/lint/kubeconform`
+- **Helm chart templates excluded:** raw files under a chart's `templates/`
+  directory (a `templates/` dir whose parent has a `Chart.yaml`, see
+  `convention.IsHelmChartTemplate`) are not Kubernetes manifests until
+  rendered, so they are dropped from the raw-file input set (and from the
+  doc-check and Kyverno raw inputs, which share `filterYAML`, and from the
+  raw CEL pass). The rendered chart output is still validated.
 - **Scaffold artifacts excluded:** files under `<ScaffoldDir>/configs/` and
   `<ScaffoldDir>/templates/` (see `convention.IsScaffoldArtifact`, where
   `ScaffoldDir` is `.scafctl` by default or an org override such as
@@ -522,6 +528,12 @@ validation.
 
 - **Package:** `pkg/lint/yamlsyntax`
 - **Enablement:** always runs — not gateable.
+- **Helm chart templates skipped:** files under a `templates/` directory
+  whose parent contains a `Chart.yaml` (see
+  `convention.IsHelmChartTemplate`) are Go-templated source, not valid
+  standalone YAML, so they are never parsed raw. Detection is structural -
+  a `templates/` directory without a sibling `Chart.yaml` is still
+  checked. The chart's rendered output is validated by the overlay build.
 
 #### `config-sort`
 

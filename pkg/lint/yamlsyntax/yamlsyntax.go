@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/convention"
 )
 
 // Violation records a YAML syntax error.
@@ -19,12 +21,16 @@ type Violation struct {
 	Message string
 }
 
-// Filter returns YAML files.
+// Filter returns YAML files, excluding Helm chart templates (Go-templated
+// source that is not valid standalone YAML until rendered).
 func Filter(files []string) []string {
 	var out []string
 	for _, f := range files {
 		l := strings.ToLower(f)
 		if strings.HasSuffix(l, ".yaml") || strings.HasSuffix(l, ".yml") {
+			if convention.IsHelmChartTemplate(f) {
+				continue
+			}
 			out = append(out, f)
 		}
 	}
