@@ -934,3 +934,26 @@ func TestFilterYAMLSkipsHelmChartTemplates(t *testing.T) {
 		}
 	}
 }
+
+func TestExcludeHelmChartTemplates(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	chartTpl := filepath.Join(dir, "chart", "templates", "deploy.yaml")
+	plain := filepath.Join(dir, "app", "templates", "deploy.yaml")
+	for p, body := range map[string]string{
+		filepath.Join(dir, "chart", "Chart.yaml"): "name: c\n",
+		chartTpl: "{{ range .Values.items }}\n{{ end }}\n",
+		plain:    "kind: Deployment\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := excludeHelmChartTemplates([]string{chartTpl, plain})
+	if len(got) != 1 || got[0] != plain {
+		t.Fatalf("expected only the non-chart file, got %v", got)
+	}
+}

@@ -392,6 +392,7 @@ func runLintAndStaticChecks(changed []string, opts Options, res *Result, log *lo
 			// <ScaffoldDir>/configs/*.yaml trips a "missing 'kind' key" error.
 			yamlFiles = excludeScaffoldArtifacts(yamlFiles)
 			yamlFiles = excludeInvalidTestdata(yamlFiles)
+			yamlFiles = excludeHelmChartTemplates(yamlFiles)
 			yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
 			yamlFiles = filterKubeconformExemptions(yamlFiles, earlySelectors)
 			// configMapGenerator / secretGenerator inputs are data payloads
@@ -920,6 +921,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 				yamlFiles := changeset.FilterByExtension(changed, ".yaml", ".yml")
 				yamlFiles = excludeScaffoldArtifacts(yamlFiles)
 				yamlFiles = excludeInvalidTestdata(yamlFiles)
+				yamlFiles = excludeHelmChartTemplates(yamlFiles)
 				yamlFiles = excludeKnownNonManifestFiles(yamlFiles)
 				// Exclude files covered by scoped overlays unless in lint-only
 				// mode (rendered pass is authoritative for those).
@@ -1168,6 +1170,21 @@ func excludeScaffoldArtifacts(files []string) []string {
 	var out []string
 	for _, f := range files {
 		if convention.IsScaffoldArtifact(f) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// excludeHelmChartTemplates drops Helm chart template files (see
+// convention.IsHelmChartTemplate) from a file list - they are Go-templated
+// source, not Kubernetes manifests until rendered, so raw manifest
+// validators must not attempt to parse or schema-check them.
+func excludeHelmChartTemplates(files []string) []string {
+	var out []string
+	for _, f := range files {
+		if convention.IsHelmChartTemplate(f) {
 			continue
 		}
 		out = append(out, f)

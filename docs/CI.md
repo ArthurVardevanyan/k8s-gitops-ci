@@ -359,8 +359,8 @@ is no rendered output to validate.
   directory (a `templates/` dir whose parent has a `Chart.yaml`, see
   `convention.IsHelmChartTemplate`) are not Kubernetes manifests until
   rendered, so they are dropped from the raw-file input set (and from the
-  doc-check and Kyverno raw inputs, which share `filterYAML`). The rendered
-  chart output is still validated.
+  doc-check and Kyverno raw inputs, which share `filterYAML`, and from the
+  raw CEL pass). The rendered chart output is still validated.
 - **Scaffold artifacts excluded:** files under `<ScaffoldDir>/configs/` and
   `<ScaffoldDir>/templates/` (see `convention.IsScaffoldArtifact`, where
   `ScaffoldDir` is `.scafctl` by default or an org override such as
