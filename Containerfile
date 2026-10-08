@@ -6,7 +6,7 @@
 # RUN steps (microdnf + npm + curl) execute under emulation when the target
 # platform differs from the host.
 # Multi-arch manifest digest for golang:1.27 (linux/amd64 + linux/arm64)
-FROM golang:1.27@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 AS builder
+FROM golang:1.27@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2 AS builder
 
 # Version metadata — filled at build time from the pipeline
 ARG BUILD_VERSION=local
@@ -65,7 +65,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" \
 # binaries, Node.js linter tooling, and copies the cross-compiled binary
 # from the builder stage.  The per-arch download logic (`uname -m`) makes
 # this stage work with `podman build --platform linux/amd64,linux/arm64`.
-FROM registry.access.redhat.com/ubi10/ubi-minimal:10.2-1789645153@sha256:04febb4a74cc9ef3eca05ef851d92957276cc6e82fe8cb1ee44abf5114d440d8 AS runtime
+FROM registry.access.redhat.com/ubi10/ubi-minimal:10.2-1791444377@sha256:bcecd3e74c9d03eb1a596c6c8f366775a289d422ac5925ec1539924d762ebf23 AS runtime
 
 # Build-time metadata (re-declared so build-args from the workflow flow into
 # this stage and can be used in LABEL instructions below).
