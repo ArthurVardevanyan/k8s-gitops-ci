@@ -4,7 +4,7 @@ set -euo pipefail
 : "${SCHEMA_REPO:=https://github.com/ArthurVardevanyan/kubernetes-json-schema}"
 : "${SCHEMA_REPO_BRANCH:=main}"
 # renovate: datasource=git-refs depName=ArthurVardevanyan/kubernetes-json-schema
-: "${SCHEMA_REPO_SHA:=56931baecb31d624ad278ba0a45612eeaf0b88cb}"
+: "${SCHEMA_REPO_SHA:=111f83561e76a50067f310ad92b0e656b2abdf86}"
 : "${XDG_CACHE_HOME:=${HOME}/.cache}"
 : "${SCHEMA_CACHE:=${XDG_CACHE_HOME}/k8s-gitops-ci/kubernetes-json-schema}"
 : "${OUTPUT:=pkg/lint/kubeconform/schemas/schemas.tar.gz}"
