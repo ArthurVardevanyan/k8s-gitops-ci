@@ -15,7 +15,7 @@ const ovnRepo = "ovn-kubernetes/ovn-kubernetes"
 // in go.mod by a Go pseudo-version (an untagged commit), which
 // `task verify:upstream-refs` resolves to this same trailing hash - see
 // pkg/validator/runtime/upstream.go's ValidatedAt doc comment.
-const ovnValidatedAt = "e63fce3cf15d"
+const ovnValidatedAt = "bdd160d3e19f"
 
 // upstreamRefs cites the exact upstream function each check in this package
 // ports or imports. See pkg/validator/runtime/upstream.go for why a
@@ -46,7 +46,7 @@ var upstreamRefs = map[string]runtime.UpstreamRef{
 		Kind:        runtime.RefKindRewrite,
 		Path:        "go-controller/pkg/util/multi_network.go",
 		Functions:   []string{"ValidateNetConf"},
-		Digest:      "sha256:addd9b4bebe3a7cc3193c841ce6489cc694253ee06e4f97f81aefff66557e7c0",
+		Digest:      "sha256:cbebbdad4e391d5036910a0e664f735b8af507da622e6da7e10b48754386db4b",
 		ValidatedAt: ovnValidatedAt,
 		Note: "Ports every statically-knowable branch of ValidateNetConf: the netAttachDefName " +
 			"consistency check, allowPersistentIPs (topology + subnets), role, ipam.type " +
