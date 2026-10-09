@@ -19,7 +19,7 @@ const labelsPath = "staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/validation/
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken
 // at. It matches the tag derived from go.mod that
 // `task verify:upstream-refs` pins to.
-const validatedAt = "v1.37.0"
+const validatedAt = "v1.37.1"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only

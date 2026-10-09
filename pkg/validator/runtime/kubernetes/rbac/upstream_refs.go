@@ -10,7 +10,7 @@ import (
 const rbacValidationPath = "pkg/apis/rbac/validation/validation.go"
 
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken at.
-const validatedAt = "v1.37.0"
+const validatedAt = "v1.37.1"
 
 // upstreamRefs cites the exact upstream Kubernetes function each check in this
 // package ports. See pkg/validator/runtime/upstream.go for why a file-only

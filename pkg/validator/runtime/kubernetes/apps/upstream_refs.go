@@ -11,7 +11,7 @@ const appsValidationPath = "pkg/apis/apps/validation/validation.go"
 // validatedAt is the kubernetes/kubernetes tag every digest below was taken
 // at. It matches the tag derived from go.mod that
 // `task verify:upstream-refs` pins to.
-const validatedAt = "v1.37.0"
+const validatedAt = "v1.37.1"
 
 // selectorNote is shared by the workload selector checks. Each upstream
 // *Spec validator hands spec.selector to apimachinery's ValidateLabelSelector;
