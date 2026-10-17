@@ -10,6 +10,7 @@ import (
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/overlay"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/exempt"
 )
 
 // complianceAttributionCtx carries the per-PR state needed to decide whether a
@@ -383,4 +384,23 @@ func changedComponentDirsOf(changedFiles []string, baseApps map[string]bool) []s
 		}
 	}
 	return dirs
+}
+
+// markExemptionsDirect sets Applied.Direct on each exempt.Applied in the
+// provided slice so the "Accepted Exemptions" audit block can distinguish
+// exemptions applied to directly-modified files from pre-existing ones.
+// A raw-source file gets Direct=true when it is one of the PR's changed
+// files; an overlay-dir file gets Direct=true when at least one source file
+// feeding that overlay was directly changed (overlayHasDirectSourceChange).
+func markExemptionsDirect(exempted []exempt.Applied, attrCtx *complianceAttributionCtx) {
+	if len(exempted) == 0 || attrCtx == nil {
+		return
+	}
+	for i := range exempted {
+		if attrCtx.changedFiles[filepath.Clean(exempted[i].File)] {
+			exempted[i].Direct = true
+		} else if overlayHasDirectSourceChange(exempted[i].File, attrCtx) {
+			exempted[i].Direct = true
+		}
+	}
 }
