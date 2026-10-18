@@ -1912,6 +1912,18 @@ surfaced as visibility only. This is file-granularity by design — an
 unchanged line in an otherwise-touched file still blocks, matching the raw
 pass and `finalizeCompliance`'s treatment of directly-changed files.
 
+**Raw-source findings** (render-sensitive checks evaluated against files
+not covered by any rendered kustomize overlay — the "fallback tier"
+described in [Raw vs. rendered check input (dual-pass compliance)](#raw-vs-rendered-check-input-dual-pass-compliance)) follow the
+same file-level directness rule: when the finding's `File` is a raw source
+path from the PR's changeset (i.e. `ctx.changedFiles[clean(f.File)]` is
+true), it is classified as **direct** (blocking). This ensures that
+components intentionally consumed outside kustomize (e.g. a Task
+consumed directly by Tekton Pipelines-as-Code) are not silently downgraded
+to warnings even though they don't participate in the rendered overlay
+pipeline. A raw-source finding on a file not in the changeset is surfaced
+as a ⚠️ warning, matching the "pre-existing" convention.
+
 ## Concurrency
 
 `Workers(opts)` returns `opts.Concurrency` if set (`--concurrency`), else

@@ -410,20 +410,13 @@ renders an **"Accepted Exemptions"** audit sub-block from
 `check.Result.Exempted` (`[]exempt.Applied`) whenever any exemption was
 applied, listing `| Resource | Value | Scope |` per exemption.
 
-> **Known limitation:** the block's label and each row's "Scope" column
-> are meant to distinguish an exemption applied to a directly-modified
-> resource (`Direct: true`, rendered "directly modified") from a
-> pre-existing one (rendered "pre-existing") — but `exempt.Applied.Direct`
-> is **never actually set to `true`** anywhere in the current code (the
-> only two `Applied{...}` construction sites, both in
-> `exempt.Evaluate`, omit the field, leaving it at its `false` zero
-> value). In practice, today, the block always renders with the
-> `(pre-existing)` label and every row shows `pre-existing`, even for an
-> exemption that was applied to a resource this PR directly touches.
-> This mirrors `finalizeCompliance`'s blocking/warning split
-> conceptually, but that wiring (setting `Direct` from the same
-> changed-file-set check `finalizeCompliance` already does) hasn't been
-> connected yet.
+Exemption scope is determined by the same changed-file-set that drives
+resource-compliance classification: a raw-source file gets `Direct=true`
+when it is one of the PR's directly-changed files, and an overlay-dir file
+gets `Direct=true` when at least one source file feeding that overlay was
+directly changed (`overlayHasDirectSourceChange`). The audit block labels
+exemptions applied to directly-modified files as **"directly modified"**
+and those on untouched resources as **"pre-existing"**.
 
 ## Selector reference
 

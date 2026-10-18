@@ -1047,6 +1047,12 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	}
 	res.Check = combinedCheck
 
+	// Wire up Applied.Direct for the audit block: a raw-source file gets
+	// Direct=true when it is one of the PR's changed files; an overlay-dir
+	// file gets Direct=true when at least one source file feeding that
+	// overlay was directly changed (overlayHasDirectSourceChange).
+	markExemptionsDirect(combinedCheck.Exempted, attrCtx)
+
 	// Runtime findings are always blocking: they describe manifests the API
 	// server itself rejects. They must be OR-ed in here rather than relying
 	// on the earlier assignment, which this line would otherwise overwrite -

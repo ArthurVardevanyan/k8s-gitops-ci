@@ -2,6 +2,7 @@ package validator
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -116,11 +117,21 @@ func classifyResourceCompliance(findings []check.Finding, ctx *complianceAttribu
 			// rendered pass) or a raw source file. They become blocking when any
 			// source file feeding that path was directly changed in this PR;
 			// otherwise the finding is a non-blocking pre-existing warning.
-			if ctx != nil && overlayHasDirectSourceChange(f.File, ctx) {
+			if ctx != nil && (ctx.changedFiles[filepath.Clean(f.File)] || overlayHasDirectSourceChange(f.File, ctx)) {
 				blockingByCheck[id] = append(blockingByCheck[id], f)
 			} else {
 				nonblockingByCheck[id] = append(nonblockingByCheck[id], f)
 			}
+			continue
+		}
+		// Raw-source findings: the finding's File is a source file from the
+		// PR's changeset (the raw pass only runs against changed files). A
+		// finding on a changed source file is by definition about a resource
+		// this PR modifies, so it's blocking regardless of the overlay-level
+		// attribution logic below (which assumes an overlay dir in f.File and
+		// misattributes findings whose File is a raw source path).
+		if ctx != nil && ctx.changedFiles[filepath.Clean(f.File)] {
+			blockingByCheck[id] = append(blockingByCheck[id], f)
 			continue
 		}
 		if ctx.changedKeys != nil && ctx.changedKeys[resourceKey] != nil && isResourceAffected(resourceKey, ctx, f.File) {

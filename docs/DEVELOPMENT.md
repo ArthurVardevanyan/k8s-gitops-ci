@@ -666,8 +666,10 @@ count:
   (`orderedComplianceIDs`), plus an "Accepted Exemptions" audit sub-block
   (`renderAcceptedExemptions`, table `| Resource | Value | Scope |`) built
   from applied exemptions (`check.Result.Exempted` /
-  `[]exempt.Applied`), labeled `(pre-existing)` when none of the
-  exemptions were applied to a directly-modified resource. The section's
+  `[]exempt.Applied`), labeled "directly modified" when the exemption was
+  applied to a file directly changed in the PR (via
+  `attrCtx.changedFiles` or `overlayHasDirectSourceChange`), and
+  "pre-existing" otherwise. The section's
   own top-level `Status` is `StatusError` when any blocking finding
   exists, `StatusWarning` for warning-only findings, and `StatusInfo` when
   only exemptions are present (no findings at all) — an audit trail worth
