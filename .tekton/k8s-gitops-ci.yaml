@@ -147,6 +147,10 @@ spec:
                 value: /home/default/.cache/tmp
               - name: GOMAXPROCS
                 value: "12"
+              # Pin is set by go.mod's toolchain directive; the Taskfile
+              # exports GOTOOLCHAIN=go1.27.x which the Tekton task
+              # inherits from the global env block.  No GOTOOLCHAIN env
+              # here — Tekton overrides would silently disable the pin.
               - name: GO_CACHE_BOUND
                 value: $(workspaces.go-cache.bound)
               - name: GO_CACHE_PATH

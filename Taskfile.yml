@@ -5,6 +5,13 @@ vars:
   NAME: k8s-gitops-ci
   # renovate: datasource=go depName=golang.org/x/tools
   GOIMPORTS_VERSION: v0.52.0
+  # GOMOD_TOOLCHAIN reads the exact toolchain pin from go.mod's `toolchain`
+  # line. That line must name a version strictly newer than the `go`
+  # directive - Go deletes a toolchain line equal to it as redundant (see
+  # docs/DEVELOPMENT.md). If no toolchain line is present the value is empty
+  # and GOTOOLCHAIN falls back to the default (auto), floor-only semantics.
+  GOMOD_TOOLCHAIN:
+    sh: grep -m1 '^toolchain ' "{{.ROOT_DIR | toSlash}}/go.mod" 2>/dev/null | awk '{print $2}'
   # renovate: datasource=go depName=mvdan.cc/gofumpt
   GOFUMPT_VERSION: v0.12.0
   # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
@@ -55,6 +62,10 @@ vars:
 env:
   CGO_ENABLED: "0"
   GOFLAGS: -mod=mod
+  # Pin the Go toolchain to the exact version in go.mod (toolchain line).
+  # If no toolchain line is present (empty), GOTOOLCHAIN is unset and Go
+  # falls back to its default behaviour (floor semantics).
+  GOTOOLCHAIN: "{{.GOMOD_TOOLCHAIN}}"
 
 # ── Info ──────────────────────────────────────────────────────────────────────
 tasks:
@@ -69,7 +80,7 @@ tasks:
         echo "------------------------------------------------------------"
         echo "Common commands:"
         echo "  task           # this info"
-        echo "  task ci        # full CI pipeline (lint + test + build)"
+        echo "  task ci        # full CI pipeline (toolchain, lint, test, build)"
         echo "  task build     # build bin/k8s-gitops-ci"
         echo "  task test      # run tests"
         echo "  task lint      # run golangci-lint"
@@ -369,6 +380,7 @@ tasks:
     env:
       GOBIN: "{{.TOOLS_BIN}}"
       PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+      GOTOOLCHAIN: "{{.GOMOD_TOOLCHAIN}}"
     cmds:
       - |
         set -e
@@ -684,7 +696,7 @@ tasks:
 
   # ── Full CI pipeline ──────────────────────────────────────────────────────────
   ci:
-    desc: Full CI pipeline — version, mod check, format, schemas, upstream refs, lint, vulncheck, test, build
+    desc: Full CI pipeline — toolchain, version, mod check, format, schemas, upstream refs, lint, vulncheck, test, build
     silent: true
     vars:
       # Suffixed with the shell PID so concurrent/overlapping `task ci` runs
@@ -705,37 +717,86 @@ tasks:
         echo "🚀 Starting CI Pipeline"
         echo "=========================================="
         echo ""
-        echo "▶ Step 1/10 Version Check"
+        echo "▶ Step 1/11 Toolchain Verification"
+        TOOLCHAIN="$(grep -m1 '^toolchain ' "{{.ROOT_DIR}}/go.mod" 2>/dev/null | awk '{print $2}' | sed 's/^go//')"
+        FLOOR="$(grep -m1 '^go ' "{{.ROOT_DIR}}/go.mod" | awk '{print $2}')"
+        if [ -z "${FLOOR:-}" ]; then
+          echo "⚠️  No 'go' directive in go.mod — skipping toolchain check"
+        elif [ -n "${TOOLCHAIN:-}" ]; then
+          # Pin present: enforce exact match so CI and local always use the
+          # same toolchain — prevents stale versions passing CI that fail
+          # locally (e.g. go1.27.1 with GO-2026-6617 vuln).
+          ACTIVER="$(go version | sed -n 's/go version go\([0-9.]*\).*/\1/p')"
+          echo "  Pinned toolchain: go ${TOOLCHAIN}, Active: go ${ACTIVER:-unknown}"
+          if [ "${ACTIVER}" = "${TOOLCHAIN}" ]; then
+            echo "✅ Toolchain go ${ACTIVER} matches the go.mod pin"
+          else
+            echo "❌ Toolchain mismatch: active go ${ACTIVER:-unknown} != pin go ${TOOLCHAIN}"
+            echo "   Fix: unset GOTOOLCHAIN or set GOTOOLCHAIN=${TOOLCHAIN}, then retry"
+            exit 1
+          fi
+        else
+          # No pin: floor-only (backward compatible with repos that lack a
+          # toolchain directive).
+          ACTIVER="$(go version | sed -n 's/go version go\([0-9.]*\).*/\1/p')"
+          echo "  Active: go ${ACTIVER:-unknown}, Floor: go ${FLOOR}"
+          if [ -n "${ACTIVER:-}" ]; then
+            IFS='.' read -ra ACTIVE_PARTS <<< "${ACTIVER}"
+            IFS='.' read -ra FLOOR_PARTS <<< "${FLOOR}"
+            NEWER=false
+            OLDER=false
+            MAX_LEN=${#FLOOR_PARTS[@]}
+            for (( i=0; i<MAX_LEN; i++ )); do
+              A=${ACTIVE_PARTS[$i]:-0}
+              F=${FLOOR_PARTS[$i]:-0}
+              if (( A > F )); then NEWER=true; break; fi
+              if (( A < F )); then OLDER=true; break; fi
+            done
+            if [ "$OLDER" = true ]; then
+              echo "❌ Toolchain too old: active go ${ACTIVER} < floor go ${FLOOR}"
+              echo "   Likely cause: GOTOOLCHAIN=local blocked the auto-download"
+              echo "   Fix: go env -w GOTOOLCHAIN=auto (or unset GOTOOLCHAIN), then retry"
+              echo "   Or install go ≥ ${FLOOR}"
+              exit 1
+            fi
+            if [ "$NEWER" = true ]; then
+              echo "  ℹ Building with go ${ACTIVER} (newer than floor ${FLOOR} — Go is backward compatible, fine)"
+            else
+              echo "✅ Toolchain go ${ACTIVER} matches the go.mod floor"
+            fi
+          fi
+        fi
+      - echo "" && echo "▶ Step 2/11 Version Check"
       - task: version:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/10 Version Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 2/10 Module Dependencies Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/11 Version Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 3/11 Module Dependencies Check"
       - task: mod:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/10 Module Dependencies Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 3/10 Code Formatting Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/11 Module Dependencies Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 4/11 Code Formatting Check"
       - task: format:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/10 Code Formatting Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 4/10 Schemas & Policies"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/11 Code Formatting Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 5/11 Schemas & Policies"
       - task: schemas:pull
       - task: policies:pull
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/10 Schemas & Policies" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 5/10 Upstream References"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/11 Schemas & Policies" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 6/11 Upstream References"
       - task: verify:upstream-refs
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/10 Upstream References" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 6/10 Linting"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/11 Upstream References" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 7/11 Linting"
       - task: lint
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/10 Linting" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 7/10 Vulnerability Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/11 Linting" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 8/11 Vulnerability Check"
       - task: vulncheck
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/10 Vulnerability Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 8/10 Tests (coverage + race)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/11 Vulnerability Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 9/11 Tests (coverage + race)"
       - task: test:cover
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/10 Tests (coverage + race)" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 9/10 Build"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 9/11 Tests (coverage + race)" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 10/11 Build"
       - task: build
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 9/10 Build" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 10/10 Smoke Gate (engine against this repo's own data)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 10/11 Build" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 11/11 Smoke Gate (engine against this repo's own data)"
       - "{{.ROOT_DIR}}/bin/k8s-gitops-ci test --disable-checks golangci"
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 10/10 Smoke Gate (engine against this repo's own data)" >> "{{.TIMEFILE}}"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 11/11 Smoke Gate (engine against this repo's own data)" >> "{{.TIMEFILE}}"
       - |
         set -euo pipefail
         echo ""

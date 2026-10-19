@@ -2,6 +2,8 @@ module github.com/ArthurVardevanyan/k8s-gitops-ci
 
 go 1.27.1
 
+toolchain go1.27.2
+
 require (
 	github.com/containernetworking/cni v1.3.1
 	github.com/google/cel-go v0.31.0
