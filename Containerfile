@@ -6,7 +6,7 @@
 # RUN steps (microdnf + npm + curl) execute under emulation when the target
 # platform differs from the host.
 # Multi-arch manifest digest for golang:1.27.1 (linux/amd64 + linux/arm64)
-FROM golang:1.27.1@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2 AS builder
+FROM golang:1.27.2@sha256:820153096fda4de6ac1b7194d12e416b7dd8f4e9a33d17e0345b111b945162d8 AS builder
 
 # Version metadata — filled at build time from the pipeline
 ARG BUILD_VERSION=local
