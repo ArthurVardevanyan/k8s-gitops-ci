@@ -54,8 +54,14 @@ pointing to every other doc (`CI.md`, `HOOKS.md`, `EXEMPTIONS.md`,
   stay in sync.
 - The `Containerfile` builder stage also verifies that `go env GOVERSION`
   matches the `go` line, failing the build if they diverge. Together with
-  the Step 1 check, these catch any drift between `go.mod` and the
-  `Containerfile` base image before it ships.
+  the Step 1 check (which also requires the `Containerfile` `FROM` tag to
+  equal the `go` line and carry a `@sha256:` digest), these catch any
+  drift between `go.mod` and the `Containerfile` base image before it
+  ships. `task update:go-image` repairs a stale tag or digest.
+- **Renovate** opens one `go toolchain` PR that bumps the `go.mod` `go`
+  line (`rangeStrategy: bump`) and the `Containerfile` golang tag + digest
+  together. Minor/major toolchain bumps require approval on the
+  dependency dashboard; patch releases open automatically.
 
 Optional, used by individual `pkg/lint/*` wrappers when present on `PATH`.
 Every wrapper itself returns a typed "CLI not found" error rather than

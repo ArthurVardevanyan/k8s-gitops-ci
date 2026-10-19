@@ -738,6 +738,17 @@ tasks:
           exit 1
         fi
         echo "✅ Active go ${ACTIVER} matches the go.mod floor"
+        # The Containerfile base image must be pinned to the same release
+        # (tag AND digest) so image builds use the same Go as local/CI.
+        CF_FROM="$(grep -m1 '^FROM golang:' "{{.ROOT_DIR}}/Containerfile" || true)"
+        if ! printf '%s' "${CF_FROM}" | grep -qE "^FROM golang:${FLOOR}@sha256:[0-9a-f]{64}( |$)"; then
+          echo "❌ Containerfile golang base image does not match go ${FLOOR}"
+          echo "   Found: ${CF_FROM:-<no 'FROM golang:' line>}"
+          echo "   Expected: FROM golang:${FLOOR}@sha256:<digest>"
+          echo "   Run: task update:go-image"
+          exit 1
+        fi
+        echo "✅ Containerfile golang image matches go ${FLOOR}"
       - echo "" && echo "▶ Step 2/11 Version Check"
       - task: version:check
       - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/11 Version Check" >> "{{.TIMEFILE}}"
@@ -1014,23 +1025,23 @@ tasks:
           exit 1
         fi
 
-        # Capture the old digest so we can report the change.
-        OLD_DIGEST=$(grep '^FROM golang:' "${CONTAINERFILE}" | grep -oP 'sha256:\K[0-9a-f]{64}')
-        echo "   Current: golang:${FLOOR}@sha256:${OLD_DIGEST:0:12}..."
-
-        # Rewrite the FROM line. Use a line-matching sed that targets
-        # the builder stage (the one ending in AS builder).
-        if [ "${OLD_DIGEST}" = "${RAW_DIGEST}" ]; then
-          echo "✅ golang:${FLOOR} index is already up to date (sha256:${RAW_DIGEST:0:12}...)"
+        # Compare the whole pinned reference (tag AND digest), so a stale
+        # tag is repaired even when the digest happens to match.
+        OLD_REF=$(grep -m1 '^FROM golang:' "${CONTAINERFILE}" | sed -E 's/^FROM golang:([^ ]+).*/\1/')
+        NEW_REF="${FLOOR}@sha256:${RAW_DIGEST}"
+        echo "   Current: golang:${OLD_REF%%@*}@${OLD_REF#*@sha256:}" | cut -c1-60
+        if [ "${OLD_REF}" = "${NEW_REF}" ]; then
+          echo "✅ golang:${FLOOR} is already up to date (sha256:${RAW_DIGEST:0:12}...)"
           exit 0
         fi
 
-        sed -i "s|FROM golang:${FLOOR}@sha256:[0-9a-f]\{64\}|FROM golang:${FLOOR}@sha256:${RAW_DIGEST}|" "${CONTAINERFILE}"
+        # Rewrite the FROM line regardless of its current tag/digest.
+        sed -i -E "s|^FROM golang:[^ ]+|FROM golang:${NEW_REF}|" "${CONTAINERFILE}"
 
         # 6. Verify the substitution landed.
-        NEW_DIGEST=$(grep '^FROM golang:' "${CONTAINERFILE}" | grep -oP 'sha256:\K[0-9a-f]{64}')
-        if [ "${NEW_DIGEST}" != "${RAW_DIGEST}" ]; then
-          echo "❌ Failed to update golang image digest in ${CONTAINERFILE}"
+        NEW_DIGEST=$(grep -m1 '^FROM golang:' "${CONTAINERFILE}" | grep -oP 'sha256:\K[0-9a-f]{64}')
+        if ! grep -q "^FROM golang:${NEW_REF}" "${CONTAINERFILE}"; then
+          echo "❌ Failed to update golang image in ${CONTAINERFILE}"
           exit 1
         fi
 
