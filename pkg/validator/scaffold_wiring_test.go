@@ -294,7 +294,8 @@ func TestIsOverlayScaffoldRelated(t *testing.T) {
 	// Unlike isOverlayRelatedToChangedFiles, scaffold relatedness is a
 	// pure path-prefix check over the files that unambiguously change an
 	// overlay's generated output - it needs no on-disk kustomization refs.
-	// Only the overlay's own files and the app's scaffold template count. A
+	// Only the overlay's own files count. A scaffold template edit is app-wide
+	// and ambiguous (settled by computeBaselineDrift). A
 	// base/ or components/ edit is never scaffold-related (it isn't a
 	// scaffold input at all), and an app scaffold-config edit is also not
 	// directly related - it is app-wide and ambiguous, settled precisely by
@@ -309,7 +310,7 @@ func TestIsOverlayScaffoldRelated(t *testing.T) {
 	}{
 		{"overlay itself changed", "c1", []string{"myapp/overlays/c1/kustomization.yaml"}, true},
 		{"overlay own patch changed", "c1", []string{"myapp/overlays/c1/patch.yaml"}, true},
-		{"template changed", "c1", []string{".scafctl/templates/myapp/overlays/kustomization.yaml"}, true},
+		{"template changed is NOT directly related", "c1", []string{".scafctl/templates/myapp/overlays/kustomization.yaml"}, false},
 		{"config yaml changed is NOT directly related", "c1", []string{".scafctl/configs/myapp.yaml"}, false},
 		{"config yml changed is NOT directly related", "c1", []string{".scafctl/configs/myapp.yml"}, false},
 		{"base changed is NOT scaffold-related", "c1", []string{"myapp/base/deployment.yaml"}, false},
@@ -324,6 +325,27 @@ func TestIsOverlayScaffoldRelated(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := isOverlayScaffoldRelated("myapp", c.cluster, c.changed); got != c.want {
 				t.Errorf("isOverlayScaffoldRelated(%q, %v) = %v, want %v", c.cluster, c.changed, got, c.want)
+			}
+		})
+	}
+}
+
+func TestIsAppScaffoldTemplateChanged(t *testing.T) {
+	chdirTemp(t)
+	cases := []struct {
+		name    string
+		changed []string
+		want    bool
+	}{
+		{"template changed", []string{".scafctl/templates/myapp/overlays/kustomization.yaml"}, true},
+		{"other app template", []string{".scafctl/templates/otherapp/overlays/kustomization.yaml"}, false},
+		{"config changed", []string{".scafctl/configs/myapp.yaml"}, false},
+		{"nothing changed", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isAppScaffoldTemplateChanged("myapp", c.changed); got != c.want {
+				t.Errorf("isAppScaffoldTemplateChanged(%v) = %v, want %v", c.changed, got, c.want)
 			}
 		})
 	}
