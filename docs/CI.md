@@ -809,17 +809,18 @@ deliberately quieter tier than an actual (non-blocking) warning like
 #### Baseline Comparison (Pre-existing Drift Filtering)
 
 A content mismatch is blocking when the PR directly touches the affected
-overlay's own files or its app's scaffold template
-(`isOverlayScaffoldRelated`) - a change to either unambiguously changes what
-scaffold generates for it. A `base/` or `components/` edit is never
+overlay's own files (`isOverlayScaffoldRelated`). A `base/` or `components/` edit is never
 scaffold-related: those aren't scaffold inputs at all (contrast
 `isOverlayRelatedToChangedFiles`, the render/build heuristic used by the
 build and kubeconform phases, whose `overlay.RefsChangedDir` version-precise
 component scoping applies there).
 
-An app scaffold-config edit is app-wide and ambiguous - it may or may not
-change any particular overlay's output - so it is deliberately **not**
-treated as directly related. Those mismatches are instead filtered against
+An app scaffold-config or scaffold-template edit is app-wide and ambiguous -
+it may or may not change any particular overlay's output (a conditional
+branch the overlay never takes, a per-cluster override) - so it is
+deliberately **not** treated as directly related. A template-only PR
+therefore no longer blames every untouched overlay for drift caused by
+something external, such as cluster metadata changing independently. Those mismatches are instead filtered against
 the **merge-base baseline**: `computeBaselineDrift` generates the app at
 both the merge-base and `HEAD`, each in its own throwaway `git worktree`
 (`git.AddWorktree`, so generation never touches the caller's working tree),

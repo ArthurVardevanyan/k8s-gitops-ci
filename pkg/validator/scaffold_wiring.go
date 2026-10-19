@@ -32,9 +32,8 @@ type scaffoldValidationResult struct {
 	// applied to scaffold drift: an overlay this PR is already modifying must
 	// still fix any drift found there (see isOverlayScaffoldRelated), even if
 	// that same drift also exists at the merge-base. Only the overlay's own
-	// files and the app's scaffold template are "directly touched"; a
-	// base/components edit is never scaffold-related, and a config edit is
-	// ambiguous until generated content is compared (see computeBaselineDrift).
+	// files are "directly touched"; a base/components edit is never
+	// scaffold-related, and a config or template edit is ambiguous until generated content is compared (see computeBaselineDrift).
 	PreExistingDriftLines []string
 	ExecErrors            []string
 	// SkippedClusters records, per app, every overlay scaffold.Run skipped
@@ -75,15 +74,15 @@ type scaffoldValidationResult struct {
 //     (scaffold.ChangedOverlayNames), via the same trigger classification
 //     overlay.GetOverlaysToTest already uses for the build phase.
 //
-// A drifted overlay this PR directly touches - its own files, or its app's
-// scaffold template (isOverlayScaffoldRelated) - or a scaffold-tool execution
+// A drifted overlay this PR directly touches - its own files
+// (isOverlayScaffoldRelated) - or a scaffold-tool execution
 // failure, is always treated as blocking. A base/ or components/ edit is
 // never scaffold-related: it changes the render/build output but not what
 // scaffold would generate (see isOverlayScaffoldRelated, and the contrast
 // with isOverlayRelatedToChangedFiles used by the build/kubeconform phases).
 //
 // A drifted overlay this PR does NOT directly touch is ambiguous when the app
-// scaffold config changed: a config edit may or may not alter what scaffold
+// scaffold config or template changed: such an edit may or may not alter what scaffold
 // generates for any given overlay. computeBaselineDrift settles that question
 // precisely by generating the app at both the merge-base and HEAD - in two
 // throwaway git worktrees, so generation never touches the caller's working
@@ -121,7 +120,7 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 		if len(ambiguous) > 0 {
 			baseline = computeBaselineDrift(opts, app, ambiguous, log)
 		}
-		configChanged := isAppScaffoldConfigChanged(app, changed)
+		configChanged := isAppScaffoldConfigChanged(app, changed) || isAppScaffoldTemplateChanged(app, changed)
 
 		mu.Lock()
 		defer mu.Unlock()
@@ -142,7 +141,7 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 				blockLine := line
 				if configChanged {
 					if files := baseline.Diffs[ov]; len(files) > 0 {
-						blockLine += fmt.Sprintf(" (this PR's scaffold config change alters its generated output: %s)", summarizeFiles(files))
+						blockLine += fmt.Sprintf(" (this PR's scaffold config/template change alters its generated output: %s)", summarizeFiles(files))
 					}
 				}
 				result.DriftLines = append(result.DriftLines, blockLine)
@@ -376,31 +375,41 @@ func isOverlayRelatedToChangedFiles(app, cluster string, changedFiles []string) 
 // overlay this PR's direct responsibility to fix (blocking), rather than
 // eligible for the non-blocking pre-existing-drift downgrade.
 //
-// Only the overlay's own files (<app>/overlays/<cluster>/...) and the app's
-// scaffold template (<ScaffoldDir>/templates/<app>/...) are direct: a change
-// to either unambiguously changes what scaffold generates for this overlay.
-// Nothing under <app>/base/ or <app>/components/ is an input to scaffold, no
+// Only the overlay's own files (<app>/overlays/<cluster>/...) are direct: the
+// PR is editing the very file scaffold would regenerate. Nothing under <app>/base/ or <app>/components/ is an input to scaffold, no
 // matter how an overlay's kustomization chain references it - the deliberate
 // contrast with isOverlayRelatedToChangedFiles, which is a render/build
 // heuristic used by the build and kubeconform phases.
 //
-// The app's scaffold config (<ScaffoldDir>/configs/<app>.{yaml,yml}) is
-// deliberately NOT treated as directly related here even though it is a
-// genuine scaffold input: a config edit is app-wide and may or may not change
-// any particular overlay's output (a per-cluster override, or a config key
-// that overlay doesn't exercise, changes nothing for it). That question is
+// The app's scaffold template (<ScaffoldDir>/templates/<app>/...) and scaffold
+// config (<ScaffoldDir>/configs/<app>.{yaml,yml}) are deliberately NOT treated
+// as directly related here even though both are genuine scaffold inputs: an
+// edit to either is app-wide and may or may not change any particular
+// overlay's output (a conditional branch the overlay never takes, a
+// per-cluster override, or a config key it doesn't exercise changes nothing
+// for it). Treating a template edit as direct would blame an overlay that
+// already drifted for an external reason (e.g. cluster metadata changing
+// independently) on a PR whose change does not alter its output. That question is
 // settled precisely by comparing generated content at the merge-base and HEAD
 // (see computeBaselineDrift), not guessed from the path.
 func isOverlayScaffoldRelated(app, cluster string, changedFiles []string) bool {
 	overlayPrefix := filepath.ToSlash(filepath.Join(app, "overlays", cluster)) + "/"
-	templatePrefix := filepath.ToSlash(filepath.Join(convention.ScaffoldTemplatesPrefix(), app)) + "/"
 
 	for _, cf := range changedFiles {
-		cf = filepath.ToSlash(cf)
-		if strings.HasPrefix(cf, overlayPrefix) {
+		if strings.HasPrefix(filepath.ToSlash(cf), overlayPrefix) {
 			return true
 		}
-		if strings.HasPrefix(cf, templatePrefix) {
+	}
+	return false
+}
+
+// isAppScaffoldTemplateChanged reports whether this PR changed any file under
+// app's scaffold template directory. Like a config edit it is app-wide and
+// ambiguous, and is settled by computeBaselineDrift rather than by path.
+func isAppScaffoldTemplateChanged(app string, changedFiles []string) bool {
+	templatePrefix := filepath.ToSlash(filepath.Join(convention.ScaffoldTemplatesPrefix(), app)) + "/"
+	for _, cf := range changedFiles {
+		if strings.HasPrefix(filepath.ToSlash(cf), templatePrefix) {
 			return true
 		}
 	}
