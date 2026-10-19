@@ -1,5 +1,5 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "$schema": "https://docs.renovatebot.com/rename-schema.json",
   "extends": ["config:recommended"],
   "labels": ["dependencies"],
   "commitMessagePrefix": "chore(deps):",
@@ -32,6 +32,17 @@
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*(versioning=(?<versioning>\\S+))?\\s*\\n\\s*[A-Za-z0-9_]+_VERSION:\\s*[\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "Pinned golang base image in Containerfile FROM line (digest-res only)",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": [
+        "FROM golang:(?<currentDigest>[0-9]+\\.[0-9]+\\.[0-9]+)@sha256:(?<currentDigest2>[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "packageNameTemplate": "docker.io/library/golang",
+      "versioningTemplate": "semver-coerced"
     }
   ],
   "packageRules": [
@@ -53,6 +64,20 @@
       "matchFileNames": ["Taskfile.yml"],
       "matchDatasources": ["go"],
       "groupName": "taskfile go tools"
+    },
+    {
+      "description": "Digest-only updates for the golang base image (no version bumps)",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["docker.io/library/golang"],
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    },
+    {
+      "description": "Allow digest updates for the golang base image",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["docker.io/library/golang"],
+      "matchUpdateTypes": ["patch", "digest"],
+      "groupName": "go base image"
     }
   ]
 }

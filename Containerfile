@@ -5,8 +5,8 @@
 # for GOARCH, avoiding qemu for the expensive go-build phase. Only stage 2's
 # RUN steps (microdnf + npm + curl) execute under emulation when the target
 # platform differs from the host.
-# Multi-arch manifest digest for golang:1.27 (linux/amd64 + linux/arm64)
-FROM golang:1.27@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 AS builder
+# Multi-arch manifest digest for golang:1.27.1 (linux/amd64 + linux/arm64)
+FROM golang:1.27.1@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2 AS builder
 
 # Version metadata — filled at build time from the pipeline
 ARG BUILD_VERSION=local
@@ -18,6 +18,26 @@ WORKDIR /src
 # Copy module files first for Docker cache optimisation:
 # this layer is reused whenever go.mod/go.sum are unchanged (common).
 COPY go.mod go.sum ./
+
+# Verify the golang base image matches the go.mod floor.
+# This catches a mismatch between the pinned image and go.mod:
+# if the image drifts (e.g. Renovate bumps golang:1.27 to 1.28)
+# without a corresponding go.mod bump, the build fails early
+# instead of quietly compiling with a different patch release.
+# Also ensures GOTOOLCHAIN is not overridden (which would defeat
+# the downgrade that the Taskfile's GOTOOLCHAIN=go1.27.x forces).
+RUN FLOOR="$(grep -m1 '^go ' go.mod 2>/dev/null | awk '{print $2}')" && \
+    INSTALLED="$(go version 2>/dev/null | sed -n 's/go version go\([0-9.]*\).*/\1/p')" && \
+    if [ "${INSTALLED}" != "${FLOOR}" ]; then \
+      echo "❌ golang base image version mismatch" && \
+      echo "   go.mod expects: go ${FLOOR}" && \
+      echo "   golang base image: go ${INSTALLED}" && \
+      echo "   Update the FROM line in Containerfile or the go directive in go.mod" && \
+      exit 1; \
+    else \
+      echo "✅ Base image go ${INSTALLED} matches go.mod floor go ${FLOOR}"; \
+    fi
+
 # Retry logic for go mod download to handle transient network/DNS failures,
 # especially problematic under QEMU emulation for cross-architecture builds.
 # GOPROXY speeds up downloads and provides caching; GONOSUMCHECK bypasses

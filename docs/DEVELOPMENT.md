@@ -36,34 +36,26 @@ pointing to every other doc (`CI.md`, `HOOKS.md`, `EXEMPTIONS.md`,
 - [`task`](https://taskfile.dev) — all build/test/lint/update workflows go
   through `task`, not raw `go` commands (see [Building](#building) for why)
 
-- The `toolchain` line in `go.mod` pins the exact Go toolchain version. The
-  Taskfile reads this line and exports `GOTOOLCHAIN` for every `task`
-  invocation, and `task ci`'s first step fails unless the active Go matches
-  it exactly, so **local, CI, and a `task ci` replay all use the same
-  version** — preventing the scenario where a vulnerable Go patch (e.g.
-  1.27.1 with a known CVE) fails locally but passes in CI because CI happened
-  to run on a newer Go (e.g. 1.27.2) that has the fix.
-
-- **The `toolchain` version must be strictly newer than the `go` directive**
-  (e.g. `go 1.27.1` + `toolchain go1.27.2`). Go treats a `toolchain` line
-  equal to the `go` directive as redundant and silently deletes it on any
-  command that may rewrite `go.mod` — not just `go mod tidy`, but also
-  `go list`/`go run`/`go build` under the Taskfile's `GOFLAGS=-mod=mod`. To
-  pick up a Go patch release (e.g. for a vulnerability fix), bump only the
-  `toolchain` line (`go mod edit -toolchain=go1.27.N`); leave the `go`
-  directive alone so packages importing this module don't need a newer Go.
-  If you do raise the `go` directive, raise `toolchain` past it too, or drop
-  the `toolchain` line to fall back to floor-only semantics (below).
-
-- If no `toolchain` line is present in `go.mod`, the toolchain guard falls
-  back to floor-only semantics (the `go` directive). `GOTOOLCHAIN=auto`
-  (the default) auto-downloads the minimum version when a local Go is older,
-  and uses a newer local Go when present — Go is backward-compatible within
-  the same minor version, so building with a newer patch than the `go`
-  directive is fine. The `task ci` toolchain guard fails only when your Go
-  is _older_ than the `go.mod` floor (likely caused by `GOTOOLCHAIN=local`
-  blocking the auto-download), and prints a one-liner fix: `go env -w
-GOTOOLCHAIN=auto`.
+- The `go` line in `go.mod` (e.g. `go 1.27.1`) is the **single version
+  pin**, including the patch number. The Taskfile reads it and exports
+  `GOTOOLCHAIN=go<version>` for every `task` invocation, which forces Go
+  to **download and use that exact version** when a newer one is installed
+  locally. That way local, CI, and a `task ci` replay all use the same
+  patch — preventing the scenario where a vulnerable Go patch (e.g. 1.27.1
+  with a known CVE) fails locally but passes in CI because CI happened to
+  run on a newer Go (e.g. 1.27.2) that has the fix.
+- **The `go` line must include a patch number** (e.g. `1.27.1`, not `1.27`).
+  Pinning to `X.Y` without a patch does not produce a downloadable
+  `GOTOOLCHAIN` version, so the Step 1 check in `task ci` requires `X.Y.Z`
+  and fails if it is missing. To take a Go patch release, bump the `go`
+  line and run `task update:go-image` (which resolves the new
+  `golang:X.Y.Z` multi-platform index digest via `skopeo` and rewrites the
+  `Containerfile` `FROM` line) — then run `task ci` to verify both files
+  stay in sync.
+- The `Containerfile` builder stage also verifies that `go env GOVERSION`
+  matches the `go` line, failing the build if they diverge. Together with
+  the Step 1 check, these catch any drift between `go.mod` and the
+  `Containerfile` base image before it ships.
 
 Optional, used by individual `pkg/lint/*` wrappers when present on `PATH`.
 Every wrapper itself returns a typed "CLI not found" error rather than

@@ -5,13 +5,14 @@ vars:
   NAME: k8s-gitops-ci
   # renovate: datasource=go depName=golang.org/x/tools
   GOIMPORTS_VERSION: v0.52.0
-  # GOMOD_TOOLCHAIN reads the exact toolchain pin from go.mod's `toolchain`
-  # line. That line must name a version strictly newer than the `go`
-  # directive - Go deletes a toolchain line equal to it as redundant (see
-  # docs/DEVELOPMENT.md). If no toolchain line is present the value is empty
-  # and GOTOOLCHAIN falls back to the default (auto), floor-only semantics.
-  GOMOD_TOOLCHAIN:
-    sh: grep -m1 '^toolchain ' "{{.ROOT_DIR | toSlash}}/go.mod" 2>/dev/null | awk '{print $2}'
+  # GOMOD_GO reads the go directive from go.mod (e.g. 1.27.1).
+  # The Taskfile exports GOTOOLCHAIN=go${GOMOD_GO} for every task
+  # invocation, which forces Go to download and use that exact version
+  # when a newer one is installed locally. That way the `go` line in
+  # go.mod is the single version pin — local, CI, and Tekton all build
+  # with the same patch release.
+  GOMOD_GO:
+    sh: grep -m1 '^go ' "{{.ROOT_DIR | toSlash}}/go.mod" 2>/dev/null | awk '{print $2}'
   # renovate: datasource=go depName=mvdan.cc/gofumpt
   GOFUMPT_VERSION: v0.12.0
   # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
@@ -62,10 +63,10 @@ vars:
 env:
   CGO_ENABLED: "0"
   GOFLAGS: -mod=mod
-  # Pin the Go toolchain to the exact version in go.mod (toolchain line).
-  # If no toolchain line is present (empty), GOTOOLCHAIN is unset and Go
-  # falls back to its default behaviour (floor semantics).
-  GOTOOLCHAIN: "{{.GOMOD_TOOLCHAIN}}"
+  # Pin the Go toolchain to the exact version in go.mod's `go` directive.
+  # `go install` commands that install tooling use {{.TOOLS_BIN}} and
+  # {{.TOOLS}}, while the build command uses {{.DIST}}.
+  GOTOOLCHAIN: "go{{.GOMOD_GO}}"
 
 # ── Info ──────────────────────────────────────────────────────────────────────
 tasks:
@@ -380,7 +381,7 @@ tasks:
     env:
       GOBIN: "{{.TOOLS_BIN}}"
       PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
-      GOTOOLCHAIN: "{{.GOMOD_TOOLCHAIN}}"
+      GOTOOLCHAIN: "go{{.GOMOD_GO}}"
     cmds:
       - |
         set -e
@@ -716,56 +717,27 @@ tasks:
         echo "=========================================="
         echo "🚀 Starting CI Pipeline"
         echo "=========================================="
-        echo ""
         echo "▶ Step 1/11 Toolchain Verification"
-        TOOLCHAIN="$(grep -m1 '^toolchain ' "{{.ROOT_DIR}}/go.mod" 2>/dev/null | awk '{print $2}' | sed 's/^go//')"
         FLOOR="$(grep -m1 '^go ' "{{.ROOT_DIR}}/go.mod" | awk '{print $2}')"
         if [ -z "${FLOOR:-}" ]; then
           echo "⚠️  No 'go' directive in go.mod — skipping toolchain check"
-        elif [ -n "${TOOLCHAIN:-}" ]; then
-          # Pin present: enforce exact match so CI and local always use the
-          # same toolchain — prevents stale versions passing CI that fail
-          # locally (e.g. go1.27.1 with GO-2026-6617 vuln).
-          ACTIVER="$(go version | sed -n 's/go version go\([0-9.]*\).*/\1/p')"
-          echo "  Pinned toolchain: go ${TOOLCHAIN}, Active: go ${ACTIVER:-unknown}"
-          if [ "${ACTIVER}" = "${TOOLCHAIN}" ]; then
-            echo "✅ Toolchain go ${ACTIVER} matches the go.mod pin"
-          else
-            echo "❌ Toolchain mismatch: active go ${ACTIVER:-unknown} != pin go ${TOOLCHAIN}"
-            echo "   Fix: unset GOTOOLCHAIN or set GOTOOLCHAIN=${TOOLCHAIN}, then retry"
-            exit 1
-          fi
-        else
-          # No pin: floor-only (backward compatible with repos that lack a
-          # toolchain directive).
-          ACTIVER="$(go version | sed -n 's/go version go\([0-9.]*\).*/\1/p')"
-          echo "  Active: go ${ACTIVER:-unknown}, Floor: go ${FLOOR}"
-          if [ -n "${ACTIVER:-}" ]; then
-            IFS='.' read -ra ACTIVE_PARTS <<< "${ACTIVER}"
-            IFS='.' read -ra FLOOR_PARTS <<< "${FLOOR}"
-            NEWER=false
-            OLDER=false
-            MAX_LEN=${#FLOOR_PARTS[@]}
-            for (( i=0; i<MAX_LEN; i++ )); do
-              A=${ACTIVE_PARTS[$i]:-0}
-              F=${FLOOR_PARTS[$i]:-0}
-              if (( A > F )); then NEWER=true; break; fi
-              if (( A < F )); then OLDER=true; break; fi
-            done
-            if [ "$OLDER" = true ]; then
-              echo "❌ Toolchain too old: active go ${ACTIVER} < floor go ${FLOOR}"
-              echo "   Likely cause: GOTOOLCHAIN=local blocked the auto-download"
-              echo "   Fix: go env -w GOTOOLCHAIN=auto (or unset GOTOOLCHAIN), then retry"
-              echo "   Or install go ≥ ${FLOOR}"
-              exit 1
-            fi
-            if [ "$NEWER" = true ]; then
-              echo "  ℹ Building with go ${ACTIVER} (newer than floor ${FLOOR} — Go is backward compatible, fine)"
-            else
-              echo "✅ Toolchain go ${ACTIVER} matches the go.mod floor"
-            fi
-          fi
+        elif ! printf '%s' "${FLOOR}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "❌ The 'go' line in go.mod must include a patch number (e.g. 1.27.1)"
+          echo "   Pinning to X.Y without a patch does not produce a downloadable"
+          echo "   GOTOOLCHAIN version, so GOTOOLCHAIN=auto would pick the local Go"
+          echo "   instead of enforcing an exact match."
+          exit 1
         fi
+        ACTIVER="$(go version | sed -n 's/go version go\([0-9.]*\).*/\1/p')"
+        echo "  go: ${FLOOR}, Active: go ${ACTIVER:-unknown}"
+        if [ "${ACTIVER}" != "${FLOOR}" ]; then
+          echo "❌ Version mismatch: active go ${ACTIVER:-unknown} != go ${FLOOR}"
+          echo "   The toolchain will downgrade to go ${FLOOR}, but a build"
+          echo "   running on a different patch would silently diverge from the"
+          echo "   go.mod floor, so we fail fast instead."
+          exit 1
+        fi
+        echo "✅ Active go ${ACTIVER} matches the go.mod floor"
       - echo "" && echo "▶ Step 2/11 Version Check"
       - task: version:check
       - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/11 Version Check" >> "{{.TIMEFILE}}"
@@ -863,6 +835,7 @@ tasks:
       - task: schemas:pull
       - task: policies:pull
       - task: update:scoped-resources
+      - task: update:go-image
 
   schemas:pull:
     desc: Pull embedded kubeconform schemas from git (repacks schemas.tar.gz from the pinned SCHEMA_REPO_SHA)
@@ -980,6 +953,90 @@ tasks:
     generates:
       - pkg/validator/static/namespace/resource_scope.go
       - pkg/validator/static/namespace/extra_resource_scope.go
+
+  update:go-image:
+    desc: Update the golang base image digest to match go.mod (multi-arch index)
+    deps:
+      - install-tools
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+
+        # 1. Read the go directive from go.mod (must be X.Y.Z — no floor-only).
+        FLOOR="$(grep -m1 '^go ' go.mod 2>/dev/null | awk '{print $2}')"
+        if [ -z "${FLOOR:-}" ]; then
+          echo "❌ No go directive in go.mod"
+          exit 1
+        fi
+
+        # 2. Require a full patch version (GOTOOLCHAIN only understands X.Y.Z).
+        if ! printf '%s' "${FLOOR}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "❌ go line must include a patch number (e.g. go 1.27.1)"
+          exit 1
+        fi
+
+        # 3. Resolve the multi-platform index digest via skopeo (read-only).
+        if ! command -v skopeo >/dev/null 2>&1; then
+          echo "❌ skopeo is required (install with: go install github.com/containers/skopeo/cmd/skopeo@latest)"
+          exit 1
+        fi
+
+        echo "🔍 Resolving golang:${FLOOR} index digest..."
+        RAW_DIGEST=$(skopeo inspect --raw "docker://docker.io/library/golang:${FLOOR}" 2>/dev/null | sha256sum | awk '{print $1}')
+
+        # 4. Validate that the resolved image is a multi-platform index
+        #    covering linux/amd64 and linux/arm64 (the platforms we build).
+        MANIFEST=$(skopeo inspect --raw "docker://docker.io/library/golang:${FLOOR}" 2>/dev/null || true)
+        HAS_AMD64=$(echo "${MANIFEST}" | jq -r '
+          (select(.manifests != null)
+           | .manifests[]
+           | select(.platform.architecture == "amd64")
+           | .platform.architecture)
+        ' 2>/dev/null || true)
+        HAS_ARM64=$(echo "${MANIFEST}" | jq -r '
+          (select(.manifests != null)
+           | .manifests[]
+           | select(.platform.architecture == "arm64")
+           | .platform.architecture)
+        ' 2>/dev/null || true)
+
+        if [ -z "${HAS_AMD64}" ] || [ -z "${HAS_ARM64}" ]; then
+          echo "❌ golang:${FLOOR} index does not cover linux/amd64 + linux/arm64"
+          echo "   amd64=${HAS_AMD64}, arm64=${HAS_ARM64}"
+          exit 1
+        fi
+
+        # 5. Update the Containerfile: replace the FROM golang:... line.
+        CONTAINERFILE="Containerfile"
+        if ! grep -q '^FROM golang:' "${CONTAINERFILE}"; then
+          echo "❌ No FROM golang: line found in ${CONTAINERFILE}"
+          exit 1
+        fi
+
+        # Capture the old digest so we can report the change.
+        OLD_DIGEST=$(grep '^FROM golang:' "${CONTAINERFILE}" | grep -oP 'sha256:\K[0-9a-f]{64}')
+        echo "   Current: golang:${FLOOR}@sha256:${OLD_DIGEST:0:12}..."
+
+        # Rewrite the FROM line. Use a line-matching sed that targets
+        # the builder stage (the one ending in AS builder).
+        if [ "${OLD_DIGEST}" = "${RAW_DIGEST}" ]; then
+          echo "✅ golang:${FLOOR} index is already up to date (sha256:${RAW_DIGEST:0:12}...)"
+          exit 0
+        fi
+
+        sed -i "s|FROM golang:${FLOOR}@sha256:[0-9a-f]\{64\}|FROM golang:${FLOOR}@sha256:${RAW_DIGEST}|" "${CONTAINERFILE}"
+
+        # 6. Verify the substitution landed.
+        NEW_DIGEST=$(grep '^FROM golang:' "${CONTAINERFILE}" | grep -oP 'sha256:\K[0-9a-f]{64}')
+        if [ "${NEW_DIGEST}" != "${RAW_DIGEST}" ]; then
+          echo "❌ Failed to update golang image digest in ${CONTAINERFILE}"
+          exit 1
+        fi
+
+        echo "   ✓ Updated FROM golang:${FLOOR}@sha256:${NEW_DIGEST:0:12}..."
+        echo "✅ golang image digest updated to match go.mod (${FLOOR})"
+        echo "   Run 'task ci' to verify, then commit."
 
   update:tools:
     desc: Bump the pinned Go tool versions (golangci-lint, govulncheck, gofumpt, goimports) to their latest tags
