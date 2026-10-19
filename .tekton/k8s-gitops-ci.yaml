@@ -147,6 +147,11 @@ spec:
                 value: /home/default/.cache/tmp
               - name: GOMAXPROCS
                 value: "12"
+              # Pin is set by go.mod's go directive; the Taskfile exports
+              # GOTOOLCHAIN=go<floor> for task ci, but the Tekton task runs
+              # goreleaser which calls go build directly — not through task.
+              # We set GOTOOLCHAIN here so release, RC and snapshot builds use
+              # the same version regardless of what the toolbox image ships.
               - name: GO_CACHE_BOUND
                 value: $(workspaces.go-cache.bound)
               - name: GO_CACHE_PATH
@@ -329,6 +334,11 @@ spec:
                 git remote add origin "${PARAM_GIT_URL}"
                 git fetch origin "${PARAM_REVISION}"
                 git reset --hard FETCH_HEAD
+                # Force GOTOOLCHAIN for goreleaser (it calls go build
+                # directly, not through task). Without this, a release
+                # run on a toolbox image with a newer Go would silently
+                # build with a different patch than the go.mod floor.
+                export GOTOOLCHAIN="go$(grep -m1 '^go ' go.mod 2>/dev/null | awk '{print $2}')"
                 # Removes untracked leftovers from a previous run's revision
                 # (e.g. a file deleted since); deliberately not `-x`, so
                 # gitignored artifacts this run wants to reuse survive -

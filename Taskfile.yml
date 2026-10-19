@@ -5,6 +5,14 @@ vars:
   NAME: k8s-gitops-ci
   # renovate: datasource=go depName=golang.org/x/tools
   GOIMPORTS_VERSION: v0.52.0
+  # GOMOD_GO reads the go directive from go.mod (e.g. 1.27.1).
+  # The Taskfile exports GOTOOLCHAIN=go${GOMOD_GO} for every task
+  # invocation, which forces Go to download and use that exact version
+  # when a newer one is installed locally. That way the `go` line in
+  # go.mod is the single version pin — local, CI, and Tekton all build
+  # with the same patch release.
+  GOMOD_GO:
+    sh: grep -m1 '^go ' "{{.ROOT_DIR | toSlash}}/go.mod" 2>/dev/null | awk '{print $2}'
   # renovate: datasource=go depName=mvdan.cc/gofumpt
   GOFUMPT_VERSION: v0.12.0
   # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
@@ -55,6 +63,10 @@ vars:
 env:
   CGO_ENABLED: "0"
   GOFLAGS: -mod=mod
+  # Pin the Go toolchain to the exact version in go.mod's `go` directive.
+  # `go install` commands that install tooling use {{.TOOLS_BIN}} and
+  # {{.TOOLS}}, while the build command uses {{.DIST}}.
+  GOTOOLCHAIN: "go{{.GOMOD_GO}}"
 
 # ── Info ──────────────────────────────────────────────────────────────────────
 tasks:
@@ -69,7 +81,7 @@ tasks:
         echo "------------------------------------------------------------"
         echo "Common commands:"
         echo "  task           # this info"
-        echo "  task ci        # full CI pipeline (lint + test + build)"
+        echo "  task ci        # full CI pipeline (toolchain, lint, test, build)"
         echo "  task build     # build bin/k8s-gitops-ci"
         echo "  task test      # run tests"
         echo "  task lint      # run golangci-lint"
@@ -369,6 +381,7 @@ tasks:
     env:
       GOBIN: "{{.TOOLS_BIN}}"
       PATH: "{{.TOOLS_PATH}}:{{ env `PATH` }}"
+      GOTOOLCHAIN: "go{{.GOMOD_GO}}"
     cmds:
       - |
         set -e
@@ -684,7 +697,7 @@ tasks:
 
   # ── Full CI pipeline ──────────────────────────────────────────────────────────
   ci:
-    desc: Full CI pipeline — version, mod check, format, schemas, upstream refs, lint, vulncheck, test, build
+    desc: Full CI pipeline — toolchain, version, mod check, format, schemas, upstream refs, lint, vulncheck, test, build
     silent: true
     vars:
       # Suffixed with the shell PID so concurrent/overlapping `task ci` runs
@@ -704,38 +717,69 @@ tasks:
         echo "=========================================="
         echo "🚀 Starting CI Pipeline"
         echo "=========================================="
-        echo ""
-        echo "▶ Step 1/10 Version Check"
+        echo "▶ Step 1/11 Toolchain Verification"
+        FLOOR="$(grep -m1 '^go ' "{{.ROOT_DIR}}/go.mod" | awk '{print $2}')"
+        if [ -z "${FLOOR:-}" ]; then
+          echo "⚠️  No 'go' directive in go.mod — skipping toolchain check"
+        elif ! printf '%s' "${FLOOR}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "❌ The 'go' line in go.mod must include a patch number (e.g. 1.27.1)"
+          echo "   Pinning to X.Y without a patch does not produce a downloadable"
+          echo "   GOTOOLCHAIN version, so GOTOOLCHAIN=auto would pick the local Go"
+          echo "   instead of enforcing an exact match."
+          exit 1
+        fi
+        ACTIVER="$(go version | sed -n 's/go version go\([0-9.]*\).*/\1/p')"
+        echo "  go: ${FLOOR}, Active: go ${ACTIVER:-unknown}"
+        if [ "${ACTIVER}" != "${FLOOR}" ]; then
+          echo "❌ Version mismatch: active go ${ACTIVER:-unknown} != go ${FLOOR}"
+          echo "   The toolchain will downgrade to go ${FLOOR}, but a build"
+          echo "   running on a different patch would silently diverge from the"
+          echo "   go.mod floor, so we fail fast instead."
+          exit 1
+        fi
+        echo "✅ Active go ${ACTIVER} matches the go.mod floor"
+        # The Containerfile base image must be pinned to the same release
+        # (tag AND digest) so image builds use the same Go as local/CI.
+        CF_FROM="$(grep -m1 '^FROM golang:' "{{.ROOT_DIR}}/Containerfile" || true)"
+        if ! printf '%s' "${CF_FROM}" | grep -qE "^FROM golang:${FLOOR}@sha256:[0-9a-f]{64}( |$)"; then
+          echo "❌ Containerfile golang base image does not match go ${FLOOR}"
+          echo "   Found: ${CF_FROM:-<no 'FROM golang:' line>}"
+          echo "   Expected: FROM golang:${FLOOR}@sha256:<digest>"
+          echo "   Run: task update:go-image"
+          exit 1
+        fi
+        echo "✅ Containerfile golang image matches go ${FLOOR}"
+      - echo "" && echo "▶ Step 2/11 Version Check"
       - task: version:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 1/10 Version Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 2/10 Module Dependencies Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/11 Version Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 3/11 Module Dependencies Check"
       - task: mod:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 2/10 Module Dependencies Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 3/10 Code Formatting Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/11 Module Dependencies Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 4/11 Code Formatting Check"
       - task: format:check
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 3/10 Code Formatting Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 4/10 Schemas & Policies"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/11 Code Formatting Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 5/11 Schemas & Policies"
       - task: schemas:pull
       - task: policies:pull
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 4/10 Schemas & Policies" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 5/10 Upstream References"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/11 Schemas & Policies" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 6/11 Upstream References"
       - task: verify:upstream-refs
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 5/10 Upstream References" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 6/10 Linting"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/11 Upstream References" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 7/11 Linting"
       - task: lint
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 6/10 Linting" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 7/10 Vulnerability Check"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/11 Linting" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 8/11 Vulnerability Check"
       - task: vulncheck
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 7/10 Vulnerability Check" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 8/10 Tests (coverage + race)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/11 Vulnerability Check" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 9/11 Tests (coverage + race)"
       - task: test:cover
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 8/10 Tests (coverage + race)" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 9/10 Build"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 9/11 Tests (coverage + race)" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 10/11 Build"
       - task: build
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 9/10 Build" >> "{{.TIMEFILE}}"
-      - echo "" && echo "▶ Step 10/10 Smoke Gate (engine against this repo's own data)"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 10/11 Build" >> "{{.TIMEFILE}}"
+      - echo "" && echo "▶ Step 11/11 Smoke Gate (engine against this repo's own data)"
       - "{{.ROOT_DIR}}/bin/k8s-gitops-ci test --disable-checks golangci"
-      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 10/10 Smoke Gate (engine against this repo's own data)" >> "{{.TIMEFILE}}"
+      - printf '%s\t%s\n' "$(date +%s.%N)" "Step 11/11 Smoke Gate (engine against this repo's own data)" >> "{{.TIMEFILE}}"
       - |
         set -euo pipefail
         echo ""
@@ -802,6 +846,7 @@ tasks:
       - task: schemas:pull
       - task: policies:pull
       - task: update:scoped-resources
+      - task: update:go-image
 
   schemas:pull:
     desc: Pull embedded kubeconform schemas from git (repacks schemas.tar.gz from the pinned SCHEMA_REPO_SHA)
@@ -919,6 +964,90 @@ tasks:
     generates:
       - pkg/validator/static/namespace/resource_scope.go
       - pkg/validator/static/namespace/extra_resource_scope.go
+
+  update:go-image:
+    desc: Update the golang base image digest to match go.mod (multi-arch index)
+    deps:
+      - install-tools
+    silent: true
+    cmds:
+      - |
+        set -euo pipefail
+
+        # 1. Read the go directive from go.mod (must be X.Y.Z — no floor-only).
+        FLOOR="$(grep -m1 '^go ' go.mod 2>/dev/null | awk '{print $2}')"
+        if [ -z "${FLOOR:-}" ]; then
+          echo "❌ No go directive in go.mod"
+          exit 1
+        fi
+
+        # 2. Require a full patch version (GOTOOLCHAIN only understands X.Y.Z).
+        if ! printf '%s' "${FLOOR}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "❌ go line must include a patch number (e.g. go 1.27.1)"
+          exit 1
+        fi
+
+        # 3. Resolve the multi-platform index digest via skopeo (read-only).
+        if ! command -v skopeo >/dev/null 2>&1; then
+          echo "❌ skopeo is required (install with: go install github.com/containers/skopeo/cmd/skopeo@latest)"
+          exit 1
+        fi
+
+        echo "🔍 Resolving golang:${FLOOR} index digest..."
+        RAW_DIGEST=$(skopeo inspect --raw "docker://docker.io/library/golang:${FLOOR}" 2>/dev/null | sha256sum | awk '{print $1}')
+
+        # 4. Validate that the resolved image is a multi-platform index
+        #    covering linux/amd64 and linux/arm64 (the platforms we build).
+        MANIFEST=$(skopeo inspect --raw "docker://docker.io/library/golang:${FLOOR}" 2>/dev/null || true)
+        HAS_AMD64=$(echo "${MANIFEST}" | jq -r '
+          (select(.manifests != null)
+           | .manifests[]
+           | select(.platform.architecture == "amd64")
+           | .platform.architecture)
+        ' 2>/dev/null || true)
+        HAS_ARM64=$(echo "${MANIFEST}" | jq -r '
+          (select(.manifests != null)
+           | .manifests[]
+           | select(.platform.architecture == "arm64")
+           | .platform.architecture)
+        ' 2>/dev/null || true)
+
+        if [ -z "${HAS_AMD64}" ] || [ -z "${HAS_ARM64}" ]; then
+          echo "❌ golang:${FLOOR} index does not cover linux/amd64 + linux/arm64"
+          echo "   amd64=${HAS_AMD64}, arm64=${HAS_ARM64}"
+          exit 1
+        fi
+
+        # 5. Update the Containerfile: replace the FROM golang:... line.
+        CONTAINERFILE="Containerfile"
+        if ! grep -q '^FROM golang:' "${CONTAINERFILE}"; then
+          echo "❌ No FROM golang: line found in ${CONTAINERFILE}"
+          exit 1
+        fi
+
+        # Compare the whole pinned reference (tag AND digest), so a stale
+        # tag is repaired even when the digest happens to match.
+        OLD_REF=$(grep -m1 '^FROM golang:' "${CONTAINERFILE}" | sed -E 's/^FROM golang:([^ ]+).*/\1/')
+        NEW_REF="${FLOOR}@sha256:${RAW_DIGEST}"
+        echo "   Current: golang:${OLD_REF%%@*}@${OLD_REF#*@sha256:}" | cut -c1-60
+        if [ "${OLD_REF}" = "${NEW_REF}" ]; then
+          echo "✅ golang:${FLOOR} is already up to date (sha256:${RAW_DIGEST:0:12}...)"
+          exit 0
+        fi
+
+        # Rewrite the FROM line regardless of its current tag/digest.
+        sed -i -E "s|^FROM golang:[^ ]+|FROM golang:${NEW_REF}|" "${CONTAINERFILE}"
+
+        # 6. Verify the substitution landed.
+        NEW_DIGEST=$(grep -m1 '^FROM golang:' "${CONTAINERFILE}" | grep -oP 'sha256:\K[0-9a-f]{64}')
+        if ! grep -q "^FROM golang:${NEW_REF}" "${CONTAINERFILE}"; then
+          echo "❌ Failed to update golang image in ${CONTAINERFILE}"
+          exit 1
+        fi
+
+        echo "   ✓ Updated FROM golang:${FLOOR}@sha256:${NEW_DIGEST:0:12}..."
+        echo "✅ golang image digest updated to match go.mod (${FLOOR})"
+        echo "   Run 'task ci' to verify, then commit."
 
   update:tools:
     desc: Bump the pinned Go tool versions (golangci-lint, govulncheck, gofumpt, goimports) to their latest tags

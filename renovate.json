@@ -53,6 +53,25 @@
       "matchFileNames": ["Taskfile.yml"],
       "matchDatasources": ["go"],
       "groupName": "taskfile go tools"
+    },
+    {
+      "description": "Bump the go.mod go directive and the Containerfile golang base image together in one PR (they must always name the same release; task ci Step 1 enforces it)",
+      "matchDatasources": ["golang-version", "docker"],
+      "matchPackageNames": ["go", "golang", "docker.io/library/golang"],
+      "groupName": "go toolchain"
+    },
+    {
+      "description": "The go directive is treated as a range (^X.Y.Z), so Renovate never proposes a newer patch unless told to bump the value itself",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["golang"],
+      "rangeStrategy": "bump"
+    },
+    {
+      "description": "Go minor/major toolchain bumps need a deliberate decision; only patch releases (and digest refreshes) open automatically",
+      "matchDatasources": ["golang-version", "docker"],
+      "matchPackageNames": ["go", "golang", "docker.io/library/golang"],
+      "matchUpdateTypes": ["minor", "major"],
+      "dependencyDashboardApproval": true
     }
   ]
 }

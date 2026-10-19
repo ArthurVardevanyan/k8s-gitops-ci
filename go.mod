@@ -1,11 +1,11 @@
 module github.com/ArthurVardevanyan/k8s-gitops-ci
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/containernetworking/cni v1.3.1
 	github.com/google/cel-go v0.31.0
-	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20261019140607-90e296b1c56d
+	github.com/ovn-kubernetes/ovn-kubernetes/go-controller v0.0.0-20261019195046-2b3e40f8f54c
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/yannh/kubeconform v0.8.0
 	golang.org/x/mod v0.42.0
@@ -101,8 +101,8 @@ require (
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/gcfg.v1 v1.2.3 // indirect

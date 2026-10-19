@@ -36,6 +36,33 @@ pointing to every other doc (`CI.md`, `HOOKS.md`, `EXEMPTIONS.md`,
 - [`task`](https://taskfile.dev) — all build/test/lint/update workflows go
   through `task`, not raw `go` commands (see [Building](#building) for why)
 
+- The `go` line in `go.mod` (e.g. `go 1.27.1`) is the **single version
+  pin**, including the patch number. The Taskfile reads it and exports
+  `GOTOOLCHAIN=go<version>` for every `task` invocation, which forces Go
+  to **download and use that exact version** when a newer one is installed
+  locally. That way local, CI, and a `task ci` replay all use the same
+  patch — preventing the scenario where a vulnerable Go patch (e.g. 1.27.1
+  with a known CVE) fails locally but passes in CI because CI happened to
+  run on a newer Go (e.g. 1.27.2) that has the fix.
+- **The `go` line must include a patch number** (e.g. `1.27.1`, not `1.27`).
+  Pinning to `X.Y` without a patch does not produce a downloadable
+  `GOTOOLCHAIN` version, so the Step 1 check in `task ci` requires `X.Y.Z`
+  and fails if it is missing. To take a Go patch release, bump the `go`
+  line and run `task update:go-image` (which resolves the new
+  `golang:X.Y.Z` multi-platform index digest via `skopeo` and rewrites the
+  `Containerfile` `FROM` line) — then run `task ci` to verify both files
+  stay in sync.
+- The `Containerfile` builder stage also verifies that `go env GOVERSION`
+  matches the `go` line, failing the build if they diverge. Together with
+  the Step 1 check (which also requires the `Containerfile` `FROM` tag to
+  equal the `go` line and carry a `@sha256:` digest), these catch any
+  drift between `go.mod` and the `Containerfile` base image before it
+  ships. `task update:go-image` repairs a stale tag or digest.
+- **Renovate** opens one `go toolchain` PR that bumps the `go.mod` `go`
+  line (`rangeStrategy: bump`) and the `Containerfile` golang tag + digest
+  together. Minor/major toolchain bumps require approval on the
+  dependency dashboard; patch releases open automatically.
+
 Optional, used by individual `pkg/lint/*` wrappers when present on `PATH`.
 Every wrapper itself returns a typed "CLI not found" error rather than
 panicking when its tool is missing, so none of these are required just to
