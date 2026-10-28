@@ -334,8 +334,50 @@ overlayDefinitions:
 	if aff.FullTest {
 		t.Error("expected FullTest false for an override change")
 	}
-	if len(aff.Clusters) != 1 || aff.Clusters[0] != "pp1011" {
-		t.Errorf("expected override cluster pp1011, got %v", aff.Clusters)
+	// pp1011 gained an override; pp1010 lost one (reverting to defaults), so
+	// both still-existing overlays must be re-tested.
+	sort.Strings(aff.Clusters)
+	if len(aff.Clusters) != 2 || aff.Clusters[0] != "pp1010" || aff.Clusters[1] != "pp1011" {
+		t.Errorf("expected override clusters [pp1010 pp1011], got %v", aff.Clusters)
+	}
+}
+
+func TestDetectAffectedApps_RemovedOverride(t *testing.T) {
+	mainConfig := []byte(`
+overlayDefinitions:
+  overrides:
+    cluster-a:
+      features:
+        feature_one: true
+    cluster-b:
+      features:
+        feature_two: true
+    cluster-c:
+      features:
+        feature_two: true
+`)
+	// cluster-b's overlay still exists (live cluster); cluster-c's overlay was
+	// deleted alongside its override (decommission).
+	scratchWorkspace(t, mainConfig, []string{"cluster-a", "cluster-b"})
+
+	writeCurrentConfig(t, []byte(`
+overlayDefinitions:
+  overrides:
+    cluster-a:
+      features:
+        feature_one: true
+`))
+
+	got := DetectAffectedApps([]string{".scafctl/configs/app.yaml"}, "", "", nil)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 affected app, got %d: %v", len(got), got)
+	}
+	aff := got[0]
+	if aff.Trigger != "config-override" {
+		t.Errorf("expected trigger config-override, got %q", aff.Trigger)
+	}
+	if len(aff.Clusters) != 1 || aff.Clusters[0] != "cluster-b" {
+		t.Errorf("expected removed-override cluster with a live overlay [cluster-b], got %v", aff.Clusters)
 	}
 }
 
