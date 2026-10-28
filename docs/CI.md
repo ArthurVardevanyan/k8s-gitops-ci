@@ -732,7 +732,9 @@ tested, cover every way a change can require this:
    template changed, so every overlay of every app using it is
    re-checked (a full test).
 2. **Config changes** (`configdiff.DetectAffectedApps`) - either specific
-   clusters (an override changed) or a full test (a change that fans out
+   clusters (an override was added, changed, or removed - a removed
+   override reverts the cluster to defaults, so its overlay is re-checked
+   when it still exists) or a full test (a change that fans out
    cluster-independently, e.g. a changeGroup reassignment - see
    `provider.Providers.ChangeGroups`).
 3. **An app's own overlay files changed**, not already covered above -

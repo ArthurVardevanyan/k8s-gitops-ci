@@ -43,7 +43,7 @@ pointing to every other doc (`CI.md`, `HOOKS.md`, `EXEMPTIONS.md`,
   locally. That way local, CI, and a `task ci` replay all use the same
   patch — preventing the scenario where a vulnerable Go patch (e.g. 1.27.1
   with a known CVE) fails locally but passes in CI because CI happened to
-  run on a newer Go (e.g. 1.27.2) that has the fix.
+  run on a newer Go (e.g. 1.27.3) that has the fix.
 - **The `go` line must include a patch number** (e.g. `1.27.1`, not `1.27`).
   Pinning to `X.Y` without a patch does not produce a downloadable
   `GOTOOLCHAIN` version, so the Step 1 check in `task ci` requires `X.Y.Z`

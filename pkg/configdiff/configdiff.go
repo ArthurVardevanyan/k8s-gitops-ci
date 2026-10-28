@@ -96,7 +96,14 @@ func detectApp(app string, changeGroups map[string]int) AffectedApp {
 
 	if OverridesDiff(mainOverrides, currentOverrides) {
 		trigger = "config-override"
+		seen := make(map[string]struct{})
+		for k := range mainOverrides {
+			seen[k] = struct{}{}
+		}
 		for k := range currentOverrides {
+			seen[k] = struct{}{}
+		}
+		for k := range seen {
 			if _, ok := mainOverrides[k]; !ok || !yamlEqual(mainOverrides[k], currentOverrides[k]) {
 				clusters = append(clusters, k)
 			}
