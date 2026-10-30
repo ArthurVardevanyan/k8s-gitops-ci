@@ -669,3 +669,23 @@ func TestComposeResourceComplianceSection_NonBlockingPlaceholderSurfaces(t *test
 		t.Errorf("expected the section body to contain the per-finding table (file + placeholder), got:\n%s", sec.Body)
 	}
 }
+
+func TestApplyFailedBuildSkipNote(t *testing.T) {
+	passed := ReportSection{Name: "Resource Compliance", Status: StatusPassed, Body: "No compliance findings."}
+	errSec := ReportSection{Name: "Resource Compliance", Status: StatusError, Body: "existing finding"}
+
+	if got := applyFailedBuildSkipNote(passed, nil); got != passed {
+		t.Errorf("nothing skipped must leave section unchanged, got %+v", got)
+	}
+	got := applyFailedBuildSkipNote(passed, []string{"a/components/x/c.yaml"})
+	if got.Status != StatusWarning {
+		t.Errorf("passed section should downgrade to warning, got %v", got.Status)
+	}
+	if !strings.Contains(got.Body, "failed to build") || !strings.Contains(got.Body, "`a/components/x/c.yaml`") {
+		t.Errorf("note missing, body=%q", got.Body)
+	}
+	got = applyFailedBuildSkipNote(errSec, []string{"f.yaml"})
+	if got.Status != StatusError || !strings.Contains(got.Body, "existing finding") || !strings.Contains(got.Body, "`f.yaml`") {
+		t.Errorf("error section must stay error and keep body, got %+v", got)
+	}
+}
