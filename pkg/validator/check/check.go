@@ -108,7 +108,9 @@ type DocCheck interface {
 // placeholder/image/podspec value injected or replaced by a base+overlay+
 // component merge (e.g. `image: <PATCHED_BY_KUSTOMIZE>` replaced by an
 // overlay `images:`/JSON-patch) is judged on the final rendered result, not
-// the intermediate raw fragment. Files that never appear in any rendered
+// the intermediate raw fragment. Files related only to an overlay that
+// failed to build are skipped entirely (the raw fragment is not
+// authoritative and would report build-failure side effects). Files that never appear in any rendered
 // overlay (e.g. a brand-new component not yet referenced by any
 // kustomization.yaml) still fall back to the raw-source pass, so violations
 // in not-yet-wired-up manifests are never silently skipped. A DocCheck that

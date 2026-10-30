@@ -1927,6 +1927,17 @@ to warnings even though they don't participate in the rendered overlay
 pipeline. A raw-source finding on a file not in the changeset is surfaced
 as a ⚠️ warning, matching the "pre-existing" convention.
 
+**Files in a failed overlay build.** The fallback tier deliberately skips a
+file that is not covered by any successful render but is related to an overlay
+that **failed to build**. Its raw fragment may be patched at build time (for
+example `image: <PATCHED_BY_KUSTOMIZE>`), so judging it raw would report side
+effects of the build failure (image digest pinning, registry FQDN, unresolved
+placeholders) rather than real findings. Instead, Resource Compliance shows a
+note listing the skipped files and a passing section is downgraded to ⚠️
+(the checks did not actually run); a section that already has blocking
+findings keeps its ❌ status. The build failure itself still fails the run via
+Overlay Build. Components referenced by no overlay still use the raw fallback.
+
 ## Concurrency
 
 `Workers(opts)` returns `opts.Concurrency` if set (`--concurrency`), else

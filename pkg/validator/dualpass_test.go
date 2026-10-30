@@ -352,3 +352,16 @@ func TestExemptionDirectFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestPlaceholderSkippedForFailedBuildFile proves a sentinel placeholder in a
+// file blocked by a failed overlay build is not reported by the raw fallback
+// (it is a side effect of the build failure), while a genuinely unwired file
+// still is.
+func TestPlaceholderSkippedForFailedBuildFile(t *testing.T) {
+	d := t.TempDir()
+	f := writeFile(t, d, "app/components/x/cm.yaml", "kind: ConfigMap\nmetadata:\n  name: x\ndata:\n  image: <PATCHED_BY_KUSTOMIZE>\n")
+	blocked := map[string]bool{filepath.Clean(f): true}
+	if got := placeholderFindingsOf(runDocChecks([]string{f}, blocked, nil, 1, nil).Findings); len(got) != 0 {
+		t.Errorf("expected no placeholder findings for failed-build file, got %+v", got)
+	}
+}

@@ -322,3 +322,36 @@ func TestFilesCoveredByRenderedContent_MemoizedPerOverlay(t *testing.T) {
 		t.Errorf("expected orphan-cm.yaml to NOT be covered, but it was: %v", got)
 	}
 }
+
+func TestFilesBlockedByFailedBuild(t *testing.T) {
+	chdirTemp(t)
+	mustWrite(t, filepath.Join("myapp", "overlays", "prod", "kustomization.yaml"),
+		"resources:\n  - ../../base\ncomponents:\n  - ../../components/foo\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "dev", "kustomization.yaml"),
+		"resources:\n  - ../../base\ncomponents:\n  - ../../components/foo\n")
+
+	comp := filepath.Join("myapp", "components", "foo", "otel.yaml")
+	wired := filepath.Join("myapp", "components", "bar", "new.yaml") // referenced by no overlay
+	prod := overlayRef{path: filepath.Join("myapp", "overlays", "prod"), cluster: "prod"}
+
+	cases := []struct {
+		name    string
+		failed  []overlayRef
+		files   []string
+		covered map[string]bool
+		want    []string
+	}{
+		{"no failed overlays", nil, []string{comp}, nil, nil},
+		{"component of failed overlay is blocked", []overlayRef{prod}, []string{comp}, nil, []string{comp}},
+		{"covered by a successful render is not blocked", []overlayRef{prod}, []string{comp}, map[string]bool{comp: true}, nil},
+		{"component unreferenced by any overlay keeps raw fallback", []overlayRef{prod}, []string{wired}, nil, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sortedKeys(filesBlockedByFailedBuild(c.failed, c.files, c.covered))
+			if strings.Join(got, ",") != strings.Join(c.want, ",") {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}

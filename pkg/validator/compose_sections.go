@@ -1237,3 +1237,31 @@ func ComposeCELSection(r *cel.Result) ReportSection {
 
 	return ReportSection{Name: name, Status: StatusError, Body: b.String()}
 }
+
+// applyFailedBuildSkipNote annotates a Resource Compliance section when
+// render-sensitive checks were skipped for files whose overlay(s) failed to
+// build. A passed section is downgraded to a warning (the checks did not
+// actually run); an error section keeps its status. No-op when nothing was
+// skipped.
+func applyFailedBuildSkipNote(sec ReportSection, skipped []string) ReportSection {
+	if len(skipped) == 0 {
+		return sec
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "ℹ️ Render-dependent checks (image digest pinning, registry FQDN, unresolved placeholders, …) were skipped for %d file(s) because their overlay(s) failed to build. Fix the Overlay Build errors and re-run.\n\n", len(skipped))
+	for _, f := range skipped {
+		fmt.Fprintf(&b, "- `%s`\n", f)
+	}
+	if sec.Status == StatusPassed {
+		sec.Status = StatusWarning
+		sec.Summary = ""
+		if sec.Body != "" {
+			sec.Body = sec.Body + "\n\n" + b.String()
+		} else {
+			sec.Body = b.String()
+		}
+		return sec
+	}
+	sec.Body = strings.TrimSuffix(sec.Body, "\n") + "\n\n" + b.String()
+	return sec
+}

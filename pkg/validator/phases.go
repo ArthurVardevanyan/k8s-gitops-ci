@@ -632,6 +632,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		overlaysPerApp[appFromOverlayPath(ov.path)]++
 	}
 	var renderedOverlays []renderedOverlay
+	var failedOverlays []overlayRef
 	if len(overlays) > 0 {
 		overlayWorkers := w
 		if overlayWorkers > len(overlays) {
@@ -658,6 +659,7 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 					overlayResult.Exempted = append(overlayResult.Exempted, r.Exempted...)
 					if buildErr != "" {
 						buildErrs = append(buildErrs, buildErr)
+						failedOverlays = append(failedOverlays, ov)
 						log.ErrorInSection("Hooks", "%s", buildErr)
 					} else if len(rendered) > 0 {
 						// Collected unconditionally (not just when Kyverno is
@@ -833,6 +835,22 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 	// the render, or a component not yet wired into any kustomization.yaml),
 	// so nothing is silently skipped.
 	renderedFiles := filesCoveredByRenderedContent(renderedOverlays, yamlFiles)
+	// Files whose only overlay(s) failed to build have no rendered result to
+	// judge, and the raw fragment is not authoritative (it may be patched at
+	// build time). Skip the render-sensitive raw fallback for them and
+	// surface a note instead of reporting likely false positives; the build
+	// failure itself already fails the run.
+	skippedByFailedBuild := filesBlockedByFailedBuild(failedOverlays, yamlFiles, renderedFiles)
+	if len(skippedByFailedBuild) > 0 {
+		merged := make(map[string]bool, len(renderedFiles)+len(skippedByFailedBuild))
+		for f := range renderedFiles {
+			merged[f] = true
+		}
+		for f := range skippedByFailedBuild {
+			merged[f] = true
+		}
+		renderedFiles = merged
+	}
 	docResult := runDocChecks(yamlFiles, renderedFiles, selectors, w, disabled)
 	renderedResult := runDocChecksRendered(renderedOverlays, selectors, w, disabled)
 	docResult.Findings = append(docResult.Findings, renderedResult.Findings...)
@@ -1089,7 +1107,10 @@ func runBuildAndPostBuild(changed []string, opts Options, res *Result, log *logg
 		log.Info("resource compliance: passed")
 	}
 
-	res.Sections = append(res.Sections, ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted, attrCtx.changedKeys))
+	res.Sections = append(res.Sections, applyFailedBuildSkipNote(
+		ComposeResourceComplianceSection(direct, indirect, combinedCheck.Exempted, attrCtx.changedKeys),
+		sortedKeys(skippedByFailedBuild),
+	))
 	tc.Record("Post-Build Validation", time.Since(postBuildStart), true)
 }
 
@@ -1470,9 +1491,10 @@ func filterDisabled(checks []check.Check, disabled map[string]bool) []check.Chec
 //     on the rendered overlay stream, evaluated separately by
 //     runDocChecksRendered. Here they only run over files that are NOT
 //     covered by any successfully-rendered overlay (renderedFiles) - a
-//     brand-new component not yet wired into any kustomization.yaml, or a
-//     file whose overlay failed to build - so a violation in a not-yet-
-//     wired-up manifest is never silently skipped, while a raw fragment that
+//     brand-new component not yet wired into any kustomization.yaml - so a
+//     violation in a not-yet-wired-up manifest is never silently skipped (files whose overlay
+//     failed to build are the exception: see filesBlockedByFailedBuild),
+//     while a raw fragment that
 //     IS composed into a rendered overlay (e.g. a base with
 //     `image: <PATCHED_BY_KUSTOMIZE>`, patched at build time) is judged only
 //     on its rendered result and never produces a raw false positive.

@@ -395,3 +395,41 @@ func identitiesMatch(want, have resourceIdentitySet) bool {
 	}
 	return true
 }
+
+// filesBlockedByFailedBuild returns the cleaned paths of files that are not
+// covered by any successfully-rendered overlay but are related to at least
+// one overlay that failed to build. Render-sensitive checks cannot be judged
+// for them: the raw fragment may be patched at build time (e.g.
+// `image: <PATCHED_BY_KUSTOMIZE>`), so running the raw fallback would report
+// side effects of the build failure rather than real findings. Files that
+// are also covered by a successful render are excluded (the rendered pass
+// judges them), as are files related to no failed overlay (e.g. a new
+// component not wired into any overlay still falls back to the raw pass).
+func filesBlockedByFailedBuild(failed []overlayRef, files []string, covered map[string]bool) map[string]bool {
+	if len(failed) == 0 {
+		return nil
+	}
+	blocked := make(map[string]bool)
+	for _, f := range files {
+		clean := filepath.Clean(f)
+		if covered[clean] {
+			continue
+		}
+		for _, ov := range failed {
+			if isOverlayRelatedToChangedFiles(appFromOverlayPath(ov.path), filepath.Base(ov.path), []string{f}) {
+				blocked[clean] = true
+				break
+			}
+		}
+	}
+	return blocked
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
