@@ -684,6 +684,9 @@ func TestApplyFailedBuildSkipNote(t *testing.T) {
 	if !strings.Contains(got.Body, "failed to build") || !strings.Contains(got.Body, "`a/components/x/c.yaml`") {
 		t.Errorf("note missing, body=%q", got.Body)
 	}
+	if !strings.Contains(got.Body, "No compliance findings.") {
+		t.Errorf("expected original body preserved, got:\n%s", got.Body)
+	}
 	got = applyFailedBuildSkipNote(errSec, []string{"f.yaml"})
 	if got.Status != StatusError || !strings.Contains(got.Body, "existing finding") || !strings.Contains(got.Body, "`f.yaml`") {
 		t.Errorf("error section must stay error and keep body, got %+v", got)

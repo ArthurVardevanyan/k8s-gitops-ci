@@ -1255,9 +1255,13 @@ func applyFailedBuildSkipNote(sec ReportSection, skipped []string) ReportSection
 	if sec.Status == StatusPassed {
 		sec.Status = StatusWarning
 		sec.Summary = ""
-		sec.Body = b.String()
+		if sec.Body != "" {
+			sec.Body = sec.Body + "\n\n" + b.String()
+		} else {
+			sec.Body = b.String()
+		}
 		return sec
 	}
-	sec.Body = strings.TrimRight(sec.Body, "\n") + "\n\n" + b.String()
+	sec.Body = strings.TrimSuffix(sec.Body, "\n") + "\n\n" + b.String()
 	return sec
 }
