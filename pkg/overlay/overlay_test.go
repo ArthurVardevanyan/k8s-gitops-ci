@@ -2,6 +2,7 @@ package overlay
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -212,6 +213,102 @@ func TestAssembleManifests(t *testing.T) {
 	// Deterministic, sorted order: a-resource before b-resource.
 	if strings.Index(out, "kind: A") > strings.Index(out, "kind: B") {
 		t.Errorf("expected sorted output, got: %s", out)
+	}
+}
+
+func TestStripAVPUsageBlock(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "strips Usage block",
+			in: "Error: Replace: could not replace all placeholders in Template:\n" +
+				"\nCould not find secrets at path secret/data/homelab/microshift-dc2\n" +
+				"\nUsage:\n" +
+				"argocd-vault-plugin generate [flags]\n" +
+				"Flags:\n" +
+				"  -c, --config-path string path to a file\n",
+			want: "Error: Replace: could not replace all placeholders in Template:\n" +
+				"\nCould not find secrets at path secret/data/homelab/microshift-dc2\n",
+		},
+		{
+			name: "no-op when no Usage block",
+			in:   "Error: something went wrong",
+			want: "Error: something went wrong",
+		},
+		{
+			name: "empty input",
+			in:   "",
+			want: "",
+		},
+		{
+			name: "only Usage block",
+			in:   "\nUsage:\nfoo\n",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := stripAVPUsageBlock(tt.in)
+			if got != tt.want {
+				t.Errorf("stripAVPUsageBlock() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// fakeExitError creates a fake *exec.ExitError with the given stderr content.
+func fakeExitError(stderr string) *exec.ExitError {
+	return &exec.ExitError{Stderr: []byte(stderr)}
+}
+
+func TestFmtErr_AVPIsClearWithOverlay(t *testing.T) {
+	stderr := "Error: Replace: could not replace all placeholders in Template:\n\nCould not find secrets at path secret/data/homelab/microshift-dc2\n\nUsage:\nargocd-vault-plugin generate [flags]\n"
+	cmd := &exec.Cmd{Path: "/usr/local/bin/argocd-vault-plugin", Args: []string{"argocd-vault-plugin", "generate", "-"}}
+	err := fmtErr(cmd, fakeExitError(stderr), "apps/myapp/overlays/prod")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "overlay apps/myapp/overlays/prod:") {
+		t.Errorf("expected overlay in error, got: %s", got)
+	}
+	if strings.Contains(got, "Usage:") {
+		t.Errorf("expected Usage block stripped, got: %s", got)
+	}
+}
+
+func TestFmtErr_AVPEmptyOverlayIsVerbatim(t *testing.T) {
+	stderr := "Error: Replace: could not replace all placeholders\n\nCould not find secrets at path secret/data/homelab/microshift-dc2\n\nUsage:\nargocd-vault-plugin generate [flags]\n"
+	cmd := &exec.Cmd{Path: "/usr/local/bin/argocd-vault-plugin", Args: []string{"argocd-vault-plugin", "generate", "-"}}
+	err := fmtErr(cmd, fakeExitError(stderr), "")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	got := err.Error()
+	if strings.Contains(got, "Usage:") {
+		t.Errorf("expected Usage block stripped, got: %s", got)
+	}
+	if !strings.Contains(got, "argocd-vault-plugin failed:") {
+		t.Errorf("expected argocd-vault-plugin in error, got: %s", got)
+	}
+}
+
+func TestFmtErr_AVPErrorWithNoUsageBlock(t *testing.T) {
+	stderr := "Error: some AVP error"
+	cmd := &exec.Cmd{Path: "/usr/local/bin/argocd-vault-plugin", Args: []string{"argocd-vault-plugin", "generate", "-"}}
+	err := fmtErr(cmd, fakeExitError(stderr), "apps/myapp/overlays/prod")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "overlay apps/myapp/overlays/prod:") {
+		t.Errorf("expected overlay in error, got: %s", got)
 	}
 }
 
