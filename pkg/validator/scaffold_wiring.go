@@ -668,6 +668,9 @@ func (a fileState) equal(b fileState) bool { return a.exists == b.exists && a.da
 
 func generatedFile(g *scaffold.GenerateResult, ov, f string) (fileState, bool) {
 	if _, hashed := g.Overlays[ov][f]; !hashed {
+		// Not generated at all: a definite "absent", not missing content.
+		// Only a hashed file whose content was dropped (oversized) is
+		// inconclusive, reported via ok=false below.
 		return fileState{}, true
 	}
 	c, ok := g.Content[ov][f]
