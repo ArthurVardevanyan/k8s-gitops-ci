@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,7 +43,18 @@ type GenerateOptions struct {
 // overlay absent from the map was not generated for that revision.
 type GenerateResult struct {
 	Overlays map[string]map[string]string
+	// Content is overlay name -> overlay-relative file path -> file bytes,
+	// kept alongside the hashes so a caller can three-way merge generated
+	// output (see git.MergeFile). Files larger than maxContentBytes are
+	// omitted (their hash is still present), so a consumer must treat a
+	// missing entry as "content unavailable", not "file absent". May be nil
+	// (e.g. results built by tests that only supply hashes).
+	Content map[string]map[string]string
 }
+
+// maxContentBytes caps the per-file content retained in GenerateResult.Content
+// so a pathological generated file cannot bloat memory.
+const maxContentBytes = 1 << 20
 
 // DiffOverlay reports whether overlay's generated content differs between
 // two GenerateResults, returning the sorted overlay-relative paths that
@@ -188,24 +198,30 @@ func hashOverlayTrees(root string) (*GenerateResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read generated output %s: %w", root, err)
 	}
-	res := &GenerateResult{Overlays: map[string]map[string]string{}}
+	res := &GenerateResult{
+		Overlays: map[string]map[string]string{},
+		Content:  map[string]map[string]string{},
+	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		h, err := hashDir(filepath.Join(root, e.Name()))
+		h, c, err := hashDir(filepath.Join(root, e.Name()))
 		if err != nil {
 			return nil, err
 		}
 		res.Overlays[e.Name()] = h
+		res.Content[e.Name()] = c
 	}
 	return res, nil
 }
 
-// hashDir returns a relative-path -> SHA-256 map of every file under dir.
-func hashDir(dir string) (map[string]string, error) {
+// hashDir returns a relative-path -> SHA-256 map of every file under dir,
+// plus a relative-path -> content map for files up to maxContentBytes.
+func hashDir(dir string) (hashes, content map[string]string, err error) {
 	out := map[string]string{}
-	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
+	content = map[string]string{}
+	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -216,28 +232,35 @@ func hashDir(dir string) (map[string]string, error) {
 		if err != nil {
 			return err
 		}
-		sum, err := hashFile(path)
+		sum, data, err := hashFile(path)
 		if err != nil {
 			return err
 		}
 		out[filepath.ToSlash(rel)] = sum
+		if data != nil {
+			content[filepath.ToSlash(rel)] = string(data)
+		}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out, nil
+	return out, content, nil
 }
 
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // path derives from a generated/worktree tree, not user input
+// hashFile returns the SHA-256 of path and, when it is at most
+// maxContentBytes, its bytes (nil otherwise).
+func hashFile(path string) (sum string, data []byte, err error) {
+	b, err := os.ReadFile(path) //nolint:gosec // path derives from a generated/worktree tree, not user input
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
+	h := sha256.Sum256(b)
+	if len(b) > maxContentBytes {
+		return hex.EncodeToString(h[:]), nil, nil
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	if b == nil {
+		b = []byte{}
+	}
+	return hex.EncodeToString(h[:]), b, nil
 }

@@ -677,7 +677,9 @@ count:
   merge-base and `HEAD` in throwaway git worktrees and comparing each
   overlay's generated content (`computeBaselineDrift`); equal content
   renders as a `StatusWarning` "Pre-Existing Scaffold Drift" child,
-  differing content stays blocking. Skipped/not-yet-rolled-out clusters
+  differing content stays blocking. A directly edited overlay is also
+  downgraded when a per-file three-way merge shows the PR added no drift of
+  its own (`classifyTouched`). Skipped/not-yet-rolled-out clusters
   render as a
   `StatusInfo` "Cluster Coverage" child (deliberately quieter than
   `StatusWarning` — per `scaffold.Run`'s own doc comment, a skip is

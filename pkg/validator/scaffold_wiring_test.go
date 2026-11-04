@@ -377,7 +377,7 @@ func TestComputeBaselineDrift_EmptyBaseRefSkipsEntirely(t *testing.T) {
 	// BaseRef (see gitDiff's own doc comment) - this must be an instant
 	// no-op, never attempting a git call or generating anything.
 	log := logger.NewLogger(false, "")
-	res := computeBaselineDrift(Options{}, "myapp", []string{"c1"}, log)
+	res := computeBaselineDrift(Options{}, "myapp", []string{"c1"}, nil, log)
 	if len(res.PreExisting) != 0 || len(res.Diffs) != 0 {
 		t.Errorf("expected an empty result, got %+v", res)
 	}
@@ -436,7 +436,7 @@ func TestComputeBaselineDrift_EqualGeneratedContentIsPreExisting(t *testing.T) {
 	})
 
 	log := logger.NewLogger(false, "")
-	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, nil, log)
 	if !res.PreExisting["c1"] {
 		t.Errorf("expected c1 to be classified external, got %+v", res)
 	}
@@ -463,7 +463,7 @@ func TestComputeBaselineDrift_DifferingContentBlocks(t *testing.T) {
 	})
 
 	log := logger.NewLogger(false, "")
-	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, nil, log)
 	if res.PreExisting["c1"] {
 		t.Errorf("expected c1 NOT to be classified external, got %+v", res)
 	}
@@ -482,7 +482,7 @@ func TestComputeBaselineDrift_NeitherSideGeneratedIsInconclusive(t *testing.T) {
 	})
 
 	log := logger.NewLogger(false, "")
-	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, nil, log)
 	if res.PreExisting["c1"] {
 		t.Errorf("expected an inconclusive overlay to stay blocking, got %+v", res)
 	}
@@ -500,7 +500,7 @@ func TestComputeBaselineDrift_DoesNotMutateWorkingTree(t *testing.T) {
 	configPath := filepath.Join(".scafctl", "configs", "myapp.yaml")
 	overlayPath := filepath.Join("myapp", "overlays", "c1", "kustomization.yaml")
 	log := logger.NewLogger(false, "")
-	_ = computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	_ = computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, nil, log)
 
 	if got, _ := os.ReadFile(configPath); string(got) != "v2\n" {
 		t.Errorf("config = %q, want unchanged %q", got, "v2\n")
@@ -516,7 +516,7 @@ func TestComputeBaselineDrift_DoesNotMutateWorkingTree(t *testing.T) {
 func TestComputeBaselineDrift_OutsideGitRepoDegrades(t *testing.T) {
 	chdirTemp(t)
 	log := logger.NewLogger(false, "")
-	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, log)
+	res := computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", []string{"c1"}, nil, log)
 	if len(res.PreExisting) != 0 {
 		t.Errorf("expected no external overlays outside a git repo, got %+v", res)
 	}
@@ -527,5 +527,122 @@ func TestRunScaffoldApps_EmptyJobsIsNoOp(t *testing.T) {
 	runScaffoldApps(nil, nil, nil, 4, func(string, *scaffold.Summary) { called = true })
 	if called {
 		t.Error("expected record to never be called with no jobs")
+	}
+}
+
+// touchedRepo builds a real repo where the merge-base ("old-main") commits
+// baseOverlay and the PR commit (HEAD) commits headOverlay for myapp/c1, with
+// scaffold config v1 -> v2. It returns a fake generator producing genBase for
+// the v1 worktree and genHead for the v2 one.
+func touchedRepo(t *testing.T, baseOverlay, headOverlay, genBase, genHead string) {
+	t.Helper()
+	chdirTemp(t)
+	runGitForTest(t, "init", "-q")
+	runGitForTest(t, "config", "user.email", "test@example.com")
+	runGitForTest(t, "config", "user.name", "Test")
+
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "v1\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "c1", "kustomization.yaml"), baseOverlay)
+	runGitForTest(t, "add", "-A")
+	runGitForTest(t, "commit", "-q", "-m", "base")
+	runGitForTest(t, "branch", "old-main")
+
+	mustWrite(t, filepath.Join(".scafctl", "configs", "myapp.yaml"), "v2\n")
+	mustWrite(t, filepath.Join("myapp", "overlays", "c1", "kustomization.yaml"), headOverlay)
+	runGitForTest(t, "add", "-A")
+	runGitForTest(t, "commit", "-q", "-m", "pr change")
+
+	withFakeGenerate(t, func(opts scaffold.GenerateOptions) (*scaffold.GenerateResult, error) {
+		cfg, _ := os.ReadFile(filepath.Join(opts.WorkDir, ".scafctl", "configs", "myapp.yaml"))
+		content := genBase
+		if strings.Contains(string(cfg), "v2") {
+			content = genHead
+		}
+		return &scaffold.GenerateResult{
+			Overlays: map[string]map[string]string{"c1": {"kustomization.yaml": "h-" + content}},
+			Content:  map[string]map[string]string{"c1": {"kustomization.yaml": content}},
+		}, nil
+	})
+}
+
+const (
+	touchedCommittedBase = "header\nold\nfoot\n"
+	touchedGenBase       = "header\nold\nfoot\nextra\n"
+	touchedGenHead       = "header\nnew\nfoot\nextra\n"
+)
+
+func runTouched(t *testing.T) baselineDriftResult {
+	t.Helper()
+	return computeBaselineDrift(Options{BaseRef: "old-main"}, "myapp", nil, []string{"c1"}, logger.NewLogger(false, ""))
+}
+
+// The PR's edit is exactly the template's merge-base->HEAD change; the
+// leftover drift ("extra") was already present at the merge-base.
+func TestComputeBaselineDrift_TouchedOverlayWithOnlyPreExistingDrift(t *testing.T) {
+	touchedRepo(t, touchedCommittedBase, "header\nnew\nfoot\n", touchedGenBase, touchedGenHead)
+	res := runTouched(t)
+	got, ok := res.TouchedPreExisting["c1"]
+	if !ok {
+		t.Fatalf("expected c1 to be classified pre-existing, got %+v", res)
+	}
+	if !strings.Contains(got, "+ extra") || !strings.Contains(got, "kustomization.yaml") {
+		t.Errorf("summary should name the remaining drift, got %q", got)
+	}
+}
+
+// A line-number shift (a line inserted above the changed region at the
+// merge-base) must not break the comparison - the merge aligns by content.
+func TestComputeBaselineDrift_TouchedOverlayLineShift(t *testing.T) {
+	touchedRepo(t,
+		"top\nheader\nold\nfoot\n", "top\nheader\nnew\nfoot\n",
+		"top\nheader\nold\nfoot\nextra\n", "top\nheader\nnew\nfoot\nextra\n")
+	if _, ok := runTouched(t).TouchedPreExisting["c1"]; !ok {
+		t.Error("expected a shifted-lines overlay to stay pre-existing")
+	}
+}
+
+// The PR also hand-adds a line the template does not generate: new drift.
+func TestComputeBaselineDrift_TouchedOverlayWithNewDriftBlocks(t *testing.T) {
+	touchedRepo(t, touchedCommittedBase, "header\nnew\nfoot\nhand-edit\n", touchedGenBase, touchedGenHead)
+	if res := runTouched(t); len(res.TouchedPreExisting) != 0 {
+		t.Errorf("expected new drift to stay blocking, got %+v", res.TouchedPreExisting)
+	}
+}
+
+// The PR's edit conflicts with the template change (same line edited
+// differently): inconclusive, so blocking.
+func TestComputeBaselineDrift_TouchedOverlayMergeConflictBlocks(t *testing.T) {
+	touchedRepo(t, touchedCommittedBase, "header\nmine\nfoot\n", touchedGenBase, touchedGenHead)
+	if res := runTouched(t); len(res.TouchedPreExisting) != 0 {
+		t.Errorf("expected a merge conflict to stay blocking, got %+v", res.TouchedPreExisting)
+	}
+}
+
+// An overlay that already equals generated output at HEAD is clean: ok with
+// no remaining-drift summary.
+func TestComputeBaselineDrift_TouchedOverlayFullyFixed(t *testing.T) {
+	touchedRepo(t, touchedCommittedBase, touchedGenHead, touchedGenBase, touchedGenHead)
+	got, ok := runTouched(t).TouchedPreExisting["c1"]
+	if !ok || got != "" {
+		t.Errorf("expected clean overlay (ok, empty summary), got %q ok=%v", got, ok)
+	}
+}
+
+// Generated results without content (hash-only) cannot be merged: blocking.
+func TestComputeBaselineDrift_TouchedOverlayWithoutContentBlocks(t *testing.T) {
+	touchedRepo(t, touchedCommittedBase, "header\nnew\nfoot\n", touchedGenBase, touchedGenHead)
+	withFakeGenerate(t, func(opts scaffold.GenerateOptions) (*scaffold.GenerateResult, error) {
+		return &scaffold.GenerateResult{Overlays: map[string]map[string]string{"c1": {"kustomization.yaml": "h"}}}, nil
+	})
+	if res := runTouched(t); len(res.TouchedPreExisting) != 0 {
+		t.Errorf("expected missing content to stay blocking, got %+v", res.TouchedPreExisting)
+	}
+}
+
+func TestComputeBaselineDrift_TouchedEmptyBaseRefBlocks(t *testing.T) {
+	touchedRepo(t, touchedCommittedBase, "header\nnew\nfoot\n", touchedGenBase, touchedGenHead)
+	res := computeBaselineDrift(Options{}, "myapp", nil, []string{"c1"}, logger.NewLogger(false, ""))
+	if len(res.TouchedPreExisting) != 0 {
+		t.Errorf("expected no classification without a base ref, got %+v", res.TouchedPreExisting)
 	}
 }

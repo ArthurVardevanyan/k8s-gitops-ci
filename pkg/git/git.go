@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -175,4 +176,50 @@ func MergeBase(ctx context.Context, ref string) (string, error) {
 	// revision argument (e.g. `git show <sha>\n:<path>`, which git rejects
 	// as an invalid revision) - exactly this package's own ShowRefPath.
 	return strings.TrimSpace(string(out)), nil
+}
+
+// ListRefFiles returns the repo-relative paths of every file under dir at ref
+// (git ls-tree -r). A directory absent at ref yields an empty list.
+func ListRefFiles(ctx context.Context, ref, dir string) ([]string, error) {
+	out, err := exec.CommandContext(ctx, "git", "ls-tree", "-r", "--name-only", ref, "--", strings.TrimSuffix(dir, "/")+"/").Output()
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			files = append(files, l)
+		}
+	}
+	return files, nil
+}
+
+// MergeFile three-way merges theirs into ours relative to base using
+// `git merge-file -p`, returning the merged bytes. conflict is true when the
+// merge could not be done cleanly (the returned bytes then carry conflict
+// markers and must not be trusted). err is reserved for tool failures.
+func MergeFile(ctx context.Context, ours, base, theirs []byte) (merged []byte, conflict bool, err error) {
+	dir, err := os.MkdirTemp("", "k8s-gitops-ci-merge-*")
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	paths := make([]string, 3)
+	for i, data := range [][]byte{ours, base, theirs} {
+		paths[i] = fmt.Sprintf("%s/f%d", dir, i)
+		if err := os.WriteFile(paths[i], data, 0o600); err != nil {
+			return nil, false, err
+		}
+	}
+	cmd := exec.CommandContext(ctx, "git", "merge-file", "-p", paths[0], paths[1], paths[2]) //nolint:gosec // fixed args; paths are temp files we created
+	out, runErr := cmd.Output()
+	if runErr == nil {
+		return out, false, nil
+	}
+	var ee *exec.ExitError
+	if errors.As(runErr, &ee) && ee.ExitCode() > 0 && ee.ExitCode() < 128 {
+		return out, true, nil
+	}
+	return nil, false, runErr
 }
