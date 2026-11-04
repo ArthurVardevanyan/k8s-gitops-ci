@@ -205,7 +205,7 @@ func RenderWithStrategy(app, overlay string, strategy Strategy, exclude map[stri
 
 	useAVP := (strategy == StrategyKustomizeAVP || strategy == StrategyHelmAVP) && !IsExcluded(overlay, exclude)
 	if useAVP {
-		return runAVP(out)
+		return runAVP(overlay, out)
 	}
 	return out, nil
 }
@@ -312,20 +312,45 @@ func assembleManifests(rendered map[string]string) []byte {
 // kustomize/helm CMPs do at deploy time. AVP is kept as a subprocess call
 // (rather than an imported library) since embedding it would pull in every
 // supported secret-backend SDK (AWS, GCP, Vault, Azure) unconditionally.
-func runAVP(in []byte) ([]byte, error) {
+func runAVP(overlay string, in []byte) ([]byte, error) {
 	cmd := exec.CommandContext(context.Background(), "argocd-vault-plugin", "generate", "-")
 	cmd.Stdin = bytes.NewReader(in)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmtErr(cmd, err)
+		return nil, fmtErr(cmd, err, overlay)
 	}
 	return out, nil
 }
 
-func fmtErr(cmd *exec.Cmd, err error) error {
+// fmtErr formats an error returned by exec.Command. For exit errors from
+// argocd-vault-plugin, it strips the Usage/Flags help block from stderr and
+// formats the message to include overlay context so the caller (the validator
+// layer) does not need to wrap it again with the overlay path. For non-AVP
+// exit errors it returns the stderr verbatim, prefixed by the executable path.
+// For non-exit errors it returns the wrapped error with the executable path.
+func fmtErr(cmd *exec.Cmd, err error, overlay string) error {
 	exitErr := &exec.ExitError{}
 	if errors.As(err, &exitErr) {
 		stderr := string(exitErr.Stderr)
+		stderr = stripAVPUsageBlock(stderr)
+
+		// Detect AVP-style stderr: it starts with "Error:" and is followed
+		// by a blank line, the specific error detail, another blank line, and
+		// then "Usage:" (which we have just stripped). If we have overlay
+		// context, format the message to include it so the failure is
+		// immediately attributable to its overlay.
+		if overlay != "" && strings.HasPrefix(stderr, "Error:") {
+			hint := ""
+			if SecretAuthHint != nil {
+				hint = SecretAuthHint(stderr)
+			}
+			msg := fmt.Sprintf("overlay %s: %s failed: %s", overlay, cmd.Path, stderr)
+			if hint != "" {
+				msg += "; " + hint
+			}
+			return fmt.Errorf("%s", msg)
+		}
+
 		hint := ""
 		if SecretAuthHint != nil {
 			hint = SecretAuthHint(stderr)
@@ -337,6 +362,18 @@ func fmtErr(cmd *exec.Cmd, err error) error {
 		return fmt.Errorf("%s", msg)
 	}
 	return fmt.Errorf("%s: %w", cmd.Path, err)
+}
+
+// stripAVPUsageBlock removes the Usage/Flags help block from AVP's stderr.
+// AVP appends a "Usage:\n..." block and a "Flags:\n..." block after the
+// actual error; they are noise for CI output and make the error harder to
+// read. This function strips everything from the line starting with "Usage:"
+// to the end of stderr.
+func stripAVPUsageBlock(stderr string) string {
+	if idx := strings.Index(stderr, "\nUsage:"); idx >= 0 {
+		return stderr[:idx]
+	}
+	return stderr
 }
 
 func contains(sl []string, s string) bool {
