@@ -840,6 +840,31 @@ tree.
   output, so the mismatch stays blocking - the author regenerated the app but
   missed that overlay - and the differing files are named in the report.
 
+**Directly edited overlays alongside a template/config change.** Editing an
+overlay while also changing the scaffold template/config is the normal way to
+apply a template refactor by hand, but it used to make _all_ drift in that
+overlay blocking - including drift that already existed at the merge-base and
+has nothing to do with the PR. When the app's scaffold template or config
+changed, each directly edited, drifted overlay is therefore also checked with
+a per-file **three-way merge** (`classifyTouched`, `git merge-file`). With `cb`
+the file committed at the merge-base, `gb`/`gh` what scaffold generates at the
+merge-base/`HEAD`, and `ch` the file committed at `HEAD`:
+
+- `ch == gh`: the file has no drift.
+- `ch == merge(cb, gb, gh)` (the merge-base's committed file with the
+  generated `gb → gh` change applied): the PR's edit is exactly what the
+  template/config change produces, so whatever still differs from `gh` already
+  existed at the merge-base. The overlay is reported under "Pre-Existing
+  Scaffold Drift" (⚠️) with the remaining drift summarized (for example
+  ``kustomization.yaml: scaffold would change `+ - ../../components/x` ``).
+- Anything else - a hand edit the template does not produce, a merge conflict,
+  a file missing on one side, or generated content too large to compare - is
+  new drift and stays blocking.
+
+Because the merge aligns by content, lines shifted by the PR's own edit do not
+break the comparison. An overlay edited _without_ a template/config change keeps
+the "touch it, fix it" rule: all of its drift blocks.
+
 This is gated on `Options.BaseRef` being set (an actual CI/PR run, never a
 local `test` run against a live working tree, which always has an empty
 `BaseRef`) and on the generator being available (`scaffold.GenerateArgs`

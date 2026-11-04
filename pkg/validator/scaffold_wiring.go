@@ -110,17 +110,22 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 		// needed: at least one mismatch this PR doesn't directly touch, and
 		// only once per app (memoized here, outside the shared-result mutex
 		// below so it doesn't serialize other apps' bookkeeping).
-		var ambiguous []string
+		configChanged := isAppScaffoldConfigChanged(app, changed) || isAppScaffoldTemplateChanged(app, changed)
+		var ambiguous, touched []string
 		for _, ov := range summary.MismatchFiles {
-			if !isOverlayScaffoldRelated(app, ov, changed) {
+			switch {
+			case !isOverlayScaffoldRelated(app, ov, changed):
 				ambiguous = append(ambiguous, ov)
+			case configChanged:
+				// Edited by this PR alongside a template/config change: the
+				// edit may just be that change applied by hand.
+				touched = append(touched, ov)
 			}
 		}
 		var baseline baselineDriftResult
-		if len(ambiguous) > 0 {
-			baseline = computeBaselineDrift(opts, app, ambiguous, log)
+		if len(ambiguous) > 0 || len(touched) > 0 {
+			baseline = computeBaselineDrift(opts, app, ambiguous, touched, log)
 		}
-		configChanged := isAppScaffoldConfigChanged(app, changed) || isAppScaffoldTemplateChanged(app, changed)
 
 		mu.Lock()
 		defer mu.Unlock()
@@ -131,6 +136,14 @@ func runScaffoldValidation(opts Options, apps, changed []string, log *logger.Log
 				line += fmt.Sprintf(" [%s]", summarizeFiles(paths))
 			}
 			switch {
+			case isOverlayScaffoldRelated(app, ov, changed) && baseline.hasTouchedPreExisting(ov):
+				detail := baseline.TouchedPreExisting[ov]
+				note := " (pre-existing: this PR's edit to the overlay matches the scaffold template/config change; the remaining drift already existed at the merge-base"
+				if detail != "" {
+					note += ": " + detail
+				}
+				result.PreExistingDriftLines = append(result.PreExistingDriftLines, line+note+")")
+				log.Warn("scaffold: pre-existing drift in edited overlay (non-blocking): %s/%s", app, ov)
 			case isOverlayScaffoldRelated(app, ov, changed):
 				result.DriftLines = append(result.DriftLines, line)
 				log.ErrorInSection("Scaffold", "drift: %s/%s", app, ov)
@@ -445,6 +458,19 @@ type baselineDriftResult struct {
 	// revisions generated the overlay (an overlay generated on one side only
 	// isn't a meaningful file list).
 	Diffs map[string][]string
+	// TouchedPreExisting maps an overlay this PR directly edited to a short
+	// description of the drift that remains in it, for overlays where the PR
+	// added no drift of its own: every file is either already equal to what
+	// scaffold generates at HEAD, or equals the merge-base's committed file
+	// with the template/config's merge-base->HEAD generated change applied
+	// (a three-way merge). The remaining drift therefore already existed at
+	// the merge-base. Overlays absent from the map stay blocking.
+	TouchedPreExisting map[string]string
+}
+
+func (r baselineDriftResult) hasTouchedPreExisting(ov string) bool {
+	_, ok := r.TouchedPreExisting[ov]
+	return ok
 }
 
 // generateScaffold is scaffold.Generate, indirected so tests can substitute
@@ -485,12 +511,19 @@ func addWorktree(ctx context.Context, ref string) (dir string, cleanup func(), e
 // Safe to call concurrently for different apps; a given app is only
 // scaffold-tested once per runScaffoldValidation call (see its isTested
 // gating), so this is never called twice concurrently for the same app.
-func computeBaselineDrift(opts Options, app string, ambiguous []string, log *logger.Logger) baselineDriftResult {
+//
+// It also handles the directly-touched-overlay analysis: for each overlay in touched (overlays
+// this PR itself edits, which are otherwise always blocking) it decides, with
+// a per-file three-way merge, whether the PR added any drift of its own (see
+// baselineDriftResult.TouchedPreExisting and classifyTouched). Both
+// revisions are generated once and shared by the two analyses.
+func computeBaselineDrift(opts Options, app string, ambiguous, touched []string, log *logger.Logger) baselineDriftResult {
 	res := baselineDriftResult{
-		PreExisting: map[string]bool{},
-		Diffs:       map[string][]string{},
+		PreExisting:        map[string]bool{},
+		Diffs:              map[string][]string{},
+		TouchedPreExisting: map[string]string{},
 	}
-	if len(ambiguous) == 0 || opts.BaseRef == "" {
+	if (len(ambiguous) == 0 && len(touched) == 0) || opts.BaseRef == "" {
 		return res
 	}
 	if scaffold.DriftMode == scaffold.DryRunParse && scaffold.GenerateArgs == nil {
@@ -546,7 +579,164 @@ func computeBaselineDrift(opts Options, app string, ambiguous []string, log *log
 			res.Diffs[ov] = files
 		}
 	}
+	for _, ov := range touched {
+		if summary, ok := classifyTouched(ctx, mergeBase, app, ov, baseGen, headGen); ok {
+			res.TouchedPreExisting[ov] = summary
+		}
+	}
 	return res
+}
+
+// classifyTouched decides whether a directly-edited overlay carries only
+// drift that already existed at the merge-base. For every file in the overlay
+// (the union of generated and committed files), with cb/gb the committed and
+// generated content at the merge-base and gh/ch the generated and committed
+// content at HEAD:
+//
+//   - ch == gh: the file has no drift.
+//   - otherwise ch must equal merge(cb, gb, gh) - the merge-base's committed
+//     file with the generated merge-base->HEAD change applied. That means the
+//     PR's edit is exactly what the template/config change produces, and
+//     whatever still differs from gh was already drifted at the merge-base.
+//   - anything else (a hand edit that is not the template's change, a merge
+//     conflict, missing or oversized content) is new drift and blocks.
+//
+// ok is false whenever the comparison is not conclusive, so the caller keeps
+// its conservative blocking behavior. summary lists the remaining drift
+// (empty when the overlay is fully clean).
+func classifyTouched(ctx context.Context, mergeBase, app, ov string, baseGen, headGen *scaffold.GenerateResult) (summary string, ok bool) {
+	if baseGen == nil || headGen == nil || baseGen.Content == nil || headGen.Content == nil {
+		return "", false
+	}
+	baseHas, headHas := baseGen.Overlays[ov] != nil, headGen.Overlays[ov] != nil
+	if !baseHas || !headHas {
+		return "", false
+	}
+	dir := filepath.ToSlash(filepath.Join(app, "overlays", ov))
+
+	files := map[string]bool{}
+	for f := range baseGen.Overlays[ov] {
+		files[f] = true
+	}
+	for f := range headGen.Overlays[ov] {
+		files[f] = true
+	}
+	headFiles, err := git.ListRefFiles(ctx, "HEAD", dir)
+	if err != nil {
+		return "", false
+	}
+	for _, f := range headFiles {
+		files[strings.TrimPrefix(f, dir+"/")] = true
+	}
+
+	sorted := make([]string, 0, len(files))
+	for f := range files {
+		sorted = append(sorted, f)
+	}
+	sort.Strings(sorted)
+
+	var remaining []string
+	for _, f := range sorted {
+		gb, gbOK := generatedFile(baseGen, ov, f)
+		gh, ghOK := generatedFile(headGen, ov, f)
+		if !gbOK || !ghOK {
+			return "", false // content unavailable (oversized file): inconclusive
+		}
+		cb := committedFile(ctx, mergeBase, dir+"/"+f)
+		ch := committedFile(ctx, "HEAD", dir+"/"+f)
+
+		if ch.equal(gh) {
+			continue
+		}
+		merged, mok := merge3(ctx, cb, gb, gh)
+		if !mok || !merged.equal(ch) {
+			return "", false
+		}
+		remaining = append(remaining, describeDrift(f, ch, gh))
+	}
+	return strings.Join(remaining, "; "), true
+}
+
+// fileState is a file's content plus whether it exists at all, so an absent
+// file is never confused with an empty one.
+type fileState struct {
+	data   string
+	exists bool
+}
+
+func (a fileState) equal(b fileState) bool { return a.exists == b.exists && a.data == b.data }
+
+func generatedFile(g *scaffold.GenerateResult, ov, f string) (fileState, bool) {
+	if _, hashed := g.Overlays[ov][f]; !hashed {
+		// Not generated at all: a definite "absent", not missing content.
+		// Only a hashed file whose content was dropped (oversized) is
+		// inconclusive, reported via ok=false below.
+		return fileState{}, true
+	}
+	c, ok := g.Content[ov][f]
+	return fileState{data: c, exists: true}, ok
+}
+
+func committedFile(ctx context.Context, ref, path string) fileState {
+	b, err := git.ShowRefPath(ctx, ref, path)
+	if err != nil {
+		return fileState{}
+	}
+	return fileState{data: string(b), exists: true}
+}
+
+// merge3 merges the change gb->gh into the committed file cb. A file that
+// exists on only some sides is only mergeable in the trivial cases.
+func merge3(ctx context.Context, cb, gb, gh fileState) (fileState, bool) {
+	switch {
+	case gb.equal(gh):
+		return cb, true // the template/config left this file alone
+	case cb.equal(gb):
+		return gh, true // committed file matched generated output: take the new one
+	case cb.equal(gh):
+		return cb, true // already carries the change
+	case !cb.exists || !gb.exists || !gh.exists:
+		return fileState{}, false
+	}
+	out, conflict, err := git.MergeFile(ctx, []byte(cb.data), []byte(gb.data), []byte(gh.data))
+	if err != nil || conflict {
+		return fileState{}, false
+	}
+	return fileState{data: string(out), exists: true}, true
+}
+
+// describeDrift renders the remaining difference between a committed file and
+// its generated counterpart as a short, capped list of lines.
+func describeDrift(file string, committed, generated fileState) string {
+	switch {
+	case !committed.exists:
+		return fmt.Sprintf("`%s` missing (scaffold generates it)", file)
+	case !generated.exists:
+		return fmt.Sprintf("`%s` not generated by scaffold", file)
+	}
+	have := map[string]bool{}
+	for _, l := range strings.Split(committed.data, "\n") {
+		have[strings.TrimSpace(l)] = true
+	}
+	want := map[string]bool{}
+	var parts []string
+	for _, l := range strings.Split(generated.data, "\n") {
+		l = strings.TrimSpace(l)
+		want[l] = true
+		if l != "" && !have[l] {
+			parts = append(parts, "+ "+l)
+		}
+	}
+	for _, l := range strings.Split(committed.data, "\n") {
+		if l = strings.TrimSpace(l); l != "" && !want[l] {
+			parts = append(parts, "- "+l)
+		}
+	}
+	const maxLines = 6
+	if len(parts) > maxLines {
+		parts = append(parts[:maxLines], fmt.Sprintf("... (+%d more)", len(parts)-maxLines))
+	}
+	return fmt.Sprintf("`%s`: scaffold would change %s", file, "`"+strings.Join(parts, "`, `")+"`")
 }
 
 // summarizeFiles renders a file list for a report line, capping it so a large

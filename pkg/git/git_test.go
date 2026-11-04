@@ -333,3 +333,15 @@ func assertFileMissing(t *testing.T, dir, name string) {
 		t.Errorf("expected %s to NOT exist in %s", name, dir)
 	}
 }
+
+func TestMergeFile(t *testing.T) {
+	ctx := context.Background()
+	merged, conflict, err := MergeFile(ctx, []byte("a\nb\nc\nd\n"), []byte("a\nb\nc\n"), []byte("a\nB\nc\n"))
+	if err != nil || conflict || string(merged) != "a\nB\nc\nd\n" {
+		t.Errorf("clean merge: got %q conflict=%v err=%v", merged, conflict, err)
+	}
+	_, conflict, err = MergeFile(ctx, []byte("a\nX\nc\n"), []byte("a\nb\nc\n"), []byte("a\nY\nc\n"))
+	if err != nil || !conflict {
+		t.Errorf("expected conflict, got conflict=%v err=%v", conflict, err)
+	}
+}
