@@ -11,6 +11,7 @@ see [CI.md](CI.md).
   - [Table of Contents](#table-of-contents)
   - [Local usage](#local-usage)
     - [Install](#install)
+      - [Release Binary](#release-binary)
       - [Install from `go`](#install-from-go)
       - [Build from source](#build-from-source)
       - [Verify Installation](#verify-installation)
@@ -45,6 +46,41 @@ failure on the command line. For the full pipeline flag reference, see
 [CI.md](CI.md).
 
 ### Install
+
+#### Release Binary
+
+Download the pre-compiled binary for your platform from the
+[release page](https://github.com/ArthurVardevanyan/k8s-gitops-ci/releases/latest).
+
+**macOS (Apple Silicon):**
+
+```sh
+curl -LO https://github.com/ArthurVardevanyan/k8s-gitops-ci/releases/download/v0.63.0/k8s-gitops-ci_0.63.0_darwin_arm64.tar.gz
+tar -xzf k8s-gitops-ci_0.63.0_darwin_arm64.tar.gz
+mv k8s-gitops-ci /usr/local/bin/
+```
+
+**Linux (x86_64):**
+
+```sh
+curl -LO https://github.com/ArthurVardevanyan/k8s-gitops-ci/releases/download/v0.63.0/k8s-gitops-ci_0.63.0_linux_amd64.tar.gz
+tar -xzf k8s-gitops-ci_0.63.0_linux_amd64.tar.gz
+sudo mv k8s-gitops-ci /usr/local/bin/
+```
+
+**Windows (x86_64):**
+
+```powershell
+# Download the .tar.gz, extract k8s-gitops-ci.exe
+# then place it somewhere on your PATH, e.g.
+# C:\Program Files\k8s-gitops-ci\
+```
+
+Verify the checksum matches the one in the corresponding `*_checksums.txt` file:
+
+```sh
+sha256sum -c k8s-gitops-ci_0.63.0_checksums.txt  # Linux/macOS
+```
 
 #### Install from `go`
 
