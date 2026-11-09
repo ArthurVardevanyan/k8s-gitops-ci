@@ -13,6 +13,7 @@ see [CI.md](CI.md).
     - [Install](#install)
       - [Install from `go`](#install-from-go)
       - [Build from source](#build-from-source)
+      - [Verify Installation](#verify-installation)
     - [Quick check — does it work?](#quick-check--does-it-work)
     - [Reproduce a CI failure locally](#reproduce-a-ci-failure-locally)
     - [Standalone Static checks](#standalone-static-checks)
@@ -59,7 +60,7 @@ Requires Go 1.27+ and [`task`](https://taskfile.dev)
 task build  # writes bin/k8s-gitops-ci with version metadata
 ```
 
-Verify the install:
+#### Verify Installation
 
 ```sh
 k8s-gitops-ci version
