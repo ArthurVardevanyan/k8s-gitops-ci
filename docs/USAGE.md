@@ -11,9 +11,11 @@ see [CI.md](CI.md).
   - [Table of Contents](#table-of-contents)
   - [Local usage](#local-usage)
     - [Install](#install)
+      - [Install from `go`](#install-from-go)
+      - [Build from source](#build-from-source)
     - [Quick check — does it work?](#quick-check--does-it-work)
     - [Reproduce a CI failure locally](#reproduce-a-ci-failure-locally)
-    - [Standalone linters and static checks](#standalone-linters-and-static-checks)
+    - [Standalone Static checks](#standalone-static-checks)
     - [Build rendered YAML](#build-rendered-yaml)
     - [Selective check enablement](#selective-check-enablement)
     - [Quiet mode for scripting](#quiet-mode-for-scripting)
@@ -43,16 +45,18 @@ failure on the command line. For the full pipeline flag reference, see
 
 ### Install
 
-Build from source (requires Go 1.27+ and [`task`](https://taskfile.dev)):
-
-```sh
-task build  # writes bin/k8s-gitops-ci with version metadata
-```
-
-Or install from `go`:
+#### Install from `go`
 
 ```sh
 go install github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/k8s-gitops-ci@latest
+```
+
+#### Build from source
+
+Requires Go 1.27+ and [`task`](https://taskfile.dev)
+
+```sh
+task build  # writes bin/k8s-gitops-ci with version metadata
 ```
 
 Verify the install:
@@ -118,32 +122,7 @@ k8s-gitops-ci pipeline --url https://github.com/org/repo --pr 123 --lint-only
 > `test.sh` by default. A `--hook-source` flag (accepts `main`/`pr`/`local`)
 > can override this. See [HOOKS.md](HOOKS.md) for details.
 
-### Standalone linters and static checks
-
-Each linter can be run independently for targeted checks. Most linters
-can operate on arbitrary file lists passed as positional arguments:
-
-```sh
-# YAML syntax validation (in-process, no external binary)
-git ls-files -z '*.yaml' | xargs -0 -n1 k8s-gitops-ci yaml-syntax
-
-# Schema validation (in-process against embedded schemas)
-git ls-files -z '*.yaml' | xargs -0 -n1 k8s-gitops-ci kubeconform
-
-# Shellcheck
-git ls-files -z '*.sh' | xargs -0 k8s-gitops-ci shellcheck
-
-# Markdown lint
-git ls-files -z '*.md' | xargs -0 k8s-gitops-ci markdownlint
-
-# Prettier (YAML, Markdown, shell)
-git ls-files -z -e '*.md' -e '*.yaml' -e '*.yml' -e '*.sh' | xargs -0 k8s-gitops-ci prettier
-
-# Go linting
-k8s-gitops-ci golangci ./...
-```
-
-Standalone static checks:
+### Standalone Static checks
 
 ```sh
 # Normalize kustomization.yaml field ordering (writes files)
@@ -171,9 +150,6 @@ k8s-gitops-ci update-scaffold-status
 > validation, and YAML syntax is parsed natively in Go. Use
 > `k8s-gitops-ci kustomize-fix` for a hard-failure on missing
 > `kustomize`.
-> **Portable globs.** `**` globstar expansion is a bash extension — it is
-> not portable to POSIX sh or macOS `zsh` without `set -o globstar`.
-> Prefer `git ls-files` + `xargs` (shown above) for portability.
 
 ### Build rendered YAML
 
