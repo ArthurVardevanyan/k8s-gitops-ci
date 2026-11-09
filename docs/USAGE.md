@@ -4,6 +4,18 @@ How to run `k8s-gitops-ci` against a repository. Pick a CI integration
 guide below to run it automatically on pull requests, or invoke the CLI
 directly. For the full pipeline and flag reference, see [CI.md](CI.md).
 
+## Table of Contents
+
+- [Usage Guide](#usage-guide)
+  - [Table of Contents](#table-of-contents)
+  - [CI integration guides](#ci-integration-guides)
+    - [GitHub Actions](#github-actions)
+      - [GitHub App setup](#github-app-setup)
+      - [Workflow](#workflow)
+      - [Setup notes](#setup-notes)
+      - [Flag quick reference](#flag-quick-reference)
+      - [Branch protection](#branch-protection)
+
 ## CI integration guides
 
 ### GitHub Actions
