@@ -7,6 +7,11 @@ the thing that would otherwise be a pile of separate lint/test/build
 Tasks. This document describes that actual footprint, not a general
 Tekton architecture.
 
+> **Scope note:** This document covers **this repo's own** CI — not a
+> guide for deploying `k8s-gitops-ci` in a Tekton cluster on your own
+> repositories. For an end-to-end, copy-paste CI workflow you can adapt
+> (GitHub Actions), see [USAGE.md](USAGE.md).
+
 ## Table of Contents
 
 - [Tekton](#tekton)
