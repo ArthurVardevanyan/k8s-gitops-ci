@@ -85,7 +85,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH="${GOARCH}" \
 # binaries, Node.js linter tooling, and copies the cross-compiled binary
 # from the builder stage.  The per-arch download logic (`uname -m`) makes
 # this stage work with `podman build --platform linux/amd64,linux/arm64`.
-FROM registry.access.redhat.com/ubi10/ubi-minimal:10.2-1792742351@sha256:ab67cd02caf8706e34a695a1432ebe965934f6128ec352a6c3f4048b43a4fb5e AS runtime
+FROM registry.access.redhat.com/ubi10/ubi-minimal:10.2-1793863917@sha256:c3fe95ec9f53a3888c47314eb4d08bde09ebde646a428137b445091afe1daf89 AS runtime
 
 # Build-time metadata (re-declared so build-args from the workflow flow into
 # this stage and can be used in LABEL instructions below).
