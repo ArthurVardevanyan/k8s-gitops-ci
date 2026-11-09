@@ -151,27 +151,6 @@ The container image includes `gh`, `kustomize`, `shellcheck`, `prettier`,
 and `markdownlint-cli`. If you use checks that require other tools, install
 them in your own image or as a separate Task step.
 
-| CLI Tool              | Required By                                     | Missing Behavior                                | Opt-out                          |
-| --------------------- | ----------------------------------------------- | ----------------------------------------------- | -------------------------------- |
-| `kustomize`           | `kustomize-fix` check, Kustomize overlay builds | Hard failure (blocking)                         | `--disable-checks kustomize-fix` |
-| `kubeconform`         | `kubeconform` lint step                         | **No binary needed** — schema data is embedded  | `--disable-checks kubeconform`   |
-| `kyverno`             | `kyverno` lint step                             | Hard failure if binary absent and step enabled  | `--disable-checks kyverno`       |
-| `shellcheck`          | `shellcheck` lint step                          | Hard failure if absent and shell files changed  | `--disable-checks shellcheck`    |
-| `prettier`            | `prettier` lint step                            | Hard failure (blocking)                         | `--disable-checks prettier`      |
-| `markdownlint-cli2`   | `markdownlint` lint step                        | Hard failure (blocking)                         | `--disable-checks markdownlint`  |
-| `golangci-lint`       | `golangci` lint step                            | Hard failure (blocking)                         | `--disable-checks golangci`      |
-| `argocd-vault-plugin` | `avp` check                                     | Hard failure if absent and AVP indicators found | `--disable-checks avp`           |
-
-**Notes:**
-
-- `kubeconform` is the exception: it has no external binary dependency
-  (schema validation runs in-process against the embedded schema set).
-- For a fast pass that avoids all optional CLI dependencies, use
-  `--lint-only` (skips overlay builds) combined with `--disable-checks`
-  for the tools unavailable in your environment.
-- `--quiet` always exits 0 regardless of findings (useful for reporting,
-  but means pre-commit/CI won't block).
-
 #### Opting out of checks
 
 When a tool cannot be installed in your Tekton environment, use
