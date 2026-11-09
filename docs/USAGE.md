@@ -114,7 +114,6 @@ k8s-gitops-ci pipeline --url https://github.com/org/repo --pr 123 --lint-only
 > reproducing locally — it requires PR context (`--url` + `--pr`) and an
 > authenticated `gh`/`glab` CLI to post a PR comment. Omit it to avoid
 > unnecessary errors.
-
 > **Hook source.** Local `test`/`build-yaml` runs use the working-tree
 > `test.sh` by default. A `--hook-source` flag (accepts `main`/`pr`/`local`)
 > can override this. See [HOOKS.md](HOOKS.md) for details.
@@ -172,7 +171,6 @@ k8s-gitops-ci update-scaffold-status
 > validation, and YAML syntax is parsed natively in Go. Use
 > `k8s-gitops-ci kustomize-fix` for a hard-failure on missing
 > `kustomize`.
-
 > **Portable globs.** `**` globstar expansion is a bash extension — it is
 > not portable to POSIX sh or macOS `zsh` without `set -o globstar`.
 > Prefer `git ls-files` + `xargs` (shown above) for portability.
@@ -233,7 +231,6 @@ k8s-gitops-ci test --all --quiet
 > where you only want to see what you broke, but **not** as a blocking
 > gate. For a blocking gate, run `test` without `--quiet` so a failed
 > run returns a non-zero exit code.
-
 > **`pipeline --quiet`** differs from `test --quiet`: in pipeline mode
 > it omits passing sections from the PR comment and deletes the comment
 > when everything passes, but the exit code still reflects findings
@@ -261,7 +258,6 @@ explicitly disabled via `--disable-checks <id>`.
 > **`gh` / `glab`** are required for any pipeline run with `--url` +
 > `--pr` context (PR title validation, PR comment posting, PR checklist).
 > Without them, the pipeline continues but skips PR-specific checks.
-
 > **Standalone subcommand behavior.** Standalone lint subcommands
 > (`k8s-gitops-ci kubeconform *.yaml`, `shellcheck *.sh`, etc.) silently
 > **no-op with exit 0** when their CLI is missing — they are not a
