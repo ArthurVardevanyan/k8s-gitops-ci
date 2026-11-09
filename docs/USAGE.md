@@ -9,6 +9,14 @@ directly. For the full pipeline and flag reference, see [CI.md](CI.md).
 - [Usage Guide](#usage-guide)
   - [Table of Contents](#table-of-contents)
   - [CI integration guides](#ci-integration-guides)
+    - [Tekton](#tekton)
+      - [Container image](#container-image)
+      - [Minimal Tekton Task](#minimal-tekton-task)
+      - [PipelineRun with Pipelines-as-Code](#pipelinerun-with-pipelines-as-code)
+      - [PR comment integration](#pr-comment-integration)
+      - [Tool dependencies](#tool-dependencies)
+      - [Opting out of checks](#opting-out-of-checks)
+      - [Caching](#caching)
     - [GitHub Actions](#github-actions)
       - [GitHub App setup](#github-app-setup)
       - [Workflow](#workflow)
@@ -17,6 +25,174 @@ directly. For the full pipeline and flag reference, see [CI.md](CI.md).
       - [Branch protection](#branch-protection)
 
 ## CI integration guides
+
+### Tekton
+
+Run `k8s-gitops-ci` as a container step in a Tekton Pipeline. The published
+image bundles the most common CLI tools, so you only need to add
+`golangci-lint` (or other missing tools) via a custom image or a separate
+Task step.
+
+#### Container image
+
+Use `ghcr.io/arthurvardevanyan/k8s-gitops-ci:0.63.0@sha256:ace79fe17227d0cd9cc65d0cc59251af719d6911747f40f5b79b0ac8bdb45336` as the base image
+for Tekton Task containers. The image includes `gh`, `kustomize`,
+`shellcheck`, `prettier`, and `markdownlint-cli`.
+
+#### Minimal Tekton Task
+
+A single Task that runs `k8s-gitops-ci pipeline` against a PR:
+
+```yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: k8s-gitops-ci
+spec:
+  params:
+    - name: repo-url
+      type: string
+    - name: pr-number
+      type: string
+    - name: target-branch
+      type: string
+  workspaces:
+    - name: source
+    - name: git-auth
+      optional: true
+  steps:
+    - name: run-ci
+      image: ghcr.io/arthurvardevanyan/k8s-gitops-ci:0.63.0@sha256:ace79fe17227d0cd9cc65d0cc59251af719d6911747f40f5b79b0ac8bdb45336
+      script: |
+        #!/usr/bin/env bash
+        k8s-gitops-ci pipeline \
+          --url "$(params.repo-url)" \
+          --pr "$(params.pr-number)" \
+          --target-branch "$(params.target-branch)" \
+          --comment \
+          --verbose
+```
+
+#### PipelineRun with Pipelines-as-Code
+
+Use the Pipelines-as-Code annotations to trigger the PipelineRun on pull
+requests, and bind PaC environment variables to pipeline parameters:
+
+```yaml
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: gitops-ci
+  annotations:
+    pipelinesascode.tekton.dev/max-keep-runs: "1"
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "pull_request" && target_branch == "main"
+    pipelinesascode.tekton.dev/target-namespace: "your-namespace"
+    pipelinesascode.tekton.dev/task: "[tekton/tasks/gitops-ci.yaml]"
+spec:
+  params:
+    - name: git-commit
+      value: "{{ revision }}"
+    - name: git-url
+      value: "{{ repo_url }}"
+    - name: git-pr-number
+      value: "{{ pull_request_number }}"
+    - name: target-branch
+      value: "{{ target_branch }}"
+  pipelineSpec:
+    params:
+      - name: git-commit
+        type: string
+      - name: git-url
+        type: string
+        description: Repository URL to clone from.
+      - name: git-pr-number
+        type: string
+      - name: target-branch
+        type: string
+    workspaces:
+      - name: git_auth_secret
+    tasks:
+      - name: k8s-gitops-ci
+        params:
+          - name: git-commit
+            value: $(params.git-commit)
+          - name: git-url
+            value: $(params.git-url)
+          - name: git-pr-number
+            value: $(params.git-pr-number)
+          - name: target-branch
+            value: $(params.target-branch)
+        taskRef:
+          name: k8s-gitops-ci
+          kind: Task
+        workspaces:
+          - name: basic-auth
+            workspace: git_auth_secret
+  taskRunTemplate:
+    serviceAccountName: pipeline
+  workspaces:
+    - name: git_auth_secret
+      secret:
+        secretName: "{{ git_auth_secret }}"
+```
+
+#### PR comment integration
+
+Pass `--comment` to post or update the report as a PR comment. The
+PipelineRun example above passes `--comment` (along with `--url`, `--pr`,
+and `--target-branch`). The GitHub token comes from a SecretRef workspace
+bound to the Task, matching the pattern used in this repo's own
+`git_auth_secret` workspace.
+
+#### Tool dependencies
+
+The container image includes `gh`, `kustomize`, `shellcheck`, `prettier`,
+and `markdownlint-cli`. If you use checks that require other tools, install
+them in your own image or as a separate Task step.
+
+| CLI Tool              | Required By                                     | Missing Behavior                                | Opt-out                          |
+| --------------------- | ----------------------------------------------- | ----------------------------------------------- | -------------------------------- |
+| `kustomize`           | `kustomize-fix` check, Kustomize overlay builds | Hard failure (blocking)                         | `--disable-checks kustomize-fix` |
+| `kubeconform`         | `kubeconform` lint step                         | **No binary needed** — schema data is embedded  | `--disable-checks kubeconform`   |
+| `kyverno`             | `kyverno` lint step                             | Hard failure if binary absent and step enabled  | `--disable-checks kyverno`       |
+| `shellcheck`          | `shellcheck` lint step                          | Hard failure if absent and shell files changed  | `--disable-checks shellcheck`    |
+| `prettier`            | `prettier` lint step                            | Hard failure (blocking)                         | `--disable-checks prettier`      |
+| `markdownlint-cli2`   | `markdownlint` lint step                        | Hard failure (blocking)                         | `--disable-checks markdownlint`  |
+| `golangci-lint`       | `golangci` lint step                            | Hard failure (blocking)                         | `--disable-checks golangci`      |
+| `argocd-vault-plugin` | `avp` check                                     | Hard failure if absent and AVP indicators found | `--disable-checks avp`           |
+
+**Notes:**
+
+- `kubeconform` is the exception: it has no external binary dependency
+  (schema validation runs in-process against the embedded schema set).
+- For a fast pass that avoids all optional CLI dependencies, use
+  `--lint-only` (skips overlay builds) combined with `--disable-checks`
+  for the tools unavailable in your environment.
+- `--quiet` always exits 0 regardless of findings (useful for reporting,
+  but means pre-commit/CI won't block).
+
+#### Opting out of checks
+
+When a tool cannot be installed in your Tekton environment, use
+`--disable-checks <id>` to skip that check:
+
+- `--disable-checks golangci` — skip Go linting if `golangci-lint` is
+  not installed in your image.
+- `--disable-checks kyverno` — skip Kyverno policy validation if the
+  binary is absent.
+- `--disable-checks avp` — skip Argo CD Vault Plugin secret resolution
+  if AVP is not in your image.
+
+For a minimal pass that avoids all optional CLI dependencies, combine
+`--lint-only` with `--disable-checks` for the tools unavailable in your
+environment.
+
+#### Caching
+
+Cache `GOCACHE`, `GOMODCACHE`, and the kubeconform schema download
+cache across PipelineRuns using a PVC-backed workspace, following the
+pattern used in this repo's own Tekton setup.
 
 ### GitHub Actions
 
