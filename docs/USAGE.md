@@ -1,14 +1,24 @@
 # Usage Guide
 
-How to run `k8s-gitops-ci` against a repository. Pick a CI integration
-guide below to run it automatically on pull requests, or invoke the CLI
-directly. For the full pipeline and flag reference, see [CI.md](CI.md).
+How to run `k8s-gitops-ci` against a repository. Start with the local
+usage section to invoke the CLI directly, then pick
+a CI integration guide below to run it automatically on pull requests. For the full pipeline and flag reference,
+see [CI.md](CI.md).
 
 ## Table of Contents
 
 - [Usage Guide](#usage-guide)
   - [Table of Contents](#table-of-contents)
-  - [CI integration guides](#ci-integration-guides)
+  - [Local usage](#local-usage)
+    - [Install](#install)
+    - [Quick check — does it work?](#quick-check--does-it-work)
+    - [Reproduce a CI failure locally](#reproduce-a-ci-failure-locally)
+    - [Standalone linters and static checks](#standalone-linters-and-static-checks)
+    - [Build rendered YAML](#build-rendered-yaml)
+    - [Selective check enablement](#selective-check-enablement)
+    - [Quiet mode for scripting](#quiet-mode-for-scripting)
+    - [External tool dependencies](#external-tool-dependencies)
+      - [Fast pass: `--lint-only`](#fast-pass---lint-only)
     - [Tekton](#tekton)
       - [Container image](#container-image)
       - [Minimal Tekton Task](#minimal-tekton-task)
@@ -24,7 +34,251 @@ directly. For the full pipeline and flag reference, see [CI.md](CI.md).
       - [Flag quick reference](#flag-quick-reference)
       - [Branch protection](#branch-protection)
 
-## CI integration guides
+## Local usage
+
+Progressive examples for running `k8s-gitops-ci` locally against your
+own GitOps repository — install, verify it works, and reproduce a CI
+failure on the command line. For the full pipeline flag reference, see
+[CI.md](CI.md).
+
+### Install
+
+Build from source (requires Go 1.27+ and [`task`](https://taskfile.dev)):
+
+```sh
+task build  # writes bin/k8s-gitops-ci with version metadata
+```
+
+Or install from `go`:
+
+```sh
+go install github.com/ArthurVardevanyan/k8s-gitops-ci/cmd/k8s-gitops-ci@latest
+```
+
+Verify the install:
+
+```sh
+k8s-gitops-ci version
+```
+
+Run `k8s-gitops-ci --help` or `k8s-gitops-ci <command> --help` for the
+full CLI reference, or check the per-command descriptions in [CI.md](CI.md)'s
+[Modes](CI.md#modes) section.
+
+### Quick check — does it work?
+
+`test` is the primary local validation command. It runs every enabled
+check against a **changeset** — by default, `git diff` + `git diff
+--cached` (uncommitted changes only):
+
+```sh
+# Scan uncommitted changes in the working tree
+k8s-gitops-ci test
+
+# Full-tree walk under a specific path (not a diff)
+k8s-gitops-ci test ./kubernetes
+
+# Full repository scan: every file on disk, every overlay, ignores git state
+k8s-gitops-ci test --all
+
+# Streams every check's start/pass/fail as it runs
+k8s-gitops-ci test --all --verbose
+```
+
+> **Note:** `--all` takes priority over `--dirs` when both are set.
+> Positional path args (`test ./kubernetes`) take priority over the
+> `--dirs` flag when both are given.
+
+### Reproduce a CI failure locally
+
+A failing `pipeline --url <repo> --pr <n>` can be reproduced with `test`
+using an equivalent flag set — `test` accepts the same changeset-scoping
+and check-enablement flags as `pipeline`:
+
+```sh
+# Validator phases only, against the PR's changed files (no PR-title or
+# comment posting) — no PR context needed beyond the file list.
+k8s-gitops-ci test --url https://github.com/org/repo --pr 123
+
+# Same checks, local changeset only
+k8s-gitops-ci test --dirs=kubernetes/ --disable-checks=avp
+
+# Linting-only pass (faster, skips overlay builds)
+k8s-gitops-ci test --all --lint-only
+
+# Linting-only via pipeline flag (equivalent)
+k8s-gitops-ci pipeline --url https://github.com/org/repo --pr 123 --lint-only
+```
+
+> **`--comment` is off by default.** Do not pass `--comment` when
+> reproducing locally — it requires PR context (`--url` + `--pr`) and an
+> authenticated `gh`/`glab` CLI to post a PR comment. Omit it to avoid
+> unnecessary errors.
+
+> **Hook source.** Local `test`/`build-yaml` runs use the working-tree
+> `test.sh` by default. A `--hook-source` flag (accepts `main`/`pr`/`local`)
+> can override this. See [HOOKS.md](HOOKS.md) for details.
+
+### Standalone linters and static checks
+
+Each linter can be run independently for targeted checks. Most linters
+can operate on arbitrary file lists passed as positional arguments:
+
+```sh
+# YAML syntax validation (in-process, no external binary)
+git ls-files -z '*.yaml' | xargs -0 -n1 k8s-gitops-ci yaml-syntax
+
+# Schema validation (in-process against embedded schemas)
+git ls-files -z '*.yaml' | xargs -0 -n1 k8s-gitops-ci kubeconform
+
+# Shellcheck
+git ls-files -z '*.sh' | xargs -0 k8s-gitops-ci shellcheck
+
+# Markdown lint
+git ls-files -z '*.md' | xargs -0 k8s-gitops-ci markdownlint
+
+# Prettier (YAML, Markdown, shell)
+git ls-files -z -e '*.md' -e '*.yaml' -e '*.yml' -e '*.sh' | xargs -0 k8s-gitops-ci prettier
+
+# Go linting
+k8s-gitops-ci golangci ./...
+```
+
+Standalone static checks:
+
+```sh
+# Normalize kustomization.yaml field ordering (writes files)
+k8s-gitops-ci kustomize-fix -all
+
+# Validate startingCSV folder versions
+k8s-gitops-ci check-starting-csv kubernetes/**/*.yaml
+
+# Detect kustomize patches matching no resource
+k8s-gitops-ci ghost-patches kubernetes/my-app/overlays/my-cluster
+
+# Sort repo config files
+k8s-gitops-ci sort-configs
+
+# Update scaffold status README table
+k8s-gitops-ci update-scaffold-status
+```
+
+> **Standalone vs. pipeline behavior.** Standalone linter subcommands
+> silently **no-op with exit 0** when their CLI is missing (e.g. a repo
+> without `golangci-lint` installed). The pipeline's **Linting phase**
+> treats a missing CLI as a **hard failure** (blocking). The exception
+> is `kubeconform`/`yaml-syntax`, which run in-process and never
+> require an external binary — the embedded schemas cover schema
+> validation, and YAML syntax is parsed natively in Go. Use
+> `k8s-gitops-ci kustomize-fix` for a hard-failure on missing
+> `kustomize`.
+
+> **Portable globs.** `**` globstar expansion is a bash extension — it is
+> not portable to POSIX sh or macOS `zsh` without `set -o globstar`.
+> Prefer `git ls-files` + `xargs` (shown above) for portability.
+
+### Build rendered YAML
+
+`build-yaml` validates every overlay matching the `--app`/`--cluster`
+target, runs the full validator against the rendered output, and prints
+the report to the console. It is **not** a validation-free dry run:
+
+```sh
+# Validate a specific app/cluster overlay
+k8s-gitops-ci build-yaml --app my-app --cluster prod
+
+# Add --verbose for per-overlay detail
+k8s-gitops-ci build-yaml --app my-app --cluster dev --verbose
+
+# Repeatable flags — `--app a --app b --cluster prod` validates both apps
+k8s-gitops-ci build-yaml --app my-app --app another --cluster prod --cluster staging
+```
+
+`build-yaml` uses the native Kustomize SDK and Helm rendering engine,
+so it does **not** require an external `kustomize` or `helm` binary.
+
+### Selective check enablement
+
+The `--disable-checks` and `--enable-checks` flags accept a
+**comma-separated** list of step/check IDs:
+
+```sh
+# Disable multiple checks at once
+k8s-gitops-ci test --disable-checks=shellcheck,golangci,prettier
+
+# Enable checks that are off by default (kyverno, scaffold-readme)
+k8s-gitops-ci test --enable-checks=kyverno,scaffold-readme
+```
+
+Repeated flags **overwrite** each other (Go `flag` behavior) — use
+comma-separated lists. Unknown IDs produce a warning (not a hard error)
+to allow sharing configs across repos with different tool versions.
+See [CI.md](CI.md)'s [Registered checks](CI.md#registered-checks) table
+for the full list.
+
+> **Default-off steps.** `kyverno` and `scaffold-readme` default to
+> disabled (off) — they require per-org policy configuration or
+> infrastructure to run. All other steps default to enabled and are
+> only turned off via `--disable-checks`.
+
+### Quiet mode for scripting
+
+```sh
+# Only print failed/warned sections; always exit 0
+k8s-gitops-ci test --all --quiet
+```
+
+> **Warning for gating.** `test --quiet` always exits 0 regardless of
+> findings. It is suitable for pre-commit reporting or CI dashboards
+> where you only want to see what you broke, but **not** as a blocking
+> gate. For a blocking gate, run `test` without `--quiet` so a failed
+> run returns a non-zero exit code.
+
+> **`pipeline --quiet`** differs from `test --quiet`: in pipeline mode
+> it omits passing sections from the PR comment and deletes the comment
+> when everything passes, but the exit code still reflects findings
+> (non-zero on failure).
+
+### External tool dependencies
+
+`k8s-gitops-ci` itself requires no runtime dependencies — the core
+binary is a single Go executable. The **checks** it runs depend on
+external CLI tools. A missing CLI **hard-fails** the relevant check in
+the pipeline (blocking) — it never silently skips — unless the step is
+explicitly disabled via `--disable-checks <id>`.
+
+| Tool                                 | Used by                                     | Missing behavior in pipeline/test                          | Opt out                                 |
+| ------------------------------------ | ------------------------------------------- | ---------------------------------------------------------- | --------------------------------------- |
+| `kustomize`                          | `kustomize-fix` check, `kustomize-fix` CLI  | Hard failure (blocking)                                    | `--disable-checks kustomize-fix`        |
+| `kubeconform`                        | `kubeconform` check (embedded schemas)      | **No binary needed** — runs in-process                     | `--disable-checks kubeconform`          |
+| `kyverno`                            | `kyverno` check                             | Hard failure if absent and step enabled                    | Default off — `--enable-checks kyverno` |
+| `shellcheck`                         | `shellcheck` check                          | Hard failure if binary absent and shell files in changeset | `--disable-checks shellcheck`           |
+| `prettier`                           | `prettier` check, `kustomize-fix` follow-up | Hard failure (blocking)                                    | `--disable-checks prettier`             |
+| `markdownlint` / `markdownlint-cli2` | `markdownlint` check                        | Hard failure (blocking)                                    | `--disable-checks markdownlint`         |
+| `golangci-lint`                      | `golangci` check                            | Hard failure (blocking)                                    | `--disable-checks golangci`             |
+| `argocd-vault-plugin`                | `avp` check                                 | Hard failure if binary absent and AVP indicators detected  | `--disable-checks avp`                  |
+
+> **`gh` / `glab`** are required for any pipeline run with `--url` +
+> `--pr` context (PR title validation, PR comment posting, PR checklist).
+> Without them, the pipeline continues but skips PR-specific checks.
+
+> **Standalone subcommand behavior.** Standalone lint subcommands
+> (`k8s-gitops-ci kubeconform *.yaml`, `shellcheck *.sh`, etc.) silently
+> **no-op with exit 0** when their CLI is missing — they are not a
+> substitute for a pipeline run when blocking behavior is needed.
+
+#### Fast pass: `--lint-only`
+
+For a quick validation pass that avoids all optional CLI dependencies
+(except `markdownlint`/`prettier`/`shellcheck`/`golangci` which you
+may want to skip with `--disable-checks`):
+
+```sh
+k8s-gitops-ci test --all --lint-only --disable-checks=golangci,kyverno
+```
+
+This skips the overlay build phase entirely (no `kustomize` or `helm`
+needed) and runs only the Linting + Static Checks phases.
 
 ### Tekton
 
