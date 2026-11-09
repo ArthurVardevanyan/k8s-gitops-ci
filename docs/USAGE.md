@@ -13,10 +13,10 @@ directly. For the full pipeline and flag reference, see [CI.md](CI.md).
       - [Container image](#container-image)
       - [Minimal Tekton Task](#minimal-tekton-task)
       - [PipelineRun with Pipelines-as-Code](#pipelinerun-with-pipelines-as-code)
+      - [Non-PaC Deployments](#non-pac-deployments)
       - [PR comment integration](#pr-comment-integration)
       - [Tool dependencies](#tool-dependencies)
       - [Opting out of checks](#opting-out-of-checks)
-      - [Caching](#caching)
     - [GitHub Actions](#github-actions)
       - [GitHub App setup](#github-app-setup)
       - [Workflow](#workflow)
@@ -137,6 +137,10 @@ spec:
         secretName: "{{ git_auth_secret }}"
 ```
 
+#### Non-PaC Deployments
+
+For non-Pac deployments, see <https://tekton.dev/docs/triggers/>.
+
 #### PR comment integration
 
 Pass `--comment` to post or update the report as a PR comment. The
@@ -166,12 +170,6 @@ When a tool cannot be installed in your Tekton environment, use
 For a minimal pass that avoids all optional CLI dependencies, combine
 `--lint-only` with `--disable-checks` for the tools unavailable in your
 environment.
-
-#### Caching
-
-Cache `GOCACHE`, `GOMODCACHE`, and the kubeconform schema download
-cache across PipelineRuns using a PVC-backed workspace, following the
-pattern used in this repo's own Tekton setup.
 
 ### GitHub Actions
 
