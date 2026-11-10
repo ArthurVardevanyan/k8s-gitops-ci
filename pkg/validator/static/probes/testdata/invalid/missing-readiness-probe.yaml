@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: good
+  name: missing-readiness
   namespace: default
 spec:
   selector:
     matchLabels:
-      app: good
+      app: missing-readiness
   template:
     spec:
       enableServiceLinks: false
@@ -15,8 +15,8 @@ spec:
       dnsPolicy: ClusterFirst
       automountServiceAccountToken: false
       containers:
-        - name: c
-          image: registry.example.com/nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        - name: app
+          image: registry.example.com/nginx@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
           resources:
             requests:
               cpu: 10m

@@ -162,8 +162,8 @@ Every check registered via `check.Register` becomes exemptable via the
 (`check.Register` calls `exempt.RegisterExemptable(c.ID())`
 unconditionally) — so `namespace`, `psa-labels`, `rbac-readonly`,
 `rbac-wildcards`, `crb`, `sync-options`, `named-ports`, `podspec-defaults`,
-and `placeholder` are all selector-exemptable by their own ID with no
-extra wiring needed.
+`liveness-probe`, `readiness-probe`, and `placeholder` are all
+selector-exemptable by their own ID with no extra wiring needed.
 
 **Annotation-mode support is separate and per-check** (see "Adding
 exemption support to a new check" below): a check only honors
@@ -177,7 +177,9 @@ joined missing-fields list, respectively). `namespace`, `psa-labels`,
 `rbac-readonly`, `crb`, and `sync-options` don't populate either (no
 `Value`/`Token`/`Annotations` set on their findings), so annotation
 mode and `value=`/`match=` selectors don't work for them — only
-`kind`/`name`/`file` narrowing. `placeholder` populates `Value` (the
+`kind`/`name`/`file` narrowing. `liveness-probe` and `readiness-probe`
+don't populate either, so they are also selector-only
+(`kind`/`name`/`file`). `placeholder` populates `Value` (the
 matched token) but not `Annotations` — its annotation form fails closed
 too (no annotations to match against), but its `value=`/`match=` selectors
 do work.
@@ -208,6 +210,8 @@ All check IDs that consist of multiple words use **kebab-case**
 | `cluster-identity` | word-word             |
 | `invalid-json`     | word-word             |
 | `podspec-defaults` | word-word             |
+| `liveness-probe`   | word-word             |
+| `readiness-probe`  | word-word             |
 | `named-ports`      | word-word             |
 | `sync-options`     | word-word             |
 | `rbac-wildcards`   | acronym-word          |

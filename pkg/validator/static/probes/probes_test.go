@@ -1,11 +1,12 @@
-package livenessprobe
+package probes
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
-func TestValidateReader_GoodDeployment(t *testing.T) {
+func TestValidateLivenessProbes_GoodDeployment(t *testing.T) {
 	data := `kind: Deployment
 metadata:
   name: good
@@ -20,13 +21,13 @@ spec:
             path: /healthz
             port: 8080
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 0 {
 		t.Errorf("expected no errors, got: %v", errs)
 	}
 }
 
-func TestValidateReader_MissingLivenessProbe(t *testing.T) {
+func TestValidateLivenessProbes_Missing(t *testing.T) {
 	data := `kind: Deployment
 metadata:
   name: bad
@@ -37,19 +38,22 @@ spec:
       - name: c
         image: nginx
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}
 	if errs[0].Kind != "Deployment" || errs[0].Name != "bad" || errs[0].Container != "c" {
 		t.Errorf("unexpected finding: %+v", errs[0])
 	}
+	if errs[0].Probe != "liveness" {
+		t.Errorf("expected Probe=liveness, got %q", errs[0].Probe)
+	}
 	if !strings.Contains(errs[0].Path, "livenessProbe") {
 		t.Errorf("expected path to contain 'livenessProbe', got: %q", errs[0].Path)
 	}
 }
 
-func TestValidateReader_MultipleContainers(t *testing.T) {
+func TestValidateLivenessProbes_MultipleContainers(t *testing.T) {
 	data := `kind: Deployment
 metadata:
   name: multi
@@ -65,7 +69,7 @@ spec:
           tcpSocket:
             port: 6379
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error (only c1 missing probe), got %d: %v", len(errs), errs)
 	}
@@ -74,7 +78,7 @@ spec:
 	}
 }
 
-func TestValidateReader_MissingInitContainerProbe(t *testing.T) {
+func TestValidateLivenessProbes_MissingInitContainer(t *testing.T) {
 	data := `kind: Deployment
 metadata:
   name: deploy
@@ -92,7 +96,7 @@ spec:
             path: /healthz
             port: 8080
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error (only init missing probe), got %d: %v", len(errs), errs)
 	}
@@ -107,7 +111,7 @@ spec:
 	}
 }
 
-func TestValidateReader_Pod(t *testing.T) {
+func TestValidateLivenessProbes_Pod(t *testing.T) {
 	data := `kind: Pod
 metadata:
   name: pod-missing
@@ -116,7 +120,7 @@ spec:
   - name: app
     image: busybox
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for Pod, got %d: %v", len(errs), errs)
 	}
@@ -125,7 +129,7 @@ spec:
 	}
 }
 
-func TestValidateReader_StatefulSet(t *testing.T) {
+func TestValidateLivenessProbes_StatefulSet(t *testing.T) {
 	data := `kind: StatefulSet
 metadata:
   name: ss
@@ -136,13 +140,13 @@ spec:
       - name: web
         image: nginx
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for StatefulSet, got %d: %v", len(errs), errs)
 	}
 }
 
-func TestValidateReader_DaemonSet(t *testing.T) {
+func TestValidateLivenessProbes_DaemonSet(t *testing.T) {
 	data := `kind: DaemonSet
 metadata:
   name: ds
@@ -153,13 +157,13 @@ spec:
       - name: agent
         image: fluentd
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for DaemonSet, got %d: %v", len(errs), errs)
 	}
 }
 
-func TestValidateReader_Job(t *testing.T) {
+func TestValidateLivenessProbes_Job(t *testing.T) {
 	data := `kind: Job
 metadata:
   name: job
@@ -170,13 +174,13 @@ spec:
       - name: worker
         image: python
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for Job, got %d: %v", len(errs), errs)
 	}
 }
 
-func TestValidateReader_CronJob(t *testing.T) {
+func TestValidateLivenessProbes_CronJob(t *testing.T) {
 	data := `kind: CronJob
 metadata:
   name: cj
@@ -189,7 +193,7 @@ spec:
           - name: batch
             image: python
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for CronJob, got %d: %v", len(errs), errs)
 	}
@@ -198,7 +202,7 @@ spec:
 	}
 }
 
-func TestValidateReader_ReplicaSet(t *testing.T) {
+func TestValidateLivenessProbes_ReplicaSet(t *testing.T) {
 	data := `kind: ReplicaSet
 metadata:
   name: rs
@@ -209,13 +213,13 @@ spec:
       - name: app
         image: nginx
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for ReplicaSet, got %d: %v", len(errs), errs)
 	}
 }
 
-func TestValidateReader_NonWorkload(t *testing.T) {
+func TestValidateLivenessProbes_NonWorkload(t *testing.T) {
 	data := `apiVersion: v1
 kind: Service
 metadata:
@@ -224,9 +228,84 @@ spec:
   ports:
   - port: 80
 `
-	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	errs := ValidateLivenessProbes([]byte(data), "test.yaml")
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for Service, got: %v", errs)
+	}
+}
+
+func TestValidateReadinessProbes_Missing(t *testing.T) {
+	data := `kind: Deployment
+metadata:
+  name: bad
+spec:
+  template:
+    spec:
+      containers:
+      - name: c
+        image: nginx
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+`
+	errs := ValidateReadinessProbes([]byte(data), "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Kind != "Deployment" || errs[0].Name != "bad" || errs[0].Container != "c" {
+		t.Errorf("unexpected finding: %+v", errs[0])
+	}
+	if errs[0].Probe != "readiness" {
+		t.Errorf("expected Probe=readiness, got %q", errs[0].Probe)
+	}
+	if !strings.Contains(errs[0].Path, "readinessProbe") {
+		t.Errorf("expected path to contain 'readinessProbe', got: %q", errs[0].Path)
+	}
+}
+
+func TestValidateReadinessProbes_Present(t *testing.T) {
+	data := `kind: Deployment
+metadata:
+  name: good
+spec:
+  template:
+    spec:
+      containers:
+      - name: c
+        image: nginx
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+`
+	errs := ValidateReadinessProbes([]byte(data), "test.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateReadinessProbes_SkipsInitContainers(t *testing.T) {
+	data := `kind: Deployment
+metadata:
+  name: deploy
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: init
+        image: busybox
+      containers:
+      - name: app
+        image: nginx
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+`
+	errs := ValidateReadinessProbes([]byte(data), "test.yaml")
+	if len(errs) != 0 {
+		t.Errorf("expected init containers to be skipped, got: %v", errs)
 	}
 }
 
@@ -241,8 +320,22 @@ func TestValidateFile_GoodFixtures(t *testing.T) {
 	}
 }
 
-func TestValidateFile_BadDeployment(t *testing.T) {
+func TestValidateFile_BadLivenessDeployment(t *testing.T) {
 	errs := ValidateFile("testdata/invalid/missing-liveness-probe.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if errs[0].Kind != "Deployment" || errs[0].Container != "app" {
+		t.Errorf("unexpected finding: %+v", errs[0])
+	}
+}
+
+func TestValidateFile_BadReadinessDeployment(t *testing.T) {
+	data, err := os.ReadFile("testdata/invalid/missing-readiness-probe.yaml")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	errs := ValidateReadinessProbes(data, "testdata/invalid/missing-readiness-probe.yaml")
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
 	}

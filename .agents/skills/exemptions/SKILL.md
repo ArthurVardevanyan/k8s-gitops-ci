@@ -28,10 +28,11 @@ outside the repo, or you need to exempt a whole directory.
 
 Every check registered via `check.Register` (`namespace`, `psa-labels`,
 `rbac-readonly`, `rbac-wildcards`, `crb`, `sync-options`, `image-checksum`,
-`named-ports`, `podspec-defaults`, `placeholder`) becomes exemptable via
-the **selector** mode automatically (under its own ID). The large file
-check (`large-file`) and the kubeconform lint step (`kubeconform`) are
-registered as exemptable manually via `exempt.RegisterExemptable`.
+`named-ports`, `podspec-defaults`, `placeholder`, `liveness-probe`,
+`readiness-probe`) becomes exemptable via the **selector** mode
+automatically (under its own ID). The large file check (`large-file`) and
+the kubeconform lint step (`kubeconform`) are registered as exemptable
+manually via `exempt.RegisterExemptable`.
 `cluster-identity` is also registered but is **deliberately non-exemptable** (infraID mismatch,
 invalid JSON — structural findings that should not be waved away).
 Annotation-mode support is separate: a check only honors
@@ -52,6 +53,8 @@ Annotation-mode support is separate: a check only honors
 | `crb`                                             | no               | — (selector-only)                                                                         |
 | `sync-options`                                    | no               | — (selector-only: `kind`/`name`/`file`)                                                   |
 | `placeholder`                                     | no               | — (selector-only; `value=`/`match=` match the flagged token)                              |
+| `liveness-probe`                                  | no               | — (selector-only: `kind`/`name`/`file`)                                                   |
+| `readiness-probe`                                 | no               | — (selector-only: `kind`/`name`/`file`)                                                   |
 | `kubeconform`                                     | no               | — (file-level only: `file=`)                                                              |
 | `large-file`                                      | no               | — (file-level only: `file=`)                                                              |
 | `cel`                                             | **never**        | Deliberately non-exemptable (API server enforces `x-kubernetes-validations` at admission) |

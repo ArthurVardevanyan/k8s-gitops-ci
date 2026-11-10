@@ -50,6 +50,8 @@ package map; this is the detailed, step-by-step reference.
       - [`image-fqdn`](#image-fqdn)
       - [`named-ports`](#named-ports)
       - [`podspec-defaults`](#podspec-defaults)
+      - [`liveness-probe`](#liveness-probe)
+      - [`readiness-probe`](#readiness-probe)
       - [`placeholder`](#placeholder)
       - [`cluster-identity`](#cluster-identity)
       - [`avp`](#avp)
@@ -937,6 +939,8 @@ automatically exemptable via its own check ID (see
 | `image-fqdn`       | `pkg/validator/static/image`       | Doc     | Every OCI image reference uses an explicit, fully-qualified registry host (no bare shortnames such as `nginx:latest`)                                                                                                                                                                                                                                                                                                                                 |
 | `named-ports`      | `pkg/validator/static/namedport`   | Doc     | Container/Service ports are named, not numeric, everywhere they're referenced                                                                                                                                                                                                                                                                                                                                                                         |
 | `podspec-defaults` | `pkg/validator/static/podspec`     | Doc     | Required pod-level fields (`enableServiceLinks`, `restartPolicy`, ...) and container `securityContext`/`resources.requests`/`resources.limits` are all set                                                                                                                                                                                                                                                                                            |
+| `liveness-probe`   | `pkg/validator/static/probes`      | Doc     | Every container (including init containers) declares a `livenessProbe` — non-blocking best-practice warning                                                                                                                                                                                                                                                                                                                                           |
+| `readiness-probe`  | `pkg/validator/static/probes`      | Doc     | Every regular container declares a `readinessProbe` (init containers skipped) — non-blocking best-practice warning; without one Kubernetes can route traffic before the container is ready                                                                                                                                                                                                                                                            |
 | `placeholder`      | `pkg/validator/static/placeholder` | Doc     | No unresolved `<PLACEHOLDER>`-style tokens or sentinel words (`CHANGEME`, `FIXME`, `XXX`, ...) left in committed YAML (AVP-scheme secret-reference tokens like `<path:...>` are deliberately not flagged — see below)                                                                                                                                                                                                                                 |
 | `cluster-identity` | `pkg/validator/static/clusterid`   | Overlay | No copy/paste of another cluster's identity (cluster name, project ref) into this overlay — see `exempt.IDClusterName`/`IDProjectRef`/`IDClusterIdentity` (all exemptable) vs. `exempt.IDInvalidJSON` (a deliberately non-exemptable structural bucket for malformed `.json` files)                                                                                                                                                                   |
 
@@ -1743,6 +1747,26 @@ and container `securityContext`/`resources.requests`/`resources.limits`
 are all set.
 
 - **Package:** `pkg/validator/static/podspec`
+- **Scope:** Doc
+
+#### `liveness-probe`
+
+Every container — including init containers — declares a `livenessProbe`.
+This is a non-blocking best-practice warning (`Blocking() == false`);
+without a liveness probe a hung container is never restarted.
+
+- **Package:** `pkg/validator/static/probes`
+- **Scope:** Doc
+
+#### `readiness-probe`
+
+Every regular container declares a `readinessProbe`; init containers are
+skipped because they never receive traffic. Also a non-blocking
+best-practice warning: without a readiness probe Kubernetes considers the
+container ready immediately and can route traffic to it before it can
+serve.
+
+- **Package:** `pkg/validator/static/probes`
 - **Scope:** Doc
 
 #### `placeholder`
