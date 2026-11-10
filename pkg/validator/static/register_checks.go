@@ -238,9 +238,10 @@ func (NamedPortCheck) CheckDoc(data []byte, source string) []check.Finding {
 			CheckID: "named-ports", File: e.File,
 			Kind: e.Kind, Name: e.Name,
 			Container: e.Container, Path: e.Path,
-			Message:     e.Issue,
-			Value:       e.Value,
-			Annotations: e.Annotations,
+			Message:                e.Issue,
+			Value:                  e.Value,
+			Annotations:            e.Annotations,
+			ExemptAnnotationValues: []string{e.Value},
 		})
 	}
 	return out

@@ -339,6 +339,76 @@ spec:
 	}
 }
 
+func TestNamedportCheck_CommaSeparatedAnnotationExemptionEndToEnd(t *testing.T) {
+	// A single annotation with comma-separated ports ("8080,8081") must
+	// exempt every numeric targetPort of the Service in one go.
+	dir := t.TempDir()
+	data := `kind: Service
+metadata:
+  name: svc
+  annotations:
+    gitops-ci.k8s.io/exempt-named-ports: "8080,8081"
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: grpc
+      port: 8081
+      targetPort: 8081
+`
+	f := filepath.Join(dir, "service.yaml")
+	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
+	for _, finding := range res.Findings {
+		if finding.CheckID == "named-ports" {
+			t.Errorf("expected the named-ports finding to be excluded by comma-separated annotation, got %+v", finding)
+		}
+	}
+	if len(res.Exempted) != 2 {
+		t.Errorf("expected 2 exempted entries for comma-separated annotation, got %d: %+v", len(res.Exempted), res.Exempted)
+	}
+}
+
+func TestNamedportCheck_CommaSeparatedPartialExemption(t *testing.T) {
+	// Comma-separated annotation exempts only the listed ports; other
+	// numeric targetPorts should still appear as findings.
+	dir := t.TempDir()
+	data := `kind: Service
+metadata:
+  name: svc
+  annotations:
+    gitops-ci.k8s.io/exempt-named-ports: "8080,8081"
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+`
+	f := filepath.Join(dir, "service.yaml")
+	if err := os.WriteFile(f, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := runDocChecks([]string{f}, nil, nil, 1, nil)
+	var portFindings int
+	for _, finding := range res.Findings {
+		if finding.CheckID == "named-ports" {
+			portFindings++
+		}
+	}
+	if portFindings != 1 {
+		t.Errorf("expected 1 non-exempted named-ports finding (9090), got %d", portFindings)
+	}
+	if len(res.Exempted) != 1 {
+		t.Errorf("expected 1 exempted entry (8080 only), got %d: %+v", len(res.Exempted), res.Exempted)
+	}
+}
+
 func TestPodspecCheck_AnnotationExemptionEndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	data := `kind: Deployment
