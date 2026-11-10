@@ -1,4 +1,4 @@
-package livenessprobe
+package probes
 
 import (
 	"errors"
@@ -16,36 +16,71 @@ var WorkloadKinds = map[string]bool{
 	"Job": true, "CronJob": true, "ReplicaSet": true, "Pod": true,
 }
 
-// ValidationError records a container missing a liveness probe.
+// ValidationError records a container missing a probe.
 type ValidationError struct {
 	File, Kind, Name, Container string
 	Path                        string
 	Annotations                 map[string]string
+	Probe                       string // "liveness" or "readiness"
 }
 
 func (e ValidationError) String() string {
-	return fmt.Sprintf("%s: %s %q container %q: missing liveness probe", e.File, e.Kind, e.Name, e.Container)
+	return fmt.Sprintf("%s: %s %q container %q: missing %s probe", e.File, e.Kind, e.Name, e.Container, e.Probe)
+}
+
+// ValidateLivenessProbes validates liveness probes in a file, checking both
+// regular and init containers (init containers can be restarted by a failing
+// liveness probe, so they are in scope).
+func ValidateLivenessProbes(data []byte, source string) []ValidationError {
+	return validateProbes(ValidateOptions{
+		Data:    data,
+		Source:  source,
+		Field:   "livenessProbe",
+		Probe:   "liveness",
+		InitToo: true,
+	})
+}
+
+// ValidateReadinessProbes validates readiness probes in a file. Init
+// containers are skipped: they never receive traffic, so a readiness probe
+// on them is meaningless.
+func ValidateReadinessProbes(data []byte, source string) []ValidationError {
+	return validateProbes(ValidateOptions{
+		Data:    data,
+		Source:  source,
+		Field:   "readinessProbe",
+		Probe:   "readiness",
+		InitToo: false,
+	})
 }
 
 // ValidateFile validates liveness probes in a file.
 func ValidateFile(path string) []ValidationError {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
-	return ValidateReader(f, path)
+	return ValidateLivenessProbes(data, path)
 }
 
-// ValidateBytes validates liveness probes in bytes.
+// ValidateBytes validates liveness probes in bytes. Retained for callers that
+// predate the liveness/readiness split.
 func ValidateBytes(data []byte, source string) []ValidationError {
-	return ValidateReader(strings.NewReader(string(data)), source)
+	return ValidateLivenessProbes(data, source)
 }
 
-// ValidateReader validates liveness probes from a reader.
-func ValidateReader(r io.Reader, source string) []ValidationError {
+// ValidateOptions configures validateProbes.
+type ValidateOptions struct {
+	Data    []byte
+	Source  string
+	Field   string // YAML field to look for, e.g. "livenessProbe"
+	Probe   string // human-readable probe name, e.g. "liveness"
+	InitToo bool   // whether to also check initContainers
+}
+
+func validateProbes(opts ValidateOptions) []ValidationError {
 	var errs []ValidationError
-	dec := yaml.NewDecoder(r)
+	dec := yaml.NewDecoder(strings.NewReader(string(opts.Data)))
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
@@ -71,24 +106,25 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 		if podSpec == nil || podSpec.Kind != yaml.MappingNode {
 			continue
 		}
-		containers := getNodeAtPath(podSpec, "containers")
-		initContainers := getNodeAtPath(podSpec, "initContainers")
-		for i, contList := range []*yaml.Node{containers, initContainers} {
+		fields := []string{"containers"}
+		if opts.InitToo {
+			fields = append(fields, "initContainers")
+		}
+		for _, contField := range fields {
+			contList := getNodeAtPath(podSpec, contField)
 			if contList == nil || contList.Kind != yaml.SequenceNode {
 				continue
 			}
-			// Derive the field name from the loop index so an init-container
-			// finding points at .initContainers rather than .containers.
-			contField := []string{"containers", "initContainers"}[i]
 			for _, cont := range contList.Content {
 				if cont.Kind != yaml.MappingNode {
 					continue
 				}
 				cname := quickString(findKey(cont, "name"))
-				if !hasLivenessProbe(cont) {
+				if !hasProbe(cont, opts.Field) {
 					errs = append(errs, ValidationError{
-						File: source, Kind: kind, Name: name, Container: cname,
-						Path: fmt.Sprintf("%s.%s[].livenessProbe", podPath, contField),
+						File: opts.Source, Kind: kind, Name: name, Container: cname,
+						Path:  fmt.Sprintf("%s.%s[].%s", podPath, contField, opts.Field),
+						Probe: opts.Probe,
 					})
 				}
 			}
@@ -108,9 +144,8 @@ func podSpecPath(kind string) string {
 	}
 }
 
-func hasLivenessProbe(container *yaml.Node) bool {
-	probe := findKey(container, "livenessProbe")
-	return probe != nil
+func hasProbe(container *yaml.Node, field string) bool {
+	return findKey(container, field) != nil
 }
 
 func quickName(mapping *yaml.Node) string {

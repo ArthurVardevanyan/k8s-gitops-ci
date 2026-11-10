@@ -10,11 +10,11 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/crb"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/image"
-	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/livenessprobe"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/namedport"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/namespace"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/placeholder"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/podspec"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/probes"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/psa"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/rbac"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/syncopts"
@@ -363,7 +363,7 @@ func (LivenessProbeCheck) Blocking() bool        { return false }
 func (LivenessProbeCheck) Scope() check.Scope    { return check.ScopeDoc }
 func (LivenessProbeCheck) RenderSensitive() bool { return true }
 func (LivenessProbeCheck) CheckDoc(data []byte, source string) []check.Finding {
-	errs := livenessprobe.ValidateBytes(data, source)
+	errs := probes.ValidateLivenessProbes(data, source)
 	out := make([]check.Finding, 0, len(errs))
 	for _, e := range errs {
 		out = append(out, check.Finding{
@@ -371,6 +371,30 @@ func (LivenessProbeCheck) CheckDoc(data []byte, source string) []check.Finding {
 			Kind: e.Kind, Name: e.Name,
 			Container: e.Container, Path: e.Path,
 			Message: fmt.Sprintf("container %q in %s %q has no liveness probe configured", e.Container, e.Kind, e.Name),
+		})
+	}
+	return out
+}
+
+// ── readiness-probe ───────────────────────────────────────────────────────────
+
+type ReadinessProbeCheck struct{}
+
+func (ReadinessProbeCheck) ID() string            { return "readiness-probe" }
+func (ReadinessProbeCheck) Title() string         { return "Readiness Probe Missing" }
+func (ReadinessProbeCheck) Section() string       { return "readiness-probe" }
+func (ReadinessProbeCheck) Blocking() bool        { return false }
+func (ReadinessProbeCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (ReadinessProbeCheck) RenderSensitive() bool { return true }
+func (ReadinessProbeCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := probes.ValidateReadinessProbes(data, source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "readiness-probe", File: e.File,
+			Kind: e.Kind, Name: e.Name,
+			Container: e.Container, Path: e.Path,
+			Message: fmt.Sprintf("container %q in %s %q has no readiness probe configured; without one Kubernetes can route traffic before the container is ready", e.Container, e.Kind, e.Name),
 		})
 	}
 	return out

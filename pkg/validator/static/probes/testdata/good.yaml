@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: good
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: good
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      schedulerName: default
+      dnsPolicy: ClusterFirst
+      automountServiceAccountToken: false
+      containers:
+        - name: c
+          image: registry.example.com/nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          resources:
+            requests:
+              cpu: 10m
+            limits:
+              cpu: 100m
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
