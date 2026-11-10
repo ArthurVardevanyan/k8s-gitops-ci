@@ -74,6 +74,39 @@ spec:
 	}
 }
 
+func TestValidateReader_MissingInitContainerProbe(t *testing.T) {
+	data := `kind: Deployment
+metadata:
+  name: deploy
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: init
+        image: busybox
+      containers:
+      - name: app
+        image: nginx
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+`
+	errs := ValidateReader(strings.NewReader(data), "test.yaml")
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error (only init missing probe), got %d: %v", len(errs), errs)
+	}
+	if errs[0].Container != "init" {
+		t.Errorf("expected finding for init container, got: %q", errs[0].Container)
+	}
+	if !strings.Contains(errs[0].Path, "initContainers") {
+		t.Errorf("expected path to reference initContainers, got: %q", errs[0].Path)
+	}
+	if strings.Contains(errs[0].Path, ".containers") {
+		t.Errorf("expected path not to reference .containers, got: %q", errs[0].Path)
+	}
+}
+
 func TestValidateReader_Pod(t *testing.T) {
 	data := `kind: Pod
 metadata:

@@ -71,13 +71,15 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 		if podSpec == nil || podSpec.Kind != yaml.MappingNode {
 			continue
 		}
-		containersPath := podPath + ".containers"
 		containers := getNodeAtPath(podSpec, "containers")
 		initContainers := getNodeAtPath(podSpec, "initContainers")
-		for _, contList := range []*yaml.Node{containers, initContainers} {
+		for i, contList := range []*yaml.Node{containers, initContainers} {
 			if contList == nil || contList.Kind != yaml.SequenceNode {
 				continue
 			}
+			// Derive the field name from the loop index so an init-container
+			// finding points at .initContainers rather than .containers.
+			contField := []string{"containers", "initContainers"}[i]
 			for _, cont := range contList.Content {
 				if cont.Kind != yaml.MappingNode {
 					continue
@@ -86,7 +88,7 @@ func ValidateReader(r io.Reader, source string) []ValidationError {
 				if !hasLivenessProbe(cont) {
 					errs = append(errs, ValidationError{
 						File: source, Kind: kind, Name: name, Container: cname,
-						Path: fmt.Sprintf("%s[].livenessProbe", containersPath),
+						Path: fmt.Sprintf("%s.%s[].livenessProbe", podPath, contField),
 					})
 				}
 			}
