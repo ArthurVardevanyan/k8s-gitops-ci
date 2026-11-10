@@ -1,9 +1,11 @@
+apiVersion: v1
 kind: Deployment
 metadata:
   name: missing-liveness
+  namespace: default
 spec:
   template:
     spec:
       containers:
-      - name: app
-        image: nginx
+        - name: app
+          image: nginx
