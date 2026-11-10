@@ -55,16 +55,16 @@ Download the pre-compiled binary for your platform from the
 **macOS (Apple Silicon):**
 
 ```sh
-curl -LO https://github.com/ArthurVardevanyan/k8s-gitops-ci/releases/download/v0.63.0/k8s-gitops-ci_0.63.0_darwin_arm64.tar.gz
-tar -xzf k8s-gitops-ci_0.63.0_darwin_arm64.tar.gz
+curl -LO https://github.com/ArthurVardevanyan/k8s-gitops-ci/releases/latest/download/k8s-gitops-ci_darwin_arm64.tar.gz
+tar -xzf k8s-gitops-ci_darwin_arm64.tar.gz
 mv k8s-gitops-ci /usr/local/bin/
 ```
 
 **Linux (x86_64):**
 
 ```sh
-curl -LO https://github.com/ArthurVardevanyan/k8s-gitops-ci/releases/download/v0.63.0/k8s-gitops-ci_0.63.0_linux_amd64.tar.gz
-tar -xzf k8s-gitops-ci_0.63.0_linux_amd64.tar.gz
+curl -LO https://github.com/ArthurVardevanyan/k8s-gitops-ci/releases/latest/download/k8s-gitops-ci_linux_amd64.tar.gz
+tar -xzf k8s-gitops-ci_linux_amd64.tar.gz
 sudo mv k8s-gitops-ci /usr/local/bin/
 ```
 
@@ -79,8 +79,13 @@ sudo mv k8s-gitops-ci /usr/local/bin/
 Verify the checksum matches the one in the corresponding `*_checksums.txt` file:
 
 ```sh
-sha256sum -c k8s-gitops-ci_0.63.0_checksums.txt  # Linux/macOS
+sha256sum -c k8s-gitops-ci_checksums.txt  # Linux/macOS
 ```
+
+> **Production note.** The examples above use `latest` for convenience.
+> For production, pin to a specific release (e.g. `v0.63.0`) and verify
+> the SHA-256 digest matches the one in `*_checksums.txt` to prevent
+> supply-chain attacks on the `latest` tag.
 
 #### Install from `go`
 
@@ -298,9 +303,14 @@ Task step.
 
 #### Container image
 
-Use `ghcr.io/arthurvardevanyan/k8s-gitops-ci:0.63.0@sha256:ace79fe17227d0cd9cc65d0cc59251af719d6911747f40f5b79b0ac8bdb45336` as the base image
+Use `ghcr.io/arthurvardevanyan/k8s-gitops-ci:latest` as the base image
 for Tekton Task containers. The image includes `gh`, `kustomize`,
 `shellcheck`, `prettier`, and `markdownlint-cli`.
+
+> **Production note.** Use a specific version tag and SHA-256 digest
+> (e.g. `ghcr.io/arthurvardevanyan/k8s-gitops-ci:v0.63.0@sha25:...`)
+> in production environments to pin the image and prevent unexpected
+> changes when a new release is published.
 
 #### Minimal Tekton Task
 
@@ -325,7 +335,7 @@ spec:
       optional: true
   steps:
     - name: run-ci
-      image: ghcr.io/arthurvardevanyan/k8s-gitops-ci:0.63.0@sha256:ace79fe17227d0cd9cc65d0cc59251af719d6911747f40f5b79b0ac8bdb45336
+      image: ghcr.io/arthurvardevanyan/k8s-gitops-ci:<VERSION>@<SHA>
       script: |
         #!/usr/bin/env bash
         k8s-gitops-ci pipeline \
@@ -483,7 +493,7 @@ jobs:
   k8s-gitops-ci:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/arthurvardevanyan/k8s-gitops-ci:0.63.0@sha256:ace79fe17227d0cd9cc65d0cc59251af719d6911747f40f5b79b0ac8bdb45336
+      image: ghcr.io/arthurvardevanyan/k8s-gitops-ci:<VERSION>@<SHA>
     steps:
       - uses: actions/checkout@v7.0.1
         with:
