@@ -238,3 +238,4 @@ maintainable file-size bounds.
 | Trust model, `exec.Command` audit, file-permission rationale                   | [SECURITY.md](SECURITY.md)                                 |
 | Embedded kubeconform schemas / Kyverno policies, how an org supplies its own   | [SCHEMAS.md](SCHEMAS.md)                                   |
 | Build/test/lint commands, repo structure, design conventions                   | [DEVELOPMENT.md](DEVELOPMENT.md)                           |
+| Local usage, reproduce a CI failure, linter/subcommand walkthrough             | [USAGE.md](USAGE.md#local-usage)                           |

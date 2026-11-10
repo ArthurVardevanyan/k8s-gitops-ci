@@ -122,9 +122,10 @@ pattern, and the generic check-enablement mechanism).
 - [`docs/CI.md`](docs/CI.md) — pipeline phases, every mode
   (`pipeline`/`test`/`build-yaml`), the full registered-
   check list, and the direct-vs-external finding classification
-- [`docs/USAGE.md`](docs/USAGE.md) — general usage guide:
-  requirements, a GitHub Actions integration (container-image workflow,
-  GitHub App setup, branch protection), and CLI modes/flags
+- [`docs/USAGE.md`](docs/USAGE.md) — local usage guide (install, verify,
+  reproduce failures, linters, build-yaml, selective checks), CI
+  integration guides (GitHub Actions, Tekton), and a link to the full
+  pipeline and flag reference
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — build/test/lint,
   repository structure, design conventions, how to add a new validator
 - [`docs/HOOKS.md`](docs/HOOKS.md) — the `test.sh` contract
