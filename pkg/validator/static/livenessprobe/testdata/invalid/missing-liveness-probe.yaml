@@ -9,6 +9,11 @@ spec:
       app: missing-liveness
   template:
     spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      schedulerName: default
+      dnsPolicy: ClusterFirst
+      automountServiceAccountToken: false
       containers:
         - name: app
           image: registry.example.com/nginx@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
