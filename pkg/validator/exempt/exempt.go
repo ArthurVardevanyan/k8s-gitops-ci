@@ -26,6 +26,7 @@ const (
 	IDClusterIdentity = "cluster-identity"
 	IDInvalidJSON     = "invalid-json" // non-exemptable structural bucket
 	IDLargeFile       = "large-file"
+	IDLivenessProbe   = "liveness-probe"
 )
 
 // Scalar is a generic finding value used for exemption matching.
@@ -80,6 +81,7 @@ var exemptable = map[string]bool{
 	IDProjectRef:      true,
 	IDClusterIdentity: true,
 	IDLargeFile:       true,
+	IDLivenessProbe:   true,
 }
 
 // Exemptable reports whether a check id supports exemptions.

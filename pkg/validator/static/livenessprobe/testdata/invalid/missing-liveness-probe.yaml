@@ -1,0 +1,9 @@
+kind: Deployment
+metadata:
+  name: missing-liveness
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: nginx

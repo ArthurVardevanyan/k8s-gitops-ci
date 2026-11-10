@@ -1,0 +1,13 @@
+kind: Deployment
+metadata:
+  name: good
+spec:
+  template:
+    spec:
+      containers:
+      - name: c
+        image: nginx
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
