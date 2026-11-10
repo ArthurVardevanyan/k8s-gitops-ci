@@ -2,6 +2,7 @@ package static
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/check"
@@ -9,6 +10,7 @@ import (
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/clusterid"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/crb"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/image"
+	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/livenessprobe"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/namedport"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/namespace"
 	"github.com/ArthurVardevanyan/k8s-gitops-ci/pkg/validator/static/placeholder"
@@ -344,6 +346,30 @@ func (ClusterIdentityAdapter) CheckOverlay(overlayPath, cluster string) []check.
 			Namespace:   f.Namespace,
 			Annotations: f.Annotations,
 			Message:     f.Message,
+		})
+	}
+	return out
+}
+
+// ── liveness-probe ────────────────────────────────────────────────────────────
+
+type LivenessProbeCheck struct{}
+
+func (LivenessProbeCheck) ID() string            { return "liveness-probe" }
+func (LivenessProbeCheck) Title() string         { return "Liveness Probe Missing" }
+func (LivenessProbeCheck) Section() string       { return "liveness-probe" }
+func (LivenessProbeCheck) Blocking() bool        { return false }
+func (LivenessProbeCheck) Scope() check.Scope    { return check.ScopeDoc }
+func (LivenessProbeCheck) RenderSensitive() bool { return true }
+func (LivenessProbeCheck) CheckDoc(data []byte, source string) []check.Finding {
+	errs := livenessprobe.ValidateBytes(data, source)
+	out := make([]check.Finding, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, check.Finding{
+			CheckID: "liveness-probe", File: e.File,
+			Kind: e.Kind, Name: e.Name,
+			Container: e.Container, Path: e.Path,
+			Message: fmt.Sprintf("container %q in %s %q has no liveness probe configured", e.Container, e.Kind, e.Name),
 		})
 	}
 	return out

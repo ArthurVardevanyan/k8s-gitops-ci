@@ -47,6 +47,7 @@ func RegisterAll() {
 	check.Register(PodspecCheck{})
 	check.Register(PlaceholderCheck{})
 	check.Register(ClusterIdentityAdapter{})
+	check.Register(LivenessProbeCheck{})
 }
 
 // ClusterIndexProvider is a seam allowing the engine to inject a ClusterIndex
