@@ -5,8 +5,8 @@
 # for GOARCH, avoiding qemu for the expensive go-build phase. Only stage 2's
 # RUN steps (microdnf + npm + curl) execute under emulation when the target
 # platform differs from the host.
-# Multi-arch manifest digest for golang:1.27.1 (linux/amd64 + linux/arm64)
-FROM golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e AS builder
+# Multi-arch manifest digest for golang:1.27.x (linux/amd64 + linux/arm64)
+FROM golang:1.27.4@sha256:08bcb99a38f85a265f9a93d1d3323e2440eec333380f3ea26ee0dec9264bb41c AS builder
 
 # Version metadata — filled at build time from the pipeline
 ARG BUILD_VERSION=local
