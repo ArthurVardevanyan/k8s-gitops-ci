@@ -34,7 +34,7 @@ func TestExtractEmbedded_CronJobBash(t *testing.T) {
 }
 
 func TestExtractEmbedded_DeploymentNoBash(t *testing.T) {
-	scripts, err := ExtractEmbedded("testdata/deployment-no-bash.yaml")
+	scripts, err := ExtractEmbedded("testdata/invalid/deployment-no-bash.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
