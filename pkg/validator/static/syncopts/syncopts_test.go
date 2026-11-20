@@ -404,7 +404,7 @@ func TestValidateFile_CommaSeparatedAnnotationValue(t *testing.T) {
 }
 
 func TestValidateFile_Builtin(t *testing.T) {
-	errs := ValidateFile("testdata/builtin.yaml")
+	errs := ValidateFile("testdata/invalid/builtin.yaml")
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for a builtin Deployment, got: %v", errs)
 	}
