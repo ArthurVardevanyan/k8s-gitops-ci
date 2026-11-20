@@ -199,6 +199,29 @@ func TestValidateReader_InstallerOnlyKinds(t *testing.T) {
 	AssumeOpenShift = false
 }
 
+func TestValidateReader_ComponentConfigGroups_AlwaysExempt(t *testing.T) {
+	t.Cleanup(func() { AssumeOpenShift = false })
+	cases := []struct {
+		name string
+		data string
+	}{
+		{"AuthenticationConfiguration", "kind: AuthenticationConfiguration\napiVersion: apiserver.config.k8s.io/v1beta1\nmetadata:\n  name: authn\n"},
+		{"KubeletConfiguration", "kind: KubeletConfiguration\napiVersion: kubelet.config.k8s.io/v1beta1\nmetadata:\n  name: kubelet\n"},
+		{"KubeProxyConfiguration", "kind: KubeProxyConfiguration\napiVersion: kubeproxy.config.k8s.io/v1alpha1\nmetadata:\n  name: kube-proxy\n"},
+		{"KubeSchedulerConfiguration", "kind: KubeSchedulerConfiguration\napiVersion: kubescheduler.config.k8s.io/v1\nmetadata:\n  name: scheduler\n"},
+	}
+	for _, assume := range []bool{false, true} {
+		AssumeOpenShift = assume
+		for _, c := range cases {
+			errs := ValidateReader(strings.NewReader(c.data), "x.yaml")
+			if len(errs) != 0 {
+				t.Errorf("%s (AssumeOpenShift=%v): expected no errors for component config group: %v", c.name, assume, errs)
+			}
+		}
+	}
+	AssumeOpenShift = false
+}
+
 func TestDeduplicatedError_String(t *testing.T) {
 	d := DeduplicatedError{APIVersion: "argoproj.io/v1alpha1", Kind: "ArgoCD", Name: "cd", Count: 2}
 	if !strings.Contains(d.String(), "missing argocd.argoproj.io/sync-options") {
@@ -244,12 +267,13 @@ func TestIsBuiltinResource(t *testing.T) {
 		{"infrastructure.cluster.x-k8s.io/v1beta1", false, true, "infrastructure.cluster.x-k8s.io (core)"},
 		{"ipam.cluster.x-k8s.io/v1beta1", false, true, "ipam.cluster.x-k8s.io (core)"},
 
-		// openshiftExclusiveAPIGroups - always exempt, regardless of
-		// AssumeOpenShift, since these groups can only ever exist on an
-		// OpenShift/OKD API server.
-		{"route.openshift.io/v1", false, true, "route.openshift.io (exclusive, not assumed)"},
-		{"route.openshift.io/v1", true, true, "route.openshift.io (exclusive, assumed)"},
-		{"imageregistry.operator.openshift.io/v1", false, true, "imageregistry.operator.openshift.io (exclusive, not assumed)"},
+		// Kubernetes component configuration groups — static configs
+		// consumed directly by component binaries (kube-apiserver, kubelet,
+		// kube-proxy, kube-scheduler), never applied to a cluster by Argo CD.
+		{"apiserver.config.k8s.io/v1beta1", false, true, "apiserver.config.k8s.io (core)"},
+		{"kubelet.config.k8s.io/v1beta1", false, true, "kubelet.config.k8s.io (core)"},
+		{"kubeproxy.config.k8s.io/v1alpha1", false, true, "kubeproxy.config.k8s.io (core)"},
+		{"kubescheduler.config.k8s.io/v1", false, true, "kubescheduler.config.k8s.io (core)"},
 
 		// openshiftDefaultAPIGroups - only exempt when AssumeOpenShift=true,
 		// since these groups also ship on non-OpenShift Kubernetes clusters.
@@ -261,8 +285,9 @@ func TestIsBuiltinResource(t *testing.T) {
 		{"hive.openshift.io/v1", false, false, "hive.openshift.io (not assumed)"},
 		{"hive.openshift.io/v1", true, true, "hive.openshift.io (assumed)"},
 
-		// openshiftExclusiveAPIGroups - always exempt (moved out of the
-		// former flag-gated map).
+		// openshiftExclusiveAPIGroups - always exempt, regardless of
+		// AssumeOpenShift, since these groups can only ever exist on an
+		// OpenShift/OKD API server.
 		{"network.openshift.io/v1", false, true, "network.openshift.io"},
 		{"network.operator.openshift.io/v1", false, true, "network.operator.openshift.io"},
 		{"cloud.network.openshift.io/v1", false, true, "cloud.network.openshift.io"},
@@ -278,6 +303,13 @@ func TestIsBuiltinResource(t *testing.T) {
 		{"performance.openshift.io/v2", false, true, "performance.openshift.io"},
 		{"apiserver.openshift.io/v1", false, true, "apiserver.openshift.io"},
 		{"autoscaling.openshift.io/v1", false, true, "autoscaling.openshift.io"},
+
+		// openshiftExclusiveAPIGroups - always exempt, regardless of
+		// AssumeOpenShift, since these groups can only ever exist on an
+		// OpenShift/OKD API server.
+		{"route.openshift.io/v1", false, true, "route.openshift.io (exclusive, not assumed)"},
+		{"route.openshift.io/v1", true, true, "route.openshift.io (exclusive, assumed)"},
+		{"imageregistry.operator.openshift.io/v1", false, true, "imageregistry.operator.openshift.io (exclusive, not assumed)"},
 
 		// Regression for the typo fix: the corrected group name is now
 		// recognized as an always-exempt exclusive group.
