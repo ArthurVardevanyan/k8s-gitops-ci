@@ -64,6 +64,14 @@ var coreAPIGroups = map[string]bool{
 	// doesn't apply to them.
 	"kustomize.config.k8s.io": true,
 
+	// Kubernetes component configuration groups — static configs
+	// consumed directly by component binaries (kube-apiserver, kubelet,
+	// kube-proxy, kube-scheduler) rather than CRDs applied by Argo CD.
+	"apiserver.config.k8s.io":     true,
+	"kubelet.config.k8s.io":       true,
+	"kubeproxy.config.k8s.io":     true,
+	"kubescheduler.config.k8s.io": true,
+
 	// Widely-installed, distro-agnostic platform group.
 	"metrics.k8s.io": true,
 
