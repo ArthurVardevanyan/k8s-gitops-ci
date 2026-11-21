@@ -58,6 +58,28 @@ resources:
 	}
 }
 
+func TestValidateBytes_ComponentConfigResources(t *testing.T) {
+	cases := []struct {
+		apiVersion string
+		kind       string
+	}{
+		{"apiserver.config.k8s.io/v1beta1", "AuthenticationConfiguration"},
+		{"apiserver.config.k8s.io/v1beta1", "AuthorizationConfiguration"},
+		{"kubelet.config.k8s.io/v1beta1", "KubeletConfiguration"},
+		{"kubeproxy.config.k8s.io/v1alpha1", "KubeProxyConfiguration"},
+		{"kubescheduler.config.k8s.io/v1", "KubeSchedulerConfiguration"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			data := []byte("apiVersion: " + tc.apiVersion + "\nkind: " + tc.kind + "\nmetadata:\n  name: cfg\n")
+			errs := ValidateBytes(data, "config.yaml")
+			if len(errs) != 0 {
+				t.Errorf("expected no errors for %s: %v", tc.kind, errs)
+			}
+		})
+	}
+}
+
 func TestValidateBytes_ClusterScopedResourceWithNamespace(t *testing.T) {
 	data := []byte(`kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
